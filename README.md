@@ -16,6 +16,7 @@ This project is divided into two programs:
 1. Install Docker and Compose
 2. Create a GitHub Token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
 3. Create the file `gh_token.txt` with the generated token in the root of this project folder,
+    ** Make sure that the file has only one line! (ex: nano -L gh_token.txt)
 
 ---
 
@@ -69,6 +70,12 @@ docker compose exec -it -u appuser app oghcollector <origin> <version>
  ```sh
  docker compose exec -it -u appuser app oghcollector OCA 18.0
  ```
+
+## Auto Update
+
+To auto-update the database you can create a CRON that invokes the `update_db.sh` script.
+For example (update every 6 hours): 
+```0 */6 * * * * * cd /path/to/OGHCollector && ./update_db.sh```.
 
 # Extra Info
 
