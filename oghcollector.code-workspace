@@ -1,0 +1,33 @@
+{
+	"folders": [
+		{
+			"name": "OGHCollector",
+			"path": "."
+		},
+		{
+			"name": "Collector",
+			"path": "crates/collector"
+		},
+		{
+			"name": "Server",
+			"path": "crates/server"
+		},
+		{
+			"name": "SqliteDB",
+			"path": "crates/sqlitedb"
+		},
+		{
+			"name": "Web",
+			"path": "web"
+		}
+	],
+	"settings": {
+		"rust-analyzer.cargo.sysroot": "discover",
+		"rust-analyzer.linkedProjects": [
+			"./Cargo.toml",
+			"./crates/collector/Cargo.toml",
+			"./crates/server/Cargo.toml",
+			"./crates/sqlitedb/Cargo.toml"
+		]
+	}
+}

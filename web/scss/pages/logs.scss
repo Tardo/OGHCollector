@@ -1,0 +1,15 @@
+#logs {
+    .dep_name, .module_tech_name, .author_name, .maintainer_name {
+        font-weight: bold;
+    }
+    .dep_name {
+        color: #54a390;
+    }
+    .module_tech_name {
+        color: #ffef7e;
+    }
+    .problem {
+        color: #ff6d6d;
+        font-weight: bold;
+    }
+}

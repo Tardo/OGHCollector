@@ -1,0 +1,27 @@
+.navbar-dark,
+.navbar[data-bs-theme=dark] {
+  .navbar-brand {
+    .title {
+      color: #85a4d3;
+    }
+  
+    .title-letter-d {
+      color: #5d7498;
+    }
+  }
+}
+
+.navbar .navbar-brand {
+  .title {
+    flex-grow: 1;
+    font-family: monospace;
+    font-size: x-large;
+    font-weight: bolder;
+    text-transform: uppercase;
+  }
+
+  .title-letter-d {
+    display: inline-block;
+    transform: rotate(334deg);
+  }
+}

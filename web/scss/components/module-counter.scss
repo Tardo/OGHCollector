@@ -1,0 +1,46 @@
+#version {
+    font-size: large;
+}
+
+#counter {
+    font-size: xx-large;
+}
+
+table {
+    padding: 1em;
+    min-width: 250px;
+    min-height: 120px;
+    width: 100%;
+
+    td {
+        text-align: center;
+
+        ol {
+            text-align: left;
+            margin-bottom: 0;
+            padding-left: 1em;
+        }
+    }
+}
+
+hr {
+    border-color: rgb(76 86 157);
+    border-style: double;
+    border-width: 4px;
+    border-left-width: 0;
+    border-right-width: 0;
+    transform: skew(-10deg, -10deg);
+}
+
+#contrib_rank, #committer_rank {
+    font-size: small;
+    ol {
+        margin-top: 0;
+    }
+}
+
+.section-title {
+    text-align: right;
+    padding-right: 4px;
+    font-size: small;
+}

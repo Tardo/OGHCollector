@@ -1,0 +1,23 @@
+services:
+  app:
+    build:
+      context: .
+      target: final
+    ports:
+      - 8080:8080
+    volumes:
+      - app_data:/app/data
+      # - ./server.yaml:/app/server.yaml
+    environment:
+      RUST_LOG: info
+      RUST_LIB_BACKTRACE: 0
+      OGHCOLLECTOR_TOKEN_FILE: /run/secrets/gh_token
+    secrets:
+      - gh_token
+
+secrets:
+   gh_token:
+     file: gh_token.txt
+
+volumes:
+  app_data:

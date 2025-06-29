@@ -1,0 +1,321 @@
+{% extends "minimal_layout.html" %}
+{% block title %}API{% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+{% macro api_doc_tab_pane(prefix, path_parameters, query_parameters, method, endpoint, example_curl, example, schema) -%}
+    <div class="row">
+        <div class="col-12 col-lg-4">
+            <h2 class="fs-4 fw-bold mb-4">Parameters</h2>
+            <h4 class="border-bottom pb-4 fs-6 fw-bold text-secondary-emphasis">Path parameters</h4>
+            {{ path_parameters|safe }}
+            <h4 class="border-bottom mt-5 pb-4 fs-6 fw-bold text-secondary-emphasis">Query parameters</h4>
+            {{ query_parameters|safe }}
+        </div>
+        <div class="col-12 col-lg-8">
+            <h2 class="fs-4 fw-bold mb-4">Samples</h2>
+            <div>
+                <div class="border p-3">
+                    <span class="badge rounded-pill text-bg-primary me-2">{{ method }}</span> <span class="fw-bold">{{ endpoint }}</span>
+                </div>
+                <div>
+                    <ul class="nav nav-tabs px-2 pt-2 border">
+                        <li class="nav-item"><a class="nav-link active" aria-current="page" href="#">cURL + jq</a></li>
+                    </ul>
+                    <div class="p-3 text-bg-secondary">
+                        <code class="text-light">curl -s {{ REQ_BASE_URL }}{{ example_curl }} | jq</code>
+                    </div>
+                </div>
+            </div>
+            <h2 class="fs-4 fw-bold my-4">Response</h2>
+            <div>
+                <ul class="nav nav-tabs">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="{{ prefix }}-example-tab" data-bs-toggle="tab" data-bs-target="#{{ prefix }}-example-tab-pane" type="button" role="tab" aria-controls="{{ prefix }}-example-tab-pane" aria-selected="true">Example</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="{{ prefix }}-schema-tab" data-bs-toggle="tab" data-bs-target="#{{ prefix }}-schema-tab-pane" type="button" role="tab" aria-controls="{{ prefix }}-schema-tab-pane" aria-selected="true">Schema</button>
+                    </li>
+                </ul>
+                <div class="tab-content" id="myTabContent">
+                    <div class="tab-pane fade show active p-3 text-bg-secondary" id="{{ prefix }}-example-tab-pane" role="tabpanel" aria-labelledby="{{ prefix }}-example-tab" tabindex="0">
+                        <pre><code>{{ example }}</code></pre>
+                    </div>
+                    <div class="tab-pane fade p-3 text-bg-secondary" id="{{ prefix }}-schema-tab-pane" role="tabpanel" aria-labelledby="{{ prefix }}-schema-tab" tabindex="0">
+                        <pre><code>{{ schema }}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endmacro -%}
+
+<h2 class="z-3">🧪 API (v1)</h2>
+<div class="d-flex align-items-start">
+    <div class="nav flex-column nav-pills me-3" id="api-pills-tab" role="tablist" aria-orientation="vertical">
+        <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-geeeric" aria-selected="true">Get generic module information</button>
+        <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
+        <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
+        <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
+    </div>
+    <div class="tab-content flex-grow-1" id="api-pills-tabContent">
+        <div class="tab-pane fade show active" id="api-pills-generic" role="tabpanel" aria-labelledby="api-pills-generic-tab" tabindex="0">
+            {{ api_doc_tab_pane(
+                "generic",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>module_name</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The module technical name
+                        </div>
+                    </li>
+                </ul>",
+                "",
+                "GET",
+                "/v1/module/{module_name}",
+                "/v1/module/MODULE_TECHNICAL_NAME",
+                "{
+    \"name\": \"Web Responsive\",
+    \"technical_name\": \"web_responsive\",
+    \"odoo_versions\": [
+        \"14.0\",
+        \"15.0\"
+    ],
+    \"repos\": [
+        \"https://github.com/OCA/web.git\"
+    ]
+}",
+                "{
+    \"name\": string,
+    \"technical_name\": string,
+    \"odoo_versions\": Array[string],
+    \"repos\": Array[string]
+}"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-detailed" role="tabpanel" aria-labelledby="api-pills-detailed-tab" tabindex="0">
+            {{ api_doc_tab_pane(
+                "detailed",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>module_name</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The module technical name
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>odoo_version</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The odoo version
+                        </div>
+                    </li>
+                </ul>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>org</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The organization name
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>repo</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The repository name
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/v1/module/{module_name}/{odoo_version}",
+                "/v1/module/MODULE_TECHNICAL_NAME/ODOO_VERSION",
+                "[
+    {
+        \"technical_name\": \"web_responsive\",
+        \"name\": \"Web Responsive\",
+        \"version\": \"1.1.12\",
+        \"description\": \"\",
+        \"authors\": [
+            \"Odoo Community Association (OCA)\",
+            \"Tecnativa\",
+            \"LasLabs\",
+            \"ITerra\"
+        ],
+        \"website\": \"https://github.com/OCA/web\",
+        \"license\": \"LGPL-3\",
+        \"category\": \"Website\",
+        \"auto_install\": false,
+        \"application\": false,
+        \"installable\": true,
+        \"maintainers\": [
+            \"Odoo Community Association (OCA)\"
+        ],
+        \"dependencies\": {
+            \"odoo\": {
+                \"odoo/odoo\": [
+                    \"web\",
+                    \"mail\"
+                ]
+            },
+            \"pip\": [],
+            \"bin\": []
+        },
+        \"update_date\": \"2024-01-22 21:51:45\",
+        \"git\": \"https://github.com/OCA/web.git\",
+        \"folder_size\": 5146591
+    }
+]",
+                "{
+    \"technical_name\": string,
+    \"name\": string,
+    \"version\": string,
+    \"description\": string,
+    \"authors\": Array[string],
+    \"website\": string,
+    \"license\": string,
+    \"category\": string,
+    \"auto_install\": boolean,
+    \"application\": boolean,
+    \"installable\": boolean,
+    \"maintainers\": Array[string],
+    \"dependencies\": {
+        \"odoo\": Object,
+        \"pip\": Array[string],
+        \"bin\": Array[string]
+    },
+    \"update_date\": string,
+    \"git\": string,
+    \"folder_size\": Number
+}"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-repo" role="tabpanel" aria-labelledby="api-pills-repo-tab" tabindex="0">
+            {{ api_doc_tab_pane(
+                "repo",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>repo_name</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The repository name
+                        </div>
+                    </li>
+                </ul>",
+                "",
+                "GET",
+                "/v1/repo/{repo_name}",
+                "/v1/repo/REPOSITORY_NAME",
+                "{
+    \"name\": \"web\",
+    \"organizations\": {
+        \"OCA\": {
+            \"14.0\": 62,
+            \"15.0\": 47
+        }
+    }
+}",
+                "{
+    \"name\": string,
+    \"organizations\": Object
+}"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-qsearch" role="tabpanel" aria-labelledby="api-pills-qsearch-tab" tabindex="0">
+            {{ api_doc_tab_pane(
+                "qsearch",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>module_name</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The module technical name
+                        </div>
+                    </li>
+                </ul>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>odoo_version</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The odoo version
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>installable</span>
+                            <span class='text-danger-emphasis'>bool</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            If the module is installable
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/v1/search/{module_name}",
+                "/v1/search/MODULE_TECHNICAL_NAME",
+                "[
+    {
+        \"technical_name\": \"web_refresher\",
+        \"versions\": {
+            \"OCA/web\": [
+                \"14.0\",
+                \"15.0\"
+            ]
+        }
+    },
+    {
+        \"technical_name\": \"web_remember_tree_column_width\",
+        \"versions\": {
+            \"OCA/web\": [
+                \"14.0\",
+                \"15.0\"
+            ]
+        }
+    },
+    {
+        \"technical_name\": \"web_responsive\",
+        \"versions\": {
+            \"OCA/web\": [
+                \"14.0\",
+                \"15.0\"
+            ]
+        }
+    }
+]",
+                "{
+    \"technical_name\": string,
+    \"versions\": Object
+}"
+            ) }}
+        </div>
+    </div>
+</div>
+{% endblock %}

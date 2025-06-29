@@ -1,0 +1,9 @@
+mirlo-module-counter {
+    transition-duration: .4s;
+    box-shadow: 0px 0px 60px rgb(76 86 157 / 50%);
+}
+mirlo-module-counter:hover {
+    transform: scale(0.98, 0.99);
+    box-shadow: 0px 0px 0px rgb(76 86 157 / 50%);
+    border: 1px solid rgb(76 86 157);
+}

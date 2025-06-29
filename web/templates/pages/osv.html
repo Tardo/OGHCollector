@@ -1,0 +1,53 @@
+{% extends "minimal_layout.html" %}
+{% block title %}OSV{% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <script type="module" src="/static/auto/osv.mjs"></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+
+<h2 class="z-3">🐛 Open Source Vulnerabilities (OSV)</h2>
+
+<div id="osv">
+    <ul class="nav nav-pills mb-5" id="pills-tab" role="tablist">
+    {% for odoo_ver in osv_info %}
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {{ 'active' if loop.index == 1 else '' }}" id="osv-pills-{{ odoo_ver }}-tab" data-bs-toggle="pill" data-bs-target="#osv-pills-{{ odoo_ver }}" type="button" role="tab" aria-controls="osv-pills-{{ odoo_ver }}" aria-selected="true">{{ odoo_ver }}</button>
+        </li>
+    {% endfor %}
+    </ul>
+    <div class="tab-content" id="pills-tabContent">
+    {% for odoo_ver in osv_info %}
+        <div class="tab-pane fade {{ 'show active' if loop.index == 1 else '' }}" id="osv-pills-{{ odoo_ver }}" role="tabpanel" aria-labelledby="osv-pills-{{ odoo_ver }}-tab" tabindex="0">
+        {% for mod_name in osv_info[odoo_ver] %}
+            <h3 class="text-info">{{ mod_name }}</h3>
+            {% for package_name in osv_info[odoo_ver][mod_name] %}
+                <table class="table table-striped-columns">
+                    <thead>
+                        <tr class="table-active"><th colspan="3" class="fs-5">{{ package_name }}</th></tr>
+                        <tr>
+                            <th>ID</th>
+                            <th class="text-nowrap">Fixed In</th>
+                            <th class="d-none d-lg-table-cell">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for osv in osv_info[odoo_ver][mod_name][package_name] %}
+                            <tr>
+                                <td class="text-nowrap">{{ osv.osv_id }}</td>
+                                <td class="text-nowrap text-center">{{ osv.fixed_in }}</td>
+                                <td class="d-none d-lg-table-cell">{{ osv.details }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endfor %}
+        {% endfor %}
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endblock %}

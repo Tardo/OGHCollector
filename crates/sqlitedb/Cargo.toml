@@ -1,0 +1,17 @@
+[package]
+name = "sqlitedb"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[dependencies]
+oghutils = { path = "../oghutils" }
+rusqlite.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+cached.workspace = true

@@ -1,0 +1,39 @@
+[package]
+name = "server"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[dependencies]
+sqlitedb = { path = "../sqlitedb" }
+oghutils = { path = "../oghutils" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+actix-web.workspace = true
+actix-files.workspace = true
+actix-utils.workspace = true
+actix-web-lab.workspace = true
+actix-cors.workspace = true
+actix-service.workspace = true
+actix-rt.workspace = true
+actix-session.workspace = true
+actix-csrf.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+env_logger.workspace = true
+log.workspace = true
+futures-util.workspace = true
+array_tool.workspace = true
+minijinja.workspace = true
+minijinja-autoreload.workspace = true
+config.workspace = true
+url.workspace = true
+lazy_static.workspace = true
+futures.workspace = true
+tokio_schedule.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+cached.workspace = true

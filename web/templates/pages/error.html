@@ -1,0 +1,12 @@
+{% extends "minimal_layout.html" %}
+{% block title %}{{ error }}{% endblock %}
+{% block content %}
+{{ super() }}
+
+<div class="alert alert-danger" role="alert">
+    <h4 class="alert-heading">Oops! Something went wrong...</h4>
+    <p>{{ error }}</p>
+    <hr>
+    <p class="mb-0 text-end">Error {{ status_code }}</p>
+</div>
+{% endblock %}

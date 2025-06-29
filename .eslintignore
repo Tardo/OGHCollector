@@ -1,0 +1,16 @@
+node_modules/
+.github
+dist
+*.code-workspace
+*.lock
+*.toml
+*.rs
+*.yaml
+Dockerfile
+package-lock.json
+scripts/
+static/
+docker/
+crates/
+repos/
+.vscode/

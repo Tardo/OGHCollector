@@ -1,0 +1,30 @@
+{% extends "minimal_layout.html" %}
+{% block title %}Atlas{% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <script type="module" src="/static/auto/atlas.mjs"></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<template id="template-mirlo-atlas">
+    <div id="sigma_atlas_mod_dep_search">
+        <div>
+            <input list="sigma_atlas_mod_dep_search_dependencies" class="search_input" id="sigma_atlas_mod_dep_search_input" placeholder="Search by dependency name"></select>
+            <datalist id="sigma_atlas_mod_dep_search_dependencies"></datalist>
+            <select class="search_input" id="sigma_atlas_mod_dep_search_select_ver"></select>
+        </div>
+        <div style="text-align: right">
+            <button type="button" id="sigma_atlas_mod_dep_control">⏹️</button>
+        </div>
+    </div>
+    <span id="sigma_atlas_mod_dep_graph_loading_msg">LOADING...</span>
+    <div id="sigma_atlas_mod_dep_graph"></div>
+</template>
+
+<h2 class="z-3">🌐 Module Dependency Atlas</h2>
+<div class="position-absolute start-0 top-0 h-100 w-100">
+    <mirlo-atlas id="sigma_atlas_mod_dep"></mirlo-atlas>
+</div>
+{% endblock %}

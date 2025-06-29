@@ -1,0 +1,24 @@
+[package]
+name = "collector"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[dependencies]
+sqlitedb = { path = "../sqlitedb" }
+oghutils = { path = "../oghutils" }
+reqwest.workspace = true
+futures.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+argparse.workspace = true
+pyo3.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+env_logger.workspace = true
+log.workspace = true
+fs_extra.workspace = true
+regex.workspace = true
