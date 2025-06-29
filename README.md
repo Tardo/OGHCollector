@@ -17,6 +17,8 @@ This project is divided into two programs:
 2. Create a GitHub Token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
 3. Create the file `gh_token.txt` with the generated token in the root of this project folder,
 
+---
+
 # OGHServer
 
 ## Start
@@ -67,3 +69,7 @@ docker compose exec -it -u appuser app oghcollector <origin> <version>
  ```sh
  docker compose exec -it -u appuser app oghcollector OCA 18.0
  ```
+
+# Extra Info
+
+If you want to modify the configuration of `docker-compose.yaml`, it is recommended to create a new file `docker-compose.override.yaml` where to make the modifications.
