@@ -1,1 +1,2 @@
 - Add tests
+- Using unwrap does not seem to be a good practice in the rust world

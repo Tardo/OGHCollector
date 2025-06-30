@@ -6,3 +6,6 @@
 *.db
 server.yaml
 gh_token.txt
+compose.yaml
+compose.*.yaml
+docker-compose.*.yaml
