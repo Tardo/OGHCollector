@@ -8,6 +8,8 @@ use std::env;
 use r2d2_sqlite::{self, SqliteConnectionManager};
 use std::time::Instant;
 use regex::Regex;
+use std::fs::{self, File};
+use std::path::Path;
 
 use sqlitedb::{Pool, models};
 use pypi::PypiClient;
@@ -24,7 +26,14 @@ async fn main() {
     let gh_client = GithubClient::new(&config.get_token());
     let pypi_client = PypiClient::new();
 
-    let manager = SqliteConnectionManager::file("data.db");
+    let db_path = "data/data.db";
+    if let Some(parent) = Path::new(db_path).parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    if !Path::new(db_path).exists() {
+        File::create(db_path).unwrap();
+    }
+    let manager = SqliteConnectionManager::file(db_path);
     let pool = Pool::new(manager).unwrap();
     let conn = pool.get().unwrap();
 
