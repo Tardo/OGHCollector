@@ -1,13 +1,11 @@
+// Copyright 2025 Alexandre D. Díaz
 use minijinja::context;
 use actix_web::{web, get, HttpRequest, Responder, Result};
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 
 use crate::utils::get_minijinja_context;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 
-use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::{Pool, models};
+use sqlitedb::Pool;
 
 
 #[get("/doodba/converter")]

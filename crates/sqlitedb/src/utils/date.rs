@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use chrono::{DateTime, Utc};
 
 pub fn to_sqlite_datetime(dt: DateTime<Utc>) -> String {

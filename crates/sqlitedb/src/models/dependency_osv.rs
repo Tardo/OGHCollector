@@ -1,8 +1,8 @@
+// Copyright 2025 Alexandre D. Díaz
 use cached::proc_macro::cached;
 use serde::{Deserialize, Serialize};
 use rusqlite::{Result, ToSql, params};
 
-use oghutils::version::odoo_version_u8_to_string;
 use crate::models::{dependency, dependency_module, module};
 
 pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;

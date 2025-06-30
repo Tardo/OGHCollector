@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 pub mod utils;
 pub mod models;
 

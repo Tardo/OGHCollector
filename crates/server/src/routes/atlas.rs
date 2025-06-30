@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use cached::proc_macro::cached;
 use minijinja::context;
 use actix_web::{web, get, HttpRequest, HttpResponse, Responder, Result, Error as AWError};

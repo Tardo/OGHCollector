@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use cached::proc_macro::cached;
 use serde::{Deserialize, Serialize};
 use rusqlite::{Result, ToSql, params};

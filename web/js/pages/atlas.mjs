@@ -1,2 +1,2 @@
-// OGHCollector Copyright 2025 Alexandre Díaz
+// Copyright 2025 Alexandre D. Díaz
 import '@app/components/atlas';

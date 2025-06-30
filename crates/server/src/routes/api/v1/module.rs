@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use std::collections::HashMap;
 use array_tool::vec::Uniq;
 

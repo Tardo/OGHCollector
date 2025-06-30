@@ -1,4 +1,4 @@
-// Copyright  Alexandre Díaz <dev@redneboa.es>
+// Copyright Alexandre D. Díaz
 
 import {execSync} from 'child_process';
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Alexandre Díaz
+// Copyright 2025 Alexandre D. Díaz
 import {AnimatedComponent, registerComponent, HTTP_METHOD} from 'mirlo';
 import '@scss/components/module-counter.scss';
 

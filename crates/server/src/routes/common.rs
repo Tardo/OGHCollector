@@ -1,4 +1,4 @@
-use cached::proc_macro::cached;
+// Copyright 2025 Alexandre D. Díaz
 use actix_web::{web, get, post, HttpResponse, Result, Error as AWError};
 use oghutils::version::odoo_version_u8_to_string;
 use serde::{Deserialize, Serialize};

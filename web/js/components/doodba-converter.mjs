@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Alexandre Díaz
+// Copyright 2025 Alexandre D. Díaz
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
 import yaml from 'js-yaml';
 import '@scss/components/doodba-converter.scss';

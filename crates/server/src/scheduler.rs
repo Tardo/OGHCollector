@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use chrono::Local;
 use tokio_schedule::{every, Job};
 

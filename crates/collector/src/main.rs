@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 mod config;
 mod github;
 mod pypi;

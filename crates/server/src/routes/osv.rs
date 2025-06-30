@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use minijinja::context;
 use actix_web::{web, get, HttpRequest, Responder, Result};
 use std::collections::HashMap;

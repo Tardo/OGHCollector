@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use actix_web::{
     dev::ServiceResponse, 
     http::header,

@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use actix_utils::future::{ready, Ready};
 use actix_web_lab::respond::Html;
 use actix_web::{

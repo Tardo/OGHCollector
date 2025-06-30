@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use std::fs;
 use std::io;
 use std::collections::{HashSet, HashMap};

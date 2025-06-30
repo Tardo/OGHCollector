@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 use lazy_static::lazy_static;
 use config::Config;
 use url::Url;

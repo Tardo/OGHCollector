@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Alexandre Díaz
+// Copyright 2025 Alexandre D. Díaz
 import {Graph} from 'graphology';
 import {random} from 'graphology-layout';
 import FA2Layout from 'graphology-layout-forceatlas2/worker';

@@ -1,3 +1,4 @@
+// Copyright 2025 Alexandre D. Díaz
 pub mod author;
 pub mod dependency_module;
 pub mod dependency_type;
