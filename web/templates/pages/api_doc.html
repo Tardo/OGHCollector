@@ -16,7 +16,7 @@
             <h4 class="border-bottom mt-5 pb-4 fs-6 fw-bold text-secondary-emphasis">Query parameters</h4>
             {{ query_parameters|safe }}
         </div>
-        <div class="col-12 col-lg-8">
+        <div class="col-12 col-lg-8 d-none d-sm-block">
             <h2 class="fs-4 fw-bold mb-4">Samples</h2>
             <div>
                 <div class="border p-3">
@@ -55,13 +55,32 @@
 {% endmacro -%}
 
 <h2 class="z-3">🧪 API (v1)</h2>
-<div class="d-flex align-items-start">
-    <div class="nav flex-column nav-pills me-3" id="api-pills-tab" role="tablist" aria-orientation="vertical">
-        <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-geeeric" aria-selected="true">Get generic module information</button>
+<div class="d-flex flex-column flex-md-row align-items-start">
+    <div class="nav flex-column nav-pills me-3 d-none d-md-flex" id="api-pills-tab" role="tablist" aria-orientation="vertical">
+        <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-generic" aria-selected="true">Get generic module information</button>
         <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
         <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
         <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
     </div>
+    <ul class="nav nav-pills mb-3 d-flex d-md-none mb-5" id="pills-tab" role="tablist">
+        <li class="nav-item dropdown bg-primary-subtle">
+            <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Select Topic</a>
+            <ul class="dropdown-menu">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-generic" aria-selected="true">Get generic module information</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
+                </li>
+            </ul>
+        </li>
+    </ul>
     <div class="tab-content flex-grow-1" id="api-pills-tabContent">
         <div class="tab-pane fade show active" id="api-pills-generic" role="tabpanel" aria-labelledby="api-pills-generic-tab" tabindex="0">
             {{ api_doc_tab_pane(
