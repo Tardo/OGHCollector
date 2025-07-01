@@ -1,25 +1,20 @@
 // Copyright 2025 Alexandre D. Díaz
 $utilities: map-merge(
-    $utilities,
-    (
-        "bf-blur": (
-            property: backdrop-filter,
-            class: bf-blur,
-            values: (
-                0: blur(0),
-                1: blur(10px),
-                2: blur(20px),
-                3: blur(30px),
-                4: blur(40px),
-                5: blur(50px)
-            )
-        )
-    )
-);
-
-$utilities: map-merge(
   $utilities,
   (
+    "bf-blur": (
+      property: backdrop-filter,
+      class: bf-blur,
+      values: (
+        0: blur(0),
+        1: blur(10px),
+        2: blur(20px),
+        3: blur(30px),
+        4: blur(40px),
+        5: blur(50px)
+      )
+    ),
+
     "background-color": (
       property: background-color,
       class: bg,
