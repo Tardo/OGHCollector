@@ -1,9 +1,4 @@
 // Copyright 2025 Alexandre D. Díaz
-use std::fs;
-use std::path::Path;
-use std::process::Command;
-
-
 #[derive(Debug)]
 pub struct PypiClient {
     client: reqwest::Client,
