@@ -1,36 +1,18 @@
-#!/bin/sh
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 6.1
-docker compose exec -it -u appuser app oghcollector OCA 6.1
+#!/bin/bash
+# Copyright 2025 Alexandre D. Díaz
+ogh_cmd="docker compose exec -it -u appuser app oghcollector"
+versions_openerp=("6.1", "7.0", "8.0", "9.0")
+versions_odoo=("10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0")
+versions_all=("${versions_openerp[@]}" "${versions_odoo[@]}")
 
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 7.0
-docker compose exec -it -u appuser app oghcollector OCA 7.0
+for oversion in "${versions_openerp[@]}"; do
+    $ogh_cmd odoo/odoo:/addons,/openerp/addons $oversion
+done
 
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 8.0
-docker compose exec -it -u appuser app oghcollector OCA 8.0
+for oversion in "${versions_odoo[@]}"; do
+    $ogh_cmd odoo/odoo:/addons,/odoo/addons $oversion
+done
 
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 9.0
-docker compose exec -it -u appuser app oghcollector OCA 9.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 10.0
-docker compose exec -it -u appuser app oghcollector OCA 10.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 11.0
-docker compose exec -it -u appuser app oghcollector OCA 11.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 12.0
-docker compose exec -it -u appuser app oghcollector OCA 12.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 13.0
-docker compose exec -it -u appuser app oghcollector OCA 13.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 14.0
-docker compose exec -it -u appuser app oghcollector OCA 14.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 15.0
-docker compose exec -it -u appuser app oghcollector OCA 15.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 16.0
-docker compose exec -it -u appuser app oghcollector OCA 16.0
-
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 17.0
-docker compose exec -it -u appuser app oghcollector OCA 17.0
+for oversion in "${versions_all[@]}"; do
+    $ogh_cmd OCA $oversion
+done
