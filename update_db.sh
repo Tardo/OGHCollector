@@ -1,14 +1,14 @@
 #!/bin/sh
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 6.1
+docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 6.1
 docker compose exec -it -u appuser app oghcollector OCA 6.1
 
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 7.0
+docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 7.0
 docker compose exec -it -u appuser app oghcollector OCA 7.0
 
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 8.0
+docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 8.0
 docker compose exec -it -u appuser app oghcollector OCA 8.0
 
-docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 9.0
+docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/openerp/addons 9.0
 docker compose exec -it -u appuser app oghcollector OCA 9.0
 
 docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 10.0
