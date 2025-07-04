@@ -4,7 +4,8 @@
     "build:watch": "rollup -c -w",
     "build": "rollup -c",
     "build:prod": "export NODE_ENV='production' && rollup -c",
-    "lint": "eslint --cache --color --fix . && cargo clippy --fix -- -D warnings",
+    "lint": "eslint --cache --color . && cargo clippy -- -D warnings",
+    "lint:fix": "eslint --fix . && cargo clippy --fix",
     "prepare": "husky"
   },
   "devDependencies": {

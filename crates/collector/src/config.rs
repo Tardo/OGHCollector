@@ -17,13 +17,12 @@ pub struct OGHCollectorConfig {
 
 impl OGHCollectorConfig {
     pub fn new(args: &[String]) -> OGHCollectorConfig {
-        let token_file = env::var("OGHCOLLECTOR_TOKEN_FILE").unwrap_or(String::new());
-        let mut token: String = String::new();
-        if token_file.is_empty() {
-            token = env::var("OGHCOLLECTOR_TOKEN").unwrap_or(String::new());
+        let token_file = env::var("OGHCOLLECTOR_TOKEN_FILE").unwrap_or_default();
+        let token: String = if token_file.is_empty() {
+            env::var("OGHCOLLECTOR_TOKEN").unwrap_or_default()
         } else {
-            token = fs::read_to_string(token_file).unwrap_or(String::new());
-        }
+            fs::read_to_string(token_file).unwrap_or_default()
+        };
         if token.is_empty() {
             panic!("Need the github api token!")
         }
@@ -32,12 +31,11 @@ impl OGHCollectorConfig {
         let current_path = env::current_dir().unwrap();
         let repos_path = format!("{}/data/repos", current_path.display());
         let branch_parts = branch.split(".").collect::<Vec<&str>>();
-        let version_odoo: u8;
-        if branch_parts.len() == 1 {
-            version_odoo = odoo_version_string_to_u8(&branch_parts[0].to_string());
+        let version_odoo: u8 = if branch_parts.len() == 1 {
+            odoo_version_string_to_u8(branch_parts[0])
         } else {
-            version_odoo = odoo_version_string_to_u8(&branch_parts[..2].join("."));
-        }
+            odoo_version_string_to_u8(&branch_parts[..2].join("."))
+        };
         let mut mode: String = "org".to_string();
 
         let raw_src_parts = raw_src.split(":").collect::<Vec<&str>>();

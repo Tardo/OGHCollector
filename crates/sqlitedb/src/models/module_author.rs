@@ -77,7 +77,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}{}", module_id, author_id) }"#
 )]
 pub fn get_by_id(conn: &Connection, module_id: &i64, author_id: &i64) -> Option<Model> {
-    let mod_authors = query(&conn, "WHERE mod_au.module_id = ?1 AND mod_au.author_id = ?2 LIMIT 1", params![&module_id, &author_id]).unwrap();
+    let mod_authors = query(conn, "WHERE mod_au.module_id = ?1 AND mod_au.author_id = ?2 LIMIT 1", params![&module_id, &author_id]).unwrap();
     if mod_authors.is_empty() {
         return None;
     }
@@ -91,7 +91,7 @@ pub fn get_by_id(conn: &Connection, module_id: &i64, author_id: &i64) -> Option<
     convert = r#"{ format!("{}{}", module_id, name) }"#
 )]
 pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Model> {
-    let mod_authors = query(&conn, "WHERE mod_au.module_id = ?1 AND au.name = ?2 LIMIT 1", params![&module_id, &name]).unwrap();
+    let mod_authors = query(conn, "WHERE mod_au.module_id = ?1 AND au.name = ?2 LIMIT 1", params![&module_id, &name]).unwrap();
     if mod_authors.is_empty() {
         return None;
     }
@@ -104,8 +104,8 @@ pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Mod
     convert = r#"{ format!("{}", module_id) }"#
 )]
 pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
-    let mod_authors = query(&conn, "WHERE mod_au.module_id = ?1", params![&module_id]).unwrap();
-    mod_authors
+    
+    query(conn, "WHERE mod_au.module_id = ?1", params![&module_id]).unwrap()
 }
 
 #[cached(
@@ -115,9 +115,9 @@ pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
 )]
 pub fn get_names_by_module_id(conn: &Connection, module_id: &i64) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
-    let module_authors = get_by_module_id(&conn, &module_id);
+    let module_authors = get_by_module_id(conn, module_id);
     for module_author in module_authors {
-        let author = author::get_by_id(&conn, &module_author.author_id.0).unwrap();
+        let author = author::get_by_id(conn, &module_author.author_id.0).unwrap();
         names.push(author.name);
     }
     names
@@ -150,20 +150,20 @@ pub fn get_top_names(conn: &Connection, limit: &u8) -> Vec<TopAuthorJSON> {
 }
 
 pub fn add(conn: &Connection, module_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
-    let module_author_opt = get_by_name(&conn, &module_id, &name);
+    let module_author_opt = get_by_name(conn, module_id, name);
     if module_author_opt.is_none() {
-        let author = author::add(&conn, &name).unwrap();
+        let author = author::add(conn, name).unwrap();
         conn.execute(
             format!("INSERT INTO {}(module_id, author_id) VALUES (?1, ?2)", &TABLE_NAME).as_str(),
             params![&module_id, &author.id],
         )?;
-        let last_id = conn.last_insert_rowid().clone();
-        let module = module::get_by_id(&conn, &module_id).unwrap();
-        let _ = system_event::register_new_module_author(&conn, &name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
+        let last_id = conn.last_insert_rowid();
+        let module = module::get_by_id(conn, module_id).unwrap();
+        let _ = system_event::register_new_module_author(conn, name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
         return Ok(Model { 
             id: last_id, 
-            module_id: (module.id.clone(), module.technical_name.clone()), 
-            author_id: (author.id.clone(), name.to_string()),
+            module_id: (module.id, module.technical_name.clone()), 
+            author_id: (author.id, name.to_string()),
         });
     }
     Ok(module_author_opt.unwrap())

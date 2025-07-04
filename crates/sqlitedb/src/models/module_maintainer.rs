@@ -71,7 +71,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}{}", module_id, maintainer_id) }"#
 )]
 pub fn get_by_id(conn: &Connection, module_id: &i64, maintainer_id: &i64) -> Option<Model> {
-    let mod_maintainers = query(&conn, "WHERE mod_mant.module_id = ?1 AND mod_mant.maintainer_id = ?2 LIMIT 1", params![&module_id, &maintainer_id]).unwrap();
+    let mod_maintainers = query(conn, "WHERE mod_mant.module_id = ?1 AND mod_mant.maintainer_id = ?2 LIMIT 1", params![&module_id, &maintainer_id]).unwrap();
     if mod_maintainers.is_empty() {
         return None;
     }
@@ -85,7 +85,7 @@ pub fn get_by_id(conn: &Connection, module_id: &i64, maintainer_id: &i64) -> Opt
     convert = r#"{ format!("{}{}", module_id, name) }"#
 )]
 pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Model> {
-    let mod_maintainers = query(&conn, "WHERE mod_mant.module_id = ?1 AND mant.name = ?2 LIMIT 1", params![&module_id, &name]).unwrap();
+    let mod_maintainers = query(conn, "WHERE mod_mant.module_id = ?1 AND mant.name = ?2 LIMIT 1", params![&module_id, &name]).unwrap();
     if mod_maintainers.is_empty() {
         return None;
     }
@@ -98,8 +98,8 @@ pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Mod
     convert = r#"{ format!("{}", module_id) }"#
 )]
 pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
-    let mod_maintainers = query(&conn, "WHERE mod_mant.module_id = ?1 LIMIT 1", params![&module_id]).unwrap();
-    mod_maintainers
+    
+    query(conn, "WHERE mod_mant.module_id = ?1 LIMIT 1", params![&module_id]).unwrap()
 }
 
 #[cached(
@@ -109,29 +109,29 @@ pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
 )]
 pub fn get_names_by_module_id(conn: &Connection, module_id: &i64) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
-    let module_maintainers = get_by_module_id(&conn, &module_id);
+    let module_maintainers = get_by_module_id(conn, module_id);
     for module_maintainer in module_maintainers {
-        let maintainer = maintainer::get_by_id(&conn, &module_maintainer.maintainer_id.0).unwrap();
+        let maintainer = maintainer::get_by_id(conn, &module_maintainer.maintainer_id.0).unwrap();
         names.push(maintainer.name);
     }
     names
 }
 
 pub fn add(conn: &Connection, module_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
-    let module_maintainer_opt = get_by_name(&conn, &module_id, &name);
+    let module_maintainer_opt = get_by_name(conn, module_id, name);
     if module_maintainer_opt.is_none() {
-        let maintainer = maintainer::add(&conn, &name).unwrap();
+        let maintainer = maintainer::add(conn, name).unwrap();
         conn.execute(
             format!("INSERT INTO {}(module_id, maintainer_id) VALUES (?1, ?2)", &TABLE_NAME).as_str(),
             params![&module_id, &maintainer.id],
         )?;
-        let last_id = conn.last_insert_rowid().clone();
-        let module = module::get_by_id(&conn, &module_id).unwrap();
-        let _ = system_event::register_new_module_maintainer(&conn, &name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
+        let last_id = conn.last_insert_rowid();
+        let module = module::get_by_id(conn, module_id).unwrap();
+        let _ = system_event::register_new_module_maintainer(conn, name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
         return Ok(Model { 
             id: last_id, 
-            module_id: (module.id.clone(), module.technical_name.clone()), 
-            maintainer_id: (maintainer.id.clone(), maintainer.name.clone()),
+            module_id: (module.id, module.technical_name.clone()), 
+            maintainer_id: (maintainer.id, maintainer.name.clone()),
         });
     }
     Ok(module_maintainer_opt.unwrap())

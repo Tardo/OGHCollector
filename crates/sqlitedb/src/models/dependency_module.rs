@@ -71,7 +71,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}", id) }"#
 )]
 pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let dep_mods = query(&conn, "WHERE mod_dep.id = ?1 LIMIT 1", params![&id]).unwrap();
+    let dep_mods = query(conn, "WHERE mod_dep.id = ?1 LIMIT 1", params![&id]).unwrap();
     if dep_mods.is_empty() {
         return None;
     }
@@ -85,7 +85,7 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
     convert = r#"{ format!("{}{}", dependency_id, module_id) }"#
 )]
 fn get_by_dependency_id_module_id(conn: &Connection, dependency_id: &i64, module_id: &i64) -> Option<Model> {
-    let mod_deps = query(&conn, "WHERE mod_dep.dependency_id = ?1 AND mod_dep.module_id = ?2 LIMIT 1", params![&dependency_id, &module_id]).unwrap();
+    let mod_deps = query(conn, "WHERE mod_dep.dependency_id = ?1 AND mod_dep.module_id = ?2 LIMIT 1", params![&dependency_id, &module_id]).unwrap();
     if mod_deps.is_empty() {
         return None;
     }
@@ -104,29 +104,29 @@ pub fn get_names(conn: &Connection, module_id: &i64, dep_type_id: &i64) -> Vec<S
     let deps_rows = stmt.query_map(
         params![&dep_type_id, &module_id], 
         |row| {
-            Ok(row.get(0)?)
+            row.get(0)
     }).unwrap();
 
     let deps_iter = deps_rows.map(|x| x.unwrap());
-    let depends = deps_iter.collect::<Vec<String>>();
-    depends
+    
+    deps_iter.collect::<Vec<String>>()
 }
 
 pub fn add(conn: &Connection, dep_type_id: &i64, name: &str, module_id: &i64) -> Result<Model, rusqlite::Error> {
-    let dep = dependency::add(&conn, &dep_type_id, &name)?;
-    let dep_module_opt = get_by_dependency_id_module_id(&conn, &dep.id, &module_id);
+    let dep = dependency::add(conn, dep_type_id, name)?;
+    let dep_module_opt = get_by_dependency_id_module_id(conn, &dep.id, module_id);
     if dep_module_opt.is_none() {
         conn.execute(
             format!("INSERT INTO {}(dependency_id, module_id) VALUES (?1, ?2)", &TABLE_NAME).as_str(),
             params![&dep.id, &module_id],
         )?;
-        let last_id = conn.last_insert_rowid().clone();
-        let module = module::get_by_id(&conn, &module_id).unwrap();
-        let _ = system_event::register_new_dependency_module(&conn, &name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
+        let last_id = conn.last_insert_rowid();
+        let module = module::get_by_id(conn, module_id).unwrap();
+        let _ = system_event::register_new_dependency_module(conn, name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
         return Ok(Model { 
             id: last_id, 
-            dependency_id: (dep.id.clone(), dep.name.clone()), 
-            module_id: (module.id.clone(), module.technical_name.clone()),
+            dependency_id: (dep.id, dep.name.clone()), 
+            module_id: (module.id, module.technical_name.clone()),
         });
     }
     Ok(dep_module_opt.unwrap())

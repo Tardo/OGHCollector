@@ -52,7 +52,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}", name) }"#
 )]
 pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let gh_orgs = query(&conn, "WHERE gh_org.name = ?1 LIMIT 1", params![&name]).unwrap();
+    let gh_orgs = query(conn, "WHERE gh_org.name = ?1 LIMIT 1", params![&name]).unwrap();
     if gh_orgs.is_empty() {
         return None;
     }
@@ -66,7 +66,7 @@ pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
     convert = r#"{ format!("{}", id) }"#
 )]
 pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let gh_orgs = query(&conn, "WHERE gh_org.id = ?1 LIMIT 1", params![&id]).unwrap();
+    let gh_orgs = query(conn, "WHERE gh_org.id = ?1 LIMIT 1", params![&id]).unwrap();
     if gh_orgs.is_empty() {
         return None;
     }
@@ -74,14 +74,14 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
 }
 
 pub fn add(conn: &Connection, name: &str) -> Result<Model, rusqlite::Error> {
-    let org_opt = get_by_name(&conn, &name);
+    let org_opt = get_by_name(conn, name);
     if org_opt.is_none() {
         conn.execute(
             format!("INSERT INTO {}(name) VALUES (?1)", &TABLE_NAME).as_str(),
             params![&name],
         )?;
-        let last_id = conn.last_insert_rowid().clone();
-        let _ = system_event::register_new_gh_organization(&conn, &name);
+        let last_id = conn.last_insert_rowid();
+        let _ = system_event::register_new_gh_organization(conn, name);
         return Ok(Model { id: last_id, name: name.to_string() });
     }
     Ok(org_opt.unwrap())

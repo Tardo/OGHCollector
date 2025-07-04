@@ -56,7 +56,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}", id) }"#
 )]
 pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let dep_types = query(&conn, "WHERE dt.id = ?1 LIMIT 1", params![&id]).unwrap();
+    let dep_types = query(conn, "WHERE dt.id = ?1 LIMIT 1", params![&id]).unwrap();
     if dep_types.is_empty() {
         return None;
     }
@@ -70,7 +70,7 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
     convert = r#"{ format!("{}", name) }"#
 )]
 pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let dep_types = query(&conn, "WHERE dt.name = ?1 LIMIT 1", params![&name]).unwrap();
+    let dep_types = query(conn, "WHERE dt.name = ?1 LIMIT 1", params![&name]).unwrap();
     if dep_types.is_empty() {
         return None;
     }

@@ -79,7 +79,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}{}", gh_org_id, name) }"#
 )]
 pub fn get_by_name(conn: &Connection, gh_org_id: &i64, name: &str) -> Option<Model> {
-    let gh_repos = query(&conn, "WHERE gh_repo.name = ?1 AND gh_org.id = ?2 LIMIT 1", params![&name, &gh_org_id]).unwrap();
+    let gh_repos = query(conn, "WHERE gh_repo.name = ?1 AND gh_org.id = ?2 LIMIT 1", params![&name, &gh_org_id]).unwrap();
     if gh_repos.is_empty() {
         return None;
     }
@@ -93,7 +93,7 @@ pub fn get_by_name(conn: &Connection, gh_org_id: &i64, name: &str) -> Option<Mod
     convert = r#"{ format!("{}", id) }"#
 )]
 pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let gh_repos = query(&conn, "WHERE gh_repo.id = ?1 LIMIT 1", params![&id]).unwrap();
+    let gh_repos = query(conn, "WHERE gh_repo.id = ?1 LIMIT 1", params![&id]).unwrap();
     if gh_repos.is_empty() {
         return None;
     }
@@ -126,26 +126,26 @@ pub fn get_info_by_name(conn: &Connection, repo_name: &str) -> Vec<RepositoryInf
             })
     }).unwrap();
     let repos_iter = repos_rows.map(|x| x.unwrap());
-    let repos = repos_iter.collect::<Vec<RepositoryInfo>>();
-    repos
+    
+    repos_iter.collect::<Vec<RepositoryInfo>>()
 }
 
 
 pub fn add(conn: &Connection, gh_org_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
-    let repo_opt = get_by_name(&conn, &gh_org_id, &name);
+    let repo_opt = get_by_name(conn, gh_org_id, name);
     if repo_opt.is_none() {
         let create_date: String = get_sqlite_utc_now();
         conn.execute(
             format!("INSERT INTO {}(name, gh_organization_id, create_date, update_date) VALUES (?1, ?2, ?3, ?3)", &TABLE_NAME).as_str(),
             params![&name, &gh_org_id, &create_date],
         )?;
-        let last_id = conn.last_insert_rowid().clone();
-        let gh_organization = gh_organization::get_by_id(&conn, &gh_org_id).unwrap();
-        let _ = system_event::register_new_gh_repository(&conn, &gh_organization.name, &name);
+        let last_id = conn.last_insert_rowid();
+        let gh_organization = gh_organization::get_by_id(conn, gh_org_id).unwrap();
+        let _ = system_event::register_new_gh_repository(conn, &gh_organization.name, name);
         return Ok(Model { 
             id: last_id, 
             name: name.to_string(), 
-            gh_organization_id: (gh_organization.id.clone(), gh_organization.name.clone()), 
+            gh_organization_id: (gh_organization.id, gh_organization.name.clone()), 
             create_date: create_date.clone(),
             update_date: create_date.clone()
         });

@@ -41,27 +41,27 @@ struct JSONRequestModuleDoodba {
 
 
 fn get_odoo_versions(conn: &Connection) -> Vec<OdooVersionInfo> {
-    let versions: Vec<OdooVersionInfo> = models::module::get_odoo_versions(&conn).iter().map(|x| OdooVersionInfo { key: x.clone(), value: odoo_version_u8_to_string(&x) }).collect();
+    let versions: Vec<OdooVersionInfo> = models::module::get_odoo_versions(conn).iter().map(|x| OdooVersionInfo { key: *x, value: odoo_version_u8_to_string(x) }).collect();
     versions
 }
 
 fn get_odoo_module_count(conn: &Connection) -> Vec<ModuleCountInfo> {
-    let modules_count: Vec<ModuleCountInfo> = models::module::count_organization(&conn).iter().map(|x| ModuleCountInfo { version: odoo_version_u8_to_string(&x.version_odoo), count: x.count.clone(), org: x.org_name.to_string() }).collect();
+    let modules_count: Vec<ModuleCountInfo> = models::module::count_organization(conn).iter().map(|x| ModuleCountInfo { version: odoo_version_u8_to_string(&x.version_odoo), count: x.count, org: x.org_name.to_string() }).collect();
     modules_count
 }
 
 fn get_odoo_contributor_rank(conn: &Connection) -> Vec<ContribRankInfo> {
-    let contrib_rank: Vec<ContribRankInfo> = models::module::rank_contributor(&conn).iter().map(|x| ContribRankInfo { version: odoo_version_u8_to_string(&x.version_odoo), count: x.count.clone(), contrib: x.contrib_name.to_string(), rank: x.rank.clone() }).collect();
+    let contrib_rank: Vec<ContribRankInfo> = models::module::rank_contributor(conn).iter().map(|x| ContribRankInfo { version: odoo_version_u8_to_string(&x.version_odoo), count: x.count, contrib: x.contrib_name.to_string(), rank: x.rank }).collect();
     contrib_rank
 }
 
 fn get_odoo_committer_rank(conn: &Connection) -> Vec<CommitterRankInfo> {
-    let committer_rank: Vec<CommitterRankInfo> = models::module::rank_committer(&conn).iter().map(|x| CommitterRankInfo { version: odoo_version_u8_to_string(&x.version_odoo), count: x.count.clone(), committer: x.committer_name.to_string(), rank: x.rank.clone() }).collect();
+    let committer_rank: Vec<CommitterRankInfo> = models::module::rank_committer(conn).iter().map(|x| CommitterRankInfo { version: odoo_version_u8_to_string(&x.version_odoo), count: x.count, committer: x.committer_name.to_string(), rank: x.rank }).collect();
     committer_rank
 }
 
-fn get_doodba_addons(conn: &Connection, mods: &Vec<String>) -> Vec<ModuleRepositoryInfo> {
-    let module_repos: Vec<ModuleRepositoryInfo> = models::module::get_module_repository(&conn, &mods);
+fn get_doodba_addons(conn: &Connection, mods: &[String]) -> Vec<ModuleRepositoryInfo> {
+    let module_repos: Vec<ModuleRepositoryInfo> = models::module::get_module_repository(conn, mods);
     log::info!("{:?}", &module_repos);
     module_repos
 }
@@ -73,7 +73,7 @@ pub async fn route_odoo_versions(pool: web::Data<Pool>) -> Result<HttpResponse, 
     let result = web::block(move || {
         get_odoo_versions(&conn)
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/common/odoo/module/count")]
@@ -83,7 +83,7 @@ pub async fn route_odoo_module_count(pool: web::Data<Pool>) -> Result<HttpRespon
     let result = web::block(move || {
         get_odoo_module_count(&conn)
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/common/odoo/contributor/rank")]
@@ -93,7 +93,7 @@ pub async fn route_odoo_contributor_rank(pool: web::Data<Pool>) -> Result<HttpRe
     let result = web::block(move || {
         get_odoo_contributor_rank(&conn)
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/common/odoo/committer/rank")]
@@ -103,7 +103,7 @@ pub async fn route_odoo_committer_rank(pool: web::Data<Pool>) -> Result<HttpResp
     let result = web::block(move || {
         get_odoo_committer_rank(&conn)
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[post("/common/doodba/addons")]
@@ -113,5 +113,5 @@ pub async fn route_doodba_addons(pool: web::Data<Pool>, info: web::Json<JSONRequ
     let result = web::block(move || {
         get_doodba_addons(&conn, &info.modules)
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }

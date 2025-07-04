@@ -4,8 +4,6 @@ mod minijinja_renderer;
 mod routes;
 mod utils;
 mod middlewares;
-mod state;
-mod scheduler;
 
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -27,7 +25,6 @@ use minijinja_autoreload::AutoReloader;
 use sqlitedb::{Pool, models};
 use middlewares::not_found;
 use config::SERVER_CONFIG;
-use state::AppState;
 
 
 #[actix_web::main]
@@ -44,12 +41,11 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Secret Key
-    let cookie_secret_key;
-    if SERVER_CONFIG.get_cookie_key_bytes().len() < 64 {
-        cookie_secret_key = Key::generate();
+    let cookie_secret_key = if SERVER_CONFIG.get_cookie_key_bytes().len() < 64 {
+        Key::generate()
     } else {
-        cookie_secret_key = Key::from(&SERVER_CONFIG.get_cookie_key_bytes());
-    }
+        Key::from(SERVER_CONFIG.get_cookie_key_bytes())
+    };
 
     // The closure is invoked every time the environment is outdated to recreate it.
     let tmpl_reloader = AutoReloader::new(move |notifier| {
@@ -67,9 +63,6 @@ async fn main() -> std::io::Result<()> {
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);
-
-    // App State
-    let app_state = AppState { page_name: "index".to_string() };
 
     // connect to SQLite DB
     let db_path = "data/data.db";
@@ -106,7 +99,6 @@ async fn main() -> std::io::Result<()> {
             // store db pool as Data object
             .app_data(web::Data::new(pool.clone()))
             .app_data(tmpl_reloader.clone())
-            .app_data(web::Data::new(app_state.clone()))
             .service(afs::Files::new("/static", "./static").show_files_listing())
             .service(routes::common::route_odoo_versions)
             .service(routes::common::route_odoo_module_count)
@@ -121,7 +113,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::atlas::route)
             .service(routes::atlas::route_atlas_data)
             .service(
-                web::scope(&routes::api::v1::PATH)
+                web::scope(routes::api::v1::PATH)
                     .service(routes::api::v1::module::route)
                     .service(routes::api::v1::module::route_odoo_version)
                     .service(routes::api::v1::repository::route)
@@ -137,8 +129,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(ErrorHandlers::new().handler(StatusCode::NOT_FOUND, not_found::handler_fn))
             .wrap(Logger::default())
     })
-    .bind((SERVER_CONFIG.get_bind_address().clone(), SERVER_CONFIG.get_port().clone()))?
-    .workers(SERVER_CONFIG.get_workers().clone())
+    .bind((SERVER_CONFIG.get_bind_address().clone(), *SERVER_CONFIG.get_port()))?
+    .workers(*SERVER_CONFIG.get_workers())
     .run()
     .await
 }

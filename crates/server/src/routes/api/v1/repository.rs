@@ -15,14 +15,14 @@ pub struct RepositoryGenericInfoResponse {
 
 
 fn get_repository_generic_info(conn: &Connection, repo_name: &str) -> Option<RepositoryGenericInfoResponse> {
-    let repos = models::gh_repository::get_info_by_name(&conn, &repo_name);
+    let repos = models::gh_repository::get_info_by_name(conn, repo_name);
     if repos.is_empty() {
         return None;
     }
 
     let mut orgs: HashMap<String, HashMap<String, u16>> = HashMap::new();
     for repo in repos {
-        let branches = orgs.entry(repo.organization).or_insert(HashMap::new());
+        let branches = orgs.entry(repo.organization).or_default();
         branches.entry(odoo_version_u8_to_string(&repo.version_odoo)).or_insert(repo.num_modules);
     }
     Some(RepositoryGenericInfoResponse {

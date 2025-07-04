@@ -83,7 +83,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}{}", dep_mod_id, osv_id) }"#
 )]
 pub fn get_by_dep_mod_id_osv_id(conn: &Connection, dep_mod_id: &i64, osv_id: &String) -> Option<Model> {
-    let deps = query(&conn, "WHERE dep_mod.id = ?1 AND dep_o.osv_id = ?2 LIMIT 1", params![&dep_mod_id, &osv_id]).unwrap();
+    let deps = query(conn, "WHERE dep_mod.id = ?1 AND dep_o.osv_id = ?2 LIMIT 1", params![&dep_mod_id, &osv_id]).unwrap();
     if deps.is_empty() {
         return None;
     }
@@ -115,22 +115,22 @@ pub fn get_osv_info(conn: &Connection) -> Vec<DependencyModuleOSVInfo> {
             })
     }).unwrap();
     let iter = rows.map(|x| x.unwrap());
-    let records = iter.collect::<Vec<DependencyModuleOSVInfo>>();
-    records
+    
+    iter.collect::<Vec<DependencyModuleOSVInfo>>()
 }
 
 pub fn add(conn: &Connection, dep_mod_id: &i64, osv_id: &str, details: &str, fixed_in: &str) -> Result<Model, rusqlite::Error> {
-    let dep_opt = get_by_dep_mod_id_osv_id(&conn, &dep_mod_id, &osv_id.to_string());
+    let dep_opt = get_by_dep_mod_id_osv_id(conn, dep_mod_id, &osv_id.to_string());
     if dep_opt.is_none() {
-        let dep_mod = dependency_module::get_by_id(&conn, &dep_mod_id).unwrap();
-        let dep = dependency::get_by_id(&conn, &dep_mod.dependency_id.0).unwrap();
+        let dep_mod = dependency_module::get_by_id(conn, dep_mod_id).unwrap();
+        let dep = dependency::get_by_id(conn, &dep_mod.dependency_id.0).unwrap();
         conn.execute(
             format!("INSERT INTO {}(dependency_module_id, osv_id, details, fixed_in) VALUES (?1, ?2, ?3, ?4)", &TABLE_NAME).as_str(),
             params![&dep_mod_id, &osv_id, &details, &fixed_in],
         )?;
         return Ok(Model { 
-            id: conn.last_insert_rowid().clone(), 
-            dependency_module_id: (dep_mod.id.clone(), dep.name.clone()), 
+            id: conn.last_insert_rowid(), 
+            dependency_module_id: (dep_mod.id, dep.name.clone()), 
             osv_id: osv_id.to_string(), 
             details: details.to_string(), 
             fixed_in: fixed_in.to_string(), 

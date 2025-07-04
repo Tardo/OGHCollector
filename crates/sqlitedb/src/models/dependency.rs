@@ -71,7 +71,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}", id) }"#
 )]
 pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let deps = query(&conn, "WHERE dep.id = ?1 LIMIT 1", params![&id]).unwrap();
+    let deps = query(conn, "WHERE dep.id = ?1 LIMIT 1", params![&id]).unwrap();
     if deps.is_empty() {
         return None;
     }
@@ -85,7 +85,7 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
     convert = r#"{ format!("{}{}", dep_type_id, name) }"#
 )]
 pub fn get_by_name(conn: &Connection, dep_type_id: &i64, name: &str) -> Option<Model> {
-    let deps = query(&conn, "WHERE dep.dependency_type_id = ?1 AND dep.name = ?2 LIMIT 1", params![&dep_type_id, &name]).unwrap();
+    let deps = query(conn, "WHERE dep.dependency_type_id = ?1 AND dep.name = ?2 LIMIT 1", params![&dep_type_id, &name]).unwrap();
     if deps.is_empty() {
         return None;
     }
@@ -113,12 +113,12 @@ pub fn get_module_external_dependency_names(conn: &Connection, module_id: &i64, 
     let deps_rows = stmt.query_map(
         params![&module_id, &dep_type], 
         |row| {
-            Ok(row.get(0)?)
+            row.get(0)
     }).unwrap();
 
     let depends_iter = deps_rows.map(|x| x.unwrap());
-    let depends = depends_iter.collect::<Vec<String>>();
-    depends
+    
+    depends_iter.collect::<Vec<String>>()
 }
 
 #[cached(
@@ -156,21 +156,21 @@ pub fn get_module_dependency_info(conn: &Connection, module_id: &i64) -> Vec<Dep
     }).unwrap();
 
     let depends_iter = deps_rows.map(|x| x.unwrap());
-    let depends = depends_iter.collect::<Vec<DependencyModuleInfo>>();
-    depends
+    
+    depends_iter.collect::<Vec<DependencyModuleInfo>>()
 }
 
 pub fn add(conn: &Connection, dep_type_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
-    let dep_opt = get_by_name(&conn, &dep_type_id, &name);
+    let dep_opt = get_by_name(conn, dep_type_id, name);
     if dep_opt.is_none() {
-        let dep_type = dependency_type::get_by_id(&conn, &dep_type_id).unwrap();
+        let dep_type = dependency_type::get_by_id(conn, dep_type_id).unwrap();
         conn.execute(
             format!("INSERT INTO {}(dependency_type_id, name) VALUES (?1, ?2)", &TABLE_NAME).as_str(),
             params![&dep_type.id, &name],
         )?;
         return Ok(Model { 
-            id: conn.last_insert_rowid().clone(), 
-            dependency_type_id: (dep_type.id.clone(), dep_type.name.clone()), 
+            id: conn.last_insert_rowid(), 
+            dependency_type_id: (dep_type.id, dep_type.name.clone()), 
             name: name.to_string(), 
         });
     }

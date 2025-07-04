@@ -53,7 +53,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}", maintainer_id) }"#
 )]
 pub fn get_by_id(conn: &Connection, maintainer_id: &i64) -> Option<Model> {
-    let maintainers = query(&conn, "WHERE mant.id = ?1 LIMIT 1", params![&maintainer_id]).unwrap();
+    let maintainers = query(conn, "WHERE mant.id = ?1 LIMIT 1", params![&maintainer_id]).unwrap();
     if maintainers.is_empty() {
         return None;
     }
@@ -67,7 +67,7 @@ pub fn get_by_id(conn: &Connection, maintainer_id: &i64) -> Option<Model> {
     convert = r#"{ format!("{}", name) }"#
 )]
 pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let maintainers = query(&conn, "WHERE mant.name = ?1 LIMIT 1", params![&name]).unwrap();
+    let maintainers = query(conn, "WHERE mant.name = ?1 LIMIT 1", params![&name]).unwrap();
     if maintainers.is_empty() {
         return None;
     }
@@ -75,13 +75,13 @@ pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
 }
 
 pub fn add(conn: &Connection, name: &str) -> Result<Model, rusqlite::Error> {
-    let maintainer_opt = get_by_name(&conn, &name);
+    let maintainer_opt = get_by_name(conn, name);
     if maintainer_opt.is_none() {
         conn.execute(
             format!("INSERT INTO {}(name) VALUES (?1)", &TABLE_NAME).as_str(),
             params![&name],
         )?;
-        return Ok(Model { id: conn.last_insert_rowid().clone(), name: name.to_string() });
+        return Ok(Model { id: conn.last_insert_rowid(), name: name.to_string() });
     }
     Ok(maintainer_opt.unwrap())
 }

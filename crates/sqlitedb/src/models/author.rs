@@ -53,7 +53,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}", author_id) }"#
 )]
 pub fn get_by_id(conn: &Connection, author_id: &i64) -> Option<Model> {
-    let authors = query(&conn, "WHERE au.id = ?1 LIMIT 1", params![&author_id]).unwrap();
+    let authors = query(conn, "WHERE au.id = ?1 LIMIT 1", params![&author_id]).unwrap();
     if authors.is_empty() {
         return None;
     }
@@ -67,7 +67,7 @@ pub fn get_by_id(conn: &Connection, author_id: &i64) -> Option<Model> {
     convert = r#"{ format!("{}", name) }"#
 )]
 pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let authors = query(&conn, "WHERE au.name = ?1 LIMIT 1", params![&name]).unwrap();
+    let authors = query(conn, "WHERE au.name = ?1 LIMIT 1", params![&name]).unwrap();
     if authors.is_empty() {
         return None;
     }
@@ -75,13 +75,13 @@ pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
 }
 
 pub fn add(conn: &Connection, name: &str) -> Result<Model, rusqlite::Error> {
-    let author_opt = get_by_name(&conn, &name);
+    let author_opt = get_by_name(conn, name);
     if author_opt.is_none() {
         conn.execute(
             format!("INSERT INTO {}(name) VALUES (?1)", &TABLE_NAME).as_str(),
             params![&name],
         )?;
-        return Ok(Model { id: conn.last_insert_rowid().clone(), name: name.to_string() });
+        return Ok(Model { id: conn.last_insert_rowid(), name: name.to_string() });
     }
     Ok(author_opt.unwrap())
 }

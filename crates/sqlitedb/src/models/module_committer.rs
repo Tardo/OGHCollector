@@ -74,7 +74,7 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}{}", module_id, committer_id) }"#
 )]
 pub fn get_by_id(conn: &Connection, module_id: &i64, committer_id: &i64) -> Option<Model> {
-    let mod_committers = query(&conn, "WHERE mod_mant.module_id = ?1 AND mod_mant.committer_id = ?2 LIMIT 1", params![&module_id, &committer_id]).unwrap();
+    let mod_committers = query(conn, "WHERE mod_mant.module_id = ?1 AND mod_mant.committer_id = ?2 LIMIT 1", params![&module_id, &committer_id]).unwrap();
     if mod_committers.is_empty() {
         return None;
     }
@@ -88,7 +88,7 @@ pub fn get_by_id(conn: &Connection, module_id: &i64, committer_id: &i64) -> Opti
     convert = r#"{ format!("{}{}", module_id, name) }"#
 )]
 pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Model> {
-    let mod_committers = query(&conn, "WHERE mod_com.module_id = ?1 AND com.name = ?2 LIMIT 1", params![&module_id, &name]).unwrap();
+    let mod_committers = query(conn, "WHERE mod_com.module_id = ?1 AND com.name = ?2 LIMIT 1", params![&module_id, &name]).unwrap();
     if mod_committers.is_empty() {
         return None;
     }
@@ -101,8 +101,8 @@ pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Mod
     convert = r#"{ format!("{}", module_id) }"#
 )]
 pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
-    let mod_committers = query(&conn, "WHERE mod_com.module_id = ?1 LIMIT 1", params![&module_id]).unwrap();
-    mod_committers
+    
+    query(conn, "WHERE mod_com.module_id = ?1 LIMIT 1", params![&module_id]).unwrap()
 }
 
 #[cached(
@@ -112,30 +112,30 @@ pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
 )]
 pub fn get_names_by_module_id(conn: &Connection, module_id: &i64) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
-    let module_committers = get_by_module_id(&conn, &module_id);
+    let module_committers = get_by_module_id(conn, module_id);
     for module_committer in module_committers {
-        let committer = committer::get_by_id(&conn, &module_committer.committer_id.0).unwrap();
+        let committer = committer::get_by_id(conn, &module_committer.committer_id.0).unwrap();
         names.push(committer.name);
     }
     names
 }
 
 pub fn add(conn: &Connection, module_id: &i64, name: &str, commits: &u32) -> Result<Model, rusqlite::Error> {
-    let module_committer_opt = get_by_name(&conn, &module_id, &name);
+    let module_committer_opt = get_by_name(conn, module_id, name);
     if module_committer_opt.is_none() {
-        let committer = committer::add(&conn, &name).unwrap();
+        let committer = committer::add(conn, name).unwrap();
         conn.execute(
             format!("INSERT INTO {}(module_id, committer_id, commits) VALUES (?1, ?2, ?3)", &TABLE_NAME).as_str(),
             params![&module_id, &committer.id, &commits],
         )?;
-        let last_id = conn.last_insert_rowid().clone();
-        let module = module::get_by_id(&conn, &module_id).unwrap();
-        let _ = system_event::register_new_module_committer(&conn, &name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
+        let last_id = conn.last_insert_rowid();
+        let module = module::get_by_id(conn, module_id).unwrap();
+        let _ = system_event::register_new_module_committer(conn, name, &module.technical_name, &module.name, odoo_version_u8_to_string(&module.version_odoo).as_str());
         return Ok(Model { 
             id: last_id, 
-            module_id: (module.id.clone(), module.technical_name.clone()), 
-            committer_id: (committer.id.clone(), committer.name.clone()),
-            commits: commits.clone(),
+            module_id: (module.id, module.technical_name.clone()), 
+            committer_id: (committer.id, committer.name.clone()),
+            commits: *commits,
         });
     }
     let module_committer = module_committer_opt.unwrap();
@@ -143,10 +143,10 @@ pub fn add(conn: &Connection, module_id: &i64, name: &str, commits: &u32) -> Res
         format!("UPDATE {} SET commits = ?3 WHERE module_id = ?1 AND committer_id = ?2", &TABLE_NAME).as_str(),
         params![&module_committer.module_id.0, &module_committer.committer_id.0, &commits],
     )?;
-    return Ok(Model { 
+    Ok(Model { 
         id: module_committer.id, 
         module_id: module_committer.module_id, 
         committer_id: module_committer.committer_id,
-        commits: commits.clone(),
-    });
+        commits: *commits,
+    })
 }

@@ -42,21 +42,21 @@ pub struct GraphInfo {
 fn set_main_node_attributes(module: &models::module::Model, gh_repo_odoo_id: &i64, node_info: &mut GraphNodeInfo) {
     if module.gh_repository_id.0.eq(gh_repo_odoo_id) {
         if module.application {
-            node_info.update("size".into(), "12".into());
-            node_info.update("color".into(), "#21B799".into());
+            node_info.update("size", "12");
+            node_info.update("color", "#21B799");
         } else {
-            node_info.update("size".into(), "10".into());
-            node_info.update("color".into(), "#017E84".into());
+            node_info.update("size", "10");
+            node_info.update("color", "#017E84");
         }
     } else if module.application {
-        node_info.update("size".into(), "9".into());
-        node_info.update("color".into(), "#21B799".into());
+        node_info.update("size", "9");
+        node_info.update("color", "#21B799");
     } else {
-        node_info.update("size".into(), "8".into());
-        node_info.update("color".into(), "#E46E78".into());
+        node_info.update("size", "8");
+        node_info.update("color", "#E46E78");
     }
-    node_info.update("label".into(), &module.technical_name);
-    node_info.update("repository".into(), &module.gh_repository_id.1);
+    node_info.update("label", &module.technical_name);
+    node_info.update("repository", &module.gh_repository_id.1);
 }
 
 #[cached(
@@ -71,28 +71,28 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
         edges: Vec::new(),
     };
     let mut gh_repo_odoo_id = 0;
-    let gh_org_odoo_opt = models::gh_organization::get_by_name(&conn, "odoo");
+    let gh_org_odoo_opt = models::gh_organization::get_by_name(conn, "odoo");
     if gh_org_odoo_opt.is_some() {
         let gh_org_odoo = gh_org_odoo_opt.unwrap();
-        let gh_repo_odoo_opt = models::gh_repository::get_by_name(&conn, &gh_org_odoo.id, "odoo");
+        let gh_repo_odoo_opt = models::gh_repository::get_by_name(conn, &gh_org_odoo.id, "odoo");
         if gh_repo_odoo_opt.is_some() {
             let gh_repo_odoo = gh_repo_odoo_opt.unwrap();
             gh_repo_odoo_id = gh_repo_odoo.id;
         }
     }
-    let main_modules: Vec<models::module::Model> = models::module::get_by_odoo_version(&conn, &odoo_version);
+    let main_modules: Vec<models::module::Model> = models::module::get_by_odoo_version(conn, odoo_version);
     let main_modules_names: Vec<String> = main_modules.iter().map(|item| item.technical_name.clone()).collect();
     for module in main_modules {
         if module.technical_name == "base" {
             continue
         }
-        let module_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(&conn, &module.id, "module");
+        let module_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "module");
         for mod_dep_name in module_depends_list {
             if mod_dep_name == "base" {
                 continue
             }
             let node_key: String = format!("o_{}", &mod_dep_name);
-            if !main_modules_names.contains(&mod_dep_name) && graph_info.nodes.iter().find(|x| x.key.eq(&node_key)).is_none() {
+            if !main_modules_names.contains(&mod_dep_name) && !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
                 let mut node_info = GraphNodeInfo {
                     key: node_key.clone(),
                     attributes: HashMap::new(),
@@ -103,7 +103,7 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
                 graph_info.nodes.push(node_info);
             }
             let edge_key = format!("o_{}__{}", &module.technical_name, &mod_dep_name);
-            if graph_info.edges.iter().find(|x| x.key.eq(&edge_key)).is_none() {
+            if !graph_info.edges.iter().any(|x| x.key.eq(&edge_key)) {
                 let mut edge_info = GraphEdgeInfo {
                     key: edge_key,
                     source: format!("o_{}", &module.technical_name),
@@ -115,10 +115,10 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
                 graph_info.edges.push(edge_info);
             }
         }
-        let pip_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(&conn, &module.id, "python");
+        let pip_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
         for pip_dep_name in pip_depends_list {
             let node_key: String = format!("p_{}", &pip_dep_name);
-            if graph_info.nodes.iter().find(|x| x.key.eq(&node_key)).is_none() {
+            if !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
                 let mut node_info = GraphNodeInfo {
                     key: node_key.clone(),
                     attributes: HashMap::new(),
@@ -138,10 +138,10 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
             edge_info.attributes.insert("size".into(), "2".into());
             graph_info.edges.push(edge_info);
         }
-        let bin_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(&conn, &module.id, "bin");   
+        let bin_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");   
         for bin_dep_name in bin_depends_list {
             let node_key: String = format!("b_{}", &bin_dep_name);
-            if graph_info.nodes.iter().find(|x| x.key.eq(&node_key)).is_none() {
+            if !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
                 let mut node_info = GraphNodeInfo {
                     key: node_key.clone(),
                     attributes: HashMap::new(),
@@ -185,12 +185,12 @@ pub async fn route_atlas_data(pool: web::Data<Pool>, path: web::Path<String>) ->
     let result = web::block(move || {
         get_graph_data(&conn, &odoo_version_string_to_u8(&odoo_version))
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/atlas")]
 pub async fn route(tmpl_env: MiniJinjaRenderer, req: HttpRequest) -> Result<impl Responder> {    
-    return tmpl_env.render("pages/atlas.html", context!(
+    tmpl_env.render("pages/atlas.html", context!(
         ..get_minijinja_context(&req),
         ..context!(
             page_name => "atlas",

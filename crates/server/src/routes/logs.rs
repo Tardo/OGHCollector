@@ -14,7 +14,7 @@ pub async fn route(pool: web::Data<Pool>, tmpl_env: MiniJinjaRenderer, req: Http
         .await?.unwrap();
 
     let logs = models::system_event::get_messages_current_month(&conn);
-    return tmpl_env.render("pages/logs.html", context!(
+    tmpl_env.render("pages/logs.html", context!(
         ..get_minijinja_context(&req),
         ..context!(
             page_name => "logs",

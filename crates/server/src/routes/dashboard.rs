@@ -22,7 +22,7 @@ pub async fn route(pool: web::Data<Pool>, tmpl_env: MiniJinjaRenderer, req: Http
         .await?.unwrap();
 
     let modules_count = models::module::count(&conn).iter().map(|x| ModuleCountInfoResponse { count: x.count, version_odoo: odoo_version_u8_to_string(&x.version_odoo) }).collect::<Vec<ModuleCountInfoResponse>>();
-    return tmpl_env.render("pages/dashboard.html", context!(
+    tmpl_env.render("pages/dashboard.html", context!(
         ..get_minijinja_context(&req),
         ..context!(
             page_name => "dashboard",

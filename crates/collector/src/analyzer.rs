@@ -10,6 +10,7 @@ use fs_extra::dir::get_size;
 use regex::Regex;
 
 use oghutils::version::OdooVersion;
+use sqlitedb::models::module::ManifestInfo;
 
 use crate::github::RepoInfo;
 
@@ -25,34 +26,6 @@ where
     }
 
     result
-}
-
-pub struct ManifestInfo {
-    pub technical_name: String,
-    pub version_odoo: u8,
-    pub name: String,
-    pub version_module: String,
-    pub description: String,
-    pub author: String,
-    pub website: String,
-    pub license: String,
-    pub category: String,
-    pub auto_install: bool,
-    pub application: bool,
-    pub installable: bool,
-    pub maintainer: String,
-    pub git_org: String,
-    pub git_repo: String,
-    pub depends: Vec<String>,
-    pub external_depends_python: Vec<String>,
-    pub external_depends_bin: Vec<String>,
-    pub folder_size: u64,
-    pub last_commit_hash: String,
-    pub last_commit_author: String,
-    pub last_commit_date: String,
-    pub last_commit_name: String,
-    pub last_commit_partof: String,
-    pub committers: HashMap<String, u32>,
 }
 
 #[derive(Debug)]
@@ -78,7 +51,7 @@ impl OGHCollectorAnalyzer {
         if !mod_path.is_dir() {
             return Ok(None);
         };
-        for entry in fs::read_dir(&mod_path)? {
+        for entry in fs::read_dir(mod_path)? {
             let path = entry?.path();
             if !path.is_dir() {
                 if path.ends_with("__manifest__.py") {
@@ -94,7 +67,7 @@ impl OGHCollectorAnalyzer {
     fn get_git_info(&self, folder_path: &std::path::PathBuf) -> Result<GitInfo, ExitStatus> {
         log::info!("Get git info...");
         let output_fetch = Command::new("git")
-                    .current_dir(&folder_path)
+                    .current_dir(folder_path)
                     .arg("--no-pager")
                     .arg("log")
                     .arg("--pretty=%H~~%an~~%aD~~%s~~%b")
@@ -102,7 +75,7 @@ impl OGHCollectorAnalyzer {
                     .arg("--")
                     .arg(".")
                     .output()
-                    .expect(format!("Can't get git info").as_str());
+                    .unwrap_or_else(|_| { panic!("{}", "Can't get git info".to_string()) });
         if !output_fetch.status.success() {
             return Err(output_fetch.status);
         }
@@ -122,14 +95,14 @@ impl OGHCollectorAnalyzer {
     fn get_git_committers(&self, folder_path: &std::path::PathBuf) -> Result<HashMap<String, u32>, ExitStatus> {
         log::info!("Get git committer info...");
         let output_fetch = Command::new("git")
-                    .current_dir(&folder_path)
+                    .current_dir(folder_path)
                     .arg("--no-pager")
                     .arg("log")
                     .arg("--pretty=%cn")
                     .arg("--")
                     .arg(".")
                     .output()
-                    .expect(format!("Can't get git info").as_str());
+                    .unwrap_or_else(|_| { panic!("{}", "Can't get git info".to_string()) });
         if !output_fetch.status.success() {
             return Err(output_fetch.status);
         }
@@ -140,31 +113,28 @@ impl OGHCollectorAnalyzer {
     }
 
     fn read_manifest(&self, org_name: &str, repo_name: &str, module_name: &str, manifest_path: &str) -> PyResult<ManifestInfo> {
-        log::info!("Reading Manifest: {}", manifest_path);
+        log::info!("Reading Manifest: {manifest_path}");
         Python::with_gil(|py| {
             let code = fs::read_to_string(manifest_path).unwrap();
             let manifest: &PyDict = py.eval(&code, None, None)?.extract()?;
             // name
             let name_opt = manifest.get_item("name");
-            let name: String;
-            if name_opt.is_some() {
-                name = name_opt.unwrap().downcast::<PyString>()?.extract::<String>()?;
+            let name: String = if name_opt.is_some() {
+                name_opt.unwrap().downcast::<PyString>()?.extract::<String>()?
             } else {
-                name = String::new();
-            }
+                String::new()
+            };
             // description
             let description_opt = manifest.get_item("description");
-            let description: String;
-            if description_opt.is_some() {
-                description = description_opt.unwrap().downcast::<PyString>()?.extract::<String>()?;
+            let description: String = if description_opt.is_some() {
+                description_opt.unwrap().downcast::<PyString>()?.extract::<String>()?
             } else {
-                description = String::new();
-            }
+                String::new()
+            };
             // author
             let author_opt = manifest.get_item("author");
-            let author: String;
-            if author_opt.is_some() {
-                author = match author_opt.unwrap().downcast::<PyString>() {
+            let author: String = if author_opt.is_some() {
+                match author_opt.unwrap().downcast::<PyString>() {
                     Ok(pyval) => pyval.extract::<String>()?,
                     Err(_) => match author_opt.unwrap().downcast::<PyList>() {
                         Ok(pyval) => {
@@ -173,82 +143,74 @@ impl OGHCollectorAnalyzer {
                         },
                         Err(_) => String::new()
                     }
-                };
+                }
             } else {
-                author = String::new();
-            }
+                String::new()
+            };
             // website
             let website_opt = manifest.get_item("website");
-            let website: String;
-            if website_opt.is_some() {
-                website = website_opt.unwrap().downcast::<PyString>()?.extract::<String>()?;
+            let website: String = if website_opt.is_some() {
+                website_opt.unwrap().downcast::<PyString>()?.extract::<String>()?
             } else {
-                website = String::new();
-            }
+                String::new()
+            };
             // license
             let license_opt = manifest.get_item("license");
-            let license: String;
-            if license_opt.is_some() {
-                license = license_opt.unwrap().downcast::<PyString>()?.extract::<String>()?;
+            let license: String = if license_opt.is_some() {
+                license_opt.unwrap().downcast::<PyString>()?.extract::<String>()?
             } else {
-                license = "LGPL-3".to_string();
-            }
+                "LGPL-3".to_string()
+            };
             // category
             let category_opt = manifest.get_item("category");
-            let category: String;
-            if category_opt.is_some() {
-                category = category_opt.unwrap().downcast::<PyString>()?.extract::<String>()?;
+            let category: String = if category_opt.is_some() {
+                category_opt.unwrap().downcast::<PyString>()?.extract::<String>()?
             } else {
-                category = "Uncategorized".to_string();
-            }
+                "Uncategorized".to_string()
+            };
             // auto_install
             let auto_install_opt = manifest.get_item("auto_install");
-            let auto_install: bool;
-            if auto_install_opt.is_some() {
-                auto_install = match auto_install_opt.unwrap().downcast::<PyBool>() {
+            let auto_install: bool = if auto_install_opt.is_some() {
+                match auto_install_opt.unwrap().downcast::<PyBool>() {
                     Ok(pyval) =>pyval.extract::<bool>()?,
                     Err(_) => true,
-                };
+                }
             } else {
-                auto_install = false;
-            }
+                false
+            };
             // version_odoo, version_module
             let version_opt = manifest.get_item("version");
             let version_odoo: u8;
-            let version_module: String;
-            if version_opt.is_some() {
+            let version_module: String = if version_opt.is_some() {
                 let version = version_opt.unwrap().downcast::<PyString>()?.extract::<String>()?;
                 let odoo_ver = OdooVersion::new(&version, &self.version_odoo);
-                version_odoo = odoo_ver.get_version_odoo().clone();
-                version_module = odoo_ver.get_version_module().clone();
+                version_odoo = *odoo_ver.get_version_odoo();
+                odoo_ver.get_version_module().clone()
             } else {
                 version_odoo = self.version_odoo;
-                version_module = "0.1.0".to_string();
-            }
+                "0.1.0".to_string()
+            };
             // application
             let application_opt = manifest.get_item("application");
-            let application: bool;
-            if application_opt.is_some() {
-                application = application_opt.unwrap().downcast::<PyBool>()?.extract::<bool>()?;
+            let application: bool = if application_opt.is_some() {
+                application_opt.unwrap().downcast::<PyBool>()?.extract::<bool>()?
             } else {
-                application = false;
-            }
+                false
+            };
             // installable
             let installable_opt = manifest.get_item("installable");
-            let installable: bool;
-            if installable_opt.is_some() {
-                installable = match installable_opt.unwrap().downcast::<PyBool>() {
+            let installable: bool = if installable_opt.is_some() {
+                match installable_opt.unwrap().downcast::<PyBool>() {
                     Ok(pyval) => pyval.extract::<bool>()?,
                     Err(_) => true,
                 }
             } else {
-                installable = true;
-            }
+                true
+            };
             // maintainer
             let maintainer_opt = manifest.get_item("maintainer");
-            let maintainer: String;
-            if maintainer_opt.is_some() {
-                maintainer = match maintainer_opt.unwrap().downcast::<PyString>() {
+            let maintainer: String = if maintainer_opt.is_some() {
+                match maintainer_opt.unwrap().downcast::<PyString>() {
                     Ok(pyval) => pyval.extract::<String>()?,
                     Err(_) => match maintainer_opt.unwrap().downcast::<PyList>() {
                         Ok(pyval) => {
@@ -257,18 +219,17 @@ impl OGHCollectorAnalyzer {
                         },
                         Err(_) => author.clone()
                     }
-                };
+                }
             } else {
-                maintainer = author.clone();
-            }
+                author.clone()
+            };
             // depends
             let depends_opt = manifest.get_item("depends");
-            let depends: Vec<String>;
-            if depends_opt.is_some() {
-                depends = depends_opt.unwrap().downcast::<PyList>()?.extract::<Vec<String>>()?;
+            let depends: Vec<String> = if depends_opt.is_some() {
+                depends_opt.unwrap().downcast::<PyList>()?.extract::<Vec<String>>()?
             } else {
-                depends = Vec::new();
-            }
+                Vec::new()
+            };
             let external_depends_opt = manifest.get_item("external_dependencies");
             let mut external_depends_python_set: HashSet<String> = HashSet::new();
             let mut external_depends_bin_set: HashSet<String> = HashSet::new();
@@ -365,7 +326,7 @@ impl OGHCollectorAnalyzer {
                         let manifest_filename = manifest_filename_opt.unwrap();
                         let manifest_path = format!("{}/{}", &path.display(), &manifest_filename);
                         let module_name = path.file_name().unwrap().to_str().unwrap();
-                        let mut manifest = self.read_manifest(&repo_info.get_org(), &repo_info.get_name(), &module_name, &manifest_path).unwrap();
+                        let mut manifest = self.read_manifest(repo_info.get_org(), repo_info.get_name(), module_name, &manifest_path).unwrap();
                         manifest.folder_size = folder_size;
                         manifest.last_commit_hash = git_info.last_commit_hash;
                         manifest.last_commit_author = git_info.last_commit_author;

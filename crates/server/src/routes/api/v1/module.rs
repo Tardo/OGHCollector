@@ -51,17 +51,17 @@ pub struct RouteModuleRequest {
 
 
 fn construct_module_dependecies_info(conn: &Connection, module: &models::module::Model, mod_depends_dict: &mut HashMap<String, Vec<String>>, pip_depends: &mut Vec<String>, bin_depends: &mut Vec<String>) {
-    let mut pip_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(&conn, &module.id, "python");
+    let mut pip_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
     pip_depends.append(&mut pip_depends_list);
-    let mut bin_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(&conn, &module.id, "bin");
+    let mut bin_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");
     bin_depends.append(&mut bin_depends_list);
-    let mod_depends = models::dependency::get_module_dependency_info(&conn, &module.id);
+    let mod_depends = models::dependency::get_module_dependency_info(conn, &module.id);
     for mod_dep in mod_depends {
-        let repo_depends = mod_depends_dict.entry(format!("{}/{}", &mod_dep.org, &mod_dep.repo)).or_insert(Vec::new());
+        let repo_depends = mod_depends_dict.entry(format!("{}/{}", &mod_dep.org, &mod_dep.repo)).or_default();
         let technical_name = mod_dep.technical_name.clone();
         if !repo_depends.contains(&technical_name) {
             repo_depends.push(mod_dep.technical_name.clone());
-            construct_module_dependecies_info(&conn, &module, mod_depends_dict, pip_depends, bin_depends);
+            construct_module_dependecies_info(conn, module, mod_depends_dict, pip_depends, bin_depends);
         }
     }
 }
@@ -78,35 +78,35 @@ fn process_modules_db(conn: &Connection, modules: &Vec<models::module::Model>) -
         let mut pip_dependencies: Vec<String> = Vec::new();
         let mut bin_dependencies: Vec<String> = Vec::new();
         let mut odoo_dependencies: HashMap<String, Vec<String>> = HashMap::new();
-        construct_module_dependecies_info(&conn, &module, &mut odoo_dependencies, &mut pip_dependencies, &mut bin_dependencies);
+        construct_module_dependecies_info(conn, module, &mut odoo_dependencies, &mut pip_dependencies, &mut bin_dependencies);
         let dependencies = ModuleDependencyInfoResponse { odoo: odoo_dependencies, pip: pip_dependencies.unique(), bin: bin_dependencies.unique() };
-        let authors =  models::module_author::get_names_by_module_id(&conn, &module.id);
-        let maintainers = models::module_maintainer::get_names_by_module_id(&conn, &module.id);
+        let authors =  models::module_author::get_names_by_module_id(conn, &module.id);
+        let maintainers = models::module_maintainer::get_names_by_module_id(conn, &module.id);
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version: module.version_module.clone(),
             description: module.description.clone(),
-            authors: authors,
+            authors,
             website: module.website.clone(),
             license: module.license.clone(),
             category: module.category.clone(),
-            auto_install: module.auto_install.clone(),
+            auto_install: module.auto_install,
             technical_name: module.technical_name.clone(),
             application: module.application,
             installable: module.installable,
-            maintainers: maintainers,
+            maintainers,
             dependencies,
             update_date: module.update_date.clone(),
-            git: get_module_git(&conn, &module),
-            folder_size: module.folder_size.clone(),
+            git: get_module_git(conn, module),
+            folder_size: module.folder_size,
         });
     }
     res
 }
 
 fn get_module_generic_info(conn: &Connection, module_name: &str) -> Option<ModuleGenericInfoResponse> {
-    let modules =  models::module::get_info(&conn, &module_name);
-    if modules.len() == 0 {
+    let modules =  models::module::get_info(conn, module_name);
+    if modules.is_empty() {
         return None;
     }
     let name = &modules[0].name;
@@ -129,7 +129,7 @@ pub async fn route(pool: web::Data<Pool>, path: web::Path<String>) -> Result<Htt
     let result = web::block(move || {
         get_module_generic_info(&conn, &module_name)
     }).await?;
-    return Ok(HttpResponse::Ok().json(result));
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/module/{module_name}/{odoo_version}")]
