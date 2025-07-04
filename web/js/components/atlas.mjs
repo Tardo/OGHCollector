@@ -73,7 +73,9 @@ class SigmaAtlas extends Component {
   }
 
   toggleLoadingMessage(visible) {
-    const loading_msg_el = this.queryId('sigma_atlas_mod_dep_graph_loading_msg');
+    const loading_msg_el = this.queryId(
+      'sigma_atlas_mod_dep_graph_loading_msg',
+    );
     if (visible) {
       loading_msg_el.style.display = '';
     } else {
@@ -139,7 +141,10 @@ class SigmaAtlas extends Component {
     this.queryId('sigma_atlas_mod_dep_control').textContent = '⏹️';
 
     if (!this.#timer) {
-      this.#timer = setTimeout(this.onPauseAtlasLayout.bind(this), this.DEFAULT_LAYOUT_TIMEOUT);
+      this.#timer = setTimeout(
+        this.onPauseAtlasLayout.bind(this),
+        this.DEFAULT_LAYOUT_TIMEOUT,
+      );
     }
 
     this.toggleLoadingMessage(false);

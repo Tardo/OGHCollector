@@ -1,4 +1,3 @@
-# Copyright 2025 Alexandre D. Díaz
 FROM rust:slim AS build
 WORKDIR /app
 

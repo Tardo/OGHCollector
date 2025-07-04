@@ -1,17 +1,18 @@
 // Copyright 2025 Alexandre D. Díaz
-import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
+import {Component, registerComponent, getService} from 'mirlo';
 import yaml from 'js-yaml';
 import '@scss/components/doodba-converter.scss';
 
-
-const MANIFEST_NAMES = ["__manifest__.py"];
+const MANIFEST_NAMES = ['__manifest__.py'];
 
 class DoodbaConverter extends Component {
   #drag_panel = null;
   #result = null;
 
   onSetup() {
-    Component.useStyles('/static/auto/web/scss/components/doodba-converter.css');
+    Component.useStyles(
+      '/static/auto/web/scss/components/doodba-converter.css',
+    );
     Component.useEvents({
       drag_panel: {
         mode: 'id',
@@ -53,33 +54,33 @@ class DoodbaConverter extends Component {
 
   makeYaml(data, mods) {
     const groupedData = data.reduce((acc, item) => {
-      const { technical_name, repository_name } = item;
+      const {technical_name, repository_name} = item;
       if (!acc[repository_name]) {
-          acc[repository_name] = [];
+        acc[repository_name] = [];
       }
       acc[repository_name].push(technical_name);
       return acc;
     }, {});
 
     const sortedGroupedData = Object.keys(groupedData)
-        .sort()
-        .reduce((acc, key) => {
-            acc[key] = groupedData[key];
-            return acc;
-        }, {});
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = groupedData[key];
+        return acc;
+      }, {});
 
-    const data_mods = data.map((mod_info) => mod_info.technical_name);
+    const data_mods = data.map(mod_info => mod_info.technical_name);
     const difference = mods.filter(x => !data_mods.includes(x));
     sortedGroupedData['unknown'] = difference;
 
-    return yaml.dump(sortedGroupedData, { indent: 2 });
+    return yaml.dump(sortedGroupedData, {indent: 2});
   }
 
   #hasManifest(entries) {
     for (const entry of entries) {
       if (entry.isFile && MANIFEST_NAMES.includes(entry.name)) {
         return true;
-      } 
+      }
     }
     return false;
   }
@@ -126,16 +127,16 @@ class DoodbaConverter extends Component {
         // do nothing
       }
     }
-    mods = mods.filter((value, index, array) => array.indexOf(value) === index)
+    mods = mods.filter((value, index, array) => array.indexOf(value) === index);
     if (mods.length > 0) {
       const data = await getService('requests').postJSON(
         `/common/doodba/addons`,
         {
           modules: mods,
-        }
+        },
       );
-      const yaml = this.makeYaml(data, mods);
-      this.showYaml(yaml);
+      const yaml_txt = this.makeYaml(data, mods);
+      this.showYaml(yaml_txt);
     }
   }
 }

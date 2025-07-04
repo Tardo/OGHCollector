@@ -17,6 +17,10 @@
 			"path": "crates/sqlitedb"
 		},
 		{
+			"name": "Utils",
+			"path": "crates/oghutils"
+		},
+		{
 			"name": "Web",
 			"path": "web"
 		}
@@ -27,7 +31,19 @@
 			"./Cargo.toml",
 			"./crates/collector/Cargo.toml",
 			"./crates/server/Cargo.toml",
-			"./crates/sqlitedb/Cargo.toml"
-		]
+			"./crates/sqlitedb/Cargo.toml",
+			"./crates/oghutils/Cargo.toml"
+		],
+		"eslint.enable": true,
+		"eslint.validate": [
+			"javascript",
+			"module"
+		],
+		"eslint.workingDirectories": [
+			"./"
+		],
+		"eslint.run": "onType",
+		"eslint.experimental.useFlatConfig": true,
+		"eslint.debug": true
 	}
 }

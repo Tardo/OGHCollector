@@ -1,5 +1,5 @@
 // Copyright 2025 Alexandre D. Díaz
-import {AnimatedComponent, registerComponent, mirloComponent} from 'mirlo';
+import {AnimatedComponent, registerComponent} from 'mirlo';
 import '@scss/components/main-example.scss';
 
 const EXAMPLES = [
@@ -29,7 +29,9 @@ class InputMainExample extends AnimatedComponent {
   #is_paused = false;
 
   onSetup() {
-    AnimatedComponent.useStyles('/static/auto/web/scss/components/main-example.css');
+    AnimatedComponent.useStyles(
+      '/static/auto/web/scss/components/main-example.css',
+    );
     AnimatedComponent.useEvents({
       display: {
         mode: 'id',
@@ -75,11 +77,11 @@ class InputMainExample extends AnimatedComponent {
     }
   }
 
-  onMouseEnter(ev) {
+  onMouseEnter() {
     this.#is_paused = true;
   }
 
-  onMouseLeave(ev) {
+  onMouseLeave() {
     this.#is_paused = false;
   }
 }

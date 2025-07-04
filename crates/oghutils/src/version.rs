@@ -1,10 +1,10 @@
 pub fn odoo_version_u8_to_string(version: &u8) -> String {
     let float_ver: f32 = (*version as f32) / 10.0;
-    format!("{:.1}", float_ver)
+    format!("{float_ver:.1}")
 }
 
 pub fn odoo_version_string_to_u8(version: &str) -> u8 {
-    return (version.parse::<f32>().unwrap() * 10.0) as u8;
+    (version.parse::<f32>().unwrap() * 10.0) as u8
 }
 
 pub struct OdooVersion {
