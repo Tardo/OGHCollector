@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  schedule:
+    - cron: '0 0 * * SUN'
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  validations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v3
+        with:
+            fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '*'
+          check-latest: true
+      - uses: actions/cache@v3
+        with:
+          path: |
+            .venv
+            .cache
+            .npm
+            node_modules
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/Cargo.lock') }}
+      - name: Build Rust Project
+        run: cargo build --release
+      - run: |
+          npm ci --cache .npm --prefer-offline
+          npm install --global npm
+          npm install
+      - name: Linters
+        run: npm run lint
+      - name: Build Static Resources
+        run: npm run build:prod
