@@ -1,7 +1,7 @@
 // Copyright 2025 Alexandre D. Díaz
 use cached::proc_macro::cached;
+use rusqlite::{params, Result, ToSql};
 use serde::{Deserialize, Serialize};
-use rusqlite::{Result, ToSql, params};
 
 use crate::models::{gh_organization, module, system_event};
 use crate::utils::date::get_sqlite_utc_now;
@@ -9,7 +9,6 @@ use crate::utils::date::get_sqlite_utc_now;
 pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
 
 pub static TABLE_NAME: &str = "gh_repository";
-
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
@@ -30,7 +29,8 @@ pub struct RepositoryInfo {
 
 pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.execute(
-        format!("CREATE TABLE IF NOT EXISTS {0} (
+        format!(
+            "CREATE TABLE IF NOT EXISTS {0} (
             id integer primary key,
             name text unique not null,
             gh_organization_id integer not null references {1}(id),
@@ -40,32 +40,39 @@ pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
                 FOREIGN KEY (gh_organization_id)
                 REFERENCES {1}(id)
                 ON DELETE CASCADE
-        )", &TABLE_NAME, &gh_organization::TABLE_NAME).as_str(),
+        )",
+            &TABLE_NAME,
+            &gh_organization::TABLE_NAME
+        )
+        .as_str(),
         params![],
-    ).unwrap();
+    )
+    .unwrap();
     conn.execute(
         format!("CREATE UNIQUE INDEX IF NOT EXISTS uniq_name_gh_organization_id ON {}(name, gh_organization_id)", &TABLE_NAME).as_str(),
         params![],
     )
 }
 
-fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Vec<Model>, rusqlite::Error> {
+fn query(
+    conn: &Connection,
+    extra_sql: &str,
+    params: &[&dyn ToSql],
+) -> Result<Vec<Model>, rusqlite::Error> {
     let sql: String = format!("SELECT gh_repo.id, gh_repo.name, gh_repo.gh_organization_id, gh_org.name, gh_repo.create_date, gh_repo.update_date \
     FROM {} as gh_repo \
     INNER JOIN {} as gh_org \
     ON gh_org.id = gh_repo.gh_organization_id \
     {}", &TABLE_NAME, &gh_organization::TABLE_NAME, &extra_sql);
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        params, 
-        |row| {
-            Ok(Model {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                gh_organization_id: (row.get(2)?, row.get(3)?),
-                create_date: row.get(4)?,
-                update_date: row.get(5)?,
-            })
+    let rows = stmt.query_map(params, |row| {
+        Ok(Model {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            gh_organization_id: (row.get(2)?, row.get(3)?),
+            create_date: row.get(4)?,
+            update_date: row.get(5)?,
+        })
     })?;
     let iter = rows.map(|x| x.unwrap());
     let records = iter.collect::<Vec<Model>>();
@@ -79,7 +86,12 @@ fn query(conn: &Connection, extra_sql: &str, params: &[&dyn ToSql]) -> Result<Ve
     convert = r#"{ format!("{}{}", gh_org_id, name) }"#
 )]
 pub fn get_by_name(conn: &Connection, gh_org_id: &i64, name: &str) -> Option<Model> {
-    let gh_repos = query(conn, "WHERE gh_repo.name = ?1 AND gh_org.id = ?2 LIMIT 1", params![&name, &gh_org_id]).unwrap();
+    let gh_repos = query(
+        conn,
+        "WHERE gh_repo.name = ?1 AND gh_org.id = ?2 LIMIT 1",
+        params![&name, &gh_org_id],
+    )
+    .unwrap();
     if gh_repos.is_empty() {
         return None;
     }
@@ -115,21 +127,20 @@ pub fn get_info_by_name(conn: &Connection, repo_name: &str) -> Vec<RepositoryInf
         WHERE gh_repo.name = ?1
         GROUP BY gh_org.id, mod.version_odoo", &TABLE_NAME, &gh_organization::TABLE_NAME, &module::TABLE_NAME).as_str(),
     ).unwrap();
-    let repos_rows = stmt.query_map(
-        params![&repo_name], 
-        |row| {
+    let repos_rows = stmt
+        .query_map(params![&repo_name], |row| {
             Ok(RepositoryInfo {
                 name: row.get(0)?,
                 organization: row.get(1)?,
                 num_modules: row.get(2)?,
                 version_odoo: row.get(3)?,
             })
-    }).unwrap();
+        })
+        .unwrap();
     let repos_iter = repos_rows.map(|x| x.unwrap());
-    
+
     repos_iter.collect::<Vec<RepositoryInfo>>()
 }
-
 
 pub fn add(conn: &Connection, gh_org_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
     let repo_opt = get_by_name(conn, gh_org_id, name);
@@ -142,12 +153,12 @@ pub fn add(conn: &Connection, gh_org_id: &i64, name: &str) -> Result<Model, rusq
         let last_id = conn.last_insert_rowid();
         let gh_organization = gh_organization::get_by_id(conn, gh_org_id).unwrap();
         let _ = system_event::register_new_gh_repository(conn, &gh_organization.name, name);
-        return Ok(Model { 
-            id: last_id, 
-            name: name.to_string(), 
-            gh_organization_id: (gh_organization.id, gh_organization.name.clone()), 
+        return Ok(Model {
+            id: last_id,
+            name: name.to_string(),
+            gh_organization_id: (gh_organization.id, gh_organization.name.clone()),
             create_date: create_date.clone(),
-            update_date: create_date.clone()
+            update_date: create_date.clone(),
         });
     }
     Ok(repo_opt.unwrap())

@@ -1,19 +1,19 @@
 // Copyright 2025 Alexandre D. Díaz
 pub mod author;
-pub mod dependency_module;
-pub mod dependency_type;
+pub mod committer;
 pub mod dependency;
+pub mod dependency_module;
 pub mod dependency_osv;
+pub mod dependency_type;
 pub mod gh_organization;
 pub mod gh_repository;
 pub mod maintainer;
-pub mod committer;
-pub mod module_author;
-pub mod module_maintainer;
-pub mod module_committer;
 pub mod module;
-pub mod system_event_type;
+pub mod module_author;
+pub mod module_committer;
+pub mod module_maintainer;
 pub mod system_event;
+pub mod system_event_type;
 
 pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
 

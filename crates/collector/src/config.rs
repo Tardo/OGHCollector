@@ -55,7 +55,15 @@ impl OGHCollectorConfig {
             read_paths = vec!["".to_string()];
         }
 
-        OGHCollectorConfig { mode, src: src.to_string(), token, branch, repos_path, version_odoo, read_paths }
+        OGHCollectorConfig {
+            mode,
+            src: src.to_string(),
+            token,
+            branch,
+            repos_path,
+            version_odoo,
+            read_paths,
+        }
     }
 
     pub fn get_mode(&self) -> &String {

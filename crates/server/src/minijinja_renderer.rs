@@ -1,13 +1,7 @@
 // Copyright 2025 Alexandre D. Díaz
 use actix_utils::future::{ready, Ready};
+use actix_web::{dev, error, web, FromRequest, HttpRequest};
 use actix_web_lab::respond::Html;
-use actix_web::{
-    dev, 
-    error,
-    web,
-    FromRequest,
-    HttpRequest
-};
 
 pub struct MiniJinjaRenderer {
     tmpl_env: web::Data<minijinja_autoreload::AutoReloader>,

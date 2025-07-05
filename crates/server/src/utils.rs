@@ -1,6 +1,6 @@
 // Copyright 2025 Alexandre D. Díaz
-use minijinja::{context, Value};
 use actix_web::HttpRequest;
+use minijinja::{context, Value};
 
 pub fn get_minijinja_context(req: &HttpRequest) -> Value {
     let scheme = req.connection_info().scheme().to_string();

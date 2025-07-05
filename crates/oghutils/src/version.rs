@@ -18,14 +18,18 @@ impl OdooVersion {
         let version_odoo: u8;
         let version_module: String;
         let ver_parts = version.split(".").collect::<Vec<&str>>();
-        if ver_parts.len() > 3 {                    
+        if ver_parts.len() > 3 {
             version_odoo = odoo_version_string_to_u8(&ver_parts[..2].join("."));
             version_module = ver_parts[2..].join(".");
         } else {
             version_odoo = *def_version;
             version_module = version.to_string();
         }
-        OdooVersion { raw: version.to_string(), version_odoo, version_module }
+        OdooVersion {
+            raw: version.to_string(),
+            version_odoo,
+            version_module,
+        }
     }
 
     pub fn get_raw(&self) -> &String {

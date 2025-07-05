@@ -1,31 +1,28 @@
 // Copyright 2025 Alexandre D. Díaz
 mod config;
+mod middlewares;
 mod minijinja_renderer;
 mod routes;
 mod utils;
-mod middlewares;
 
-use std::fs::{self, File};
-use std::path::{Path, PathBuf};
 use actix_cors::Cors;
 use actix_files as afs;
+use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+use actix_web::cookie::Key;
 use actix_web::{
     http::{header, StatusCode},
     middleware::{ErrorHandlers, Logger},
-    web, 
-    App, 
-    HttpServer
+    web, App, HttpServer,
 };
-use actix_session::{SessionMiddleware, storage::CookieSessionStore};
-use actix_web::cookie::Key;
-use r2d2_sqlite::{self, SqliteConnectionManager};
 use minijinja::path_loader;
 use minijinja_autoreload::AutoReloader;
+use r2d2_sqlite::{self, SqliteConnectionManager};
+use std::fs::{self, File};
+use std::path::{Path, PathBuf};
 
-use sqlitedb::{Pool, models};
-use middlewares::not_found;
 use config::SERVER_CONFIG;
-
+use middlewares::not_found;
+use sqlitedb::{models, Pool};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -82,17 +79,20 @@ async fn main() -> std::io::Result<()> {
     //     start_scheduler().await;
     // });
 
-    log::info!("starting HTTP server at http://{}:{}", &SERVER_CONFIG.get_bind_address(), &SERVER_CONFIG.get_port());
+    log::info!(
+        "starting HTTP server at http://{}:{}",
+        &SERVER_CONFIG.get_bind_address(),
+        &SERVER_CONFIG.get_port()
+    );
 
     // start HTTP server
     HttpServer::new(move || {
         let cors = Cors::default()
-            .allowed_origin_fn(|origin, _req_head| SERVER_CONFIG.is_allowed_origin(origin.to_str().unwrap_or("")))
+            .allowed_origin_fn(|origin, _req_head| {
+                SERVER_CONFIG.is_allowed_origin(origin.to_str().unwrap_or(""))
+            })
             .allowed_methods(vec!["GET", "POST"])
-            .allowed_headers(vec![
-                header::CONTENT_TYPE,
-                header::ACCEPT,
-            ])
+            .allowed_headers(vec![header::CONTENT_TYPE, header::ACCEPT])
             .max_age(3600);
 
         App::new()
@@ -117,19 +117,20 @@ async fn main() -> std::io::Result<()> {
                     .service(routes::api::v1::module::route)
                     .service(routes::api::v1::module::route_odoo_version)
                     .service(routes::api::v1::repository::route)
-                    .service(routes::api::v1::search::route)
+                    .service(routes::api::v1::search::route),
             )
-            .wrap(
-                SessionMiddleware::new(
-                    CookieSessionStore::default(),
-                    cookie_secret_key.clone()
-                )
-            )
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                cookie_secret_key.clone(),
+            ))
             .wrap(cors)
             .wrap(ErrorHandlers::new().handler(StatusCode::NOT_FOUND, not_found::handler_fn))
             .wrap(Logger::default())
     })
-    .bind((SERVER_CONFIG.get_bind_address().clone(), *SERVER_CONFIG.get_port()))?
+    .bind((
+        SERVER_CONFIG.get_bind_address().clone(),
+        *SERVER_CONFIG.get_port(),
+    ))?
     .workers(*SERVER_CONFIG.get_workers())
     .run()
     .await

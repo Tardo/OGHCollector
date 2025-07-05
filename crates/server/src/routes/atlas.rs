@@ -1,16 +1,18 @@
 // Copyright 2025 Alexandre D. Díaz
+use actix_web::{get, web, Error as AWError, HttpRequest, HttpResponse, Responder, Result};
 use cached::proc_macro::cached;
 use minijinja::context;
-use actix_web::{web, get, HttpRequest, HttpResponse, Responder, Result, Error as AWError};
 use oghutils::version::odoo_version_string_to_u8;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::utils::get_minijinja_context;
 use crate::minijinja_renderer::MiniJinjaRenderer;
+use crate::utils::get_minijinja_context;
 
-use sqlitedb::{Pool, models::{self, Connection}};
-
+use sqlitedb::{
+    models::{self, Connection},
+    Pool,
+};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GraphNodeInfo {
@@ -39,7 +41,11 @@ pub struct GraphInfo {
     pub edges: Vec<GraphEdgeInfo>,
 }
 
-fn set_main_node_attributes(module: &models::module::Model, gh_repo_odoo_id: &i64, node_info: &mut GraphNodeInfo) {
+fn set_main_node_attributes(
+    module: &models::module::Model,
+    gh_repo_odoo_id: &i64,
+    node_info: &mut GraphNodeInfo,
+) {
     if module.gh_repository_id.0.eq(gh_repo_odoo_id) {
         if module.application {
             node_info.update("size", "12");
@@ -61,7 +67,7 @@ fn set_main_node_attributes(module: &models::module::Model, gh_repo_odoo_id: &i6
 
 #[cached(
     key = "String",
-    time = 3600, 
+    time = 3600,
     convert = r#"{ format!("{}", odoo_version) }"#
 )]
 fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
@@ -80,26 +86,37 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
             gh_repo_odoo_id = gh_repo_odoo.id;
         }
     }
-    let main_modules: Vec<models::module::Model> = models::module::get_by_odoo_version(conn, odoo_version);
-    let main_modules_names: Vec<String> = main_modules.iter().map(|item| item.technical_name.clone()).collect();
+    let main_modules: Vec<models::module::Model> =
+        models::module::get_by_odoo_version(conn, odoo_version);
+    let main_modules_names: Vec<String> = main_modules
+        .iter()
+        .map(|item| item.technical_name.clone())
+        .collect();
     for module in main_modules {
         if module.technical_name == "base" {
-            continue
+            continue;
         }
-        let module_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "module");
+        let module_depends_list: Vec<String> =
+            models::dependency::get_module_external_dependency_names(conn, &module.id, "module");
         for mod_dep_name in module_depends_list {
             if mod_dep_name == "base" {
-                continue
+                continue;
             }
             let node_key: String = format!("o_{}", &mod_dep_name);
-            if !main_modules_names.contains(&mod_dep_name) && !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
+            if !main_modules_names.contains(&mod_dep_name)
+                && !graph_info.nodes.iter().any(|x| x.key.eq(&node_key))
+            {
                 let mut node_info = GraphNodeInfo {
                     key: node_key.clone(),
                     attributes: HashMap::new(),
                 };
                 node_info.attributes.insert("size".into(), "8".into());
-                node_info.attributes.insert("color".into(), "#E46E78".into());
-                node_info.attributes.insert("label".into(), mod_dep_name.clone());
+                node_info
+                    .attributes
+                    .insert("color".into(), "#E46E78".into());
+                node_info
+                    .attributes
+                    .insert("label".into(), mod_dep_name.clone());
                 graph_info.nodes.push(node_info);
             }
             let edge_key = format!("o_{}__{}", &module.technical_name, &mod_dep_name);
@@ -115,7 +132,8 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
                 graph_info.edges.push(edge_info);
             }
         }
-        let pip_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
+        let pip_depends_list: Vec<String> =
+            models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
         for pip_dep_name in pip_depends_list {
             let node_key: String = format!("p_{}", &pip_dep_name);
             if !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
@@ -124,8 +142,12 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
                     attributes: HashMap::new(),
                 };
                 node_info.attributes.insert("size".into(), "5".into());
-                node_info.attributes.insert("color".into(), "#6c5148".into());
-                node_info.attributes.insert("label".into(), pip_dep_name.clone());
+                node_info
+                    .attributes
+                    .insert("color".into(), "#6c5148".into());
+                node_info
+                    .attributes
+                    .insert("label".into(), pip_dep_name.clone());
                 graph_info.nodes.push(node_info);
             }
             let mut edge_info = GraphEdgeInfo {
@@ -138,7 +160,8 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
             edge_info.attributes.insert("size".into(), "2".into());
             graph_info.edges.push(edge_info);
         }
-        let bin_depends_list: Vec<String> = models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");   
+        let bin_depends_list: Vec<String> =
+            models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");
         for bin_dep_name in bin_depends_list {
             let node_key: String = format!("b_{}", &bin_dep_name);
             if !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
@@ -147,8 +170,12 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
                     attributes: HashMap::new(),
                 };
                 node_info.attributes.insert("size".into(), "5".into());
-                node_info.attributes.insert("color".into(), "#335548".into());
-                node_info.attributes.insert("label".into(), bin_dep_name.clone());
+                node_info
+                    .attributes
+                    .insert("color".into(), "#335548".into());
+                node_info
+                    .attributes
+                    .insert("label".into(), bin_dep_name.clone());
                 graph_info.nodes.push(node_info);
             }
             let mut edge_info = GraphEdgeInfo {
@@ -178,22 +205,27 @@ fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {
 }
 
 #[get("/atlas/data/{odoo_version}")]
-pub async fn route_atlas_data(pool: web::Data<Pool>, path: web::Path<String>) -> Result<HttpResponse, AWError> {
-    let conn = web::block(move || pool.get())
-        .await?.unwrap();
+pub async fn route_atlas_data(
+    pool: web::Data<Pool>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, AWError> {
+    let conn = web::block(move || pool.get()).await?.unwrap();
     let odoo_version = path.into_inner();
-    let result = web::block(move || {
-        get_graph_data(&conn, &odoo_version_string_to_u8(&odoo_version))
-    }).await?;
+    let result =
+        web::block(move || get_graph_data(&conn, &odoo_version_string_to_u8(&odoo_version)))
+            .await?;
     Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/atlas")]
-pub async fn route(tmpl_env: MiniJinjaRenderer, req: HttpRequest) -> Result<impl Responder> {    
-    tmpl_env.render("pages/atlas.html", context!(
-        ..get_minijinja_context(&req),
-        ..context!(
-            page_name => "atlas",
-        )
-    ))
+pub async fn route(tmpl_env: MiniJinjaRenderer, req: HttpRequest) -> Result<impl Responder> {
+    tmpl_env.render(
+        "pages/atlas.html",
+        context!(
+            ..get_minijinja_context(&req),
+            ..context!(
+                page_name => "atlas",
+            )
+        ),
+    )
 }

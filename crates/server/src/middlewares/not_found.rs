@@ -1,15 +1,10 @@
 // Copyright 2025 Alexandre D. Díaz
 use actix_web::{
-    dev::ServiceResponse, 
-    http::header,
-    middleware::ErrorHandlerResponse,
-    HttpResponse, 
+    dev::ServiceResponse, http::header, middleware::ErrorHandlerResponse, HttpResponse, Responder,
     Result,
-    Responder
 };
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
-
 
 /// Error handler for a 404 Page not found error.
 pub fn handler_fn<B>(svc_res: ServiceResponse<B>) -> Result<ErrorHandlerResponse<B>> {
