@@ -5,15 +5,26 @@
 - Rust
 - npm
 
-## Start Server
+## Rust Components
 
-```sh
-cargo run --bin server
+- rustfmt: ```rustup component add rustfmt```
+- clippy: ```rustup component add clippy```
+
+## Install NPM Project
+
+```
+npm install
 ```
 
 ## Update Static Resources
 ```sh
 npm run build
+```
+
+## Start Server
+
+```sh
+cargo run --bin server
 ```
 
 ## Update Database
