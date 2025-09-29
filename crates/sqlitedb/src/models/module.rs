@@ -1013,9 +1013,14 @@ pub fn get_module_repository(
 ) -> Vec<ModuleRepositoryInfo> {
     let mod_placeholders = modules
         .iter()
-        .map(|s| format!("'{s}'"))
+        .map(|_| "?".to_string())
         .collect::<Vec<String>>()
         .join(", ");
+    let mut params_vec: Vec<&dyn rusqlite::ToSql> = modules
+        .iter()
+        .map(|module_name| module_name as &dyn rusqlite::ToSql)
+        .collect();
+    params_vec.push(version_odoo as &dyn rusqlite::ToSql);
     let mut stmt = conn
         .prepare(
             format!(
@@ -1024,7 +1029,7 @@ pub fn get_module_repository(
             INNER JOIN gh_repository as gh_repo 
             ON gh_repo.id = mod.gh_repository_id 
             WHERE mod.technical_name IN ({}) 
-                AND mod.version_odoo = ?1 
+                AND mod.version_odoo = ? 
             GROUP BY mod.technical_name",
                 &TABLE_NAME, mod_placeholders
             )
@@ -1032,12 +1037,15 @@ pub fn get_module_repository(
         )
         .unwrap();
     let module_rows = stmt
-        .query_map(params![&version_odoo], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleRepositoryInfo {
-                technical_name: row.get(0)?,
-                repository_name: row.get(1)?,
-            })
-        })
+        .query_map(
+            params_from_iter(params_vec.iter()),
+            |row: &rusqlite::Row<'_>| {
+                Ok(ModuleRepositoryInfo {
+                    technical_name: row.get(0)?,
+                    repository_name: row.get(1)?,
+                })
+            },
+        )
         .unwrap();
     let modules_iter = module_rows.map(|x| x.unwrap());
 

@@ -19,8 +19,7 @@ impl PypiClient {
         package: &str,
         version: Option<&str>,
     ) -> Result<reqwest::Response, reqwest::Error> {
-        let full_url = if version.is_some() {
-            let ver = version.unwrap();
+        let full_url = if let Some(ver) = version {
             format!("https://pypi.python.org/pypi/{package}/{ver}/json")
         } else {
             format!("https://pypi.python.org/pypi/{package}/json")

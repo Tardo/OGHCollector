@@ -42,6 +42,8 @@ You can add a volume to `/app/server.yaml` (you can use other formats like json 
 | allowed_origins | list of strings | A list of origins to allow | [] |
 | timezone | string | The timezone to use | UTC |
 | cookie_key | string | The key to use for the cookie | |
+| upload_limit | int | The maximum bytes that can be uploaded | 2097152 |
+| cache_ttl | int | The seconds that the cache is valid | 3600 |
 
 # OGHCollector
 

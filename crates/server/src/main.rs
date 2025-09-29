@@ -12,7 +12,7 @@ use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{
     http::{header, StatusCode},
-    middleware::{ErrorHandlers, Logger},
+    middleware::{DefaultHeaders, ErrorHandlers, Logger},
     web, App, HttpServer,
 };
 use minijinja::path_loader;
@@ -123,6 +123,10 @@ async fn main() -> std::io::Result<()> {
                     .service(routes::api::v1::repository::route)
                     .service(routes::api::v1::search::route),
             )
+            .wrap(DefaultHeaders::new().add((
+                "Cache-Control",
+                format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),
+            )))
             .wrap(SessionMiddleware::new(
                 CookieSessionStore::default(),
                 cookie_secret_key.clone(),

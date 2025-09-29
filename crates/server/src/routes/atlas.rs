@@ -1,11 +1,12 @@
 // Copyright 2025 Alexandre D. Díaz
 use actix_web::{get, web, Error as AWError, HttpRequest, HttpResponse, Responder, Result};
-use cached::proc_macro::cached;
+use cached::{proc_macro::cached, stores::TimedSizedCache};
 use minijinja::context;
 use oghutils::version::odoo_version_string_to_u8;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
@@ -66,10 +67,14 @@ fn set_main_node_attributes(
 }
 
 #[cached(
+    type = "TimedSizedCache<String, GraphInfo>",
     key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 50,
+    create = r#"
+        {
+            let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(50, ttl_secs, true)
+        }
+    "#,
     convert = r#"{ format!("{}", odoo_version) }"#
 )]
 fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {

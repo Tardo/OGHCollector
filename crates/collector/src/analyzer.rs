@@ -146,19 +146,15 @@ impl OGHCollectorAnalyzer {
             let manifest: &PyDict = py.eval(&code, None, None)?.extract()?;
             // name
             let name_opt = manifest.get_item("name");
-            let name: String = if name_opt.is_some() {
-                name_opt
-                    .unwrap()
-                    .downcast::<PyString>()?
-                    .extract::<String>()?
+            let name: String = if let Some(name_value) = name_opt {
+                name_value.downcast::<PyString>()?.extract::<String>()?
             } else {
                 String::new()
             };
             // description
             let description_opt = manifest.get_item("description");
-            let description: String = if description_opt.is_some() {
-                description_opt
-                    .unwrap()
+            let description: String = if let Some(description_value) = description_opt {
+                description_value
                     .downcast::<PyString>()?
                     .extract::<String>()?
             } else {
@@ -166,10 +162,10 @@ impl OGHCollectorAnalyzer {
             };
             // author
             let author_opt = manifest.get_item("author");
-            let author: String = if author_opt.is_some() {
-                match author_opt.unwrap().downcast::<PyString>() {
+            let author: String = if let Some(author_value) = author_opt {
+                match author_value.downcast::<PyString>() {
                     Ok(pyval) => pyval.extract::<String>()?,
-                    Err(_) => match author_opt.unwrap().downcast::<PyList>() {
+                    Err(_) => match author_value.downcast::<PyList>() {
                         Ok(pyval) => {
                             let author_vec = pyval.extract::<Vec<String>>()?;
                             author_vec.join(", ")
@@ -182,38 +178,29 @@ impl OGHCollectorAnalyzer {
             };
             // website
             let website_opt = manifest.get_item("website");
-            let website: String = if website_opt.is_some() {
-                website_opt
-                    .unwrap()
-                    .downcast::<PyString>()?
-                    .extract::<String>()?
+            let website: String = if let Some(website_value) = website_opt {
+                website_value.downcast::<PyString>()?.extract::<String>()?
             } else {
                 String::new()
             };
             // license
             let license_opt = manifest.get_item("license");
-            let license: String = if license_opt.is_some() {
-                license_opt
-                    .unwrap()
-                    .downcast::<PyString>()?
-                    .extract::<String>()?
+            let license: String = if let Some(license_value) = license_opt {
+                license_value.downcast::<PyString>()?.extract::<String>()?
             } else {
                 "LGPL-3".to_string()
             };
             // category
             let category_opt = manifest.get_item("category");
-            let category: String = if category_opt.is_some() {
-                category_opt
-                    .unwrap()
-                    .downcast::<PyString>()?
-                    .extract::<String>()?
+            let category: String = if let Some(category_value) = category_opt {
+                category_value.downcast::<PyString>()?.extract::<String>()?
             } else {
                 "Uncategorized".to_string()
             };
             // auto_install
             let auto_install_opt = manifest.get_item("auto_install");
-            let auto_install: bool = if auto_install_opt.is_some() {
-                match auto_install_opt.unwrap().downcast::<PyBool>() {
+            let auto_install: bool = if let Some(auto_install_value) = auto_install_opt {
+                match auto_install_value.downcast::<PyBool>() {
                     Ok(pyval) => pyval.extract::<bool>()?,
                     Err(_) => true,
                 }
@@ -223,11 +210,8 @@ impl OGHCollectorAnalyzer {
             // version_odoo, version_module
             let version_opt = manifest.get_item("version");
             let version_odoo: u8;
-            let version_module: String = if version_opt.is_some() {
-                let version = version_opt
-                    .unwrap()
-                    .downcast::<PyString>()?
-                    .extract::<String>()?;
+            let version_module: String = if let Some(version_value) = version_opt {
+                let version = version_value.downcast::<PyString>()?.extract::<String>()?;
                 let odoo_ver = OdooVersion::new(&version, &self.version_odoo);
                 version_odoo = *odoo_ver.get_version_odoo();
                 odoo_ver.get_version_module().clone()
@@ -237,18 +221,15 @@ impl OGHCollectorAnalyzer {
             };
             // application
             let application_opt = manifest.get_item("application");
-            let application: bool = if application_opt.is_some() {
-                application_opt
-                    .unwrap()
-                    .downcast::<PyBool>()?
-                    .extract::<bool>()?
+            let application: bool = if let Some(application_value) = application_opt {
+                application_value.downcast::<PyBool>()?.extract::<bool>()?
             } else {
                 false
             };
             // installable
             let installable_opt = manifest.get_item("installable");
-            let installable: bool = if installable_opt.is_some() {
-                match installable_opt.unwrap().downcast::<PyBool>() {
+            let installable: bool = if let Some(installable_value) = installable_opt {
+                match installable_value.downcast::<PyBool>() {
                     Ok(pyval) => pyval.extract::<bool>()?,
                     Err(_) => true,
                 }
@@ -257,10 +238,10 @@ impl OGHCollectorAnalyzer {
             };
             // maintainer
             let maintainer_opt = manifest.get_item("maintainer");
-            let maintainer: String = if maintainer_opt.is_some() {
-                match maintainer_opt.unwrap().downcast::<PyString>() {
+            let maintainer: String = if let Some(maintainer_value) = maintainer_opt {
+                match maintainer_value.downcast::<PyString>() {
                     Ok(pyval) => pyval.extract::<String>()?,
-                    Err(_) => match maintainer_opt.unwrap().downcast::<PyList>() {
+                    Err(_) => match maintainer_value.downcast::<PyList>() {
                         Ok(pyval) => {
                             let maintainer_vec = pyval.extract::<Vec<String>>()?;
                             maintainer_vec.join(", ")
@@ -273,9 +254,8 @@ impl OGHCollectorAnalyzer {
             };
             // depends
             let depends_opt = manifest.get_item("depends");
-            let depends: Vec<String> = if depends_opt.is_some() {
-                depends_opt
-                    .unwrap()
+            let depends: Vec<String> = if let Some(depends_value) = depends_opt {
+                depends_value
                     .downcast::<PyList>()?
                     .extract::<Vec<String>>()?
             } else {
@@ -284,8 +264,8 @@ impl OGHCollectorAnalyzer {
             let external_depends_opt = manifest.get_item("external_dependencies");
             let mut external_depends_python_set: HashSet<String> = HashSet::new();
             let mut external_depends_bin_set: HashSet<String> = HashSet::new();
-            if external_depends_opt.is_some() {
-                let depends_dict = external_depends_opt.unwrap().downcast::<PyDict>()?;
+            if let Some(external_depends_value) = external_depends_opt {
+                let depends_dict = external_depends_value.downcast::<PyDict>()?;
                 let depends_python_opt = depends_dict.get_item("python");
                 if depends_python_opt.is_some() {
                     let python_deps = match depends_python_opt {
@@ -376,11 +356,10 @@ impl OGHCollectorAnalyzer {
                 for entry in fs::read_dir(&base_path).unwrap() {
                     let path = entry.unwrap().path();
                     let manifest_filename_opt = self.is_odoo_module_folder(&path).unwrap();
-                    if manifest_filename_opt.is_some() {
+                    if let Some(manifest_filename) = manifest_filename_opt {
                         let folder_size = get_size(&path).unwrap();
                         let git_info = self.get_git_info(&path).unwrap();
                         let committers = self.get_git_committers(&path).unwrap();
-                        let manifest_filename = manifest_filename_opt.unwrap();
                         let manifest_path = format!("{}/{}", &path.display(), &manifest_filename);
                         let module_name = path.file_name().unwrap().to_str().unwrap();
                         let mut manifest = self
