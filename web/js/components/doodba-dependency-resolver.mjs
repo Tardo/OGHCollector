@@ -109,7 +109,7 @@ class DoodbaDependencyResolver extends Component {
         return acc;
       }, {});
 
-    const data_mods = Object.values(data);
+    const data_mods = Object.values(data).flat();
     const difference = mods.filter(x => !data_mods.includes(x));
     if (difference.length > 0) {
       sortedGroupedData['unknown'] = difference;
