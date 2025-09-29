@@ -690,8 +690,7 @@ pub fn add(conn: &Connection, module_info: &ManifestInfo) -> Result<Model, rusql
         .collect();
     for author_name in authors_to_remove {
         let author_id_opt = author::get_by_name(conn, author_name);
-        if author_id_opt.is_some() {
-            let author_id = author_id_opt.unwrap();
+        if let Some(author_id) = author_id_opt {
             module_author::delete_by_module_id_author_id(conn, &module.id, &author_id.id)?;
             let _ = system_event::register_delete_module_author(
                 conn,
@@ -724,8 +723,7 @@ pub fn add(conn: &Connection, module_info: &ManifestInfo) -> Result<Model, rusql
         .collect();
     for maintainer_name in maintainers_to_remove {
         let maintainer_id_opt = maintainer::get_by_name(conn, maintainer_name);
-        if maintainer_id_opt.is_some() {
-            let maintainer_id = maintainer_id_opt.unwrap();
+        if let Some(maintainer_id) = maintainer_id_opt {
             module_maintainer::delete_by_module_id_maintainer_id(
                 conn,
                 &module.id,
