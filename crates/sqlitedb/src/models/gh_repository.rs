@@ -82,6 +82,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}", gh_org_id, name) }"#
 )]
@@ -101,6 +103,8 @@ pub fn get_by_name(conn: &Connection, gh_org_id: &i64, name: &str) -> Option<Mod
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}", id) }"#
 )]
@@ -115,6 +119,8 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", repo_name) }"#
 )]
 pub fn get_info_by_name(conn: &Connection, repo_name: &str) -> Vec<RepositoryInfo> {

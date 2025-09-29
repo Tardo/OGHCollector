@@ -82,6 +82,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}", id) }"#
 )]
@@ -96,6 +98,8 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}", dep_type_id, name) }"#
 )]
@@ -115,6 +119,8 @@ pub fn get_by_name(conn: &Connection, dep_type_id: &i64, name: &str) -> Option<M
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}", module_id, dep_type) }"#
 )]
 pub fn get_module_external_dependency_names(
@@ -154,6 +160,8 @@ pub fn get_module_external_dependency_names(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", module_id) }"#
 )]
 pub fn get_module_dependency_info(conn: &Connection, module_id: &i64) -> Vec<DependencyModuleInfo> {

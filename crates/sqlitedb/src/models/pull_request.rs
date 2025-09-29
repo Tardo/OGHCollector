@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 
 pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
 
-pub static TABLE_NAME: &str = "dependency_type";
+pub static TABLE_NAME: &str = "pull_request";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
     pub id: i64,
-    pub name: String,
+    pub url: String,
+    pub title: String,
 }
 
 pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
@@ -18,19 +19,16 @@ pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
         format!(
             "CREATE TABLE IF NOT EXISTS {} (
             id integer primary key,
-            name text not null unique
+            name text not null
         )",
             &TABLE_NAME
         )
         .as_str(),
         params![],
-    )
-}
-
-pub fn populate(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    )?;
     conn.execute(
         format!(
-            "INSERT OR IGNORE INTO {}(name) VALUES ('module'), ('python'), ('bin')",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_author_name ON {}(name)",
             &TABLE_NAME
         )
         .as_str(),
@@ -44,8 +42,8 @@ fn query(
     params: &[&dyn ToSql],
 ) -> Result<Vec<Model>, rusqlite::Error> {
     let sql: String = format!(
-        "SELECT dt.id, dt.name \
-    FROM {} as dt \
+        "SELECT au.id, au.name \
+    FROM {} as au \
     {}",
         &TABLE_NAME, &extra_sql
     );
@@ -67,14 +65,14 @@ fn query(
     time_refresh = true,
     size = 1000,
     option = true,
-    convert = r#"{ format!("{}", id) }"#
+    convert = r#"{ format!("{}", author_id) }"#
 )]
-pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let dep_types = query(conn, "WHERE dt.id = ?1 LIMIT 1", params![&id]).unwrap();
-    if dep_types.is_empty() {
+pub fn get_by_id(conn: &Connection, author_id: &i64) -> Option<Model> {
+    let authors = query(conn, "WHERE au.id = ?1 LIMIT 1", params![&author_id]).unwrap();
+    if authors.is_empty() {
         return None;
     }
-    Some(dep_types[0].clone())
+    Some(authors[0].clone())
 }
 
 #[cached(
@@ -86,9 +84,24 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
     convert = r#"{ format!("{}", name) }"#
 )]
 pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let dep_types = query(conn, "WHERE dt.name = ?1 LIMIT 1", params![&name]).unwrap();
-    if dep_types.is_empty() {
+    let authors = query(conn, "WHERE au.name = ?1 LIMIT 1", params![&name]).unwrap();
+    if authors.is_empty() {
         return None;
     }
-    Some(dep_types[0].clone())
+    Some(authors[0].clone())
+}
+
+pub fn add(conn: &Connection, name: &str) -> Result<Model, rusqlite::Error> {
+    let author_opt = get_by_name(conn, name);
+    if author_opt.is_none() {
+        conn.execute(
+            format!("INSERT INTO {}(name) VALUES (?1)", &TABLE_NAME).as_str(),
+            params![&name],
+        )?;
+        return Ok(Model {
+            id: conn.last_insert_rowid(),
+            name: name.to_string(),
+        });
+    }
+    Ok(author_opt.unwrap())
 }

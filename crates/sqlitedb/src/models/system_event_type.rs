@@ -60,6 +60,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}", id) }"#
 )]
@@ -74,6 +76,8 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}", name) }"#
 )]

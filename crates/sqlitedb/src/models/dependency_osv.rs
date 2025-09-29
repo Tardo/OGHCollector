@@ -85,6 +85,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}", dep_mod_id, osv_id) }"#
 )]
@@ -105,7 +107,12 @@ pub fn get_by_dep_mod_id_osv_id(
     Some(deps[0].clone())
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn get_osv_info(conn: &Connection) -> Vec<DependencyModuleOSVInfo> {
     let sql: String = format!("SELECT mod.version_odoo, mod.name, mod.technical_name, dep.name, dep_o.osv_id, dep_o.details, dep_o.fixed_in FROM {} as dep_o
     INNER JOIN {} as dep_mod ON dep_mod.id = dep_o.dependency_module_id

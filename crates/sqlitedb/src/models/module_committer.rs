@@ -77,6 +77,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}", module_id, committer_id) }"#
 )]
@@ -96,6 +98,8 @@ pub fn get_by_id(conn: &Connection, module_id: &i64, committer_id: &i64) -> Opti
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}", module_id, name) }"#
 )]
@@ -115,6 +119,8 @@ pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Mod
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", module_id) }"#
 )]
 pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
@@ -129,6 +135,8 @@ pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", module_id) }"#
 )]
 pub fn get_names_by_module_id(conn: &Connection, module_id: &i64) -> Vec<String> {

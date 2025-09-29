@@ -36,6 +36,8 @@ pub struct ModuleFullInfoResponse {
     pub update_date: String,
     pub git: String,
     pub folder_size: u64,
+    pub repository: String,
+    pub organization: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -90,7 +92,7 @@ fn get_module_git(conn: &Connection, module: &models::module::Model) -> String {
     format!("https://github.com/{}/{}.git", &org.name, &repo.name).to_string()
 }
 
-fn process_modules_db(
+pub fn process_modules_db(
     conn: &Connection,
     modules: &Vec<models::module::Model>,
 ) -> Vec<ModuleFullInfoResponse> {
@@ -113,6 +115,8 @@ fn process_modules_db(
         };
         let authors = models::module_author::get_names_by_module_id(conn, &module.id);
         let maintainers = models::module_maintainer::get_names_by_module_id(conn, &module.id);
+        let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id.0).unwrap();
+        let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id.0).unwrap();
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version: module.version_module.clone(),
@@ -130,6 +134,8 @@ fn process_modules_db(
             update_date: module.update_date.clone(),
             git: get_module_git(conn, module),
             folder_size: module.folder_size,
+            repository: module.gh_repository_id.1.clone(),
+            organization: org.name.clone(),
         });
     }
     res
@@ -223,8 +229,11 @@ pub async fn route_odoo_version(
         return Ok(HttpResponse::Ok().json(result));
     }
     let result = web::block(move || {
-        let modules =
-            models::module::get_by_technical_name_odoo_version(&conn, &module_name, &version_odoo);
+        let modules = models::module::get_by_technical_name_odoo_version(
+            &conn,
+            &[module_name],
+            &version_odoo,
+        );
         process_modules_db(&conn, &modules)
     })
     .await?;

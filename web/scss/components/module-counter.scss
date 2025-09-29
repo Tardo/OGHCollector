@@ -1,4 +1,8 @@
 // Copyright 2025 Alexandre D. Díaz
+#main_container.changing {
+    animation: changeBlurEffect 450ms ease 1;
+}
+
 #version {
     font-size: large;
 }
@@ -44,4 +48,17 @@ hr {
     text-align: right;
     padding-right: 4px;
     font-size: small;
+}
+
+
+@keyframes changeBlurEffect {
+    0% {
+        filter: blur(0);
+    }
+    50% {
+        filter: blur(5px);
+    }
+    100% {
+        filter: blur(0);
+    }
 }

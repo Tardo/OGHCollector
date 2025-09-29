@@ -21,6 +21,7 @@ actix-service.workspace = true
 actix-rt.workspace = true
 actix-session.workspace = true
 actix-csrf.workspace = true
+actix-multipart.workspace = true
 r2d2.workspace = true
 r2d2_sqlite.workspace = true
 env_logger.workspace = true

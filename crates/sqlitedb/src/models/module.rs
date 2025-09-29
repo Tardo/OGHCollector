@@ -1,6 +1,6 @@
 // Copyright 2025 Alexandre D. Díaz
 use cached::proc_macro::cached;
-use rusqlite::{params, Result, ToSql};
+use rusqlite::{params, params_from_iter, Params, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -164,11 +164,10 @@ pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
     )
 }
 
-fn query(
-    conn: &Connection,
-    extra_sql: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<Model>, rusqlite::Error> {
+fn query<P>(conn: &Connection, extra_sql: &str, params: P) -> Result<Vec<Model>, rusqlite::Error>
+where
+    P: Params,
+{
     let sql = format!(
         "SELECT mod.id, mod.technical_name, mod.version_odoo, mod.name, \
     mod.version_module, mod.description, \
@@ -219,6 +218,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}", id) }"#
 )]
@@ -233,6 +234,8 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", version_odoo) }"#
 )]
 pub fn get_by_odoo_version(conn: &Connection, version_odoo: &u8) -> Vec<Model> {
@@ -242,6 +245,8 @@ pub fn get_by_odoo_version(conn: &Connection, version_odoo: &u8) -> Vec<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}{}", technical_name, version_odoo, gh_repo_id) }"#
 )]
@@ -258,20 +263,27 @@ pub fn get_by_technical_name(
     Some(modules[0].clone())
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    convert = r#"{ format!("{}{}", technical_name, version_odoo) }"#
-)]
 pub fn get_by_technical_name_odoo_version(
     conn: &Connection,
-    technical_name: &str,
+    modules: &[String],
     version_odoo: &u8,
 ) -> Vec<Model> {
+    // Genera los placeholders
+    let mod_placeholders = modules
+        .iter()
+        .map(|_| "?".to_string())
+        .collect::<Vec<String>>()
+        .join(", ");
+    let mut params_vec: Vec<&dyn rusqlite::ToSql> = modules
+        .iter()
+        .map(|module_name| module_name as &dyn rusqlite::ToSql)
+        .collect();
+    params_vec.push(version_odoo as &dyn rusqlite::ToSql);
     query(
         conn,
-        "WHERE mod.technical_name = ?1 AND mod.version_odoo = ?2",
-        params![&technical_name, &version_odoo],
+        format!("WHERE mod.technical_name IN ({mod_placeholders}) AND mod.version_odoo = ?")
+            .as_str(),
+        params_from_iter(params_vec.iter()),
     )
     .unwrap()
 }
@@ -279,6 +291,8 @@ pub fn get_by_technical_name_odoo_version(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}{}{}", technical_name, version_odoo, org_name, repo_name) }"#
 )]
 pub fn get_by_technical_name_odoo_version_organization_name_repository_name(
@@ -299,6 +313,8 @@ pub fn get_by_technical_name_odoo_version_organization_name_repository_name(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}{}", technical_name, version_odoo, org_name) }"#
 )]
 pub fn get_by_technical_name_odoo_version_organization_name(
@@ -325,6 +341,8 @@ pub fn get_by_technical_name_odoo_version_organization_name(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}{}", technical_name, version_odoo, repo_name) }"#
 )]
 pub fn get_by_technical_name_odoo_version_repository_name(
@@ -344,6 +362,8 @@ pub fn get_by_technical_name_odoo_version_repository_name(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", technical_name) }"#
 )]
 pub fn get_generic_info(conn: &Connection, technical_name: &str) -> Vec<ModuleGenericInfo> {
@@ -378,6 +398,8 @@ pub fn get_generic_info(conn: &Connection, technical_name: &str) -> Vec<ModuleGe
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}", technical_name, version_odoo) }"#
 )]
 pub fn get_generic_info_by_odoo_version(
@@ -416,6 +438,8 @@ pub fn get_generic_info_by_odoo_version(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}{}", technical_name, version_odoo, installable) }"#
 )]
 pub fn get_generic_info_by_odoo_version_installable(
@@ -459,6 +483,8 @@ pub fn get_generic_info_by_odoo_version_installable(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}", technical_name, installable) }"#
 )]
 pub fn get_generic_info_by_installable(
@@ -497,6 +523,8 @@ pub fn get_generic_info_by_installable(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}", technical_name) }"#
 )]
 pub fn get_info(conn: &Connection, technical_name: &str) -> Vec<ModuleInfo> {
@@ -821,7 +849,12 @@ pub fn add(conn: &Connection, module_info: &ManifestInfo) -> Result<Model, rusql
     Ok(new_module_opt.unwrap())
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn count(conn: &Connection) -> Vec<ModuleCountInfo> {
     let mut stmt = conn
         .prepare(
@@ -845,7 +878,12 @@ pub fn count(conn: &Connection) -> Vec<ModuleCountInfo> {
     modules_iter.collect::<Vec<ModuleCountInfo>>()
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn count_organization(conn: &Connection) -> Vec<ModuleCountByOrganizationInfo> {
     let mut stmt = conn
         .prepare(
@@ -877,7 +915,12 @@ pub fn count_organization(conn: &Connection) -> Vec<ModuleCountByOrganizationInf
     modules_iter.collect::<Vec<ModuleCountByOrganizationInfo>>()
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn rank_contributor(conn: &Connection) -> Vec<ModuleRankContributorInfo> {
     let mut stmt = conn.prepare(
         format!("SELECT * FROM (
@@ -907,7 +950,12 @@ pub fn rank_contributor(conn: &Connection) -> Vec<ModuleRankContributorInfo> {
     modules_iter.collect::<Vec<ModuleRankContributorInfo>>()
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn rank_committer(conn: &Connection) -> Vec<ModuleRankCommitterInfo> {
     let mut stmt = conn.prepare(
         format!("SELECT * FROM (
@@ -936,7 +984,12 @@ pub fn rank_committer(conn: &Connection) -> Vec<ModuleRankCommitterInfo> {
     modules_iter.collect::<Vec<ModuleRankCommitterInfo>>()
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn get_odoo_versions(conn: &Connection) -> Vec<u8> {
     let mut stmt = conn
         .prepare(
@@ -955,7 +1008,11 @@ pub fn get_odoo_versions(conn: &Connection) -> Vec<u8> {
     modules_iter.collect::<Vec<u8>>()
 }
 
-pub fn get_module_repository(conn: &Connection, modules: &[String]) -> Vec<ModuleRepositoryInfo> {
+pub fn get_module_repository(
+    conn: &Connection,
+    version_odoo: &u8,
+    modules: &[String],
+) -> Vec<ModuleRepositoryInfo> {
     let mod_placeholders = modules
         .iter()
         .map(|s| format!("'{s}'"))
@@ -969,6 +1026,7 @@ pub fn get_module_repository(conn: &Connection, modules: &[String]) -> Vec<Modul
             INNER JOIN gh_repository as gh_repo 
             ON gh_repo.id = mod.gh_repository_id 
             WHERE mod.technical_name IN ({}) 
+                AND mod.version_odoo = ?1 
             GROUP BY mod.technical_name",
                 &TABLE_NAME, mod_placeholders
             )
@@ -976,7 +1034,7 @@ pub fn get_module_repository(conn: &Connection, modules: &[String]) -> Vec<Modul
         )
         .unwrap();
     let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
+        .query_map(params![&version_odoo], |row: &rusqlite::Row<'_>| {
             Ok(ModuleRepositoryInfo {
                 technical_name: row.get(0)?,
                 repository_name: row.get(1)?,

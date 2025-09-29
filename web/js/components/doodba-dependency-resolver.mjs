@@ -1,22 +1,25 @@
 // Copyright 2025 Alexandre D. Díaz
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
 import yaml from 'js-yaml';
-import '@scss/components/doodba-converter.scss';
+import JSZip from 'jszip';
+import '@scss/components/doodba-dependency-resolver.scss';
 
 const MANIFEST_NAMES = ['__manifest__.py'];
 
-class DoodbaConverter extends Component {
+class DoodbaDependencyResolver extends Component {
   #el_search_select_ver = null;
   #el_drag_panel = null;
-  #el_result = null;
+  #el_result_odoo = null;
+  #el_result_pip = null;
+  #el_result_bin = null;
   #el_save = null;
 
   onSetup() {
     Component.useStyles(
-      '/static/auto/web/scss/components/doodba-converter.css',
+      '/static/auto/web/scss/components/doodba-dependency-resolver.css',
     );
     Component.useEvents({
-      doodba_converter_drag_panel: {
+      doodba_dep_resolver_drag_panel: {
         mode: 'id',
         events: {
           dragenter: this.onDragEnter,
@@ -25,7 +28,7 @@ class DoodbaConverter extends Component {
           drop: this.onDrop,
         },
       },
-      doodba_converter_save: {
+      doodba_dep_resolver_save: {
         mode: 'id',
         events: {
           click: this.onClickSave,
@@ -43,11 +46,13 @@ class DoodbaConverter extends Component {
   async onWillStart() {
     await super.onWillStart(...arguments);
     this.#el_search_select_ver = this.queryId(
-      'doodba_converter_search_select_ver',
+      'doodba_dep_resolver_search_select_ver',
     );
-    this.#el_drag_panel = this.queryId('doodba_converter_drag_panel');
-    this.#el_result = this.queryId('doodba_converter_result');
-    this.#el_save = this.queryId('doodba_converter_save');
+    this.#el_drag_panel = this.queryId('doodba_dep_resolver_drag_panel');
+    this.#el_result_odoo = this.queryId('doodba_dep_resolver_result_odoo');
+    this.#el_result_pip = this.queryId('doodba_dep_resolver_result_pip');
+    this.#el_result_bin = this.queryId('doodba_dep_resolver_result_bin');
+    this.#el_save = this.queryId('doodba_dep_resolver_save');
   }
 
   onStart() {
@@ -55,10 +60,14 @@ class DoodbaConverter extends Component {
     this.#fillOdooVersionsSearchOptions();
   }
 
-  showYaml(yaml_data) {
-    this.#el_result.value = yaml_data;
+  showResults(yaml_data, pip_data, bin_data) {
+    this.#el_result_odoo.value = yaml_data;
+    this.#el_result_pip.value = pip_data;
+    this.#el_result_bin.value = bin_data;
     this.#el_drag_panel.style.display = 'none';
-    this.#el_result.style.display = '';
+    this.#el_result_odoo.style.display = '';
+    this.#el_result_pip.style.display = '';
+    this.#el_result_bin.style.display = '';
     this.#el_save.style.display = '';
   }
 
@@ -76,12 +85,16 @@ class DoodbaConverter extends Component {
     this.#el_drag_panel.style.backgroundColor = '';
   }
 
-  onClickSave() {
-    const blob = new Blob([this.#el_result.value], {type: 'text/yaml'});
+  async onClickSave() {
+    const zip = new JSZip();
+    zip.file('addons.yaml', this.#el_result_odoo.value);
+    zip.file('pip.txt', this.#el_result_pip.value);
+    zip.file('apt.txt', this.#el_result_bin.value);
+    const zip_bin = await zip.generateAsync({type: 'blob'});
     const elem = window.document.createElement('a');
-    const objURL = window.URL.createObjectURL(blob);
+    const objURL = window.URL.createObjectURL(zip_bin);
     elem.href = objURL;
-    elem.download = 'addons.yaml';
+    elem.download = 'doodba_bundle.zip';
     document.body?.appendChild(elem);
     elem.click();
     document.body?.removeChild(elem);
@@ -89,23 +102,14 @@ class DoodbaConverter extends Component {
   }
 
   makeYaml(data, mods) {
-    const groupedData = data.reduce((acc, item) => {
-      const {technical_name, repository_name} = item;
-      if (!acc[repository_name]) {
-        acc[repository_name] = [];
-      }
-      acc[repository_name].push(technical_name);
-      return acc;
-    }, {});
-
-    const sortedGroupedData = Object.keys(groupedData)
+    const sortedGroupedData = Object.keys(data)
       .sort()
       .reduce((acc, key) => {
-        acc[key] = groupedData[key];
+        acc[key] = data[key];
         return acc;
       }, {});
 
-    const data_mods = data.map(mod_info => mod_info.technical_name);
+    const data_mods = Object.values(data);
     const difference = mods.filter(x => !data_mods.includes(x));
     if (difference.length > 0) {
       sortedGroupedData['unknown'] = difference;
@@ -172,40 +176,49 @@ class DoodbaConverter extends Component {
     return acc_res;
   }
 
+  #readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(reader.result);
+      };
+      reader.onerror = err => {
+        reject(err);
+      };
+      reader.readAsText(file);
+    });
+  }
+
   async onDrop(ev) {
     ev.preventDefault();
-    let mods = [];
-    for (const raw_item of ev.dataTransfer.items) {
-      const entry = raw_item.webkitGetAsEntry();
-      try {
-        const entries = await this.#readDirectoryEntries(entry);
-        mods.push(...(await this.readAddonFolder(entry.name, entries)));
-      } catch (_err) {
-        // do nothing
-      }
-    }
-    mods = mods.filter((value, index, array) => array.indexOf(value) === index);
-    if (mods.length > 0) {
+    const raw_item = ev.dataTransfer.items[0];
+    const file = raw_item.getAsFile();
+    if (file.type.endsWith('/yaml')) {
+      const file_text = await this.#readFileAsText(file);
+      const mods = Object.values(yaml.load(file_text)).flat();
       const odoo_ver =
         this.#el_search_select_ver.value ||
         this.getFetchData('odoo_versions')[0].value;
-
       const formData = new FormData();
       formData.append('odoo_version', odoo_ver);
       mods.forEach(mod_name => formData.append('modules', mod_name));
       const data = await getService('requests').post(
-        '/doodba/converter/addons',
+        '/doodba/dependency-resolver/addons',
         {
           headers: undefined,
           body: formData,
         },
       );
       const json_data = await data.json();
-      const yaml_txt = this.makeYaml(json_data, mods);
-      this.showYaml(yaml_txt);
+      const yaml_txt = this.makeYaml(json_data.odoo, mods);
+      this.showResults(
+        yaml_txt,
+        json_data.bin.join('\n'),
+        json_data.pip.join('\n'),
+      );
       this.#el_search_select_ver.disabled = true;
     }
   }
 }
 
-registerComponent('doodba-converter', DoodbaConverter);
+registerComponent('doodba-dependency-resolver', DoodbaDependencyResolver);

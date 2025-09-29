@@ -1,10 +1,10 @@
 // Copyright 2025 Alexandre D. Díaz
-use actix_web::{get, post, web, Error as AWError, HttpResponse, Result};
+use actix_web::{get, web, Error as AWError, HttpResponse, Result};
 use oghutils::version::odoo_version_u8_to_string;
 use serde::{Deserialize, Serialize};
 
 use sqlitedb::{
-    models::{self, module::ModuleRepositoryInfo, Connection},
+    models::{self, Connection},
     Pool,
 };
 
@@ -35,11 +35,6 @@ pub struct CommitterRankInfo {
     pub count: u32,
     pub committer: String,
     pub rank: u16,
-}
-
-#[derive(Deserialize)]
-struct JSONRequestModuleDoodba {
-    modules: Vec<String>,
 }
 
 fn get_odoo_versions(conn: &Connection) -> Vec<OdooVersionInfo> {
@@ -91,12 +86,6 @@ fn get_odoo_committer_rank(conn: &Connection) -> Vec<CommitterRankInfo> {
     committer_rank
 }
 
-fn get_doodba_addons(conn: &Connection, mods: &[String]) -> Vec<ModuleRepositoryInfo> {
-    let module_repos: Vec<ModuleRepositoryInfo> = models::module::get_module_repository(conn, mods);
-    log::info!("{:?}", &module_repos);
-    module_repos
-}
-
 #[get("/common/odoo/versions")]
 pub async fn route_odoo_versions(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
     let conn = web::block(move || pool.get()).await?.unwrap();
@@ -122,15 +111,5 @@ pub async fn route_odoo_contributor_rank(pool: web::Data<Pool>) -> Result<HttpRe
 pub async fn route_odoo_committer_rank(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
     let conn = web::block(move || pool.get()).await?.unwrap();
     let result = web::block(move || get_odoo_committer_rank(&conn)).await?;
-    Ok(HttpResponse::Ok().json(result))
-}
-
-#[post("/common/doodba/addons")]
-pub async fn route_doodba_addons(
-    pool: web::Data<Pool>,
-    info: web::Json<JSONRequestModuleDoodba>,
-) -> Result<HttpResponse, AWError> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
-    let result = web::block(move || get_doodba_addons(&conn, &info.modules)).await?;
     Ok(HttpResponse::Ok().json(result))
 }

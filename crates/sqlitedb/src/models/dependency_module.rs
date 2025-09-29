@@ -84,6 +84,8 @@ fn query(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}", id) }"#
 )]
@@ -98,6 +100,8 @@ pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     option = true,
     convert = r#"{ format!("{}{}", dependency_id, module_id) }"#
 )]
@@ -121,6 +125,8 @@ fn get_by_dependency_id_module_id(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 1000,
     convert = r#"{ format!("{}{}", module_id, dep_type_id) }"#
 )]
 pub fn get_names(conn: &Connection, module_id: &i64, dep_type_id: &i64) -> Vec<String> {

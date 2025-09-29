@@ -11,6 +11,7 @@ pub struct OGHServerConfig {
     template_autoreload: bool,
     allowed_origins: Vec<Url>,
     cookie_key_bytes: Vec<u8>,
+    upload_limit: usize,
 }
 
 impl OGHServerConfig {
@@ -35,6 +36,7 @@ impl OGHServerConfig {
             .collect::<Vec<Url>>();
         let cookie_key = settings.get_string("cookie_key").unwrap_or_default();
         let cookie_key_bytes = cookie_key.into_bytes();
+        let upload_limit = settings.get_int("upload_limit").unwrap_or(20 * 1024 * 1024) as usize;
         OGHServerConfig {
             bind_address,
             port,
@@ -42,6 +44,7 @@ impl OGHServerConfig {
             template_autoreload,
             allowed_origins,
             cookie_key_bytes,
+            upload_limit,
         }
     }
 
@@ -82,6 +85,10 @@ impl OGHServerConfig {
 
     pub fn get_cookie_key_bytes(&self) -> &Vec<u8> {
         &self.cookie_key_bytes
+    }
+
+    pub fn get_upload_limit(&self) -> &usize {
+        &self.upload_limit
     }
 }
 

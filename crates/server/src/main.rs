@@ -7,6 +7,7 @@ mod utils;
 
 use actix_cors::Cors;
 use actix_files as afs;
+use actix_multipart::form::MultipartFormConfig;
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{
@@ -99,17 +100,20 @@ async fn main() -> std::io::Result<()> {
             // store db pool as Data object
             .app_data(web::Data::new(pool.clone()))
             .app_data(tmpl_reloader.clone())
+            .app_data(MultipartFormConfig::default().total_limit(*SERVER_CONFIG.get_upload_limit()))
             .service(afs::Files::new("/static", "./static").show_files_listing())
             .service(routes::common::route_odoo_versions)
             .service(routes::common::route_odoo_module_count)
             .service(routes::common::route_odoo_contributor_rank)
             .service(routes::common::route_odoo_committer_rank)
-            .service(routes::common::route_doodba_addons)
             .service(routes::dashboard::route)
             .service(routes::api_doc::route)
             .service(routes::logs::route)
             .service(routes::osv::route)
-            .service(routes::doodba_converter::route)
+            .service(routes::doodba_tools::route_doodba_converter)
+            .service(routes::doodba_tools::route_doodba_converter_addons)
+            .service(routes::doodba_tools::route_doodba_dependency_resolver)
+            .service(routes::doodba_tools::route_doodba_dependency_resolver_addons)
             .service(routes::atlas::route)
             .service(routes::atlas::route_atlas_data)
             .service(

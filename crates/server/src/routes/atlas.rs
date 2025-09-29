@@ -68,6 +68,8 @@ fn set_main_node_attributes(
 #[cached(
     key = "String",
     time = 3600,
+    time_refresh = true,
+    size = 50,
     convert = r#"{ format!("{}", odoo_version) }"#
 )]
 fn get_graph_data(conn: &Connection, odoo_version: &u8) -> GraphInfo {

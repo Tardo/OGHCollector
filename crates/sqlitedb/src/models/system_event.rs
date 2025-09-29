@@ -81,7 +81,12 @@ fn query(
     Ok(records)
 }
 
-#[cached(key = "String", time = 3600, convert = r#"{ format!("") }"#)]
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
 pub fn get_messages_current_month(conn: &Connection) -> Vec<Model> {
     query(conn,
         "WHERE date(se.date) >= date('now', 'start of month') AND date(se.date) <= date('now', 'start of month', '+1 month', '-1 day') ORDER BY se.date DESC, se.id DESC LIMIT 1000", params![]).unwrap()

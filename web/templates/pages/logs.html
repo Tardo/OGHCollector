@@ -4,8 +4,8 @@
 {% block base_head_content %}
 {{ super() }}
 
-    <link rel="stylesheet" href="/static/auto/web/scss/pages/logs.css">
-    <script type="module" src="/static/auto/logs.mjs"></script>
+    <link rel="stylesheet" href="/static/auto/web/scss/pages/logs.css" as="style">
+    <script type="module" src="/static/auto/logs.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}

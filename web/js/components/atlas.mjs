@@ -12,6 +12,11 @@ class SigmaAtlas extends Component {
   #sigma_renderer = null;
   #fa2_layout = null;
   #timer = null;
+  #el_loading_msg = null;
+  #el_search_select_ver = null;
+  #el_mod_dep_graph = null;
+  #el_mod_dep_control = null;
+  #el_mod_dep_search_dependencies = null;
 
   onSetup() {
     Component.useStyles('/static/auto/web/scss/components/atlas.css');
@@ -46,7 +51,18 @@ class SigmaAtlas extends Component {
 
   async onWillStart() {
     await super.onWillStart(...arguments);
-    await this.#update();
+    this.#el_loading_msg = this.queryId(
+      'sigma_atlas_mod_dep_graph_loading_msg',
+    );
+    this.#el_search_select_ver = this.queryId(
+      'sigma_atlas_mod_dep_search_select_ver',
+    );
+    this.#el_mod_dep_graph = this.queryId('sigma_atlas_mod_dep_graph');
+    this.#el_mod_dep_control = this.queryId('sigma_atlas_mod_dep_control');
+    this.#el_mod_dep_search_dependencies = this.queryId(
+      'sigma_atlas_mod_dep_search_dependencies',
+    );
+    this.#update();
   }
 
   onStart() {
@@ -73,13 +89,10 @@ class SigmaAtlas extends Component {
   }
 
   toggleLoadingMessage(visible) {
-    const loading_msg_el = this.queryId(
-      'sigma_atlas_mod_dep_graph_loading_msg',
-    );
     if (visible) {
-      loading_msg_el.style.display = '';
+      this.#el_loading_msg.style.display = '';
     } else {
-      loading_msg_el.style.display = 'none';
+      this.#el_loading_msg.style.display = 'none';
     }
   }
 
@@ -87,7 +100,7 @@ class SigmaAtlas extends Component {
     this.toggleLoadingMessage(true);
 
     this.mirlo.state.odoo_version =
-      this.queryId('sigma_atlas_mod_dep_search_select_ver').value ||
+      this.#el_search_select_ver.value ||
       this.getFetchData('odoo_versions')[0].value;
     const data = await getService('requests').getJSON(
       `/atlas/data/${this.mirlo.state.odoo_version}`,
@@ -100,22 +113,18 @@ class SigmaAtlas extends Component {
     const graph = Graph.from(data);
     random.assign(graph);
 
-    this.#sigma_renderer = new Sigma(
-      graph,
-      this.queryId('sigma_atlas_mod_dep_graph'),
-      {
-        labelColor: {color: '#763626'},
-        nodeReducer: this.#nodeReducer.bind(this),
-        edgeReducer: this.#edgeReducer.bind(this),
-        minArrowSize: 2,
-        defaultEdgeType: 'arrow',
-        arrowSizeRatio: 10,
-        defaultEdgeColor: 'red',
-        defaultNodeColor: '#007FFF',
-        hideEdgesOnMove: false,
-        allowInvalidContainer: true,
-      },
-    );
+    this.#sigma_renderer = new Sigma(graph, this.#el_mod_dep_graph, {
+      labelColor: {color: '#763626'},
+      nodeReducer: this.#nodeReducer.bind(this),
+      edgeReducer: this.#edgeReducer.bind(this),
+      minArrowSize: 2,
+      defaultEdgeType: 'arrow',
+      arrowSizeRatio: 10,
+      defaultEdgeColor: 'red',
+      defaultNodeColor: '#007FFF',
+      hideEdgesOnMove: false,
+      allowInvalidContainer: true,
+    });
     // Bind graph interactions
     this.#sigma_renderer.on('clickNode', ({node}) => {
       if (this.mirlo.state.hoveredNode === node) {
@@ -138,7 +147,7 @@ class SigmaAtlas extends Component {
     });
     this.#fa2_layout.start();
     this.#fillDependecySearchOptions();
-    this.queryId('sigma_atlas_mod_dep_control').textContent = '⏹️';
+    this.#el_mod_dep_control.textContent = '⏹️';
 
     if (!this.#timer) {
       this.#timer = setTimeout(
@@ -151,7 +160,7 @@ class SigmaAtlas extends Component {
   }
 
   #fillDependecySearchOptions() {
-    this.queryId('sigma_atlas_mod_dep_search_dependencies').replaceChildren();
+    this.#el_mod_dep_search_dependencies.replaceChildren();
     this.#sigma_renderer.graph
       .nodes()
       .map(
@@ -162,21 +171,15 @@ class SigmaAtlas extends Component {
           ),
       )
       .forEach(option =>
-        this.queryId('sigma_atlas_mod_dep_search_dependencies').appendChild(
-          option,
-        ),
+        this.#el_mod_dep_search_dependencies.appendChild(option),
       );
   }
 
   #fillOdooVersionsSearchOptions() {
-    this.queryId('sigma_atlas_mod_dep_search_select_ver').replaceChildren();
+    this.#el_search_select_ver.replaceChildren();
     this.getFetchData('odoo_versions')
       .map(({value}) => new Option(value))
-      .forEach(option =>
-        this.queryId('sigma_atlas_mod_dep_search_select_ver').appendChild(
-          option,
-        ),
-      );
+      .forEach(option => this.#el_search_select_ver.add(option));
   }
 
   setHoveredNode(node) {
@@ -250,7 +253,7 @@ class SigmaAtlas extends Component {
 
   onPauseAtlasLayout() {
     this.#fa2_layout.stop();
-    this.queryId('sigma_atlas_mod_dep_control').textContent = '▶️';
+    this.#el_mod_dep_control.textContent = '▶️';
   }
 
   onClickControl() {
@@ -261,10 +264,10 @@ class SigmaAtlas extends Component {
         this.#timer = null;
       }
       this.#fa2_layout.stop();
-      this.queryId('sigma_atlas_mod_dep_control').textContent = '▶️';
+      this.#el_mod_dep_control.textContent = '▶️';
     } else {
       this.#fa2_layout.start();
-      this.queryId('sigma_atlas_mod_dep_control').textContent = '⏹️';
+      this.#el_mod_dep_control.textContent = '⏹️';
     }
   }
 
