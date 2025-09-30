@@ -4,11 +4,10 @@ import yaml from 'js-yaml';
 import JSZip from 'jszip';
 import '@scss/components/doodba-dependency-resolver.scss';
 
-const MANIFEST_NAMES = ['__manifest__.py'];
-
 class DoodbaDependencyResolver extends Component {
   #el_search_select_ver = null;
   #el_drag_panel = null;
+  #el_result = null;
   #el_result_odoo = null;
   #el_result_pip = null;
   #el_result_bin = null;
@@ -26,6 +25,7 @@ class DoodbaDependencyResolver extends Component {
           dragover: this.onDragOver,
           dragleave: this.onDragLeave,
           drop: this.onDrop,
+          click: this.onClick,
         },
       },
       doodba_dep_resolver_save: {
@@ -49,6 +49,7 @@ class DoodbaDependencyResolver extends Component {
       'doodba_dep_resolver_search_select_ver',
     );
     this.#el_drag_panel = this.queryId('doodba_dep_resolver_drag_panel');
+    this.#el_result = this.queryId('doodba_dep_resolver_result');
     this.#el_result_odoo = this.queryId('doodba_dep_resolver_result_odoo');
     this.#el_result_pip = this.queryId('doodba_dep_resolver_result_pip');
     this.#el_result_bin = this.queryId('doodba_dep_resolver_result_bin');
@@ -58,17 +59,6 @@ class DoodbaDependencyResolver extends Component {
   onStart() {
     super.onStart();
     this.#fillOdooVersionsSearchOptions();
-  }
-
-  showResults(yaml_data, pip_data, bin_data) {
-    this.#el_result_odoo.value = yaml_data;
-    this.#el_result_pip.value = pip_data;
-    this.#el_result_bin.value = bin_data;
-    this.#el_drag_panel.style.display = 'none';
-    this.#el_result_odoo.style.display = '';
-    this.#el_result_pip.style.display = '';
-    this.#el_result_bin.style.display = '';
-    this.#el_save.style.display = '';
   }
 
   onDragEnter(ev) {
@@ -101,20 +91,48 @@ class DoodbaDependencyResolver extends Component {
     URL.revokeObjectURL(objURL);
   }
 
-  makeYaml(data, mods) {
+  #showResults(yaml_data, pip_data, bin_data) {
+    this.#el_result_odoo.value = yaml_data;
+    this.#el_result_pip.value = pip_data;
+    this.#el_result_bin.value = bin_data;
+    this.#el_drag_panel.style.display = 'none';
+    this.#el_result.style.display = '';
+    this.#el_save.style.display = '';
+  }
+
+  #makeYaml(data, yaml_data) {
+    const data_mods = Object.values(data).flat();
+    const yaml_mods = Object.values(yaml_data).flat();
+    const diff_mods = yaml_mods.filter(x => !data_mods.includes(x));
+    const san_diff_mods = [];
+    const mods_entries = Object.entries(yaml_data);
+    for (const mod_name of diff_mods) {
+      let found = false;
+      for (const [repo_name, mod_names] of mods_entries) {
+        if (mod_names.includes(mod_name)) {
+          found = true;
+          if (!Object.hasOwn(data, repo_name)) {
+            data[repo_name] = [mod_name];
+          } else {
+            data[repo_name].push(mod_name);
+          }
+          break;
+        }
+      }
+      if (!found) {
+        san_diff_mods.push(mod_name);
+      }
+    }
+    if (san_diff_mods.length > 0) {
+      data['_UNKNOWN_'] = diff_mods;
+    }
+
     const sortedGroupedData = Object.keys(data)
       .sort()
       .reduce((acc, key) => {
         acc[key] = data[key];
         return acc;
       }, {});
-
-    const data_mods = Object.values(data).flat();
-    const difference = mods.filter(x => !data_mods.includes(x));
-    if (difference.length > 0) {
-      sortedGroupedData['unknown'] = difference;
-    }
-
     return yaml.dump(sortedGroupedData, {indent: 2});
   }
 
@@ -123,57 +141,6 @@ class DoodbaDependencyResolver extends Component {
     this.getFetchData('odoo_versions')
       .map(({value}) => new Option(value))
       .forEach(option => this.#el_search_select_ver.add(option));
-  }
-
-  #hasManifest(entries) {
-    for (const entry of entries) {
-      if (entry.isFile && MANIFEST_NAMES.includes(entry.name)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  #readDirectoryEntries(entry) {
-    return new Promise((resolve, reject) => {
-      if (entry && entry.isDirectory) {
-        const dir_reader = entry.createReader();
-        const allEntries = [];
-
-        function readEntries() {
-          dir_reader.readEntries(entries => {
-            if (entries.length === 0) {
-              return resolve(allEntries);
-            }
-            allEntries.push(...entries);
-            readEntries();
-          }, reject);
-        }
-
-        readEntries();
-      } else {
-        reject();
-      }
-    });
-  }
-
-  async readAddonFolder(parent_name, entries, acc_res) {
-    if (typeof acc_res === 'undefined') {
-      acc_res = [];
-    }
-    if (this.#hasManifest(entries)) {
-      acc_res.push(parent_name);
-    } else {
-      for (const entry of entries) {
-        try {
-          const n_entries = await this.#readDirectoryEntries(entry);
-          await this.readAddonFolder(entry.name, n_entries, acc_res);
-        } catch (_err) {
-          // do nothing
-        }
-      }
-    }
-    return acc_res;
   }
 
   #readFileAsText(file) {
@@ -189,35 +156,57 @@ class DoodbaDependencyResolver extends Component {
     });
   }
 
+  async #processYAML(yaml_data) {
+    const odoo_ver =
+      this.#el_search_select_ver.value ||
+      this.getFetchData('odoo_versions')[0].value;
+    const formData = new FormData();
+    formData.append('odoo_version', odoo_ver);
+    Object.values(yaml_data)
+      .flat()
+      .forEach(mod_name => formData.append('modules', mod_name));
+    const data = await getService('requests').post(
+      '/doodba/dependency-resolver/addons',
+      {
+        body: formData,
+      },
+    );
+    const json_data = await data.json();
+    const yaml_txt = this.#makeYaml(json_data.odoo, yaml_data);
+    this.#showResults(
+      yaml_txt,
+      json_data.bin.join('\n'),
+      json_data.pip.join('\n'),
+    );
+    this.#el_search_select_ver.disabled = true;
+  }
+
   async onDrop(ev) {
     ev.preventDefault();
     const raw_item = ev.dataTransfer.items[0];
     const file = raw_item.getAsFile();
     if (file.type.endsWith('/yaml')) {
       const file_text = await this.#readFileAsText(file);
-      const mods = Object.values(yaml.load(file_text)).flat();
-      const odoo_ver =
-        this.#el_search_select_ver.value ||
-        this.getFetchData('odoo_versions')[0].value;
-      const formData = new FormData();
-      formData.append('odoo_version', odoo_ver);
-      mods.forEach(mod_name => formData.append('modules', mod_name));
-      const data = await getService('requests').post(
-        '/doodba/dependency-resolver/addons',
-        {
-          headers: undefined,
-          body: formData,
-        },
-      );
-      const json_data = await data.json();
-      const yaml_txt = this.makeYaml(json_data.odoo, mods);
-      this.showResults(
-        yaml_txt,
-        json_data.bin.join('\n'),
-        json_data.pip.join('\n'),
-      );
-      this.#el_search_select_ver.disabled = true;
+      this.#processYAML(yaml.load(file_text));
     }
+  }
+
+  async onClick(ev) {
+    ev.preventDefault();
+    const elem = window.document.createElement('input');
+    elem.type = 'file';
+    elem.hidden = true;
+    elem.setAttribute('accept', '.yaml,.yml');
+    elem.addEventListener('change', async ev_chg => {
+      const file = ev_chg.target.files[0];
+      if (file.type.endsWith('/yaml')) {
+        const file_text = await this.#readFileAsText(file);
+        this.#processYAML(yaml.load(file_text));
+      }
+    });
+    document.body?.appendChild(elem);
+    elem.click();
+    document.body?.removeChild(elem);
   }
 }
 

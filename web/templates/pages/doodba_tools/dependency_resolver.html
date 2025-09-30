@@ -13,13 +13,13 @@
 <template id="template-mirlo-doodba-dependency-resolver">
     <span class="search_container" id="doodba_dep_resolver_search_version"><strong>Odoo Version:</strong> </strong><select class="search_input" id="doodba_dep_resolver_search_select_ver"></select></span>
     <span class="search_container" id="doodba_dep_resolver_save" style="display:none">💾 Save</span><br/>
-    <div id="doodba_dep_resolver_drag_panel"><span class="no_mouse">Drag addons.yaml file here and get the complete list of modules with their dependencies.</span></div>
-    <table id="doodba_dep_resolver_result">
+    <div id="doodba_dep_resolver_drag_panel"><span class="no_mouse">Click or Drag addons.yaml file here and get the complete list of modules with their dependencies.</span></div>
+    <table id="doodba_dep_resolver_result" style="display: none">
         <tbody>
             <tr>
-                <td><textarea id="doodba_dep_resolver_result_odoo" style="display: none" readonly="readonly"></textarea></td>
-                <td><textarea id="doodba_dep_resolver_result_pip" style="display: none" readonly="readonly"></textarea></td>
-                <td><textarea id="doodba_dep_resolver_result_bin" style="display: none" readonly="readonly"></textarea></td>
+                <td><textarea id="doodba_dep_resolver_result_odoo" readonly="readonly"></textarea></td>
+                <td><textarea id="doodba_dep_resolver_result_pip" readonly="readonly"></textarea></td>
+                <td><textarea id="doodba_dep_resolver_result_bin" readonly="readonly"></textarea></td>
             </tr>
         </tbody>
     </table>
