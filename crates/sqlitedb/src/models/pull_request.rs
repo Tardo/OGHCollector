@@ -3,6 +3,8 @@ use cached::proc_macro::cached;
 use rusqlite::{params, Result, ToSql};
 use serde::{Deserialize, Serialize};
 
+use crate::models::gh_repository;
+
 pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
 
 pub static TABLE_NAME: &str = "pull_request";
@@ -10,25 +12,37 @@ pub static TABLE_NAME: &str = "pull_request";
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
     pub id: i64,
-    pub url: String,
-    pub title: String,
+    pub name: String,
+    pub version_odoo: u8,
+    pub module_technical_name: String,
+    pub prid: i64,
+    pub gh_repository_id: (i64, String),
 }
 
 pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.execute(
         format!(
-            "CREATE TABLE IF NOT EXISTS {} (
+            "CREATE TABLE IF NOT EXISTS {0} (
             id integer primary key,
-            name text not null
+            name text not null,
+            version_odoo integer not null,
+            module_technical_name text not null,
+            prid integer not null,
+            gh_repository_id integer not null references {1}(id),
+            CONSTRAINT fk_gh_repository
+                FOREIGN KEY (gh_repository_id)
+                REFERENCES {1}(id)
+                ON DELETE CASCADE
         )",
-            &TABLE_NAME
+            &TABLE_NAME,
+            &gh_repository::TABLE_NAME
         )
         .as_str(),
         params![],
     )?;
     conn.execute(
         format!(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_author_name ON {}(name)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_prid ON {}(prid)",
             &TABLE_NAME
         )
         .as_str(),
