@@ -14,9 +14,6 @@ class DoodbaDependencyResolver extends Component {
   #el_save = null;
 
   onSetup() {
-    Component.useStyles(
-      '/static/auto/web/scss/components/doodba-dependency-resolver.css',
-    );
     Component.useEvents({
       doodba_dep_resolver_drag_panel: {
         mode: 'id',

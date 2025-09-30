@@ -4,13 +4,13 @@
 {% block base_head_content %}
 {{ super() }}
 
-    <link rel="stylesheet" href="/static/auto/web/scss/pages/logs.css" as="style">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/logs.css" as="style">
     <script type="module" src="/static/auto/logs.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}
 
-<h2>🗓️ Month Logs</h2>
+<h2>🗓️ Monthly Logs (last 1000 events)</h2>
 <div id="logs">
     <table class="table table-striped table-striped-columns table-hover">
         <tbody>

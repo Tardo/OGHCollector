@@ -19,7 +19,6 @@ class SigmaAtlas extends Component {
   #el_mod_dep_search_dependencies = null;
 
   onSetup() {
-    Component.useStyles('/static/auto/web/scss/components/atlas.css');
     Component.disableShadow();
     Component.useEvents({
       sigma_atlas_mod_dep_search_input: {

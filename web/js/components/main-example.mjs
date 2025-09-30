@@ -29,9 +29,6 @@ class InputMainExample extends AnimatedComponent {
   #is_paused = false;
 
   onSetup() {
-    AnimatedComponent.useStyles(
-      '/static/auto/web/scss/components/main-example.css',
-    );
     AnimatedComponent.useEvents({
       display: {
         mode: 'id',

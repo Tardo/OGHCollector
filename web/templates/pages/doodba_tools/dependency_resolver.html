@@ -4,13 +4,14 @@
 {% block base_head_content %}
 {{ super() }}
 
-    <link rel="stylesheet" href="/static/auto/web/scss/pages/doodba_tools/dependency-resolver.css" as="style">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/doodba_tools/dependency-resolver.css" as="style">
     <script type="module" src="/static/auto/dependency-resolver.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}
 
 <template id="template-mirlo-doodba-dependency-resolver">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/doodba-dependency-resolver.css" as="style">
     <span class="search_container" id="doodba_dep_resolver_search_version"><strong>Odoo Version:</strong> </strong><select class="search_input" id="doodba_dep_resolver_search_select_ver"></select></span>
     <span class="search_container" id="doodba_dep_resolver_save" style="display:none">💾 Save</span><br/>
     <div id="doodba_dep_resolver_drag_panel"><span class="no_mouse">Click or Drag addons.yaml file here and get the complete list of modules with their dependencies.</span></div>

@@ -15,9 +15,6 @@ class ModuleCounter extends AnimatedComponent {
   #module_count = 0;
 
   onSetup() {
-    AnimatedComponent.useStyles(
-      '/static/auto/web/scss/components/module-counter.css',
-    );
     AnimatedComponent.useStateBinds({
       mod_counter: {
         id: 'counter',

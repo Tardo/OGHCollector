@@ -6,7 +6,7 @@
 
     <link rel="preload" href="/static/auto/web/scss/components/main-example.css" as="style" />
     <link rel="preload" href="/static/auto/web/scss/components/module-counter.css" as="style" />
-    <link rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css" as="style">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css" as="style">
     <script type="module" src="/static/auto/dashboard.mjs" async></script>
 {% endblock %}
 {% block content %}
@@ -14,6 +14,7 @@
 
 
 <template id="template-mirlo-module-counter">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-counter.css" as="style" />
     <div id="main_container">
         <table>
             <tbody>
@@ -40,6 +41,7 @@
 </template>
 
 <template id="template-mirlo-main-example">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/main-example.css" as="style" />
     <input type="text" readonly="1" id="display" />
 </template>
 

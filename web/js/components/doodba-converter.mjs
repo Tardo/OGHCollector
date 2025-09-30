@@ -12,9 +12,6 @@ class DoodbaConverter extends Component {
   #el_save = null;
 
   onSetup() {
-    Component.useStyles(
-      '/static/auto/web/scss/components/doodba-converter.css',
-    );
     Component.useEvents({
       doodba_converter_drag_panel: {
         mode: 'id',
