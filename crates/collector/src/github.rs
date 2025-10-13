@@ -5,8 +5,8 @@ use std::process::Command;
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
-const GITHUB_LIMIT_PER_PAGE: u8 = 50u8;
-const GITHUB_LIMIT_PAGES: u8 = 255u8;
+const GITHUB_LIMIT_PER_PAGE: usize = 50;
+const GITHUB_LIMIT_PAGES: usize = 255;
 
 pub struct RepoInfo {
     name: String,
@@ -70,8 +70,8 @@ impl GithubClient {
     pub async fn get_org_repos(
         &self,
         org_name: &str,
-        per_page: &u8,
-        page: &u8,
+        per_page: &usize,
+        page: &usize,
     ) -> Result<serde_json::Value, reqwest::Error> {
         let res = self
             .request_json(
@@ -238,7 +238,7 @@ impl GithubClient {
     }
 
     pub async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
-        let mut page_count: u8 = 1;
+        let mut page_count: usize = 1;
         let mut repos: Vec<RepoInfo> = Vec::new();
         while page_count < GITHUB_LIMIT_PAGES {
             let org_repos = self
@@ -261,7 +261,7 @@ impl GithubClient {
                     None => log::info!("'{repo_url}' Is not a valid Odoo modules repository!"),
                 }
             }
-            if (org_repos_items.len() as u8) < GITHUB_LIMIT_PER_PAGE {
+            if org_repos_items.len() < GITHUB_LIMIT_PER_PAGE {
                 break;
             }
             page_count += 1;
