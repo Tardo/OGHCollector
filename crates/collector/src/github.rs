@@ -92,62 +92,98 @@ impl GithubClient {
     ) -> Option<RepoInfo> {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
         let clone_path_exists = Path::new(&clone_path).exists();
-        let git_status: bool;
         if clone_path_exists {
             log::info!("Updating: '{repo_name}' in '{clone_path}'...");
             log::info!("Fetch...");
-            let output_fetch = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("fetch")
                 .arg("origin")
                 .output()
-                .unwrap_or_else(|_| panic!("{}", "Can't fetch 'origin'".to_string()));
-            if !output_fetch.status.success() {
-                return None;
-            }
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Error: Can't fetch 'origin'");
+                    return None;
+                }
+            };
             log::info!("Cleaning...");
-            let output_clean = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("clean")
                 .arg("-d")
                 .arg("--force")
                 .output()
-                .unwrap_or_else(|_| panic!("Can't clean '{repo_name}' repository"));
-            if !output_clean.status.success() {
-                return None;
-            }
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Can't clean '{repo_name}' repository");
+                    return None;
+                }
+            };
             log::info!("Switch...");
-            let output_check = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("switch")
                 .arg("-f")
                 .arg(branch)
                 .output()
-                .unwrap_or_else(|_| panic!("Can't checkout '{repo_name}' repository"));
-            if !output_check.status.success() {
-                return None;
-            }
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Can't switch '{repo_name}' repository");
+                    return None;
+                }
+            };
             log::info!("Reset...");
-            let output_reset = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("reset")
                 .arg("--hard")
                 .arg(format!("origin/{}", &branch).as_str())
                 .output()
-                .unwrap_or_else(|_| panic!("Can't checkout '{repo_name}' repository"));
-            if !output_reset.status.success() {
-                return None;
-            }
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Can't checkout '{repo_name}' repository");
+                    return None;
+                }
+            };
             log::info!("Rebase...");
-            let output = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("pull")
                 .arg("--rebase")
                 .arg("origin")
                 .arg(branch)
                 .output()
-                .unwrap_or_else(|_| panic!("Can't pull '{repo_name}' repository"));
-            git_status = output.status.success();
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Can't pull '{repo_name}' repository");
+                    return None;
+                }
+            };
             log::info!("Update done!");
         } else {
             log::info!("Cloning: '{repo_name}' in '{clone_path}'...");
@@ -155,7 +191,7 @@ impl GithubClient {
                 Ok(res) => res,
                 Err(_e) => panic!("Can't create '{clone_path}' repository"),
             };
-            let output = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("clone")
                 .arg(repo_url)
@@ -164,22 +200,35 @@ impl GithubClient {
                 .arg("1")
                 .arg("--no-single-branch")
                 .output()
-                .unwrap_or_else(|_| panic!("Can't clone '{repo_url}' repository"));
-            if !output.status.success() {
-                return None;
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Can't clone '{repo_url}' repository");
+                    return None;
+                }
             }
             log::info!("Checkout...");
-            let output_check = Command::new("git")
+            match Command::new("git")
                 .current_dir(&clone_path)
                 .arg("checkout")
                 .arg(branch)
                 .output()
-                .unwrap_or_else(|_| panic!("Can't checkout '{repo_name}' repository"));
-            git_status = output_check.status.success();
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return None;
+                    }
+                }
+                Err(_) => {
+                    log::error!("Can't checkout '{repo_name}' repository");
+                    return None;
+                }
+            }
             log::info!("Clone done!");
-        }
-        if !git_status {
-            return None;
         }
         Some(RepoInfo {
             name: repo_name.into(),
