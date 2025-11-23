@@ -125,11 +125,13 @@ impl GithubClient {
             if !run_git(&["fetch", "origin", "--prune"]) {
                 return None;
             }
+            let _ = run_git(&["reset", "--hard", "HEAD"]);
             let _ = run_git(&["clean", "-fdx"]);
             if !run_git(&["switch", "-C", branch, &format!("origin/{branch}")]) {
                 log::error!("Failed to switch to branch {branch}");
                 return None;
             }
+            let _ = run_git(&["reset", "--hard", "HEAD"]);
             log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
         } else {
             log::info!("Cloning repo: {repo_name} @ {branch}");

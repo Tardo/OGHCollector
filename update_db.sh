@@ -1,6 +1,6 @@
 #!/bin/bash
 # Copyright 2025 Alexandre D. Díaz
-ogh_cmd="docker compose exec -it -u appuser app oghcollector"
+ogh_cmd="docker compose run --rm -u appuser -T app oghcollector"
 versions_openerp=("6.1" "7.0" "8.0" "9.0")
 versions_odoo=("10.0" "11.0" "12.0" "13.0" "14.0" "15.0" "16.0" "17.0" "18.0" "19.0")
 versions_all=("${versions_openerp[@]}" "${versions_odoo[@]}")
