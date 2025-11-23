@@ -1,7 +1,7 @@
 // Copyright 2025 Alexandre D. Díaz
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
@@ -92,143 +92,63 @@ impl GithubClient {
     ) -> Option<RepoInfo> {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
         let clone_path_exists = Path::new(&clone_path).exists();
+        // Helper para ejecutar git de forma segura
+        let run_git = |args: &[&str]| -> bool {
+            let output = Command::new("git")
+                .current_dir(&clone_path)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output();
+
+            match output {
+                Ok(ref o) if o.status.success() => true,
+                Ok(o) => {
+                    log::warn!(
+                        "git {} failed (code {:?}): {}",
+                        args[0],
+                        o.status.code(),
+                        String::from_utf8_lossy(&o.stderr).trim()
+                    );
+                    false
+                }
+                Err(e) => {
+                    log::error!("Failed to execute git {}: {}", args[0], e);
+                    false
+                }
+            }
+        };
+
         if clone_path_exists {
-            log::info!("Updating: '{repo_name}' in '{clone_path}'...");
-            log::info!("Fetch...");
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("fetch")
-                .arg("origin")
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Error: Can't fetch 'origin'");
-                    return None;
-                }
-            };
-            log::info!("Cleaning...");
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("clean")
-                .arg("-d")
-                .arg("--force")
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Can't clean '{repo_name}' repository");
-                    return None;
-                }
-            };
-            log::info!("Switch...");
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("switch")
-                .arg("-f")
-                .arg(branch)
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Can't switch '{repo_name}' repository");
-                    return None;
-                }
-            };
-            log::info!("Reset...");
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("reset")
-                .arg("--hard")
-                .arg(format!("origin/{}", &branch).as_str())
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Can't checkout '{repo_name}' repository");
-                    return None;
-                }
-            };
-            log::info!("Rebase...");
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("pull")
-                .arg("--rebase")
-                .arg("origin")
-                .arg(branch)
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Can't pull '{repo_name}' repository");
-                    return None;
-                }
-            };
-            log::info!("Update done!");
+            log::info!("Updating repo: {repo_name} @ {branch}");
+            if !run_git(&["fetch", "origin", "--prune"]) {
+                return None;
+            }
+            let _ = run_git(&["clean", "-fdx"]);
+            if !run_git(&["switch", "-C", branch, &format!("origin/{branch}")]) {
+                log::error!("Failed to switch to branch {branch}");
+                return None;
+            }
+            log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
         } else {
-            log::info!("Cloning: '{repo_name}' in '{clone_path}'...");
-            match fs::create_dir_all(&clone_path) {
-                Ok(res) => res,
-                Err(_e) => panic!("Can't create '{clone_path}' repository"),
-            };
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("clone")
-                .arg(repo_url)
-                .arg(".")
-                .arg("--depth")
-                .arg("1")
-                .arg("--no-single-branch")
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Can't clone '{repo_url}' repository");
-                    return None;
-                }
+            log::info!("Cloning repo: {repo_name} @ {branch}");
+            if fs::create_dir_all(&clone_path).is_err() {
+                log::error!("Cannot create directory: {clone_path}");
+                return None;
             }
-            log::info!("Checkout...");
-            match Command::new("git")
-                .current_dir(&clone_path)
-                .arg("checkout")
-                .arg(branch)
-                .output()
-            {
-                Ok(output) => {
-                    if !output.status.success() {
-                        return None;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Can't checkout '{repo_name}' repository");
-                    return None;
-                }
+            if !run_git(&[
+                "clone",
+                "--no-single-branch",
+                "--branch",
+                branch,
+                repo_url,
+                ".",
+            ]) {
+                log::error!("Clone failed");
+                return None;
             }
-            log::info!("Clone done!");
+            log::info!("Repo cloned: {repo_name} @ {branch}");
         }
         Some(RepoInfo {
             name: repo_name.into(),
