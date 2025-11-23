@@ -96,17 +96,24 @@ impl GithubClient {
             log::info!("Updating repo: {repo_name} @ {branch}");
             let result = cmd!("git", "fetch", "origin", "--prune")
                 .dir(&clone_path)
+                .stdin_null()
                 .run();
             if result.is_err() {
                 return None;
             }
             cmd!("git", "reset", "--hard", "HEAD")
                 .dir(&clone_path)
+                .stdin_null()
                 .run()
                 .unwrap();
-            cmd!("git", "clean", "-fdx").dir(&clone_path).run().unwrap();
+            cmd!("git", "clean", "-fdx")
+                .dir(&clone_path)
+                .stdin_null()
+                .run()
+                .unwrap();
             let result = cmd!("git", "switch", "-C", branch, &format!("origin/{branch}"))
                 .dir(&clone_path)
+                .stdin_null()
                 .run();
             if result.is_err() {
                 log::error!("Failed to switch to branch {branch}");
@@ -114,6 +121,7 @@ impl GithubClient {
             }
             cmd!("git", "reset", "--hard", "HEAD")
                 .dir(&clone_path)
+                .stdin_null()
                 .run()
                 .unwrap();
             log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
@@ -134,6 +142,7 @@ impl GithubClient {
                 ".",
             )
             .dir(&clone_path)
+            .stdin_null()
             .run();
             if result.is_ok() {
                 log::info!("Repo cloned: {repo_name} @ {branch}");

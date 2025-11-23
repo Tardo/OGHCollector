@@ -82,6 +82,7 @@ impl OGHCollectorAnalyzer {
             "."
         )
         .dir(folder_path)
+        .stdin_null()
         .read()
         .unwrap_or_else(|_| String::new());
         let re =
@@ -114,6 +115,7 @@ impl OGHCollectorAnalyzer {
         log::info!("Get git committer info...");
         let output = cmd!("git", "--no-pager", "log", "--pretty=%cn", "--", ".")
             .dir(folder_path)
+            .stdin_null()
             .read()
             .unwrap_or_else(|_| String::new());
         let counter: HashMap<String, u32> =
