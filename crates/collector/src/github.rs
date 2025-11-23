@@ -94,30 +94,30 @@ impl GithubClient {
         let clone_path_exists = Path::new(&clone_path).exists();
         // Helper para ejecutar git de forma segura
         let run_git = |args: &[&str]| -> bool {
-            let output = Command::new("git")
+            Command::new("git")
                 .current_dir(&clone_path)
                 .args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .output();
-
-            match output {
-                Ok(ref o) if o.status.success() => true,
-                Ok(o) => {
-                    log::warn!(
-                        "git {} failed (code {:?}): {}",
-                        args[0],
-                        o.status.code(),
-                        String::from_utf8_lossy(&o.stderr).trim()
-                    );
+                .spawn()
+                .and_then(|child| child.wait_with_output())
+                .map(|output| {
+                    if output.status.success() {
+                        true
+                    } else {
+                        log::warn!(
+                            "git {} failed: {}",
+                            args[0],
+                            String::from_utf8_lossy(&output.stderr).trim()
+                        );
+                        false
+                    }
+                })
+                .unwrap_or_else(|e| {
+                    log::error!("Failed to run git {}: {}", args[0], e);
                     false
-                }
-                Err(e) => {
-                    log::error!("Failed to execute git {}: {}", args[0], e);
-                    false
-                }
-            }
+                })
         };
 
         if clone_path_exists {
