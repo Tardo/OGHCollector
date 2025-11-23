@@ -1,7 +1,8 @@
 // Copyright 2025 Alexandre D. Díaz
 use std::fs;
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
@@ -94,30 +95,49 @@ impl GithubClient {
         let clone_path_exists = Path::new(&clone_path).exists();
         // Helper para ejecutar git de forma segura
         let run_git = |args: &[&str]| -> bool {
-            Command::new("git")
+            let child: Child = match Command::new("git")
                 .current_dir(&clone_path)
                 .args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .and_then(|child| child.wait_with_output())
-                .map(|output| {
-                    if output.status.success() {
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("Failed to spawn git {}: {}", args[0], e);
+                    return false;
+                }
+            };
+
+            let output = child.wait_with_output();
+            match output {
+                Ok(out) => {
+                    if out.status.success() {
                         true
                     } else {
+                        let code_or_signal = if let Some(code) = out.status.code() {
+                            format!("exit code {}", code)
+                        } else if let Some(signal) = out.status.signal() {
+                            format!("signal {}", signal)
+                        } else {
+                            "unknown reason".to_string()
+                        };
+
                         log::warn!(
-                            "git {} failed: {}",
+                            "git {} failed ({}): {}",
                             args[0],
-                            String::from_utf8_lossy(&output.stderr).trim()
+                            code_or_signal,
+                            String::from_utf8_lossy(&out.stderr).trim()
                         );
                         false
                     }
-                })
-                .unwrap_or_else(|e| {
-                    log::error!("Failed to run git {}: {}", args[0], e);
+                }
+                Err(e) => {
+                    log::error!("git {} crashed or I/O error while waiting: {}", args[0], e);
                     false
-                })
+                }
+            }
         };
 
         if clone_path_exists {

@@ -8,7 +8,7 @@ use std::fs;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 
 use oghutils::version::OdooVersion;
 use sqlitedb::models::module::ManifestInfo;
@@ -72,7 +72,7 @@ impl OGHCollectorAnalyzer {
 
     fn get_git_info(&self, folder_path: &std::path::PathBuf) -> Result<GitInfo, ExitStatus> {
         log::info!("Get git info...");
-        let output_call = Command::new("git")
+        let child: Child = Command::new("git")
             .current_dir(folder_path)
             .arg("--no-pager")
             .arg("log")
@@ -84,9 +84,10 @@ impl OGHCollectorAnalyzer {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .and_then(|child| child.wait_with_output());
+            .expect("git log command failed to start");
 
-        let output_fetch = match output_call {
+        let output_log = child.wait_with_output();
+        let output_fetch = match output_log {
             Ok(out) if out.status.success() => out,
             Ok(out) => {
                 let err = String::from_utf8_lossy(&out.stderr);
@@ -127,7 +128,7 @@ impl OGHCollectorAnalyzer {
         folder_path: &std::path::PathBuf,
     ) -> Result<HashMap<String, u32>, ExitStatus> {
         log::info!("Get git committer info...");
-        let output_call = Command::new("git")
+        let child = Command::new("git")
             .current_dir(folder_path)
             .arg("--no-pager")
             .arg("log")
@@ -138,9 +139,10 @@ impl OGHCollectorAnalyzer {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .and_then(|child| child.wait_with_output());
+            .expect("git log command failed to start");
 
-        let output_fetch = match output_call {
+        let output_log = child.wait_with_output();
+        let output_fetch = match output_log {
             Ok(out) if out.status.success() => out,
             Ok(out) => {
                 let err = String::from_utf8_lossy(&out.stderr);
