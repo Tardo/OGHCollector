@@ -6,8 +6,9 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
 
 use oghutils::version::OdooVersion;
 use sqlitedb::models::module::ManifestInfo;
@@ -71,7 +72,7 @@ impl OGHCollectorAnalyzer {
 
     fn get_git_info(&self, folder_path: &std::path::PathBuf) -> Result<GitInfo, ExitStatus> {
         log::info!("Get git info...");
-        let output_fetch = Command::new("git")
+        let output_call = Command::new("git")
             .current_dir(folder_path)
             .arg("--no-pager")
             .arg("log")
@@ -79,12 +80,24 @@ impl OGHCollectorAnalyzer {
             .arg("-1")
             .arg("--")
             .arg(".")
-            .output()
-            .unwrap_or_else(|_| panic!("{}", "Can't get git info".to_string()));
-        if !output_fetch.status.success() {
-            return Err(output_fetch.status);
-        }
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .and_then(|child| child.wait_with_output());
 
+        let output_fetch = match output_call {
+            Ok(out) if out.status.success() => out,
+            Ok(out) => {
+                let err = String::from_utf8_lossy(&out.stderr);
+                log::warn!("git log failed: {}", err.trim());
+                return Err(out.status);
+            }
+            Err(e) => {
+                log::error!("Failed to run git log: {}", e);
+                return Err(ExitStatus::from_raw(-1));
+            }
+        };
         let output = String::from_utf8_lossy(&output_fetch.stdout).to_string();
         let re =
             Regex::new(r"([0-9a-f]+)~~([^\n]+)~~([^\n]+)~~(.+)~~(?:[\S\s]+Part-of:\s([^\n]+))?")
@@ -114,19 +127,31 @@ impl OGHCollectorAnalyzer {
         folder_path: &std::path::PathBuf,
     ) -> Result<HashMap<String, u32>, ExitStatus> {
         log::info!("Get git committer info...");
-        let output_fetch = Command::new("git")
+        let output_call = Command::new("git")
             .current_dir(folder_path)
             .arg("--no-pager")
             .arg("log")
             .arg("--pretty=%cn")
             .arg("--")
             .arg(".")
-            .output()
-            .unwrap_or_else(|_| panic!("{}", "Can't get git info".to_string()));
-        if !output_fetch.status.success() {
-            return Err(output_fetch.status);
-        }
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .and_then(|child| child.wait_with_output());
 
+        let output_fetch = match output_call {
+            Ok(out) if out.status.success() => out,
+            Ok(out) => {
+                let err = String::from_utf8_lossy(&out.stderr);
+                log::warn!("git log failed: {}", err.trim());
+                return Err(out.status);
+            }
+            Err(e) => {
+                log::error!("Failed to run git log: {}", e);
+                return Err(ExitStatus::from_raw(-1));
+            }
+        };
         let output = String::from_utf8_lossy(&output_fetch.stdout).to_string();
         let counter: HashMap<String, u32> =
             count_element_function(output.lines().map(|l| l.to_string()));
