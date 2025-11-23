@@ -1,8 +1,7 @@
 // Copyright 2025 Alexandre D. Díaz
+use duct::cmd;
 use std::fs;
-use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
@@ -93,65 +92,30 @@ impl GithubClient {
     ) -> Option<RepoInfo> {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
         let clone_path_exists = Path::new(&clone_path).exists();
-        // Helper para ejecutar git de forma segura
-        let run_git = |args: &[&str]| -> bool {
-            let child: Child = match Command::new("git")
-                .current_dir(&clone_path)
-                .args(args)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("Failed to spawn git {}: {}", args[0], e);
-                    return false;
-                }
-            };
-
-            let output = child.wait_with_output();
-            match output {
-                Ok(out) => {
-                    if out.status.success() {
-                        true
-                    } else {
-                        let code_or_signal = if let Some(code) = out.status.code() {
-                            format!("exit code {}", code)
-                        } else if let Some(signal) = out.status.signal() {
-                            format!("signal {}", signal)
-                        } else {
-                            "unknown reason".to_string()
-                        };
-
-                        log::warn!(
-                            "git {} failed ({}): {}",
-                            args[0],
-                            code_or_signal,
-                            String::from_utf8_lossy(&out.stderr).trim()
-                        );
-                        false
-                    }
-                }
-                Err(e) => {
-                    log::error!("git {} crashed or I/O error while waiting: {}", args[0], e);
-                    false
-                }
-            }
-        };
-
         if clone_path_exists {
             log::info!("Updating repo: {repo_name} @ {branch}");
-            if !run_git(&["fetch", "origin", "--prune"]) {
+            let result = cmd!("git", "fetch", "origin", "--prune")
+                .dir(&clone_path)
+                .run();
+            if result.is_err() {
                 return None;
             }
-            let _ = run_git(&["reset", "--hard", "HEAD"]);
-            let _ = run_git(&["clean", "-fdx"]);
-            if !run_git(&["switch", "-C", branch, &format!("origin/{branch}")]) {
+            cmd!("git", "reset", "--hard", "HEAD")
+                .dir(&clone_path)
+                .run()
+                .unwrap();
+            cmd!("git", "clean", "-fdx").dir(&clone_path).run().unwrap();
+            let result = cmd!("git", "switch", "-C", branch, &format!("origin/{branch}"))
+                .dir(&clone_path)
+                .run();
+            if result.is_err() {
                 log::error!("Failed to switch to branch {branch}");
                 return None;
             }
-            let _ = run_git(&["reset", "--hard", "HEAD"]);
+            cmd!("git", "reset", "--hard", "HEAD")
+                .dir(&clone_path)
+                .run()
+                .unwrap();
             log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
         } else {
             log::info!("Cloning repo: {repo_name} @ {branch}");
@@ -159,18 +123,21 @@ impl GithubClient {
                 log::error!("Cannot create directory: {clone_path}");
                 return None;
             }
-            if !run_git(&[
+
+            let result = cmd!(
+                "git",
                 "clone",
                 "--no-single-branch",
                 "--branch",
                 branch,
                 repo_url,
                 ".",
-            ]) {
-                log::error!("Clone failed");
-                return None;
+            )
+            .dir(&clone_path)
+            .run();
+            if result.is_ok() {
+                log::info!("Repo cloned: {repo_name} @ {branch}");
             }
-            log::info!("Repo cloned: {repo_name} @ {branch}");
         }
         Some(RepoInfo {
             name: repo_name.into(),

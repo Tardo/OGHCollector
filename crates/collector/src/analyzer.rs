@@ -1,4 +1,5 @@
 // Copyright 2025 Alexandre D. Díaz
+use duct::cmd;
 use fs_extra::dir::get_size;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -6,9 +7,8 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
-use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::ExitStatus;
 
 use oghutils::version::OdooVersion;
 use sqlitedb::models::module::ManifestInfo;
@@ -72,34 +72,18 @@ impl OGHCollectorAnalyzer {
 
     fn get_git_info(&self, folder_path: &std::path::PathBuf) -> Result<GitInfo, ExitStatus> {
         log::info!("Get git info...");
-        let child: Child = Command::new("git")
-            .current_dir(folder_path)
-            .arg("--no-pager")
-            .arg("log")
-            .arg("--pretty=%H~~%an~~%aD~~%s~~%b")
-            .arg("-1")
-            .arg("--")
-            .arg(".")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("git log command failed to start");
-
-        let output_log = child.wait_with_output();
-        let output_fetch = match output_log {
-            Ok(out) if out.status.success() => out,
-            Ok(out) => {
-                let err = String::from_utf8_lossy(&out.stderr);
-                log::warn!("git log failed: {}", err.trim());
-                return Err(out.status);
-            }
-            Err(e) => {
-                log::error!("Failed to run git log: {}", e);
-                return Err(ExitStatus::from_raw(-1));
-            }
-        };
-        let output = String::from_utf8_lossy(&output_fetch.stdout).to_string();
+        let output = cmd!(
+            "git",
+            "--no-pager",
+            "log",
+            "--pretty=%H~~%an~~%aD~~%s~~%b",
+            "-1",
+            "--",
+            "."
+        )
+        .dir(folder_path)
+        .read()
+        .unwrap_or_else(|_| String::new());
         let re =
             Regex::new(r"([0-9a-f]+)~~([^\n]+)~~([^\n]+)~~(.+)~~(?:[\S\s]+Part-of:\s([^\n]+))?")
                 .unwrap();
@@ -128,33 +112,10 @@ impl OGHCollectorAnalyzer {
         folder_path: &std::path::PathBuf,
     ) -> Result<HashMap<String, u32>, ExitStatus> {
         log::info!("Get git committer info...");
-        let child = Command::new("git")
-            .current_dir(folder_path)
-            .arg("--no-pager")
-            .arg("log")
-            .arg("--pretty=%cn")
-            .arg("--")
-            .arg(".")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("git log command failed to start");
-
-        let output_log = child.wait_with_output();
-        let output_fetch = match output_log {
-            Ok(out) if out.status.success() => out,
-            Ok(out) => {
-                let err = String::from_utf8_lossy(&out.stderr);
-                log::warn!("git log failed: {}", err.trim());
-                return Err(out.status);
-            }
-            Err(e) => {
-                log::error!("Failed to run git log: {}", e);
-                return Err(ExitStatus::from_raw(-1));
-            }
-        };
-        let output = String::from_utf8_lossy(&output_fetch.stdout).to_string();
+        let output = cmd!("git", "--no-pager", "log", "--pretty=%cn", "--", ".")
+            .dir(folder_path)
+            .read()
+            .unwrap_or_else(|_| String::new());
         let counter: HashMap<String, u32> =
             count_element_function(output.lines().map(|l| l.to_string()));
         Ok(counter)
