@@ -119,7 +119,7 @@ impl GithubClient {
                 log::error!("Failed to switch to branch {branch}");
                 return None;
             }
-            cmd!("git", "reset", "--hard", "HEAD")
+            cmd!("git", "reset", "--hard", &format!("origin/{branch}"))
                 .dir(&clone_path)
                 .stdin_null()
                 .run()
