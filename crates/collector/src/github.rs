@@ -99,7 +99,7 @@ impl GithubClient {
                 .stdin_null()
                 .run()
                 .ok()?;
-            cmd!("git", "reset", "--hard", &format!("origin/{branch}"))
+            cmd!("git", "reset", "--hard")
                 .dir(&clone_path)
                 .stdin_null()
                 .run()

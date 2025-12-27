@@ -66,10 +66,10 @@ async fn main() {
             config.get_branch(),
             config.get_repos_path(),
         );
-        if res_opt.is_none() {
-            log::info!("'{repo_url}' Is not a valid Odoo modules repository!");
+        if let Some(res) = res_opt {
+            repo_infos.push(res);
         } else {
-            repo_infos.push(res_opt.unwrap());
+            log::info!("'{repo_url}' Is not a valid Odoo modules repository!");
         }
     }
 
@@ -129,8 +129,7 @@ async fn main() {
                     &dep_type_module.id,
                     module_depend_name,
                 );
-                if module_depend_id_opt.is_some() {
-                    let module_depend_id = module_depend_id_opt.unwrap();
+                if let Some(module_depend_id) = module_depend_id_opt {
                     let _ = models::dependency_module::delete_by_module_id_dependecy_id(
                         &conn,
                         &new_module.id,
@@ -177,8 +176,7 @@ async fn main() {
                     &dep_type_python.id,
                     module_depends_python_name,
                 );
-                if module_depend_python_id_opt.is_some() {
-                    let module_depend_id = module_depend_python_id_opt.unwrap();
+                if let Some(module_depend_id) = module_depend_python_id_opt {
                     let _ = models::dependency_module::delete_by_module_id_dependecy_id(
                         &conn,
                         &new_module.id,
@@ -236,8 +234,7 @@ async fn main() {
                         .await
                         .unwrap();
                     let vulns_opt = package_info["vulnerabilities"].as_array();
-                    if vulns_opt.is_some() {
-                        let vulns = vulns_opt.unwrap();
+                    if let Some(vulns) = vulns_opt {
                         for vuln in vulns {
                             let fixed_in: String = vuln["fixed_in"]
                                 .as_array()
@@ -281,8 +278,7 @@ async fn main() {
                     &dep_type_bin.id,
                     module_depends_bin_name,
                 );
-                if module_depend_bin_id_opt.is_some() {
-                    let module_depend_id = module_depend_bin_id_opt.unwrap();
+                if let Some(module_depend_id) = module_depend_bin_id_opt {
                     let _ = models::dependency_module::delete_by_module_id_dependecy_id(
                         &conn,
                         &new_module.id,

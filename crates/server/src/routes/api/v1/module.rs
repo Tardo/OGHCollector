@@ -72,12 +72,13 @@ fn construct_module_dependecies_info(
         let repo_depends = mod_depends_dict
             .entry(format!("{}/{}", &mod_dep.org, &mod_dep.repo))
             .or_default();
-        let technical_name = mod_dep.technical_name.clone();
+        let technical_name = mod_dep.module_id.1.clone();
         if !repo_depends.contains(&technical_name) {
-            repo_depends.push(mod_dep.technical_name.clone());
+            repo_depends.push(technical_name);
+            let dep_module = models::module::get_by_id(conn, &mod_dep.module_id.0).unwrap();
             construct_module_dependecies_info(
                 conn,
-                module,
+                &dep_module,
                 mod_depends_dict,
                 pip_depends,
                 bin_depends,

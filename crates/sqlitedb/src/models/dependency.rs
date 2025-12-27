@@ -20,7 +20,7 @@ pub struct Model {
 pub struct DependencyModuleInfo {
     pub org: String,
     pub repo: String,
-    pub technical_name: String,
+    pub module_id: (i64, String),
 }
 
 pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
@@ -168,7 +168,7 @@ pub fn get_module_dependency_info(conn: &Connection, module_id: &i64) -> Vec<Dep
     let mut stmt = conn
         .prepare(
             format!(
-                "SELECT ghorg.name, ghrepo.name, dep.name \
+                "SELECT ghorg.name, ghrepo.name, mod_dep.id, dep.name \
         FROM {0} as dep \
         INNER JOIN {1} as dep_mod \
         ON dep_mod.dependency_id = dep.id \
@@ -198,7 +198,7 @@ pub fn get_module_dependency_info(conn: &Connection, module_id: &i64) -> Vec<Dep
             Ok(DependencyModuleInfo {
                 org: row.get(0)?,
                 repo: row.get(1)?,
-                technical_name: row.get(2)?,
+                module_id: (row.get(2)?, row.get(3)?),
             })
         })
         .unwrap();
