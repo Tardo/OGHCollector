@@ -16,7 +16,7 @@
         <tbody>
             {% for event in logs %}
             <tr>
-                <td><span>{{ event.date }}</span></td>
+                <td class="col-2"><span>{{ event.date }}</span></td>
                 <td class="d-none d-lg-table-cell text-center">{{ event.event_type_id[1] }}</td>
                 <td>{{ event.message | safe }}</td>
             </tr>

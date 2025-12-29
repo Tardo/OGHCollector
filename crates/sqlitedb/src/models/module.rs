@@ -122,6 +122,14 @@ pub struct ModuleRepositoryInfo {
     pub repository_name: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleLastCreatedInfo {
+    pub id: i64,
+    pub version_odoo: u8,
+    pub technical_name: String,
+    pub create_date: String,
+}
+
 pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.execute(
         format!(
@@ -980,6 +988,37 @@ pub fn rank_committer(conn: &Connection) -> Vec<ModuleRankCommitterInfo> {
     let modules_iter = module_rows.map(|x| x.unwrap());
 
     modules_iter.collect::<Vec<ModuleRankCommitterInfo>>()
+}
+
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
+pub fn get_latest_modules_created(conn: &Connection) -> Vec<ModuleLastCreatedInfo> {
+    let mut stmt = conn
+        .prepare(
+            format!(
+                "SELECT id, version_odoo, technical_name, date(create_date) FROM {} ORDER BY create_date DESC LIMIT 10",
+                &TABLE_NAME
+            )
+            .as_str(),
+        )
+        .unwrap();
+    let module_rows = stmt
+        .query_map(params![], |row: &rusqlite::Row<'_>| {
+            Ok(ModuleLastCreatedInfo {
+                id: row.get(0)?,
+                version_odoo: row.get(1)?,
+                technical_name: row.get(2)?,
+                create_date: row.get(3)?,
+            })
+        })
+        .unwrap();
+    let modules_iter = module_rows.map(|x| x.unwrap());
+
+    modules_iter.collect::<Vec<ModuleLastCreatedInfo>>()
 }
 
 #[cached(

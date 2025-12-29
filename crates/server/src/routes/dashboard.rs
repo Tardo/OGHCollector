@@ -15,6 +15,14 @@ pub struct ModuleCountInfoResponse {
     pub version_odoo: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LastestCreatedInfo {
+    pub id: i64,
+    pub version: String,
+    pub technical_name: String,
+    pub create_date: String,
+}
+
 #[get("/")]
 pub async fn route(
     pool: web::Data<Pool>,
@@ -30,6 +38,17 @@ pub async fn route(
             version_odoo: odoo_version_u8_to_string(&x.version_odoo),
         })
         .collect::<Vec<ModuleCountInfoResponse>>();
+
+    let modules_latest: Vec<LastestCreatedInfo> = models::module::get_latest_modules_created(&conn)
+        .iter()
+        .map(|x| LastestCreatedInfo {
+            id: x.id,
+            version: odoo_version_u8_to_string(&x.version_odoo),
+            technical_name: x.technical_name.to_string(),
+            create_date: x.create_date.to_string(),
+        })
+        .collect();
+
     tmpl_env.render(
         "pages/dashboard.html",
         context!(
@@ -37,6 +56,7 @@ pub async fn route(
             ..context!(
                 page_name => "dashboard",
                 modules_count => modules_count,
+                modules_latest => modules_latest,
             )
         ),
     )
