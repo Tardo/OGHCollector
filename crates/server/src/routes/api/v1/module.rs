@@ -11,6 +11,8 @@ use sqlitedb::{
     Pool,
 };
 
+use crate::utils::normalize_python_dep;
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleDependencyInfoResponse {
     pub odoo: HashMap<String, Vec<String>>,
@@ -63,6 +65,10 @@ fn construct_module_dependecies_info(
 ) {
     let mut pip_depends_list: Vec<String> =
         models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
+    pip_depends_list = pip_depends_list
+        .into_iter()
+        .map(normalize_python_dep)
+        .collect();
     pip_depends.append(&mut pip_depends_list);
     let mut bin_depends_list: Vec<String> =
         models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");

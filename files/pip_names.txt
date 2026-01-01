@@ -1,0 +1,5 @@
+stdnum,python-stdnum
+ldap,python-ldap
+vatnumber,python-vatnumber
+dns,dnspython
+dateutil,python-dateutil

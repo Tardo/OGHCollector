@@ -42,6 +42,7 @@ COPY --from=build /usr/local/bin/server /usr/local/bin/oghserver
 COPY --from=build /usr/local/bin/collector /usr/local/bin/oghcollector
 COPY --from=build /usr/local/bin/static /app/static/
 COPY --from=build /usr/local/bin/web/templates /app/web/templates
+COPY ./files/pip_names.txt /app/files/pip_names.txt
 
 RUN set -ex; \
     mkdir /app/data; \
