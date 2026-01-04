@@ -101,7 +101,7 @@ class ModuleSearch extends Component {
   async #filterResults(query) {
     const modules = this.getFetchData('modules');
     const filtered = modules.filter(item =>
-      item.technical_name.includes(query),
+      item.technical_name.includes(query.toLowerCase()),
     );
     return [query, filtered];
   }
