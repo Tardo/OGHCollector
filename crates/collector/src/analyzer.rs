@@ -113,11 +113,60 @@ impl OGHCollectorAnalyzer {
         folder_path: &std::path::PathBuf,
     ) -> Result<HashMap<String, u32>, ExitStatus> {
         log::info!("Get git committer info...");
-        let output = cmd!("git", "--no-pager", "log", "--pretty=%cn", "--", ".")
+        let version_branches_output = cmd!("git", "branch", "-a", "--format=%(refname:short)")
             .dir(folder_path)
             .stdin_null()
             .read()
             .unwrap_or_else(|_| String::new());
+        let mut version_branches: Vec<String> = str::from_utf8(version_branches_output.as_bytes())
+            .expect("Invalid UTF-8")
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let version_re = Regex::new(r"^[0-9]+\.[0-9]+$").unwrap();
+        version_branches.retain(|b| version_re.is_match(b));
+        version_branches.sort_by(|a, b| {
+            let a_parts: Vec<u32> = a.split('.').map(|p| p.parse().unwrap_or(0)).collect();
+            let b_parts: Vec<u32> = b.split('.').map(|p| p.parse().unwrap_or(0)).collect();
+            a_parts.cmp(&b_parts)
+        });
+
+        let current = cmd!("git", "rev-parse", "--abbrev-ref", "HEAD")
+            .dir(folder_path)
+            .stdin_null()
+            .read()
+            .unwrap_or_else(|_| String::new());
+
+        let log_range = if let Some(pos) = version_branches.iter().position(|b| b == &current) {
+            if pos > 0 {
+                let prev = &version_branches[pos - 1];
+                format!("{}..{}", prev, current)
+            } else {
+                let base = cmd!("git", "merge-base", "main", &current)
+                    .dir(folder_path)
+                    .stdin_null()
+                    .read()
+                    .unwrap_or_else(|_| String::new());
+                format!("{}..{}", base, current)
+            }
+        } else {
+            return Ok(HashMap::new());
+        };
+
+        let output = cmd!(
+            "git",
+            "--no-pager",
+            "log",
+            &log_range,
+            "--pretty=%cn",
+            "--",
+            "."
+        )
+        .dir(folder_path)
+        .stdin_null()
+        .read()
+        .unwrap_or_else(|_| String::new());
         let counter: HashMap<String, u32> =
             count_element_function(output.lines().map(|l| l.to_string()));
         Ok(counter)

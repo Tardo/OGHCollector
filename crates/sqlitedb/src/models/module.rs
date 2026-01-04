@@ -127,7 +127,15 @@ pub struct ModuleLastCreatedInfo {
     pub id: i64,
     pub version_odoo: u8,
     pub technical_name: String,
+    pub org_name: String,
     pub create_date: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleListInfo {
+    pub technical_name: String,
+    pub org_name: String,
+    pub versions_odoo: Vec<u8>,
 }
 
 pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
@@ -341,6 +349,33 @@ pub fn get_by_technical_name_odoo_version_organization_name(
         )
         .as_str(),
         params![&technical_name, &version_odoo, &org_name],
+    )
+    .unwrap();
+    modules
+}
+
+#[cached(
+    key = "String",
+    time = 3600,
+    time_refresh = true,
+    size = 1000,
+    convert = r#"{ format!("{}{}", technical_name, org_name) }"#
+)]
+pub fn get_by_technical_name_organization_name(
+    conn: &Connection,
+    technical_name: &str,
+    org_name: &str,
+) -> Vec<Model> {
+    let modules = query(
+        conn,
+        format!(
+            "INNER JOIN {} as gh_org \
+        on gh_org.id = gh_repo.gh_organization_id \
+        WHERE mod.technical_name = ?1 AND gh_org.name = ?2",
+            &gh_organization::TABLE_NAME
+        )
+        .as_str(),
+        params![&technical_name, &org_name],
     )
     .unwrap();
     modules
@@ -992,7 +1027,7 @@ pub fn rank_committer(conn: &Connection) -> Vec<ModuleRankCommitterInfo> {
 
 #[cached(
     key = "String",
-    time = 3600,
+    time = 900,
     time_refresh = true,
     convert = r#"{ format!("") }"#
 )]
@@ -1000,7 +1035,11 @@ pub fn get_latest_modules_created(conn: &Connection) -> Vec<ModuleLastCreatedInf
     let mut stmt = conn
         .prepare(
             format!(
-                "SELECT id, version_odoo, technical_name, date(create_date) FROM {} ORDER BY create_date DESC LIMIT 10",
+                "SELECT mod.id, mod.version_odoo, mod.technical_name, date(mod.create_date), gh_org.name 
+                FROM {} as mod
+                INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id 
+                INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id 
+                ORDER BY mod.create_date DESC LIMIT 10",
                 &TABLE_NAME
             )
             .as_str(),
@@ -1013,12 +1052,54 @@ pub fn get_latest_modules_created(conn: &Connection) -> Vec<ModuleLastCreatedInf
                 version_odoo: row.get(1)?,
                 technical_name: row.get(2)?,
                 create_date: row.get(3)?,
+                org_name: row.get(4)?,
             })
         })
         .unwrap();
     let modules_iter = module_rows.map(|x| x.unwrap());
 
     modules_iter.collect::<Vec<ModuleLastCreatedInfo>>()
+}
+
+#[cached(
+    key = "String",
+    time = 900,
+    time_refresh = true,
+    convert = r#"{ format!("") }"#
+)]
+pub fn list(conn: &Connection) -> Vec<ModuleListInfo> {
+    let mut stmt = conn
+        .prepare(
+            format!(
+                "SELECT DISTINCT mod.technical_name, gh_org.name, GROUP_CONCAT(mod.version_odoo)  
+                FROM {} as mod 
+                INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id 
+                INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id 
+                GROUP BY gh_org.name, technical_name",
+                &TABLE_NAME
+            )
+            .as_str(),
+        )
+        .unwrap();
+    let module_rows = stmt
+        .query_map(params![], |row: &rusqlite::Row<'_>| {
+            let technical_name = row.get(0)?;
+            let org_name = row.get(1)?;
+            let versions_raw: String = row.get(2)?;
+            let versions_odoo: Vec<u8> = versions_raw
+                .split(',')
+                .filter_map(|s| s.trim().parse::<u8>().ok())
+                .collect();
+            Ok(ModuleListInfo {
+                technical_name,
+                org_name,
+                versions_odoo,
+            })
+        })
+        .unwrap();
+    let modules_iter = module_rows.map(|x| x.unwrap());
+
+    modules_iter.collect::<Vec<ModuleListInfo>>()
 }
 
 #[cached(

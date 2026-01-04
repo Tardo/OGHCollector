@@ -24,6 +24,8 @@ This project is divided into two programs:
 
 ## Start
 
+_Before starting the server for the first time, you must launch OGHCollector to generate the database schema. This is necessary because OGHServer starts in read-only mode. After that, you can run it without any problems:_
+
 ```sh
 docker compose up
 ```
@@ -44,13 +46,14 @@ You can add a volume to `/app/server.yaml` (you can use other formats like json 
 | cookie_key | string | The key to use for the cookie | |
 | upload_limit | int | The maximum bytes that can be uploaded | 2097152 |
 | cache_ttl | int | The seconds that the cache is valid | 3600 |
+| db_pool_max_size | int | The maximum number of connections that the pool can create and keep open at the same time | 15 |
 
 # OGHCollector
 
 ## Usage
 
 ```sh
-docker compose exec -it -u appuser app oghcollector <origin> <version>
+docker compose run --rm -u appuser -T app oghcollector <origin> <version>
 ```
 
 - `<origin>`:
@@ -62,16 +65,18 @@ docker compose exec -it -u appuser app oghcollector <origin> <version>
 
 - Get Odoo modules in 18.0:
  ```sh
- docker compose exec -it -u appuser app oghcollector odoo/odoo:/addons,/odoo/addons 18.0
+ docker compose run --rm -u appuser -T app oghcollector odoo/odoo:/addons,/odoo/addons 18.0
  ```
 - Get the OCA/web modules in 18.0:
  ```sh
- docker compose exec -it -u appuser app oghcollector OCA/web 18.0
+ docker compose run --rm -u appuser -T app oghcollector OCA/web 18.0
  ```
 - Get all OCA modules in 18.0:
  ```sh
- docker compose exec -it -u appuser app oghcollector OCA 18.0
+ docker compose run --rm -u appuser -T app oghcollector OCA 18.0
  ```
+
+** You may need to add ```-l traefik.enable=false```
 
 ## Auto Update
 

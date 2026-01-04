@@ -4,13 +4,19 @@
 {% block base_head_content %}
 {{ super() }}
 
-    <link rel="preload" href="/static/auto/web/scss/components/main-example.css" as="style" />
     <link rel="preload" href="/static/auto/web/scss/components/module-counter.css" as="style" />
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css" as="style">
     <script type="module" src="/static/auto/dashboard.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}
+
+
+<template id="template-mirlo-module-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
+    <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
+    <ul id="results"></ul>
+</template>
 
 
 <template id="template-mirlo-module-counter">
@@ -40,41 +46,33 @@
     </div>
 </template>
 
-<template id="template-mirlo-main-example">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/main-example.css" as="style" />
-    <input type="text" readonly="1" id="display" />
-</template>
 
+<div class="row position-relative" id="module_search">
+    <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
+</div>
 
-<ol class="text-left w-100 text-light fs-5 text-uppercase" id="main_example">
-    <li class="lh-lg fw-bold text-warning-emphasis">Open a terminal</li>
-    <li class="lh-lg fw-bold text-warning-emphasis">Type<br/>
-        <mirlo-main-example class="border rounded p-2"></mirlo-main-example>
-    </li>
-    <li class="lh-lg fw-bold text-warning-emphasis">That's it!</li>
-</ol>
-
-<div class="row gx-sm-5 mt-5 user-select-none" id="modules_count">
+<div class="row mb-3 gx-sm-5 user-select-none" id="modules_count">
     <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 d-inline-block rounded-3 border border-opacity-0" version="17.0"></mirlo-module-counter>
+        <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 border border-opacity-0 bg-success-subtle" version="17.0"></mirlo-module-counter>
     </div>
     <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 d-inline-block rounded-3 border border-opacity-0" version="18.0"></mirlo-module-counter>
+        <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 border border-opacity-0 bg-secondary-subtle" version="18.0"></mirlo-module-counter>
     </div>
     <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 d-inline-block rounded-3 border border-opacity-0" version="19.0"></mirlo-module-counter>
+        <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 border border-opacity-0 bg-primary-subtle" version="19.0"></mirlo-module-counter>
     </div>
 </div>
 
-<div class="row user-select-none mt-5" id="modules_count">
+<div class="row user-select-none" id="modules_count">
     <div class="col-12">
-        <h3>Latest Modules Added:</h3>
+        <h3>Latest Modules Tracked:</h3>
         <table class="table table-striped table-striped-columns table-hover">
             <tbody>
                 {% for module in modules_latest %}
                 <tr>
-                    <td class="col-10"><span>{{ module.technical_name }}</span></td>
+                    <td class="col-9"><span><a href="/module/{{ module.org_name }}/{{ module.technical_name }}">{{ module.technical_name }}</a></span></td>
                     <td class="col-1 text-center">{{ module.version }}</td>
+                    <td class="col-1 text-center">{{ module.org_name }}</td>
                     <td class="d-none d-lg-table-cell text-center col-1">{{ module.create_date }}</td>
                 </tr>
                 {% endfor %}

@@ -1,0 +1,46 @@
+// Copyright Alexandre D. Díaz
+#search {
+    outline: none;
+    font-size: 1.75em;
+    background-color: rgb(200, 200, 200);
+    color: black;
+    font-family: 'Lucida Console', Monaco, monospace;
+    width: 90%;
+    border: none;
+    padding: 0.3em;
+}
+
+#results {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    max-height: 30em;
+    overflow: auto;
+    overflow-x: hidden;
+
+    li {
+        .item {
+            border: 1px solid #ddd;
+            margin-top: -1px;
+            background-color: #f6f6f6;
+            padding: 12px;
+            text-decoration: none;
+            font-size: 18px;
+            color: black;
+            display: block;
+
+            .info {
+                color: gray;
+                font-size: small;
+            }
+
+            &:hover {
+                background-color: #bddaff;
+            }
+        }
+
+        &.active .item {
+            background-color: #bddaff;
+        }
+    }
+}

@@ -1,0 +1,78 @@
+{# Copyright 2025 Alexandre D. Díaz #}
+{% set modules = module_infos | reverse %}
+{% extends "minimal_layout.html" %}
+{% block title %}Module: {{ modules[0].technical_name }} {% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/module.css" as="style">
+    <script type="module" src="/static/auto/module.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+
+<template id="template-mirlo-module-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
+    <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
+    <ul id="results"></ul>
+</template>
+
+
+<div id="module_search" class="position-fixed start-50 w-50 translate-middle-x shadow rounded d-none">
+    <mirlo-module-search class="border-warning-subtle d-block rounded p-2" />
+</div>
+
+<div class="position-fixed end-0 p-3">
+    <div class="toast align-items-center show" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">
+                TIP: You can type at any time to perform a new search.
+            </div>
+            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
+
+<h2>{{ modules[0].name }}</h2>
+<span>{{ modules[0].technical_name }}</span>
+<ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
+    {% for module in modules %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {{ loop.first and 'active' or '' }}" id="version-{{ module.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#version-{{ module.odoo_version }}" type="button" role="tab" aria-controls="version-{{ module.odoo_version }}">{{ module.odoo_version }}</button>
+    </li>
+    {% endfor %}
+</ul>
+<div class="tab-content" id="versions-tabContent">
+    {% for module in modules %}
+    <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ module.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ module.odoo_version }}-tab" tabindex="0">
+        <table class="table table-striped-columns">
+            <tbody>
+                <tr><th class="col-2">REPOSITORY</th><td>{{ module.organization }}/{{ module.repository }}</td></tr>
+                <tr><th>GIT</th><td><a href="{{ module.git }}">{{ module.git }}</a></td></tr>
+                <tr><th>VERSION</th><td>{{ module.version }}</td></tr>
+                <tr><th>CATEGORY</th><td>{{ module.category }}</td></tr>
+                <tr><th>LICENSE</th><td>{{ module.license }}</td></tr>
+                <tr><th>APPLICATION</th><td>{{ module.application and "Yes" or "No" }}</td></tr>
+                <tr><th>AUTO-INSTALLABLE</th><td>{{ module.auto_install and "Yes" or "No" }}</td></tr>
+                <tr><th>AUTHORS</th><td>{{ module.authors | join(', ')  }}</td></tr>
+                <tr><th>MAINTAINERS</th><td>{{ module.maintainers | join(', ') }}</td></tr>
+                <tr><th>WEBSITE</th><td><a href="{{ module.website }}">{{ module.website }}</a></td></tr>
+                <tr><th>LAST TRACKING UPDATE</th><td>{{ module.update_date }}</td></tr>
+                <tr><th>ODOO DEPENDENCIES</th><td>
+                    {% for key, values in module.dependencies.odoo|items %}
+                    {{ key }}:<br/>
+                    {% for value in values %}
+                    &nbsp;&nbsp;&nbsp;&nbsp;- {{ value }}<br/>
+                    {% endfor %}
+                    {% endfor %}
+                </td></tr>
+                <tr><th>PYTHON DEPENDENCIES</th><td>{{ module.dependencies.pip | join('<br/>') or "Not have" }}</td></tr>
+                <tr><th>SYSTEM DEPENDENCIES</th><td>{{ module.dependencies.bin | join('<br/>') or "Not have" }}</td></tr>
+                <tr><th>DESCRIPTION</th><td><pre>{{ module.description or "Not found" }}</pre></td></tr>
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

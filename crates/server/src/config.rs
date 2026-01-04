@@ -13,6 +13,7 @@ pub struct OGHServerConfig {
     cookie_key_bytes: Vec<u8>,
     upload_limit: usize,
     cache_ttl: u64,
+    db_pool_max_size: u32,
 }
 
 impl OGHServerConfig {
@@ -39,6 +40,7 @@ impl OGHServerConfig {
         let cookie_key_bytes = cookie_key.into_bytes();
         let upload_limit = settings.get_int("upload_limit").unwrap_or(2 * 1024 * 1024) as usize;
         let cache_ttl = settings.get_int("cache_ttl").unwrap_or(3600) as u64;
+        let db_pool_max_size = settings.get_int("db_pool_max_size").unwrap_or(15) as u32;
         OGHServerConfig {
             bind_address,
             port,
@@ -48,6 +50,7 @@ impl OGHServerConfig {
             cookie_key_bytes,
             upload_limit,
             cache_ttl,
+            db_pool_max_size,
         }
     }
 
@@ -96,6 +99,10 @@ impl OGHServerConfig {
 
     pub fn get_cache_ttl(&self) -> &u64 {
         &self.cache_ttl
+    }
+
+    pub fn get_db_pool_max_size(&self) -> &u32 {
+        &self.db_pool_max_size
     }
 }
 

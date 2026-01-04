@@ -22,6 +22,13 @@ pub struct ModuleCountInfo {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleListInfo {
+    pub versions: Vec<String>,
+    pub technical_name: String,
+    pub org_name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ContribRankInfo {
     pub version: String,
     pub count: u32,
@@ -60,6 +67,22 @@ fn get_odoo_module_count(conn: &Connection) -> Vec<ModuleCountInfo> {
     modules_count
 }
 
+fn get_odoo_module_list(conn: &Connection) -> Vec<ModuleListInfo> {
+    let modules_list: Vec<ModuleListInfo> = models::module::list(conn)
+        .iter()
+        .map(|x| ModuleListInfo {
+            versions: x
+                .versions_odoo
+                .iter()
+                .map(odoo_version_u8_to_string)
+                .collect(),
+            technical_name: x.technical_name.to_string(),
+            org_name: x.org_name.to_string(),
+        })
+        .collect();
+    modules_list
+}
+
 fn get_odoo_contributor_rank(conn: &Connection) -> Vec<ContribRankInfo> {
     let contrib_rank: Vec<ContribRankInfo> = models::module::rank_contributor(conn)
         .iter()
@@ -90,6 +113,13 @@ fn get_odoo_committer_rank(conn: &Connection) -> Vec<CommitterRankInfo> {
 pub async fn route_odoo_versions(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
     let conn = web::block(move || pool.get()).await?.unwrap();
     let result = web::block(move || get_odoo_versions(&conn)).await?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+#[get("/common/odoo/module/list")]
+pub async fn route_odoo_module_list(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+    let conn = web::block(move || pool.get()).await?.unwrap();
+    let result = web::block(move || get_odoo_module_list(&conn)).await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

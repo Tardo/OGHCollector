@@ -18,12 +18,13 @@ use actix_web::{
 use minijinja::path_loader;
 use minijinja_autoreload::AutoReloader;
 use r2d2_sqlite::{self, SqliteConnectionManager};
+use rusqlite::OpenFlags;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
 use config::SERVER_CONFIG;
 use middlewares::not_found;
-use sqlitedb::{models, Pool};
+use sqlitedb::Pool;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -70,10 +71,12 @@ async fn main() -> std::io::Result<()> {
     if !Path::new(db_path).exists() {
         File::create(db_path)?;
     }
-    let manager = SqliteConnectionManager::file(db_path);
-    let pool = Pool::new(manager).unwrap();
-    let conn = pool.get().unwrap();
-    models::prepare_schema(&conn).expect("Can't create the database");
+    let manager = SqliteConnectionManager::file(db_path)
+        .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI);
+    let pool = Pool::builder()
+        .max_size(*SERVER_CONFIG.get_db_pool_max_size())
+        .build(manager)
+        .unwrap();
 
     // Start scheduler on a new thread
     // actix_rt::spawn(async move {
@@ -104,9 +107,11 @@ async fn main() -> std::io::Result<()> {
             .service(afs::Files::new("/static", "./static").show_files_listing())
             .service(routes::common::route_odoo_versions)
             .service(routes::common::route_odoo_module_count)
+            .service(routes::common::route_odoo_module_list)
             .service(routes::common::route_odoo_contributor_rank)
             .service(routes::common::route_odoo_committer_rank)
             .service(routes::dashboard::route)
+            .service(routes::module::route)
             .service(routes::api_doc::route)
             .service(routes::logs::route)
             .service(routes::osv::route)

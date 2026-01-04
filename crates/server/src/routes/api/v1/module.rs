@@ -40,6 +40,7 @@ pub struct ModuleFullInfoResponse {
     pub folder_size: u64,
     pub repository: String,
     pub organization: String,
+    pub odoo_version: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -143,6 +144,7 @@ pub fn process_modules_db(
             folder_size: module.folder_size,
             repository: module.gh_repository_id.1.clone(),
             organization: org.name.clone(),
+            odoo_version: odoo_version_u8_to_string(&module.version_odoo),
         });
     }
     res

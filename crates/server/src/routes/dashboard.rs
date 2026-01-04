@@ -20,6 +20,7 @@ pub struct LastestCreatedInfo {
     pub id: i64,
     pub version: String,
     pub technical_name: String,
+    pub org_name: String,
     pub create_date: String,
 }
 
@@ -45,6 +46,7 @@ pub async fn route(
             id: x.id,
             version: odoo_version_u8_to_string(&x.version_odoo),
             technical_name: x.technical_name.to_string(),
+            org_name: x.org_name.to_string(),
             create_date: x.create_date.to_string(),
         })
         .collect();

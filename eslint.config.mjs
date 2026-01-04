@@ -7,7 +7,9 @@ import babelParser from '@babel/eslint-parser';
 
 export default [
   js.configs.recommended,
-
+  {
+    ignores: ["data/**"],
+  },
   {
     files: ['web/js/**/*.mjs'],
     plugins: {

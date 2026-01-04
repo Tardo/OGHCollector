@@ -4,6 +4,9 @@
 {% block base_head_content %}
 {{ super() }}
 
+    <link rel="preload" href="/static/auto/web/scss/components/main-example.css" as="style" />
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/api-doc.css" as="style">
+    <script type="module" src="/static/auto/api-doc.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}
@@ -55,8 +58,22 @@
     </div>
 {% endmacro -%}
 
+
+<template id="template-mirlo-main-example">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/main-example.css" as="style" />
+    <input type="text" readonly="1" id="display" />
+</template>
+
+
 <h2 class="z-3">🧪 API (v1)</h2>
-<div class="d-flex flex-column flex-md-row align-items-start">
+<ol class="text-left w-100 text-light fs-5 text-uppercase" id="main_example">
+    <li class="lh-lg fw-bold text-warning-emphasis">Open a terminal</li>
+    <li class="lh-lg fw-bold text-warning-emphasis">Type<br/>
+        <mirlo-main-example class="border rounded p-2"></mirlo-main-example>
+    </li>
+    <li class="lh-lg fw-bold text-warning-emphasis">That's it!</li>
+</ol>
+<div class="d-flex flex-column flex-md-row align-items-start mt-5">
     <div class="nav flex-column nav-pills me-3 d-none d-md-flex" id="api-pills-tab" role="tablist" aria-orientation="vertical">
         <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-generic" aria-selected="true">Get generic module information</button>
         <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
@@ -204,7 +221,8 @@
         \"git\": \"https://github.com/OCA/web.git\",
         \"folder_size\": 5146591,
         \"repository\": \"web\",
-        \"organization\": \"OCA\"
+        \"organization\": \"OCA\",
+        \"odoo_version\": \"15.0\"
     }
 ]",
                 "{
@@ -229,7 +247,8 @@
     \"git\": string,
     \"folder_size\": Number,
     \"repository\": string,
-    \"organization\": string
+    \"organization\": string,
+    \"odoo_version\": string
 }"
             ) }}
         </div>

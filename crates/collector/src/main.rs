@@ -34,7 +34,11 @@ async fn main() {
     if !Path::new(db_path).exists() {
         File::create(db_path).unwrap();
     }
-    let manager = SqliteConnectionManager::file(db_path);
+    let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
+        )
+    });
     let pool = Pool::new(manager).unwrap();
     let conn = pool.get().unwrap();
 
