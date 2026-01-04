@@ -67,9 +67,25 @@
                     {% endfor %}
                     {% endfor %}
                 </td></tr>
-                <tr><th>PYTHON DEPENDENCIES</th><td>{{ module.dependencies.pip | join('<br/>') or "Not have" }}</td></tr>
-                <tr><th>SYSTEM DEPENDENCIES</th><td>{{ module.dependencies.bin | join('<br/>') or "Not have" }}</td></tr>
-                <tr><th>DESCRIPTION</th><td><pre>{{ module.description or "Not found" }}</pre></td></tr>
+                <tr><th>PYTHON DEPENDENCIES</th><td>
+                    {% if module.dependencies.pip %}
+                    {% for dep_name in module.dependencies.pip %}
+                    {{ dep_name }}<br/>
+                    {% endfor %}
+                    {% else %}
+                    <span>Not have</span>
+                    {% endif %}
+                </td></tr>
+                <tr><th>SYSTEM DEPENDENCIES</th><td>
+                    {% if module.dependencies.bin %}
+                    {% for dep_name in module.dependencies.bin %}
+                    {{ dep_name }}<br/>
+                    {% endfor %}
+                    {% else %}
+                    <span>Not have</span>
+                    {% endif %}
+                </td></tr>
+                <tr><th>DESCRIPTION</th><td><pre>{{ module.description }}</pre></td></tr>
             </tbody>
         </table>
     </div>
