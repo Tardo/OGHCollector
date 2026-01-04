@@ -23,7 +23,7 @@
     <mirlo-module-search class="border-warning-subtle d-block rounded p-2" />
 </div>
 
-<div class="position-fixed end-0 p-3">
+<div class="position-fixed end-0 p-3 d-none d-lg-block ">
     <div class="toast align-items-center show" role="alert" aria-live="assertive" aria-atomic="true">
         <div class="d-flex">
             <div class="toast-body">
@@ -48,18 +48,30 @@
     <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ module.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ module.odoo_version }}-tab" tabindex="0">
         <table class="table table-striped-columns">
             <tbody>
-                <tr><th class="col-2">REPOSITORY</th><td>{{ module.organization }}/{{ module.repository }}</td></tr>
-                <tr><th>GIT</th><td><a href="{{ module.git }}">{{ module.git }}</a></td></tr>
-                <tr><th>VERSION</th><td>{{ module.version }}</td></tr>
-                <tr><th>CATEGORY</th><td>{{ module.category }}</td></tr>
-                <tr><th>LICENSE</th><td>{{ module.license }}</td></tr>
-                <tr><th>APPLICATION</th><td>{{ module.application and "Yes" or "No" }}</td></tr>
-                <tr><th>AUTO-INSTALLABLE</th><td>{{ module.auto_install and "Yes" or "No" }}</td></tr>
-                <tr><th>AUTHORS</th><td>{{ module.authors | join(', ')  }}</td></tr>
-                <tr><th>MAINTAINERS</th><td>{{ module.maintainers | join(', ') }}</td></tr>
-                <tr><th>WEBSITE</th><td><a href="{{ module.website }}">{{ module.website }}</a></td></tr>
-                <tr><th>LAST TRACKING UPDATE</th><td>{{ module.update_date }}</td></tr>
-                <tr><th>ODOO DEPENDENCIES</th><td>
+                <tr class="col-2 d-lg-none"><th colspan="2">REPOSITORY</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">REPOSITORY</th><td>{{ module.organization }}/{{ module.repository }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">GIT</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">GIT</th><td><a href="{{ module.git }}">{{ module.git }}</a></td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">VERSION</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">VERSION</th><td>{{ module.version }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">CATEGORY</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">CATEGORY</th><td>{{ module.category }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">LICENSE</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">LICENSE</th><td>{{ module.license }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">APPLICATION</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">APPLICATION</th><td>{{ module.application and "Yes" or "No" }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">AUTO-INSTALLABLE</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">AUTO-INSTALLABLE</th><td>{{ module.auto_install and "Yes" or "No" }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">AUTHORS</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">AUTHORS</th><td>{{ module.authors | join(', ')  }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">MAINTAINERS</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">MAINTAINERS</th><td>{{ module.maintainers | join(', ') }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">WEBSITE</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">WEBSITE</th><td><a href="{{ module.website }}">{{ module.website }}</a></td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">LAST TRACKING UPDATE</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">LAST TRACKING UPDATE</th><td>{{ module.update_date }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">ODOO DEPENDENCIES</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">ODOO DEPENDENCIES</th><td>
                     {% for key, values in module.dependencies.odoo|items %}
                     {{ key }}:<br/>
                     {% for value in values %}
@@ -67,7 +79,8 @@
                     {% endfor %}
                     {% endfor %}
                 </td></tr>
-                <tr><th>PYTHON DEPENDENCIES</th><td>
+                <tr class="col-2 d-lg-none"><th colspan="2">PYTHON DEPENDENCIES</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">PYTHON DEPENDENCIES</th><td>
                     {% if module.dependencies.pip %}
                     {% for dep_name in module.dependencies.pip %}
                     {{ dep_name }}<br/>
@@ -76,7 +89,8 @@
                     <span>Not have</span>
                     {% endif %}
                 </td></tr>
-                <tr><th>SYSTEM DEPENDENCIES</th><td>
+                <tr class="col-2 d-lg-none"><th colspan="2">SYSTEM DEPENDENCIES</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">SYSTEM DEPENDENCIES</th><td>
                     {% if module.dependencies.bin %}
                     {% for dep_name in module.dependencies.bin %}
                     {{ dep_name }}<br/>
@@ -85,7 +99,8 @@
                     <span>Not have</span>
                     {% endif %}
                 </td></tr>
-                <tr><th>DESCRIPTION</th><td><pre>{{ module.description }}</pre></td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">DESCRIPTION</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">DESCRIPTION</th><td><pre>{{ module.description }}</pre></td></tr>
             </tbody>
         </table>
     </div>
