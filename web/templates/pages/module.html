@@ -45,6 +45,7 @@
 </ul>
 <div class="tab-content" id="versions-tabContent">
     {% for module in modules %}
+    {% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.technical_name) %}
     <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ module.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ module.odoo_version }}-tab" tabindex="0">
         <table class="table table-striped-columns">
             <tbody>
@@ -52,6 +53,8 @@
                 <tr><th class="col-2 d-none d-lg-table-cell">REPOSITORY</th><td>{{ module.organization }}/{{ module.repository }}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">GIT</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">GIT</th><td><a href="{{ module.git }}">{{ module.git }}</a></td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">GIT FOLDER</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">GIT FOLDER</th><td><a href="{{ git_folder_url }}">{{ git_folder_url }}</a></td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">VERSION</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">VERSION</th><td>{{ module.version }}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">CATEGORY</th></tr>
