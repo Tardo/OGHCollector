@@ -4,6 +4,7 @@ mod config;
 mod github;
 mod pypi;
 
+use named_lock::NamedLock;
 use r2d2_sqlite::{self, SqliteConnectionManager};
 use regex::Regex;
 use std::collections::HashMap;
@@ -24,6 +25,20 @@ async fn main() {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     let args: Vec<String> = env::args().collect();
     let config = OGHCollectorConfig::new(&args);
+    let org: String = config.get_read_paths()[0].clone();
+    let lock_name = format!("OGHCollector::{org}");
+    let lock = NamedLock::create(lock_name.as_str()).unwrap();
+    // Intentamos adquirir el lock sin bloquear
+    match lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            eprintln!(
+                "There is already an instance of OGHCollector working with '{org}'. Exiting..."
+            );
+            std::process::exit(1);
+        }
+    };
+
     let gh_client = GithubClient::new(config.get_token());
     let pypi_client = PypiClient::new();
 
