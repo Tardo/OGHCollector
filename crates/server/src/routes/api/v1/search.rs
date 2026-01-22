@@ -128,9 +128,7 @@ pub async fn route(
 ) -> Result<HttpResponse, AWError> {
     let conn = web::block(move || pool.get()).await?.unwrap();
     let module_name = path.into_inner();
-    if info.odoo_version.is_some() && info.installable.is_some() {
-        let version_odoo = info.odoo_version.clone().unwrap();
-        let installable = info.installable.unwrap();
+    if let (Some(version_odoo), Some(installable)) = (info.odoo_version.clone(), info.installable) {
         let result = web::block(move || {
             get_modules_by_odoo_version_installable(
                 &conn,
@@ -152,8 +150,7 @@ pub async fn route(
         })
         .await?;
         return Ok(HttpResponse::Ok().json(result));
-    } else if info.installable.is_some() {
-        let installable = info.installable.unwrap();
+    } else if let Some(installable) = info.installable {
         let result =
             web::block(move || get_modules_by_installable(&conn, &module_name, &installable))
                 .await?;
