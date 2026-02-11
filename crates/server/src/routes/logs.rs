@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use actix_web::{get, web, HttpRequest, Responder, Result};
 use minijinja::context;
 

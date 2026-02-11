@@ -1,8 +1,14 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use std::env;
 use std::fs;
 
 use oghutils::version::odoo_version_string_to_u8;
+
+#[derive(Debug)]
+pub enum GitType {
+    Github,
+    Gitlab,
+}
 
 #[derive(Debug)]
 pub struct OGHCollectorConfig {
@@ -11,23 +17,24 @@ pub struct OGHCollectorConfig {
     token: String,
     branch: String,
     repos_path: String,
+    git_type: GitType,
     version_odoo: u8,
     read_paths: Vec<String>,
 }
 
 impl OGHCollectorConfig {
     pub fn new(args: &[String]) -> OGHCollectorConfig {
-        let token_file = env::var("OGHCOLLECTOR_TOKEN_FILE").unwrap_or_default();
-        let token: String = if token_file.is_empty() {
-            env::var("OGHCOLLECTOR_TOKEN").unwrap_or_default()
-        } else {
-            fs::read_to_string(token_file).unwrap_or_default()
-        };
-        if token.is_empty() {
-            panic!("Need the github api token!")
-        }
         let raw_src = args[1].clone();
         let branch = args[2].clone();
+        let repo_type_str = match args.get(3) {
+            Some(s) => s.to_uppercase(),
+            _ => "GH".to_string(),
+        };
+        let git_type = match repo_type_str.as_str() {
+            "GL" => GitType::Gitlab,
+            _ => GitType::Github,
+        };
+        let token = OGHCollectorConfig::read_token(repo_type_str.as_str());
         let current_path = env::current_dir().unwrap();
         let repos_path = format!("{}/data/repos", current_path.display());
         let branch_parts = branch.split(".").collect::<Vec<&str>>();
@@ -61,9 +68,25 @@ impl OGHCollectorConfig {
             token,
             branch,
             repos_path,
+            git_type,
             version_odoo,
             read_paths,
         }
+    }
+
+    fn read_token(git_orig: &str) -> String {
+        let git_orig_lower = git_orig.to_lowercase();
+        let token_file =
+            env::var(format!("/run/secrets/{git_orig_lower}_token")).unwrap_or_default();
+        let token: String = if token_file.is_empty() {
+            env::var(format!("OGHCOLLECTOR_TOKEN_{git_orig}")).unwrap_or_default()
+        } else {
+            fs::read_to_string(token_file).unwrap_or_default()
+        };
+        if token.is_empty() {
+            panic!("Need the github api token!")
+        }
+        token
     }
 
     pub fn get_mode(&self) -> &String {
@@ -92,5 +115,9 @@ impl OGHCollectorConfig {
 
     pub fn get_read_paths(&self) -> &Vec<String> {
         &self.read_paths
+    }
+
+    pub fn get_git_type(&self) -> &GitType {
+        &self.git_type
     }
 }

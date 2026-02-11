@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 mod config;
 mod middlewares;
 mod minijinja_renderer;

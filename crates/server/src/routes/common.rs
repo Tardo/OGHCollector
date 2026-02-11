@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use actix_web::{get, web, Error as AWError, HttpResponse, Result};
 use oghutils::version::odoo_version_u8_to_string;
 use serde::{Deserialize, Serialize};

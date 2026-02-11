@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use duct::cmd;
 use fs_extra::dir::get_size;
 use pyo3::prelude::*;
@@ -13,7 +13,7 @@ use std::process::ExitStatus;
 use oghutils::version::OdooVersion;
 use sqlitedb::models::module::ManifestInfo;
 
-use crate::github::RepoInfo;
+use crate::gitclient::RepoInfo;
 
 fn count_element_function<I>(it: I) -> HashMap<I::Item, u32>
 where

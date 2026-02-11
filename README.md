@@ -14,9 +14,19 @@ This project is divided into two programs:
 
 ## Requirements
 1. Install Docker and Compose
-2. Create a GitHub Token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
-3. Create the file `gh_token.txt` with the generated token in the root of this project folder,
-    ** Make sure that the file has only one line! (ex: nano -L gh_token.txt)
+2. Create a GitHub/GitLab Token:
+  - https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
+3. Create token secrets ```gh_token``` or/and ```gl_token```,
+    - ** Make sure that the file has only one line! (ex: nano -L gh_token.txt)
+    ```yaml
+    ...
+        secrets:
+          - gh_token
+
+    secrets:
+      gh_token:
+        file: gh_token.txt
+    ```
 
 ---
 
@@ -53,13 +63,14 @@ You can add a volume to `/app/server.yaml` (you can use other formats like json 
 ## Usage
 
 ```sh
-docker compose run --rm -u appuser -T app oghcollector <origin> <version>
+docker compose run --rm -u appuser -T app oghcollector <origin> <version> [git_type]
 ```
 
 - `<origin>`:
   - The name of an organization (all repositories will be scanned).
   - The name of a repository (you can set the folders to be scanned separated by commas)
 - `<version>`: The version of Odoo
+- `[git_type]`: Optional. Git client to use (GL or GH)
 
 ### Examples
 

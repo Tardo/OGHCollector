@@ -11,13 +11,6 @@ services:
     environment:
       RUST_LOG: info
       RUST_BACKTRACE: 0
-      OGHCOLLECTOR_TOKEN_FILE: /run/secrets/gh_token
-    secrets:
-      - gh_token
-
-secrets:
-   gh_token:
-     file: gh_token.txt
 
 volumes:
   app_data:

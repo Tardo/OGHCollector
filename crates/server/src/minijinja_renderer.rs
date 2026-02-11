@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use actix_utils::future::{ready, Ready};
 use actix_web::{dev, error, web, FromRequest, HttpRequest};
 use actix_web_lab::respond::Html;

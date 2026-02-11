@@ -1,30 +1,10 @@
-// Copyright 2025 Alexandre D. Díaz
-use duct::cmd;
-use std::fs;
-use std::path::Path;
+// Copyright Alexandre D. Díaz
+use crate::gitclient::{GitClient, RepoInfo};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
 const GITHUB_LIMIT_PER_PAGE: usize = 50;
 const GITHUB_LIMIT_PAGES: usize = 255;
-
-pub struct RepoInfo {
-    name: String,
-    org: String,
-    clone_path: String,
-}
-
-impl RepoInfo {
-    pub fn get_name(&self) -> &str {
-        &self.name
-    }
-    pub fn get_org(&self) -> &str {
-        &self.org
-    }
-    pub fn get_clone_path(&self) -> &str {
-        &self.clone_path
-    }
-}
 
 #[derive(Debug)]
 pub struct GithubClient {
@@ -32,8 +12,8 @@ pub struct GithubClient {
     client: reqwest::Client,
 }
 
-impl GithubClient {
-    pub fn new(token: &str) -> Self {
+impl GitClient for GithubClient {
+    fn new(token: &str) -> Self {
         let client_result = reqwest::Client::builder().build();
         let client = match client_result {
             Ok(cl) => cl,
@@ -67,7 +47,7 @@ impl GithubClient {
         req.json().await
     }
 
-    pub async fn get_org_repos(
+    async fn get_org_repos(
         &self,
         org_name: &str,
         per_page: &usize,
@@ -82,68 +62,7 @@ impl GithubClient {
         Ok(res)
     }
 
-    pub fn clone_or_update_repo(
-        &self,
-        org_name: &str,
-        repo_name: &str,
-        repo_url: &str,
-        branch: &str,
-        dest: &str,
-    ) -> Option<RepoInfo> {
-        let clone_path = format!("{dest}/{org_name}/{repo_name}");
-        let clone_path_exists = Path::new(&clone_path).exists();
-        if clone_path_exists {
-            log::info!("Updating repo: {repo_name} @ {branch}");
-            cmd!("git", "fetch", "origin", "--prune")
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            cmd!("git", "reset", "--hard", &format!("origin/{branch}"))
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            cmd!("git", "clean", "-fdx")
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            cmd!("git", "switch", "-C", branch, &format!("origin/{branch}"))
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
-        } else {
-            log::info!("Cloning repo: {repo_name} @ {branch}");
-            if fs::create_dir_all(&clone_path).is_err() {
-                log::error!("Cannot create directory: {clone_path}");
-                return None;
-            }
-
-            cmd!(
-                "git",
-                "clone",
-                "--no-single-branch",
-                "--branch",
-                branch,
-                repo_url,
-                ".",
-            )
-            .dir(&clone_path)
-            .stdin_null()
-            .run()
-            .ok()?;
-        }
-        Some(RepoInfo {
-            name: repo_name.into(),
-            org: org_name.into(),
-            clone_path,
-        })
-    }
-
-    pub async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
         let mut page_count: usize = 1;
         let mut repos: Vec<RepoInfo> = Vec::new();
         while page_count < GITHUB_LIMIT_PAGES {
@@ -164,7 +83,7 @@ impl GithubClient {
                     self.clone_or_update_repo(repo_owner_login, repo_name, repo_url, branch, dest);
                 match repo_info_opt {
                     Some(info) => repos.push(info),
-                    None => log::info!("'{repo_url}' Is not a valid Odoo modules repository!"),
+                    _ => log::info!("'{repo_url}' Is not a valid Odoo modules repository!"),
                 }
             }
             if org_repos_items.len() < GITHUB_LIMIT_PER_PAGE {

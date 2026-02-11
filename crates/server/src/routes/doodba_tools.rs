@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use crate::routes::api::v1::module::{process_modules_db, ModuleDependencyInfoResponse};
 use actix_multipart::form::{text::Text, MultipartForm};
 use actix_web::{get, post, web, Error as AWError, HttpRequest, HttpResponse, Responder, Result};

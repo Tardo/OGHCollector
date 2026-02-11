@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 #[derive(Debug)]
 pub struct PypiClient {
     client: reqwest::Client,

@@ -1,7 +1,9 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 mod analyzer;
+mod anygitclient;
+mod clients;
 mod config;
-mod github;
+mod gitclient;
 mod pypi;
 
 use named_lock::NamedLock;
@@ -14,8 +16,11 @@ use std::path::Path;
 use std::time::Instant;
 
 use analyzer::OGHCollectorAnalyzer;
-use config::OGHCollectorConfig;
-use github::{GithubClient, RepoInfo};
+use anygitclient::AnyGitClient;
+use clients::github::GithubClient;
+use clients::gitlab::GitlabClient;
+use config::{GitType, OGHCollectorConfig};
+use gitclient::{GitClient, RepoInfo};
 use oghutils::version::odoo_version_u8_to_string;
 use pypi::PypiClient;
 use sqlitedb::{models, Pool};
@@ -39,7 +44,10 @@ async fn main() {
         }
     };
 
-    let gh_client = GithubClient::new(config.get_token());
+    let git_client = match config.get_git_type() {
+        GitType::Github => AnyGitClient::Github(GithubClient::new(config.get_token())),
+        GitType::Gitlab => AnyGitClient::Gitlab(GitlabClient::new(config.get_token())),
+    };
     let pypi_client = PypiClient::new();
 
     let db_path = "data/data.db";
@@ -66,7 +74,7 @@ async fn main() {
     log::info!("Cloning/Updating ({})...", &odoo_ver_str);
     let mut repo_infos: Vec<RepoInfo> = Vec::new();
     if config.get_mode() == "org" {
-        repo_infos = gh_client
+        repo_infos = git_client
             .clone_org_repos(
                 config.get_source(),
                 config.get_branch(),
@@ -78,7 +86,7 @@ async fn main() {
         let user_name = src_parts[0].to_string();
         let repo_name = src_parts[1].to_string();
         let repo_url = format!("https://github.com/{user_name}/{repo_name}.git");
-        let res_opt = gh_client.clone_or_update_repo(
+        let res_opt = git_client.clone_or_update_repo(
             &user_name,
             &repo_name,
             &repo_url,

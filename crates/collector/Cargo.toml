@@ -24,3 +24,4 @@ fs_extra.workspace = true
 regex.workspace = true
 duct.workspace = true
 named-lock.workspace = true
+urlencoding.workspace = true

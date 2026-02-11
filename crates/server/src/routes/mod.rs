@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 pub mod api;
 pub mod api_doc;
 pub mod atlas;

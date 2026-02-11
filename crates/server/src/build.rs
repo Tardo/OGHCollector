@@ -1,4 +1,4 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 use static_files::NpmBuild;
 
 fn main() -> std::io::Result<()> {

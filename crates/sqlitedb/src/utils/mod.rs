@@ -1,2 +1,2 @@
-// Copyright 2025 Alexandre D. Díaz
+// Copyright Alexandre D. Díaz
 pub mod date;

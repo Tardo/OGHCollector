@@ -1,2 +1,3 @@
 // Copyright Alexandre D. Díaz
-pub mod v1;
+pub mod github;
+pub mod gitlab;
