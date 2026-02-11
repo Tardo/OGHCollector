@@ -59,8 +59,9 @@ pub trait GitClient {
             log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
         } else {
             log::info!("Cloning repo: {repo_name} @ {branch}");
-            if fs::create_dir_all(&clone_path).is_err() {
-                log::error!("Cannot create directory: {clone_path}");
+            let base_dir = format!("{dest}/{org_name}");
+            if fs::create_dir_all(&base_dir).is_err() {
+                log::error!("Cannot create directory: {base_dir}");
                 return None;
             }
 
