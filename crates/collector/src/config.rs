@@ -76,8 +76,7 @@ impl OGHCollectorConfig {
 
     fn read_token(git_orig: &str) -> String {
         let git_orig_lower = git_orig.to_lowercase();
-        let token_file =
-            env::var(format!("/run/secrets/{git_orig_lower}_token")).unwrap_or_default();
+        let token_file = format!("/run/secrets/{git_orig_lower}_token");
         let token: String = if token_file.is_empty() {
             env::var(format!("OGHCOLLECTOR_TOKEN_{git_orig}")).unwrap_or_default()
         } else {
