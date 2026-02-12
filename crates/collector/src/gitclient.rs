@@ -72,9 +72,8 @@ pub trait GitClient {
                 "--branch",
                 branch,
                 repo_url,
-                ".",
             )
-            .dir(&clone_path)
+            .dir(&base_dir)
             .stdin_null()
             .run()
             .ok()?;
