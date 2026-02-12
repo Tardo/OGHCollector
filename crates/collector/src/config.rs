@@ -17,6 +17,7 @@ pub struct OGHCollectorConfig {
     token: String,
     branch: String,
     repos_path: String,
+    base_url: String,
     git_type: GitType,
     version_odoo: u8,
     read_paths: Vec<String>,
@@ -26,15 +27,21 @@ impl OGHCollectorConfig {
     pub fn new(args: &[String]) -> OGHCollectorConfig {
         let raw_src = args[1].clone();
         let branch = args[2].clone();
-        let repo_type_str = match args.get(3) {
-            Some(s) => s.to_uppercase(),
-            _ => "GH".to_string(),
-        };
-        let git_type = match repo_type_str.as_str() {
+        let raw_git_type = args.get(3).map_or("GH", |s| s.as_str());
+        let git_type_str: String;
+        let base_url: String;
+        if let Some((gtyp, burl)) = raw_git_type.split_once(':') {
+            git_type_str = gtyp.to_uppercase();
+            base_url = burl.to_string();
+        } else {
+            git_type_str = raw_git_type.to_uppercase();
+            base_url = String::new();
+        }
+        let git_type = match git_type_str.as_str() {
             "GL" => GitType::Gitlab,
             _ => GitType::Github,
         };
-        let token = OGHCollectorConfig::read_token(repo_type_str.as_str());
+        let token = OGHCollectorConfig::read_token(git_type_str.as_str());
         let current_path = env::current_dir().unwrap();
         let repos_path = format!("{}/data/repos", current_path.display());
         let branch_parts = branch.split(".").collect::<Vec<&str>>();
@@ -68,6 +75,7 @@ impl OGHCollectorConfig {
             token,
             branch,
             repos_path,
+            base_url,
             git_type,
             version_odoo,
             read_paths,
@@ -112,6 +120,10 @@ impl OGHCollectorConfig {
 
     pub fn get_repos_path(&self) -> &String {
         &self.repos_path
+    }
+
+    pub fn get_base_url(&self) -> &String {
+        &self.base_url
     }
 
     pub fn get_version_odoo(&self) -> &u8 {

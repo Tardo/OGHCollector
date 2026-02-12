@@ -50,8 +50,12 @@ async fn main() {
     try_lock(&config);
 
     let git_client = match config.get_git_type() {
-        GitType::Github => AnyGitClient::Github(GithubClient::new(config.get_token())),
-        GitType::Gitlab => AnyGitClient::Gitlab(GitlabClient::new(config.get_token())),
+        GitType::Github => {
+            AnyGitClient::Github(GithubClient::new(config.get_token(), config.get_base_url()))
+        }
+        GitType::Gitlab => {
+            AnyGitClient::Gitlab(GitlabClient::new(config.get_token(), config.get_base_url()))
+        }
     };
     let pypi_client = PypiClient::new();
 

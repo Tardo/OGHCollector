@@ -13,7 +13,7 @@ pub struct GithubClient {
 }
 
 impl GitClient for GithubClient {
-    fn new(token: &str) -> Self {
+    fn new(token: &str, _base_url: &str) -> Self {
         let client_result = reqwest::Client::builder().build();
         let client = match client_result {
             Ok(cl) => cl,

@@ -9,24 +9,31 @@ const GITLAB_LIMIT_PAGES: usize = 255;
 #[derive(Debug)]
 pub struct GitlabClient {
     token: String,
+    base_url: String,
     client: reqwest::Client,
 }
 
 impl GitClient for GitlabClient {
-    fn new(token: &str) -> Self {
+    fn new(token: &str, base_url: &str) -> Self {
         let client_result = reqwest::Client::builder().build();
         let client = match client_result {
             Ok(cl) => cl,
             Err(e) => panic!("Problem creating the client: {e:?}"),
         };
+        let base_url_san = if base_url.is_empty() {
+            GITLAB_BASE_URL
+        } else {
+            base_url
+        };
         Self {
             token: token.into(),
+            base_url: base_url_san.into(),
             client,
         }
     }
 
     async fn request(&self, url: &str) -> Result<reqwest::Response, reqwest::Error> {
-        let full_url = format!("{GITLAB_BASE_URL}{url}");
+        let full_url = format!("{}{url}", self.base_url);
         let res = self
             .client
             .get(full_url)

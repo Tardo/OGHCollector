@@ -22,7 +22,7 @@ impl RepoInfo {
 }
 
 pub trait GitClient {
-    fn new(token: &str) -> Self;
+    fn new(token: &str, base_url: &str) -> Self;
 
     fn clone_or_update_repo(
         &self,

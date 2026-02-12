@@ -70,21 +70,25 @@ docker compose run --rm -u appuser -T app oghcollector <origin> <version> [git_t
   - The name of an organization (all repositories will be scanned).
   - The name of a repository (you can set the folders to be scanned separated by commas)
 - `<version>`: The version of Odoo
-- `[git_type]`: Optional. Git client to use (GL or GH)
+- `[git_type]`: Optional. Git client to use (GL or GH). Default is GH.
 
 ### Examples
 
-- Get Odoo modules in 18.0:
+- Get Odoo modules in 18.0 (github):
  ```sh
  docker compose run --rm -u appuser -T app oghcollector odoo/odoo:/addons,/odoo/addons 18.0
  ```
-- Get the OCA/web modules in 18.0:
+- Get the OCA/web modules in 18.0 (github):
  ```sh
  docker compose run --rm -u appuser -T app oghcollector OCA/web 18.0
  ```
-- Get all OCA modules in 18.0:
+- Get all OCA modules in 18.0 (github):
  ```sh
  docker compose run --rm -u appuser -T app oghcollector OCA 18.0
+ ```
+- Get all MyGroup modules in 18.0 (gitlab):
+ ```sh
+ docker compose run --rm -u appuser -T app oghcollector MyGroup 18.0 GL:https://mygitlabinstance.com/api/v4/
  ```
 
 ** You may need to add ```-l traefik.enable=false```

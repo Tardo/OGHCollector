@@ -8,7 +8,7 @@ pub enum AnyGitClient {
 }
 
 impl GitClient for AnyGitClient {
-    fn new(_token: &str) -> Self {
+    fn new(_token: &str, _base_url: &str) -> Self {
         unreachable!("Use AnyGitClient::Github(...) or AnyGitClient::Gitlab(...) directly")
     }
 
