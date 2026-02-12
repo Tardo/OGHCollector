@@ -25,15 +25,11 @@ use oghutils::version::odoo_version_u8_to_string;
 use pypi::PypiClient;
 use sqlitedb::{models, Pool};
 
-#[tokio::main]
-async fn main() {
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
-    let args: Vec<String> = env::args().collect();
-    let config = OGHCollectorConfig::new(&args);
-    let org: String = config.get_read_paths()[0].clone();
+fn try_lock(config: &OGHCollectorConfig) {
+    let source_info = config.get_source().split('/').collect::<Vec<&str>>();
+    let org = source_info[0];
     let lock_name = format!("OGHCollector::{org}");
     let lock = NamedLock::create(lock_name.as_str()).unwrap();
-    // Intentamos adquirir el lock sin bloquear
     match lock.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
@@ -43,6 +39,15 @@ async fn main() {
             std::process::exit(1);
         }
     };
+}
+
+#[tokio::main]
+async fn main() {
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    let args: Vec<String> = env::args().collect();
+    let config = OGHCollectorConfig::new(&args);
+
+    try_lock(&config);
 
     let git_client = match config.get_git_type() {
         GitType::Github => AnyGitClient::Github(GithubClient::new(config.get_token())),

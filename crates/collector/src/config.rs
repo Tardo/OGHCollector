@@ -76,14 +76,20 @@ impl OGHCollectorConfig {
 
     fn read_token(git_orig: &str) -> String {
         let git_orig_lower = git_orig.to_lowercase();
-        let token_file = format!("/run/secrets/{git_orig_lower}_token");
-        let token: String = if token_file.is_empty() {
-            env::var(format!("OGHCOLLECTOR_TOKEN_{git_orig}")).unwrap_or_default()
-        } else {
-            fs::read_to_string(token_file).unwrap_or_default()
-        };
+        let secret_path = format!("/run/secrets/{git_orig_lower}_token");
+
+        if let Ok(content) = fs::read_to_string(&secret_path) {
+            let token = content.trim().to_string();
+            if !token.is_empty() {
+                return token;
+            }
+        }
+
+        let env_var = format!("OGHCOLLECTOR_TOKEN_{git_orig}");
+        let token = env::var(env_var).unwrap_or_default().trim().to_string();
+
         if token.is_empty() {
-            panic!("Need the github api token!")
+            panic!("Need the github api token!");
         }
         token
     }
