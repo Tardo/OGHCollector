@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS dependency_osv (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_dep_dep_mod_id_osv_id ON dependency_osv(dependency_module_id, osv_id);
 
-CREATE TABLE maintainer (
+CREATE TABLE IF NOT EXISTS maintainer (
     id integer primary key autoincrement,
     name text not null unique
 );
@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS module_committer (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_module_committer ON module_committer(module_id, committer_id);
 
-CREATE TABLE module_maintainer (
+CREATE TABLE IF NOT EXISTS module_maintainer (
     id integer primary key autoincrement,
     module_id integer not null references module(id),
     maintainer_id integer not null references maintainer(id),
@@ -152,7 +152,7 @@ CREATE TABLE module_maintainer (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_module_maintainer ON module_maintainer(module_id, maintainer_id);
 
-CREATE TABLE pull_request (
+CREATE TABLE IF NOT EXISTS pull_request (
     id integer primary key autoincrement,
     name text not null,
     version_odoo integer not null,
