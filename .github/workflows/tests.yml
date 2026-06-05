@@ -44,5 +44,7 @@ jobs:
           npm install
       - name: Linters
         run: npm run lint
+      - name: CArgo Tests
+        run: cargo test
       - name: Build Image
         run: docker compose build
