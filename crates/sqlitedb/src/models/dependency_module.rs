@@ -1,200 +1,156 @@
 // Copyright Alexandre D. Díaz
-use cached::proc_macro::cached;
-use rusqlite::{params, Result, ToSql};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::{dependency, module, system_event};
+use crate::schema::dependency_module;
+
+use super::{dependency, module, system_event};
 use oghutils::version::odoo_version_u8_to_string;
 
-pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
-
-pub static TABLE_NAME: &str = "dependency_module";
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
+#[diesel(table_name = dependency_module, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
     pub id: i64,
-    pub dependency_id: (i64, String),
-    pub module_id: (i64, String),
+    pub dependency_id: i64,
+    pub module_id: i64,
 }
 
-pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "CREATE TABLE IF NOT EXISTS {0} (
-            id integer primary key,
-            dependency_id integer not null references {1}(id),
-            module_id integer not null references {2}(id),
-            CONSTRAINT fk_dependency
-                FOREIGN KEY (dependency_id)
-                REFERENCES {1}(id)
-                ON DELETE CASCADE,
-            CONSTRAINT fk_module
-                FOREIGN KEY (module_id)
-                REFERENCES {2}(id)
-                ON DELETE CASCADE
-        )",
-            &TABLE_NAME,
-            &dependency::TABLE_NAME,
-            &module::TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )?;
-    conn.execute(
-        format!(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_dep_module ON {}(dependency_id, module_id)",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![],
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct ModelFull {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub id: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub dependency_id: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub dependency_name: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub module_id: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub module_technical_name: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = dependency_module)]
+struct NewDependencyModule {
+    dependency_id: i64,
+    module_id: i64,
+}
+
+pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<ModelFull> {
+    diesel::sql_query(
+        "SELECT mod_dep.id, mod_dep.dependency_id, dep.name as dependency_name, \
+         mod_dep.module_id, mod.technical_name as module_technical_name \
+         FROM dependency_module as mod_dep \
+         INNER JOIN module as mod ON mod.id = mod_dep.module_id \
+         INNER JOIN dependency as dep ON dep.id = mod_dep.dependency_id \
+         WHERE mod_dep.id = ? LIMIT 1",
     )
+    .bind::<diesel::sql_types::BigInt, _>(id)
+    .get_result::<ModelFull>(conn)
+    .optional()
+    .expect("DB error in dependency_module::get_by_id")
 }
 
-fn query(
-    conn: &Connection,
-    extra_sql: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<Model>, rusqlite::Error> {
-    let sql = format!(
-        "SELECT mod_dep.id, mod_dep.dependency_id, dep.name, mod_dep.module_id, mod.name \
-    FROM {} as mod_dep \
-    INNER JOIN {} as mod \
-    ON mod.id = mod_dep.module_id \
-    INNER JOIN {} as dep \
-    ON dep.id = mod_dep.dependency_id \
-    {}",
-        &TABLE_NAME,
-        &module::TABLE_NAME,
-        &dependency::TABLE_NAME,
-        &extra_sql
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let module_rows = stmt.query_map(params, |row| {
-        Ok(Model {
-            id: row.get(0)?,
-            dependency_id: (row.get(1)?, row.get(2)?),
-            module_id: (row.get(3)?, row.get(4)?),
-        })
-    })?;
-    let modules_iter = module_rows.map(|x| x.unwrap());
-    let modules = modules_iter.collect::<Vec<Model>>();
-    Ok(modules)
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", id) }"#
-)]
-pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let dep_mods = query(conn, "WHERE mod_dep.id = ?1 LIMIT 1", params![&id]).unwrap();
-    if dep_mods.is_empty() {
-        return None;
-    }
-    Some(dep_mods[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}{}", dependency_id, module_id) }"#
-)]
 fn get_by_dependency_id_module_id(
-    conn: &Connection,
-    dependency_id: &i64,
-    module_id: &i64,
+    conn: &mut SqliteConnection,
+    dep_id: &i64,
+    mod_id: &i64,
 ) -> Option<Model> {
-    let mod_deps = query(
-        conn,
-        "WHERE mod_dep.dependency_id = ?1 AND mod_dep.module_id = ?2 LIMIT 1",
-        params![&dependency_id, &module_id],
-    )
-    .unwrap();
-    if mod_deps.is_empty() {
-        return None;
-    }
-    Some(mod_deps[0].clone())
+    dependency_module::table
+        .filter(
+            dependency_module::dependency_id
+                .eq(dep_id)
+                .and(dependency_module::module_id.eq(mod_id)),
+        )
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in dependency_module::get_by_dependency_id_module_id")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}", module_id, dep_type_id) }"#
-)]
-pub fn get_names(conn: &Connection, module_id: &i64, dep_type_id: &i64) -> Vec<String> {
-    let mut stmt = conn.prepare(
-        format!("SELECT d.name FROM {} as dm INNER JOIN dependency as d ON dm.dependency_id = d.id WHERE dm.module_id = ?1 AND d.dependency_type_id = ?2", &TABLE_NAME).as_str(),
-    ).unwrap();
-    let deps_rows = stmt
-        .query_map(params![&dep_type_id, &module_id], |row| row.get(0))
-        .unwrap();
+pub fn get_names(conn: &mut SqliteConnection, module_id: &i64, dep_type_id: &i64) -> Vec<String> {
+    diesel::sql_query(
+        "SELECT d.name \
+         FROM dependency_module as dm \
+         INNER JOIN dependency as d ON dm.dependency_id = d.id \
+         WHERE dm.module_id = ? AND d.dependency_type_id = ?",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(module_id)
+    .bind::<diesel::sql_types::BigInt, _>(dep_type_id)
+    .load::<crate::models::NameRow>(conn)
+    .expect("DB error in dependency_module::get_names")
+    .into_iter()
+    .map(|r| r.name)
+    .collect()
+}
 
-    let deps_iter = deps_rows.map(|x| x.unwrap());
-
-    deps_iter.collect::<Vec<String>>()
+pub fn get_names_no_cache(
+    conn: &mut SqliteConnection,
+    module_id: &i64,
+    dep_type_id: &i64,
+) -> Vec<String> {
+    get_names(conn, module_id, dep_type_id)
 }
 
 pub fn add(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     dep_type_id: &i64,
     name: &str,
     module_id: &i64,
-) -> Result<Model, rusqlite::Error> {
+) -> QueryResult<ModelFull> {
     let dep = dependency::add(conn, dep_type_id, name)?;
-    let dep_module_opt = get_by_dependency_id_module_id(conn, &dep.id, module_id);
-    if dep_module_opt.is_none() {
-        conn.execute(
-            format!(
-                "INSERT INTO {}(dependency_id, module_id) VALUES (?1, ?2)",
-                &TABLE_NAME
-            )
-            .as_str(),
-            params![&dep.id, &module_id],
-        )?;
-        let last_id = conn.last_insert_rowid();
-        let module = module::get_by_id(conn, module_id).unwrap();
-        let _ = system_event::register_new_dependency_module(
-            conn,
-            name,
-            &module.technical_name,
-            &module.name,
-            odoo_version_u8_to_string(&module.version_odoo).as_str(),
-        );
-        return Ok(Model {
-            id: last_id,
-            dependency_id: (dep.id, dep.name.clone()),
-            module_id: (module.id, module.technical_name.clone()),
+    if let Some(existing) = get_by_dependency_id_module_id(conn, &dep.id, module_id) {
+        let mod_name = module::get_by_id(conn, module_id)
+            .map(|m| m.technical_name)
+            .unwrap_or_default();
+        return Ok(ModelFull {
+            id: existing.id,
+            dependency_id: dep.id,
+            dependency_name: dep.name,
+            module_id: existing.module_id,
+            module_technical_name: mod_name,
         });
     }
-    Ok(dep_module_opt.unwrap())
+
+    diesel::insert_into(dependency_module::table)
+        .values(NewDependencyModule {
+            dependency_id: dep.id,
+            module_id: *module_id,
+        })
+        .execute(conn)?;
+    let new_id = crate::models::last_insert_rowid(conn);
+    let mod_info = module::get_by_id(conn, module_id).unwrap();
+    let _ = system_event::register_new_dependency_module(
+        conn,
+        name,
+        &mod_info.technical_name,
+        &mod_info.name,
+        odoo_version_u8_to_string(&(mod_info.version_odoo as u8)).as_str(),
+    );
+    Ok(ModelFull {
+        id: new_id,
+        dependency_id: dep.id,
+        dependency_name: dep.name,
+        module_id: *module_id,
+        module_technical_name: mod_info.technical_name,
+    })
 }
 
-pub fn delete_by_module_id(conn: &Connection, module_id: &i64) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!("DELETE FROM {} WHERE module_id = ?1", &TABLE_NAME).as_str(),
-        params![&module_id],
-    )
+pub fn delete_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> QueryResult<usize> {
+    diesel::delete(dependency_module::table.filter(dependency_module::module_id.eq(module_id)))
+        .execute(conn)
 }
 
 pub fn delete_by_module_id_dependecy_id(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     module_id: &i64,
     dependency_id: &i64,
-) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "DELETE FROM {} WHERE module_id = ?1 AND dependency_id = ?2",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![&module_id, &dependency_id],
+) -> QueryResult<usize> {
+    diesel::delete(
+        dependency_module::table.filter(
+            dependency_module::module_id
+                .eq(module_id)
+                .and(dependency_module::dependency_id.eq(dependency_id)),
+        ),
     )
+    .execute(conn)
 }

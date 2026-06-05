@@ -1,199 +1,117 @@
 // Copyright Alexandre D. Díaz
-use cached::proc_macro::cached;
-use rusqlite::{params, Result, ToSql};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::{maintainer, module, system_event};
+use crate::schema::module_maintainer;
+
+use super::{maintainer, module, system_event};
 use oghutils::version::odoo_version_u8_to_string;
 
-pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
-
-pub static TABLE_NAME: &str = "module_maintainer";
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
+#[diesel(table_name = module_maintainer, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
     pub id: i64,
-    pub module_id: (i64, String),
-    pub maintainer_id: (i64, String),
+    pub module_id: i64,
+    pub maintainer_id: i64,
 }
 
-pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "CREATE TABLE IF NOT EXISTS {0} (
-            id integer primary key,
-            module_id integer not null references {1}(id),
-            maintainer_id integer not null references {2}(id),
-            CONSTRAINT fk_module
-                FOREIGN KEY (module_id)
-                REFERENCES {1}(id)
-                ON DELETE CASCADE,
-            CONSTRAINT fk_maintainer
-                FOREIGN KEY (maintainer_id)
-                REFERENCES {2}(id)
-                ON DELETE CASCADE
-        )",
-            &TABLE_NAME,
-            &module::TABLE_NAME,
-            &maintainer::TABLE_NAME
+#[derive(Insertable)]
+#[diesel(table_name = module_maintainer)]
+struct NewModuleMaintainer {
+    module_id: i64,
+    maintainer_id: i64,
+}
+
+pub fn get_by_id(
+    conn: &mut SqliteConnection,
+    module_id: &i64,
+    maintainer_id: &i64,
+) -> Option<Model> {
+    module_maintainer::table
+        .filter(
+            module_maintainer::module_id
+                .eq(module_id)
+                .and(module_maintainer::maintainer_id.eq(maintainer_id)),
         )
-        .as_str(),
-        params![],
-    )?;
-    conn.execute(
-        format!("CREATE UNIQUE INDEX IF NOT EXISTS uniq_module_maintainer ON {}(module_id, maintainer_id)", &TABLE_NAME).as_str(),
-        params![],
-    )
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in module_maintainer::get_by_id")
 }
 
-fn query(
-    conn: &Connection,
-    extra_sql: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<Model>, rusqlite::Error> {
-    let sql: String = format!("SELECT mod_mant.id, mod_mant.module_id, mod.technical_name, mod_mant.maintainer_id, mant.name \
-    FROM {} as mod_mant \
-    INNER JOIN {} as mod \
-    ON mod.id = mod_mant.module_id \
-    INNER JOIN {} as mant \
-    ON mant.id = mod_mant.maintainer_id \
-    {}", &TABLE_NAME, &module::TABLE_NAME, &maintainer::TABLE_NAME, &extra_sql);
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params, |row| {
-        Ok(Model {
-            id: row.get(0)?,
-            module_id: (row.get(1)?, row.get(2)?),
-            maintainer_id: (row.get(3)?, row.get(4)?),
-        })
-    })?;
-    let iter = rows.map(|x| x.unwrap());
-    let records = iter.collect::<Vec<Model>>();
-    Ok(records)
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}{}", module_id, maintainer_id) }"#
-)]
-pub fn get_by_id(conn: &Connection, module_id: &i64, maintainer_id: &i64) -> Option<Model> {
-    let mod_maintainers = query(
-        conn,
-        "WHERE mod_mant.module_id = ?1 AND mod_mant.maintainer_id = ?2 LIMIT 1",
-        params![&module_id, &maintainer_id],
-    )
-    .unwrap();
-    if mod_maintainers.is_empty() {
-        return None;
-    }
-    Some(mod_maintainers[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}{}", module_id, name) }"#
-)]
-pub fn get_by_name(conn: &Connection, module_id: &i64, name: &str) -> Option<Model> {
-    let mod_maintainers = query(
-        conn,
-        "WHERE mod_mant.module_id = ?1 AND mant.name = ?2 LIMIT 1",
-        params![&module_id, &name],
-    )
-    .unwrap();
-    if mod_maintainers.is_empty() {
-        return None;
-    }
-    Some(mod_maintainers[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}", module_id) }"#
-)]
-pub fn get_by_module_id(conn: &Connection, module_id: &i64) -> Vec<Model> {
-    query(
-        conn,
-        "WHERE mod_mant.module_id = ?1 LIMIT 1",
-        params![&module_id],
-    )
-    .unwrap()
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}", module_id) }"#
-)]
-pub fn get_names_by_module_id(conn: &Connection, module_id: &i64) -> Vec<String> {
-    let mut names: Vec<String> = Vec::new();
-    let module_maintainers = get_by_module_id(conn, module_id);
-    for module_maintainer in module_maintainers {
-        let maintainer = maintainer::get_by_id(conn, &module_maintainer.maintainer_id.0).unwrap();
-        names.push(maintainer.name);
-    }
-    names
-}
-
-pub fn add(conn: &Connection, module_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
-    let module_maintainer_opt = get_by_name(conn, module_id, name);
-    if module_maintainer_opt.is_none() {
-        let maintainer = maintainer::add(conn, name).unwrap();
-        conn.execute(
-            format!(
-                "INSERT INTO {}(module_id, maintainer_id) VALUES (?1, ?2)",
-                &TABLE_NAME
+pub fn get_by_name(conn: &mut SqliteConnection, module_id: &i64, name: &str) -> Option<Model> {
+    if let Some(maint) = maintainer::get_by_name(conn, name) {
+        module_maintainer::table
+            .filter(
+                module_maintainer::module_id
+                    .eq(module_id)
+                    .and(module_maintainer::maintainer_id.eq(maint.id)),
             )
-            .as_str(),
-            params![&module_id, &maintainer.id],
-        )?;
-        let last_id = conn.last_insert_rowid();
-        let module = module::get_by_id(conn, module_id).unwrap();
-        let _ = system_event::register_new_module_maintainer(
-            conn,
-            name,
-            &module.technical_name,
-            &module.name,
-            odoo_version_u8_to_string(&module.version_odoo).as_str(),
-        );
-        return Ok(Model {
-            id: last_id,
-            module_id: (module.id, module.technical_name.clone()),
-            maintainer_id: (maintainer.id, maintainer.name.clone()),
-        });
+            .first::<Model>(conn)
+            .optional()
+            .expect("DB error in module_maintainer::get_by_name")
+    } else {
+        None
     }
-    Ok(module_maintainer_opt.unwrap())
 }
 
-pub fn delete_by_module_id(conn: &Connection, module_id: &i64) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!("DELETE FROM {} WHERE module_id = ?1", &TABLE_NAME).as_str(),
-        params![&module_id],
-    )
+pub fn get_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> Vec<Model> {
+    module_maintainer::table
+        .filter(module_maintainer::module_id.eq(module_id))
+        .load::<Model>(conn)
+        .expect("DB error in module_maintainer::get_by_module_id")
+}
+
+pub fn get_names_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> Vec<String> {
+    get_by_module_id(conn, module_id)
+        .into_iter()
+        .filter_map(|mm| maintainer::get_by_id(conn, &mm.maintainer_id).map(|m| m.name))
+        .collect()
+}
+
+pub fn add(conn: &mut SqliteConnection, module_id: &i64, name: &str) -> QueryResult<Model> {
+    let maint = maintainer::add(conn, name)?;
+    if let Some(existing) = get_by_id(conn, module_id, &maint.id) {
+        return Ok(existing);
+    }
+
+    diesel::insert_into(module_maintainer::table)
+        .values(NewModuleMaintainer {
+            module_id: *module_id,
+            maintainer_id: maint.id,
+        })
+        .execute(conn)?;
+    let new_id = crate::models::last_insert_rowid(conn);
+    let mod_info = module::get_by_id(conn, module_id).unwrap();
+    let _ = system_event::register_new_module_maintainer(
+        conn,
+        name,
+        &mod_info.technical_name,
+        &mod_info.name,
+        odoo_version_u8_to_string(&(mod_info.version_odoo as u8)).as_str(),
+    );
+    Ok(Model {
+        id: new_id,
+        module_id: *module_id,
+        maintainer_id: maint.id,
+    })
+}
+
+pub fn delete_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> QueryResult<usize> {
+    diesel::delete(module_maintainer::table.filter(module_maintainer::module_id.eq(module_id)))
+        .execute(conn)
 }
 
 pub fn delete_by_module_id_maintainer_id(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     module_id: &i64,
     maintainer_id: &i64,
-) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "DELETE FROM {} WHERE module_id = ?1 AND maintainer_id = ?2",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![&module_id, &maintainer_id],
+) -> QueryResult<usize> {
+    diesel::delete(
+        module_maintainer::table.filter(
+            module_maintainer::module_id
+                .eq(module_id)
+                .and(module_maintainer::maintainer_id.eq(maintainer_id)),
+        ),
     )
+    .execute(conn)
 }

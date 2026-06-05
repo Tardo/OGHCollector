@@ -1,106 +1,54 @@
 // Copyright Alexandre D. Díaz
-use cached::proc_macro::cached;
-use rusqlite::{params, Result, ToSql};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
+use crate::schema::committer;
 
-pub static TABLE_NAME: &str = "committer";
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
+#[diesel(table_name = committer, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
     pub id: i64,
     pub name: String,
 }
 
-pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "CREATE TABLE IF NOT EXISTS {} (
-            id integer primary key,
-            name text not null
-        )",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )?;
-    conn.execute(
-        format!(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_committer_name ON {}(name)",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )
+#[derive(Insertable)]
+#[diesel(table_name = committer)]
+struct NewCommitter<'a> {
+    name: &'a str,
 }
 
-fn query(
-    conn: &Connection,
-    extra_sql: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<Model>, rusqlite::Error> {
-    let sql: String = format!(
-        "SELECT com.id, com.name \
-    FROM {} as com \
-    {}",
-        &TABLE_NAME, &extra_sql
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params, |row| {
+pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
+    committer::table
+        .filter(committer::id.eq(id))
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in committer::get_by_id")
+}
+
+pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
+    committer::table
+        .filter(committer::name.eq(name))
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in committer::get_by_name")
+}
+
+pub fn add(conn: &mut SqliteConnection, name: &str) -> QueryResult<Model> {
+    let inserted = diesel::insert_into(committer::table)
+        .values(NewCommitter { name })
+        .on_conflict(committer::name)
+        .do_nothing()
+        .execute(conn)?;
+
+    if inserted == 0 {
+        committer::table
+            .filter(committer::name.eq(name))
+            .first::<Model>(conn)
+    } else {
+        let id = crate::models::last_insert_rowid(conn);
         Ok(Model {
-            id: row.get(0)?,
-            name: row.get(1)?,
-        })
-    })?;
-    let iter = rows.map(|x| x.unwrap());
-    let records = iter.collect::<Vec<Model>>();
-    Ok(records)
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", committer_id) }"#
-)]
-pub fn get_by_id(conn: &Connection, committer_id: &i64) -> Option<Model> {
-    let committers = query(conn, "WHERE com.id = ?1 LIMIT 1", params![&committer_id]).unwrap();
-    if committers.is_empty() {
-        return None;
-    }
-    Some(committers[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", name) }"#
-)]
-pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let committers = query(conn, "WHERE com.name = ?1 LIMIT 1", params![&name]).unwrap();
-    if committers.is_empty() {
-        return None;
-    }
-    Some(committers[0].clone())
-}
-
-pub fn add(conn: &Connection, name: &str) -> Result<Model, rusqlite::Error> {
-    let committer_opt = get_by_name(conn, name);
-    if committer_opt.is_none() {
-        conn.execute(
-            format!("INSERT INTO {}(name) VALUES (?1)", &TABLE_NAME).as_str(),
-            params![&name],
-        )?;
-        return Ok(Model {
-            id: conn.last_insert_rowid(),
+            id,
             name: name.to_string(),
-        });
+        })
     }
-    Ok(committer_opt.unwrap())
 }

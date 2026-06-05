@@ -4,6 +4,7 @@
 
 - Rust
 - npm
+- Python (with devel)
 
 ## Rust Components
 

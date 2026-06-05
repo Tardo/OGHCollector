@@ -17,8 +17,6 @@ use actix_web::{
 };
 use minijinja::path_loader;
 use minijinja_autoreload::AutoReloader;
-use r2d2_sqlite::{self, SqliteConnectionManager};
-use rusqlite::OpenFlags;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
@@ -49,21 +47,16 @@ async fn main() -> std::io::Result<()> {
     // The closure is invoked every time the environment is outdated to recreate it.
     let tmpl_reloader = AutoReloader::new(move |notifier| {
         let mut env: minijinja::Environment<'static> = minijinja::Environment::new();
-
         let tmpl_path = PathBuf::from("./web/templates");
-
-        // if watch_path is never called, no fs watcher is created
         if SERVER_CONFIG.get_template_autoreload() {
             notifier.watch_path(&tmpl_path, true);
         }
-
         env.set_loader(path_loader(tmpl_path));
-
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);
 
-    // connect to SQLite DB
+    // connect to SQLite DB (read-only)
     let db_path = "data/data.db";
     if let Some(parent) = Path::new(db_path).parent() {
         fs::create_dir_all(parent)?;
@@ -71,17 +64,7 @@ async fn main() -> std::io::Result<()> {
     if !Path::new(db_path).exists() {
         File::create(db_path)?;
     }
-    let manager = SqliteConnectionManager::file(db_path)
-        .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI);
-    let pool = Pool::builder()
-        .max_size(*SERVER_CONFIG.get_db_pool_max_size())
-        .build(manager)
-        .unwrap();
-
-    // Start scheduler on a new thread
-    // actix_rt::spawn(async move {
-    //     start_scheduler().await;
-    // });
+    let pool: Pool = sqlitedb::new_read_pool(db_path, *SERVER_CONFIG.get_db_pool_max_size());
 
     log::info!(
         "starting HTTP server at http://{}:{}",
@@ -100,7 +83,6 @@ async fn main() -> std::io::Result<()> {
             .max_age(3600);
 
         App::new()
-            // store db pool as Data object
             .app_data(web::Data::new(pool.clone()))
             .app_data(tmpl_reloader.clone())
             .app_data(MultipartFormConfig::default().total_limit(*SERVER_CONFIG.get_upload_limit()))

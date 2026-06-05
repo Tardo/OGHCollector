@@ -13,9 +13,12 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
+    let logs = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        models::system_event::get_messages_current_month(&mut conn)
+    })
+    .await?;
 
-    let logs = models::system_event::get_messages_current_month(&conn);
     tmpl_env.render(
         "pages/logs.html",
         context!(

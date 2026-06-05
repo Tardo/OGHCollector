@@ -1,7 +1,7 @@
 /target
 /node_modules
 /static/auto
-/data
+/data/*.db
 /.vscode
 *.db
 server.yaml
@@ -10,3 +10,5 @@ compose.yaml
 compose.*.yaml
 docker-compose.*.yaml
 .eslintcache
+CLAUDE.md
+.claude/

@@ -23,25 +23,29 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
-    let osv_infos = models::dependency_osv::get_osv_info(&conn);
-
-    let mut res: HashMap<String, HashMap<String, HashMap<String, Vec<OSVInfo>>>> = HashMap::new();
-    for osv_info in osv_infos {
-        let version_odoo = odoo_version_u8_to_string(&osv_info.version_odoo);
-        let module_name = format!(
-            "{} ({})",
-            &osv_info.module_technical_name, &osv_info.module_name
-        );
-        let by_ver = res.entry(version_odoo).or_default();
-        let by_mod = by_ver.entry(module_name).or_default();
-        let by_pack = by_mod.entry(osv_info.name).or_default();
-        by_pack.push(OSVInfo {
-            osv_id: osv_info.osv_id,
-            details: osv_info.details,
-            fixed_in: osv_info.fixed_in,
-        });
-    }
+    let res = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let osv_infos = models::dependency_osv::get_osv_info(&mut conn);
+        let mut res: HashMap<String, HashMap<String, HashMap<String, Vec<OSVInfo>>>> =
+            HashMap::new();
+        for osv_info in osv_infos {
+            let version_odoo = odoo_version_u8_to_string(&(osv_info.version_odoo as u8));
+            let module_name = format!(
+                "{} ({})",
+                &osv_info.module_technical_name, &osv_info.module_name
+            );
+            let by_ver = res.entry(version_odoo).or_default();
+            let by_mod = by_ver.entry(module_name).or_default();
+            let by_pack = by_mod.entry(osv_info.name).or_default();
+            by_pack.push(OSVInfo {
+                osv_id: osv_info.osv_id,
+                details: osv_info.details,
+                fixed_in: osv_info.fixed_in,
+            });
+        }
+        res
+    })
+    .await?;
 
     tmpl_env.render(
         "pages/osv.html",

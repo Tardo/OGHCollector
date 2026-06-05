@@ -4,11 +4,9 @@ use std::collections::HashMap;
 use actix_web::{get, web, Error as AWError, HttpResponse};
 use serde::{Deserialize, Serialize};
 
+use diesel::sqlite::SqliteConnection;
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::{
-    models::{self, Connection},
-    Pool,
-};
+use sqlitedb::{models, Pool};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RepositoryGenericInfoResponse {
@@ -17,7 +15,7 @@ pub struct RepositoryGenericInfoResponse {
 }
 
 fn get_repository_generic_info(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     repo_name: &str,
 ) -> Option<RepositoryGenericInfoResponse> {
     let repos = models::gh_repository::get_info_by_name(conn, repo_name);
@@ -29,11 +27,11 @@ fn get_repository_generic_info(
     for repo in repos {
         let branches = orgs.entry(repo.organization).or_default();
         branches
-            .entry(odoo_version_u8_to_string(&repo.version_odoo))
-            .or_insert(repo.num_modules);
+            .entry(odoo_version_u8_to_string(&(repo.version_odoo as u8)))
+            .or_insert(repo.num_modules as u16);
     }
     Some(RepositoryGenericInfoResponse {
-        name: repo_name.to_string().clone(),
+        name: repo_name.to_string(),
         organizations: orgs,
     })
 }
@@ -43,8 +41,11 @@ pub async fn route(
     pool: web::Data<Pool>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AWError> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
     let repo_name = path.into_inner();
-    let result = web::block(move || get_repository_generic_info(&conn, &repo_name)).await?;
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        get_repository_generic_info(&mut conn, &repo_name)
+    })
+    .await?;
     Ok(HttpResponse::Ok().json(result))
 }

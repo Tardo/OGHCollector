@@ -1,106 +1,54 @@
 // Copyright Alexandre D. Díaz
-use cached::proc_macro::cached;
-use rusqlite::{params, Result, ToSql};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
+use crate::schema::maintainer;
 
-pub static TABLE_NAME: &str = "maintainer";
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
+#[diesel(table_name = maintainer, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
     pub id: i64,
     pub name: String,
 }
 
-pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "CREATE TABLE IF NOT EXISTS {} (
-            id integer primary key,
-            name text not null
-        )",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )?;
-    conn.execute(
-        format!(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_maintainer_name ON {}(name)",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )
+#[derive(Insertable)]
+#[diesel(table_name = maintainer)]
+struct NewMaintainer<'a> {
+    name: &'a str,
 }
 
-fn query(
-    conn: &Connection,
-    extra_sql: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<Model>, rusqlite::Error> {
-    let sql: String = format!(
-        "SELECT mant.id, mant.name \
-    FROM {} as mant \
-    {}",
-        &TABLE_NAME, &extra_sql
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params, |row| {
+pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
+    maintainer::table
+        .filter(maintainer::id.eq(id))
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in maintainer::get_by_id")
+}
+
+pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
+    maintainer::table
+        .filter(maintainer::name.eq(name))
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in maintainer::get_by_name")
+}
+
+pub fn add(conn: &mut SqliteConnection, name: &str) -> QueryResult<Model> {
+    let inserted = diesel::insert_into(maintainer::table)
+        .values(NewMaintainer { name })
+        .on_conflict(maintainer::name)
+        .do_nothing()
+        .execute(conn)?;
+
+    if inserted == 0 {
+        maintainer::table
+            .filter(maintainer::name.eq(name))
+            .first::<Model>(conn)
+    } else {
+        let id = crate::models::last_insert_rowid(conn);
         Ok(Model {
-            id: row.get(0)?,
-            name: row.get(1)?,
-        })
-    })?;
-    let iter = rows.map(|x| x.unwrap());
-    let records = iter.collect::<Vec<Model>>();
-    Ok(records)
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", maintainer_id) }"#
-)]
-pub fn get_by_id(conn: &Connection, maintainer_id: &i64) -> Option<Model> {
-    let maintainers = query(conn, "WHERE mant.id = ?1 LIMIT 1", params![&maintainer_id]).unwrap();
-    if maintainers.is_empty() {
-        return None;
-    }
-    Some(maintainers[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", name) }"#
-)]
-pub fn get_by_name(conn: &Connection, name: &str) -> Option<Model> {
-    let maintainers = query(conn, "WHERE mant.name = ?1 LIMIT 1", params![&name]).unwrap();
-    if maintainers.is_empty() {
-        return None;
-    }
-    Some(maintainers[0].clone())
-}
-
-pub fn add(conn: &Connection, name: &str) -> Result<Model, rusqlite::Error> {
-    let maintainer_opt = get_by_name(conn, name);
-    if maintainer_opt.is_none() {
-        conn.execute(
-            format!("INSERT INTO {}(name) VALUES (?1)", &TABLE_NAME).as_str(),
-            params![&name],
-        )?;
-        return Ok(Model {
-            id: conn.last_insert_rowid(),
+            id,
             name: name.to_string(),
-        });
+        })
     }
-    Ok(maintainer_opt.unwrap())
 }

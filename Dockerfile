@@ -3,6 +3,10 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y python3 python3-dev pkg-config libssl-dev npm && rm -rf /var/lib/apt/lists/*
 
+RUN set -ex; \
+    cargo install diesel_cli --no-default-features --features sqlite-bundled --force; \
+    cp -r ~/.cargo/bin/diesel /usr/local/bin/diesel;
+
 RUN --mount=type=bind,source=/static,target=static,rw \
     --mount=type=bind,source=/web,target=web \
     --mount=type=bind,source=/crates,target=crates \
@@ -38,6 +42,7 @@ RUN adduser \
     appuser
 RUN mkdir /app
 
+COPY --from=build /usr/local/bin/diesel /usr/local/bin/diesel
 COPY --from=build /usr/local/bin/server /usr/local/bin/oghserver
 COPY --from=build /usr/local/bin/collector /usr/local/bin/oghcollector
 COPY --from=build /usr/local/bin/static /app/static/
@@ -47,7 +52,7 @@ COPY ./files/pip_names.txt /app/files/pip_names.txt
 RUN set -ex; \
     mkdir /app/data; \
     chown -R appuser:appuser /app; \
-    chmod 755 /usr/local/bin/oghserver /usr/local/bin/oghcollector;
+    chmod 755 /usr/local/bin/oghserver /usr/local/bin/oghcollector /usr/local/bin/diesel;
 
 USER appuser
 EXPOSE 8080

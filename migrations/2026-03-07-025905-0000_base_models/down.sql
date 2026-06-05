@@ -1,0 +1,16 @@
+DROP TABLE module_author;
+DROP TABLE author;
+DROP TABLE module_committer;
+DROP TABLE committer;
+DROP TABLE dependency_osv;
+DROP TABLE dependency_module;
+DROP TABLE dependency;
+DROP TABLE dependency_type;
+DROP TABLE module_maintainer;
+DROP TABLE maintainer;
+DROP TABLE module;
+DROP TABLE pull_request;
+DROP TABLE gh_repository;
+DROP TABLE gh_organization;
+DROP TABLE system_event;
+DROP TABLE system_event_type;

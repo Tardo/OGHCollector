@@ -1,45 +1,61 @@
 // Copyright Alexandre D. Díaz
-use cached::proc_macro::cached;
-use rusqlite::{params, params_from_iter, Params, Result};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::models::{
+use crate::schema::module;
+use crate::utils::date::get_sqlite_utc_now;
+
+use super::{
     author, gh_organization, gh_repository, maintainer, module_author, module_committer,
     module_maintainer, system_event,
 };
-use crate::utils::date::get_sqlite_utc_now;
 use oghutils::version::odoo_version_u8_to_string;
 
 use super::system_event::LogUpdateModuleInfo;
 
-pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
-
-pub static TABLE_NAME: &str = "module";
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
+#[diesel(table_name = module, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
     pub id: i64,
     pub technical_name: String,
-    pub version_odoo: u8,
+    pub version_odoo: i32,
     pub name: String,
     pub version_module: String,
-    pub description: String,
-    pub website: String,
-    pub license: String,
-    pub category: String,
+    pub description: Option<String>,
+    pub website: Option<String>,
+    pub license: Option<String>,
+    pub category: Option<String>,
     pub auto_install: bool,
     pub application: bool,
     pub installable: bool,
-    pub gh_repository_id: (i64, String),
+    pub gh_repository_id: i64,
     pub create_date: String,
     pub update_date: String,
-    pub folder_size: u64,
+    pub folder_size: i64,
     pub last_commit_hash: String,
     pub last_commit_author: String,
-    pub last_commit_date: String,
     pub last_commit_name: String,
-    pub last_commit_partof: String,
+    pub last_commit_date: String,
+    pub last_commit_partof: Option<String>,
+}
+
+impl Model {
+    pub fn description_str(&self) -> &str {
+        self.description.as_deref().unwrap_or("")
+    }
+    pub fn website_str(&self) -> &str {
+        self.website.as_deref().unwrap_or("")
+    }
+    pub fn license_str(&self) -> &str {
+        self.license.as_deref().unwrap_or("LGPL-3")
+    }
+    pub fn category_str(&self) -> &str {
+        self.category.as_deref().unwrap_or("Uncategorized")
+    }
+    pub fn last_commit_partof_str(&self) -> &str {
+        self.last_commit_partof.as_deref().unwrap_or("")
+    }
 }
 
 #[derive(Clone)]
@@ -71,63 +87,91 @@ pub struct ManifestInfo {
     pub committers: HashMap<String, u32>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub name: String,
-    pub version_odoo: u8,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub organization: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleGenericInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub versions: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub src: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleCountInfo {
-    pub count: u32,
-    pub version_odoo: u8,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleCountByOrganizationInfo {
-    pub count: u32,
-    pub version_odoo: u8,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleRankContributorInfo {
-    pub count: u32,
-    pub version_odoo: u8,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub contrib_name: String,
-    pub rank: u16,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub rank: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleRankCommitterInfo {
-    pub count: u32,
-    pub version_odoo: u8,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub committer_name: String,
-    pub rank: u16,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub rank: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleRepositoryInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository_name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleLastCreatedInfo {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub id: i64,
-    pub version_odoo: u8,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub create_date: String,
 }
 
@@ -135,563 +179,526 @@ pub struct ModuleLastCreatedInfo {
 pub struct ModuleListInfo {
     pub technical_name: String,
     pub org_name: String,
-    pub versions_odoo: Vec<u8>,
+    pub versions_odoo: Vec<i32>,
 }
 
-pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "CREATE TABLE IF NOT EXISTS {0} (
-            id integer primary key,
-            technical_name text not null,
-            version_odoo integer not null,
-            name text not null,
-            version_module text not null,
-            description text,
-            website text,
-            license text default 'LGPL-3',
-            category text default 'Uncategorized',
-            auto_install boolean not null default false,
-            application boolean not null default false,
-            installable boolean not null default true,
-            gh_repository_id integer not null references {1}(id),
-            create_date text not null,
-            update_date text not null,
-            folder_size integer not null,
-            last_commit_hash text not null,
-            last_commit_author text not null,
-            last_commit_name text not null,
-            last_commit_date text not null,
-            last_commit_partof text,
-            CONSTRAINT fk_gh_repository
-                FOREIGN KEY (gh_repository_id)
-                REFERENCES {1}(id)
-                ON DELETE CASCADE
-        )",
-            &TABLE_NAME,
-            &gh_repository::TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )?;
-    conn.execute(
-        format!("CREATE UNIQUE INDEX IF NOT EXISTS uniq_tech_name_ver_odoo_gh_repository_id ON {}(technical_name, version_odoo, gh_repository_id)", &TABLE_NAME).as_str(),
-        params![],
-    )
+#[derive(QueryableByName)]
+struct ModuleListRow {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    versions_str: String,
 }
 
-fn query<P>(conn: &Connection, extra_sql: &str, params: P) -> Result<Vec<Model>, rusqlite::Error>
-where
-    P: Params,
-{
-    let sql = format!(
-        "SELECT mod.id, mod.technical_name, mod.version_odoo, mod.name, \
-    mod.version_module, mod.description, \
-    mod.website, mod.license, mod.category, \
-    mod.auto_install, mod.application, mod.installable, \
-    mod.gh_repository_id, gh_repo.name, mod.create_date, mod.update_date, \
-    mod.folder_size, mod.last_commit_hash, mod.last_commit_author, \
-    mod.last_commit_date, mod.last_commit_name, mod.last_commit_partof \
-    FROM {} as mod \
-    INNER JOIN {} as gh_repo \
-    ON gh_repo.id = mod.gh_repository_id \
-    {}",
-        &TABLE_NAME,
-        &gh_repository::TABLE_NAME,
-        &extra_sql
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let module_rows = stmt.query_map(params, |row| {
-        Ok(Model {
-            id: row.get(0)?,
-            technical_name: row.get(1)?,
-            version_odoo: row.get(2)?,
-            name: row.get(3)?,
-            version_module: row.get(4)?,
-            description: row.get(5)?,
-            website: row.get(6)?,
-            license: row.get(7)?,
-            category: row.get(8)?,
-            auto_install: row.get(9)?,
-            application: row.get(10)?,
-            installable: row.get(11)?,
-            gh_repository_id: (row.get(12)?, row.get(13)?),
-            create_date: row.get(14)?,
-            update_date: row.get(15)?,
-            folder_size: row.get(16)?,
-            last_commit_hash: row.get(17)?,
-            last_commit_author: row.get(18)?,
-            last_commit_date: row.get(19)?,
-            last_commit_name: row.get(20)?,
-            last_commit_partof: row.get(21)?,
-        })
-    })?;
-    let modules_iter = module_rows.map(|x| x.unwrap());
-    let modules = modules_iter.collect::<Vec<Model>>();
-    Ok(modules)
+#[derive(Insertable)]
+#[diesel(table_name = module)]
+struct NewModule<'a> {
+    technical_name: &'a str,
+    version_odoo: i32,
+    name: &'a str,
+    version_module: &'a str,
+    description: Option<&'a str>,
+    website: Option<&'a str>,
+    license: Option<&'a str>,
+    category: Option<&'a str>,
+    auto_install: bool,
+    application: bool,
+    installable: bool,
+    gh_repository_id: i64,
+    create_date: &'a str,
+    update_date: &'a str,
+    folder_size: i64,
+    last_commit_hash: &'a str,
+    last_commit_author: &'a str,
+    last_commit_name: &'a str,
+    last_commit_date: &'a str,
+    last_commit_partof: Option<&'a str>,
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", id) }"#
-)]
-pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let modules = query(conn, "WHERE mod.id = ?1", params![&id]).unwrap();
-    if modules.is_empty() {
-        return None;
-    }
-    Some(modules[0].clone())
+pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
+    module::table
+        .filter(module::id.eq(id))
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in module::get_by_id")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}", version_odoo) }"#
-)]
-pub fn get_by_odoo_version(conn: &Connection, version_odoo: &u8) -> Vec<Model> {
-    query(conn, "WHERE mod.version_odoo = ?1", params![&version_odoo]).unwrap()
+pub fn get_by_odoo_version(conn: &mut SqliteConnection, version_odoo: &u8) -> Vec<Model> {
+    module::table
+        .filter(module::version_odoo.eq(*version_odoo as i32))
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_odoo_version")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}{}{}", technical_name, version_odoo, gh_repo_id) }"#
-)]
 pub fn get_by_technical_name(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     version_odoo: &u8,
     gh_repo_id: &i64,
 ) -> Option<Model> {
-    let modules = query(conn, "WHERE mod.technical_name = ?1 AND mod.version_odoo = ?2 AND mod.gh_repository_id = ?3 LIMIT 1", params![&technical_name, &version_odoo, &gh_repo_id]).unwrap();
-    if modules.is_empty() {
-        return None;
-    }
-    Some(modules[0].clone())
+    module::table
+        .filter(
+            module::technical_name
+                .eq(technical_name)
+                .and(module::version_odoo.eq(*version_odoo as i32))
+                .and(module::gh_repository_id.eq(gh_repo_id)),
+        )
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in module::get_by_technical_name")
 }
 
 pub fn get_by_technical_name_odoo_version(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     modules: &[String],
     version_odoo: &u8,
 ) -> Vec<Model> {
-    // Genera los placeholders
-    let mod_placeholders = modules
-        .iter()
-        .map(|_| "?".to_string())
-        .collect::<Vec<String>>()
-        .join(", ");
-    let mut params_vec: Vec<&dyn rusqlite::ToSql> = modules
-        .iter()
-        .map(|module_name| module_name as &dyn rusqlite::ToSql)
-        .collect();
-    params_vec.push(version_odoo as &dyn rusqlite::ToSql);
-    query(
-        conn,
-        format!("WHERE mod.technical_name IN ({mod_placeholders}) AND mod.version_odoo = ?")
-            .as_str(),
-        params_from_iter(params_vec.iter()),
-    )
-    .unwrap()
+    module::table
+        .filter(
+            module::technical_name
+                .eq_any(modules)
+                .and(module::version_odoo.eq(*version_odoo as i32)),
+        )
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_technical_name_odoo_version")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}{}{}", technical_name, version_odoo, org_name, repo_name) }"#
-)]
 pub fn get_by_technical_name_odoo_version_organization_name_repository_name(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     version_odoo: &u8,
     org_name: &str,
     repo_name: &str,
 ) -> Vec<Model> {
-    let modules = query(conn, format!("INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name = ?1 AND mod.version_odoo = ?2 AND gh_repo.name = ?3 AND gh_org.name = ?4", 
-        &gh_organization::TABLE_NAME).as_str(),
-        params![&technical_name, &version_odoo, &repo_name, &org_name]).unwrap();
-    modules
+    use crate::schema::{gh_organization, gh_repository};
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(
+            module::technical_name
+                .eq(technical_name)
+                .and(module::version_odoo.eq(*version_odoo as i32))
+                .and(gh_repository::name.eq(repo_name))
+                .and(gh_organization::name.eq(org_name)),
+        )
+        .select(Model::as_select())
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_technical_name_odoo_version_organization_name_repository_name")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}{}", technical_name, version_odoo, org_name) }"#
-)]
 pub fn get_by_technical_name_odoo_version_organization_name(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     version_odoo: &u8,
     org_name: &str,
 ) -> Vec<Model> {
-    let modules = query(
-        conn,
-        format!(
-            "INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name = ?1 AND mod.version_odoo = ?2 AND gh_org.name = ?3",
-            &gh_organization::TABLE_NAME
+    use crate::schema::{gh_organization, gh_repository};
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
         )
-        .as_str(),
-        params![&technical_name, &version_odoo, &org_name],
-    )
-    .unwrap();
-    modules
+        .filter(
+            module::technical_name
+                .eq(technical_name)
+                .and(module::version_odoo.eq(*version_odoo as i32))
+                .and(gh_organization::name.eq(org_name)),
+        )
+        .select(Model::as_select())
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_technical_name_odoo_version_organization_name")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}", technical_name, org_name) }"#
-)]
 pub fn get_by_technical_name_organization_name(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     org_name: &str,
 ) -> Vec<Model> {
-    let modules = query(
-        conn,
-        format!(
-            "INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name = ?1 AND gh_org.name = ?2",
-            &gh_organization::TABLE_NAME
+    use crate::schema::{gh_organization, gh_repository};
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
         )
-        .as_str(),
-        params![&technical_name, &org_name],
-    )
-    .unwrap();
-    modules
+        .filter(
+            module::technical_name
+                .eq(technical_name)
+                .and(gh_organization::name.eq(org_name)),
+        )
+        .select(Model::as_select())
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_technical_name_organization_name")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}{}", technical_name, version_odoo, repo_name) }"#
-)]
 pub fn get_by_technical_name_odoo_version_repository_name(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     version_odoo: &u8,
     repo_name: &str,
 ) -> Vec<Model> {
-    query(
-        conn,
-        "WHERE mod.technical_name = ?1 AND mod.version_odoo = ?2 AND gh_repo.name = ?3",
-        params![&technical_name, &version_odoo, &repo_name],
+    use crate::schema::gh_repository;
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .filter(
+            module::technical_name
+                .eq(technical_name)
+                .and(module::version_odoo.eq(*version_odoo as i32))
+                .and(gh_repository::name.eq(repo_name)),
+        )
+        .select(Model::as_select())
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_technical_name_odoo_version_repository_name")
+}
+
+pub fn get_generic_info(
+    conn: &mut SqliteConnection,
+    technical_name: &str,
+) -> Vec<ModuleGenericInfo> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ',') as versions, \
+         gh_org.name || '/' || gh_repo.name as src \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         WHERE mod.technical_name LIKE ? \
+         GROUP BY mod.technical_name, src",
     )
-    .unwrap()
+    .bind::<diesel::sql_types::Text, _>(format!("%{technical_name}%"))
+    .load::<ModuleGenericInfo>(conn)
+    .expect("DB error in module::get_generic_info")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}", technical_name) }"#
-)]
-pub fn get_generic_info(conn: &Connection, technical_name: &str) -> Vec<ModuleGenericInfo> {
-    let mut stmt = conn.prepare(
-        format!("SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ','), gh_org.name || '/' || gh_repo.name as src \
-        FROM {} as mod \
-        INNER JOIN {} as gh_repo \
-        ON gh_repo.id = mod.gh_repository_id \
-        INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name LIKE ?1 \
-        GROUP BY mod.technical_name, src",
-        &TABLE_NAME, &gh_repository::TABLE_NAME, &gh_organization::TABLE_NAME).as_str(),
-    ).unwrap();
-    let module_rows = stmt
-        .query_map(
-            params![format!("%{}%", &technical_name)],
-            |row: &rusqlite::Row<'_>| {
-                Ok(ModuleGenericInfo {
-                    technical_name: row.get(0)?,
-                    versions: row.get(1)?,
-                    src: row.get(2)?,
-                })
-            },
-        )
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleGenericInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}", technical_name, version_odoo) }"#
-)]
 pub fn get_generic_info_by_odoo_version(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     version_odoo: &u8,
 ) -> Vec<ModuleGenericInfo> {
-    let mut stmt = conn.prepare(
-        format!("SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ','), gh_org.name || '/' || gh_repo.name as src \
-        FROM {} as mod \
-        INNER JOIN {} as gh_repo \
-        ON gh_repo.id = mod.gh_repository_id \
-        INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name LIKE ?1 AND mod.version_odoo = ?2\
-        GROUP BY mod.technical_name, src",
-        &TABLE_NAME, &gh_repository::TABLE_NAME, &gh_organization::TABLE_NAME).as_str(),
-    ).unwrap();
-    let module_rows = stmt
-        .query_map(
-            params![format!("%{}%", &technical_name), &version_odoo],
-            |row: &rusqlite::Row<'_>| {
-                Ok(ModuleGenericInfo {
-                    technical_name: row.get(0)?,
-                    versions: row.get(1)?,
-                    src: row.get(2)?,
-                })
-            },
-        )
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleGenericInfo>>()
+    diesel::sql_query(
+        "SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ',') as versions, \
+         gh_org.name || '/' || gh_repo.name as src \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         WHERE mod.technical_name LIKE ? AND mod.version_odoo = ? \
+         GROUP BY mod.technical_name, src",
+    )
+    .bind::<diesel::sql_types::Text, _>(format!("%{technical_name}%"))
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
+    .load::<ModuleGenericInfo>(conn)
+    .expect("DB error in module::get_generic_info_by_odoo_version")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}{}", technical_name, version_odoo, installable) }"#
-)]
 pub fn get_generic_info_by_odoo_version_installable(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     version_odoo: &u8,
     installable: &bool,
 ) -> Vec<ModuleGenericInfo> {
-    let mut stmt = conn.prepare(
-        format!("SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ','), gh_org.name || '/' || gh_repo.name as src \
-        FROM {} as mod \
-        INNER JOIN {} as gh_repo \
-        ON gh_repo.id = mod.gh_repository_id \
-        INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name LIKE ?1 AND mod.version_odoo = ?2 AND mod.installable = ?3\
-        GROUP BY mod.technical_name, src",
-        &TABLE_NAME, &gh_repository::TABLE_NAME, &gh_organization::TABLE_NAME).as_str(),
-    ).unwrap();
-    let module_rows = stmt
-        .query_map(
-            params![
-                format!("%{}%", &technical_name),
-                &version_odoo,
-                &installable
-            ],
-            |row: &rusqlite::Row<'_>| {
-                Ok(ModuleGenericInfo {
-                    technical_name: row.get(0)?,
-                    versions: row.get(1)?,
-                    src: row.get(2)?,
-                })
-            },
-        )
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleGenericInfo>>()
+    diesel::sql_query(
+        "SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ',') as versions, \
+         gh_org.name || '/' || gh_repo.name as src \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         WHERE mod.technical_name LIKE ? AND mod.version_odoo = ? AND mod.installable = ? \
+         GROUP BY mod.technical_name, src",
+    )
+    .bind::<diesel::sql_types::Text, _>(format!("%{technical_name}%"))
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
+    .bind::<diesel::sql_types::Bool, _>(*installable)
+    .load::<ModuleGenericInfo>(conn)
+    .expect("DB error in module::get_generic_info_by_odoo_version_installable")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}", technical_name, installable) }"#
-)]
 pub fn get_generic_info_by_installable(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     technical_name: &str,
     installable: &bool,
 ) -> Vec<ModuleGenericInfo> {
-    let mut stmt = conn.prepare(
-        format!("SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ','), gh_org.name || '/' || gh_repo.name as src \
-        FROM {} as mod \
-        INNER JOIN {} as gh_repo \
-        ON gh_repo.id = mod.gh_repository_id \
-        INNER JOIN {} as gh_org \
-        on gh_org.id = gh_repo.gh_organization_id \
-        WHERE mod.technical_name LIKE ?1 AND mod.installable = ?2\
-        GROUP BY mod.technical_name, src",
-        &TABLE_NAME, &gh_repository::TABLE_NAME, &gh_organization::TABLE_NAME).as_str(),
-    ).unwrap();
-    let module_rows = stmt
-        .query_map(
-            params![format!("%{}%", &technical_name), &installable],
-            |row: &rusqlite::Row<'_>| {
-                Ok(ModuleGenericInfo {
-                    technical_name: row.get(0)?,
-                    versions: row.get(1)?,
-                    src: row.get(2)?,
-                })
-            },
-        )
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleGenericInfo>>()
+    diesel::sql_query(
+        "SELECT mod.technical_name, GROUP_CONCAT(mod.version_odoo, ',') as versions, \
+         gh_org.name || '/' || gh_repo.name as src \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         WHERE mod.technical_name LIKE ? AND mod.installable = ? \
+         GROUP BY mod.technical_name, src",
+    )
+    .bind::<diesel::sql_types::Text, _>(format!("%{technical_name}%"))
+    .bind::<diesel::sql_types::Bool, _>(*installable)
+    .load::<ModuleGenericInfo>(conn)
+    .expect("DB error in module::get_generic_info_by_installable")
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}", technical_name) }"#
-)]
-pub fn get_info(conn: &Connection, technical_name: &str) -> Vec<ModuleInfo> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT mod.technical_name, mod.name, mod.version_odoo, gh_org.name, gh_rep.name \
-        FROM {} as mod \
-        INNER JOIN {} as gh_rep \
-        ON gh_rep.id = mod.gh_repository_id \
-        INNER JOIN {} as gh_org \
-        ON gh_org.id = gh_rep.gh_organization_id \
-        WHERE technical_name = ?1",
-                &TABLE_NAME,
-                &gh_repository::TABLE_NAME,
-                &gh_organization::TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(params![&technical_name], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleInfo {
-                technical_name: row.get(0)?,
-                name: row.get(1)?,
-                version_odoo: row.get(2)?,
-                organization: row.get(3)?,
-                repository: row.get(4)?,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleInfo>>()
+pub fn get_info(conn: &mut SqliteConnection, technical_name: &str) -> Vec<ModuleInfo> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, mod.name, mod.version_odoo, gh_org.name as organization, \
+         gh_rep.name as repository \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_rep ON gh_rep.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_rep.gh_organization_id \
+         WHERE mod.technical_name = ?",
+    )
+    .bind::<diesel::sql_types::Text, _>(technical_name)
+    .load::<ModuleInfo>(conn)
+    .expect("DB error in module::get_info")
 }
 
-pub fn add(conn: &Connection, module_info: &ManifestInfo) -> Result<Model, rusqlite::Error> {
+pub fn count(conn: &mut SqliteConnection) -> Vec<ModuleCountInfo> {
+    diesel::sql_query("SELECT version_odoo, count(*) as count FROM module GROUP BY version_odoo")
+        .load::<ModuleCountInfo>(conn)
+        .expect("DB error in module::count")
+}
+
+pub fn count_organization(conn: &mut SqliteConnection) -> Vec<ModuleCountByOrganizationInfo> {
+    diesel::sql_query(
+        "SELECT mod.version_odoo, count(*) as count, org.name as org_name \
+         FROM module as mod \
+         INNER JOIN gh_repository as repo ON mod.gh_repository_id = repo.id \
+         INNER JOIN gh_organization as org ON repo.gh_organization_id = org.id \
+         GROUP BY org.id, mod.version_odoo \
+         ORDER BY count DESC",
+    )
+    .load::<ModuleCountByOrganizationInfo>(conn)
+    .expect("DB error in module::count_organization")
+}
+
+pub fn rank_contributor(conn: &mut SqliteConnection) -> Vec<ModuleRankContributorInfo> {
+    diesel::sql_query(
+        "SELECT * FROM (\
+           SELECT mod.version_odoo, count(*) as count, au.name as contrib_name, \
+                  RANK() OVER (PARTITION BY mod.version_odoo ORDER BY count(*) DESC) AS rank \
+           FROM module as mod \
+           INNER JOIN module_author as mod_au ON mod.id = mod_au.module_id \
+           INNER JOIN author as au ON mod_au.author_id = au.id \
+           WHERE au.name NOT LIKE '% (OCA)' AND au.name NOT LIKE 'OpenERP %' \
+                 AND au.name NOT LIKE 'Odoo %' \
+           GROUP BY au.id, mod.version_odoo \
+           ORDER BY count DESC \
+         ) WHERE rank <= 5 ORDER BY rank ASC",
+    )
+    .load::<ModuleRankContributorInfo>(conn)
+    .expect("DB error in module::rank_contributor")
+}
+
+pub fn rank_committer(conn: &mut SqliteConnection) -> Vec<ModuleRankCommitterInfo> {
+    diesel::sql_query(
+        "SELECT * FROM (\
+           SELECT mod.version_odoo, SUM(mod_com.commits) as count, com.name as committer_name, \
+                  RANK() OVER (PARTITION BY mod.version_odoo ORDER BY SUM(mod_com.commits) DESC) AS rank \
+           FROM module as mod \
+           INNER JOIN module_committer as mod_com ON mod.id = mod_com.module_id \
+           INNER JOIN committer as com ON mod_com.committer_id = com.id \
+           WHERE com.name NOT IN \
+                 ('Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci') \
+           GROUP BY com.id, mod.version_odoo \
+         ) WHERE rank <= 5 ORDER BY rank ASC",
+    )
+    .load::<ModuleRankCommitterInfo>(conn)
+    .expect("DB error in module::rank_committer")
+}
+
+pub fn get_latest_modules_created(conn: &mut SqliteConnection) -> Vec<ModuleLastCreatedInfo> {
+    diesel::sql_query(
+        "SELECT mod.id, mod.version_odoo, mod.technical_name, date(mod.create_date) as create_date, \
+         gh_org.name as org_name \
+         FROM module as mod \
+         INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         ORDER BY mod.create_date DESC LIMIT 10",
+    )
+    .load::<ModuleLastCreatedInfo>(conn)
+    .expect("DB error in module::get_latest_modules_created")
+}
+
+pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
+    diesel::sql_query(
+        "SELECT DISTINCT mod.technical_name, gh_org.name as org_name, \
+         GROUP_CONCAT(mod.version_odoo) as versions_str \
+         FROM module as mod \
+         INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         GROUP BY gh_org.name, mod.technical_name",
+    )
+    .load::<ModuleListRow>(conn)
+    .expect("DB error in module::list")
+    .into_iter()
+    .map(|row| ModuleListInfo {
+        technical_name: row.technical_name,
+        org_name: row.org_name,
+        versions_odoo: row
+            .versions_str
+            .split(',')
+            .filter_map(|s| s.trim().parse::<i32>().ok())
+            .collect(),
+    })
+    .collect()
+}
+
+pub fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<i32> {
+    diesel::sql_query(
+        "SELECT version_odoo FROM module GROUP BY version_odoo ORDER BY version_odoo DESC",
+    )
+    .load::<crate::models::IntRow>(conn)
+    .expect("DB error in module::get_odoo_versions")
+    .into_iter()
+    .map(|r| r.value)
+    .collect()
+}
+
+pub fn get_module_repository(
+    conn: &mut SqliteConnection,
+    version_odoo: &u8,
+    modules: &[String],
+) -> Vec<ModuleRepositoryInfo> {
+    if modules.is_empty() {
+        return vec![];
+    }
+    let names_list = modules
+        .iter()
+        .map(|n| format!("'{}'", n.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(",");
+    diesel::sql_query(format!(
+        "SELECT mod.technical_name, gh_repo.name as repository_name \
+         FROM module AS mod \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         WHERE mod.technical_name IN ({names_list}) AND mod.version_odoo = ? \
+         GROUP BY mod.technical_name"
+    ))
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
+    .load::<ModuleRepositoryInfo>(conn)
+    .expect("DB error in module::get_module_repository")
+}
+
+pub fn delete_outdated(
+    conn: &mut SqliteConnection,
+    gh_repo_id: &i64,
+    version_odoo: &u8,
+    module_ids: &[i64],
+) -> QueryResult<usize> {
+    if module_ids.is_empty() {
+        return Ok(0);
+    }
+    diesel::delete(
+        module::table.filter(
+            module::gh_repository_id
+                .eq(gh_repo_id)
+                .and(module::version_odoo.eq(*version_odoo as i32))
+                .and(module::id.ne_all(module_ids)),
+        ),
+    )
+    .execute(conn)
+}
+
+pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResult<Model> {
     let gh_org = gh_organization::add(conn, module_info.git_org.as_str())?;
     let gh_repo = gh_repository::add(conn, &gh_org.id, module_info.git_repo.as_str())?;
-    let module_opt = get_by_technical_name(
+
+    let description = if module_info.description.is_empty() {
+        None
+    } else {
+        Some(module_info.description.as_str())
+    };
+    let website = if module_info.website.is_empty() {
+        None
+    } else {
+        Some(module_info.website.as_str())
+    };
+    let license = if module_info.license.is_empty() {
+        None
+    } else {
+        Some(module_info.license.as_str())
+    };
+    let category = if module_info.category.is_empty() {
+        None
+    } else {
+        Some(module_info.category.as_str())
+    };
+    let last_commit_partof = if module_info.last_commit_partof.is_empty() {
+        None
+    } else {
+        Some(module_info.last_commit_partof.as_str())
+    };
+
+    let existing = get_by_technical_name(
         conn,
         module_info.technical_name.as_str(),
         &module_info.version_odoo,
         &gh_repo.id,
     );
-    if module_opt.is_none() {
-        let create_date: String = get_sqlite_utc_now();
-        conn.execute(
-            format!("INSERT INTO {}(technical_name, version_odoo, name, \
-                version_module, description, \
-                website, license, category, \
-                auto_install, application, installable, \
-                gh_repository_id, \
-                create_date, update_date, folder_size, \
-                last_commit_hash, last_commit_author, \
-                last_commit_date, last_commit_name, \
-                last_commit_partof) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
-                &TABLE_NAME).as_str(),
-                params![
-                    &module_info.technical_name,
-                    &module_info.version_odoo,
-                    &module_info.name,
-                    &module_info.version_module,
-                    &module_info.description,
-                    &module_info.website,
-                    &module_info.license,
-                    &module_info.category,
-                    &module_info.auto_install,
-                    &module_info.application,
-                    &module_info.installable,
-                    &gh_repo.id,
-                    &create_date,
-                    &module_info.folder_size,
-                    &module_info.last_commit_hash,
-                    &module_info.last_commit_author,
-                    &module_info.last_commit_date,
-                    &module_info.last_commit_name,
-                    &module_info.last_commit_partof
-                ],
-        )?;
+
+    if existing.is_none() {
+        let create_date = get_sqlite_utc_now();
+        diesel::insert_into(module::table)
+            .values(NewModule {
+                technical_name: &module_info.technical_name,
+                version_odoo: module_info.version_odoo as i32,
+                name: &module_info.name,
+                version_module: &module_info.version_module,
+                description,
+                website,
+                license,
+                category,
+                auto_install: module_info.auto_install,
+                application: module_info.application,
+                installable: module_info.installable,
+                gh_repository_id: gh_repo.id,
+                create_date: &create_date,
+                update_date: &create_date,
+                folder_size: module_info.folder_size as i64,
+                last_commit_hash: &module_info.last_commit_hash,
+                last_commit_author: &module_info.last_commit_author,
+                last_commit_name: &module_info.last_commit_name,
+                last_commit_date: &module_info.last_commit_date,
+                last_commit_partof,
+            })
+            .execute(conn)?;
+        let new_id = crate::models::last_insert_rowid(conn);
         let new_module = Model {
-            id: conn.last_insert_rowid(),
-            technical_name: module_info.technical_name.to_string(),
-            version_odoo: module_info.version_odoo,
-            name: module_info.name.to_string(),
-            version_module: module_info.version_module.to_string(),
-            description: module_info.description.to_string(),
-            website: module_info.website.to_string(),
-            license: module_info.license.to_string(),
-            category: module_info.category.to_string(),
+            id: new_id,
+            technical_name: module_info.technical_name.clone(),
+            version_odoo: module_info.version_odoo as i32,
+            name: module_info.name.clone(),
+            version_module: module_info.version_module.clone(),
+            description: description.map(|s| s.to_string()),
+            website: website.map(|s| s.to_string()),
+            license: license.map(|s| s.to_string()),
+            category: category.map(|s| s.to_string()),
             auto_install: module_info.auto_install,
             application: module_info.application,
             installable: module_info.installable,
-            gh_repository_id: (gh_repo.id, gh_repo.name.clone()),
+            gh_repository_id: gh_repo.id,
             create_date: create_date.clone(),
-            update_date: create_date.clone(),
-            folder_size: module_info.folder_size,
-            last_commit_hash: module_info.last_commit_hash.to_string(),
-            last_commit_author: module_info.last_commit_author.to_string(),
-            last_commit_date: module_info.last_commit_date.to_string(),
-            last_commit_name: module_info.last_commit_name.to_string(),
-            last_commit_partof: module_info.last_commit_partof.to_string(),
+            update_date: create_date,
+            folder_size: module_info.folder_size as i64,
+            last_commit_hash: module_info.last_commit_hash.clone(),
+            last_commit_author: module_info.last_commit_author.clone(),
+            last_commit_name: module_info.last_commit_name.clone(),
+            last_commit_date: module_info.last_commit_date.clone(),
+            last_commit_partof: last_commit_partof.map(|s| s.to_string()),
         };
-        let author_iter = module_info
+
+        for item in module_info
             .author
-            .split(",")
+            .split(',')
             .map(|x| x.trim())
-            .filter(|x| !x.is_empty());
-        let authors = author_iter.collect::<Vec<&str>>();
-        for item in authors {
-            if !item.is_empty() {
-                module_author::add(conn, &new_module.id, item)?;
-            }
+            .filter(|x| !x.is_empty())
+        {
+            module_author::add(conn, &new_module.id, item)?;
         }
-        let maintainer_iter = module_info
+        for item in module_info
             .maintainer
-            .split(",")
+            .split(',')
             .map(|x| x.trim())
-            .filter(|x| !x.is_empty());
-        let maintainers = maintainer_iter.collect::<Vec<&str>>();
-        for item in maintainers {
+            .filter(|x| !x.is_empty())
+        {
             module_maintainer::add(conn, &new_module.id, item)?;
         }
-
         for (com_name, com_count) in &module_info.committers {
             module_committer::add(conn, &new_module.id, com_name.as_str(), com_count)?;
         }
@@ -708,171 +715,150 @@ pub fn add(conn: &Connection, module_info: &ManifestInfo) -> Result<Model, rusql
         return Ok(new_module);
     }
 
-    let module = module_opt.unwrap();
+    let existing_module = existing.unwrap();
 
-    // Update Committers
+    // Update committers
     for (com_name, com_count) in &module_info.committers {
-        module_committer::add(conn, &module.id, com_name.as_str(), com_count)?;
+        module_committer::add(conn, &existing_module.id, com_name.as_str(), com_count)?;
     }
 
-    // Check Authors
-    let author_iter = module_info
+    // Check authors
+    let authors: Vec<String> = module_info
         .author
-        .split(",")
+        .split(',')
         .map(|x| x.trim().to_string())
-        .filter(|x| !x.is_empty());
-    let authors: Vec<String> = author_iter.collect::<Vec<String>>();
-    let module_authors = module_author::get_names_by_module_id(conn, &module.id);
-    let authors_to_remove: Vec<&String> = module_authors
+        .filter(|x| !x.is_empty())
+        .collect();
+    let module_authors = module_author::get_names_by_module_id(conn, &existing_module.id);
+    for author_name in module_authors
         .iter()
         .filter(|item| !authors.contains(item))
-        .collect();
-    let authors_to_add: Vec<&String> = authors
-        .iter()
-        .filter(|item| !module_authors.contains(&item.to_string()))
-        .collect();
-    for author_name in authors_to_remove {
-        let author_id_opt = author::get_by_name(conn, author_name);
-        if let Some(author_id) = author_id_opt {
-            module_author::delete_by_module_id_author_id(conn, &module.id, &author_id.id)?;
+        .collect::<Vec<_>>()
+    {
+        if let Some(a) = author::get_by_name(conn, author_name) {
+            module_author::delete_by_module_id_author_id(conn, &existing_module.id, &a.id)?;
             let _ = system_event::register_delete_module_author(
                 conn,
-                &author_id.name,
-                &module.technical_name,
-                &module.name,
-                odoo_version_u8_to_string(&module.version_odoo).as_str(),
+                &a.name,
+                &existing_module.technical_name,
+                &existing_module.name,
+                odoo_version_u8_to_string(&(existing_module.version_odoo as u8)).as_str(),
             );
         }
     }
-    for author_name in authors_to_add {
-        module_author::add(conn, &module.id, author_name)?;
+    for author_name in authors
+        .iter()
+        .filter(|item| !module_authors.contains(&item.to_string()))
+        .collect::<Vec<_>>()
+    {
+        module_author::add(conn, &existing_module.id, author_name)?;
     }
 
-    // Check Maintainers
-    let maintainer_iter = module_info
+    // Check maintainers
+    let maintainers: Vec<String> = module_info
         .maintainer
-        .split(",")
+        .split(',')
         .map(|x| x.trim().to_string())
-        .filter(|x| !x.is_empty());
-    let maintainers: Vec<String> = maintainer_iter.collect::<Vec<String>>();
-    let module_maintainers = module_maintainer::get_names_by_module_id(conn, &module.id);
-    let maintainers_to_remove: Vec<&String> = module_maintainers
+        .filter(|x| !x.is_empty())
+        .collect();
+    let module_maintainers = module_maintainer::get_names_by_module_id(conn, &existing_module.id);
+    for maint_name in module_maintainers
         .iter()
         .filter(|item| !maintainers.contains(item))
-        .collect();
-    let maintainers_to_add: Vec<&String> = maintainers
-        .iter()
-        .filter(|item| !module_maintainers.contains(&item.to_string()))
-        .collect();
-    for maintainer_name in maintainers_to_remove {
-        let maintainer_id_opt = maintainer::get_by_name(conn, maintainer_name);
-        if let Some(maintainer_id) = maintainer_id_opt {
-            module_maintainer::delete_by_module_id_maintainer_id(
-                conn,
-                &module.id,
-                &maintainer_id.id,
-            )?;
+        .collect::<Vec<_>>()
+    {
+        if let Some(m) = maintainer::get_by_name(conn, maint_name) {
+            module_maintainer::delete_by_module_id_maintainer_id(conn, &existing_module.id, &m.id)?;
             let _ = system_event::register_delete_module_maintainer(
                 conn,
-                &maintainer_id.name,
-                &module.technical_name,
-                &module.name,
-                odoo_version_u8_to_string(&module.version_odoo).as_str(),
+                &m.name,
+                &existing_module.technical_name,
+                &existing_module.name,
+                odoo_version_u8_to_string(&(existing_module.version_odoo as u8)).as_str(),
             );
         }
     }
-    for maintainer_name in maintainers_to_add {
-        module_maintainer::add(conn, &module.id, maintainer_name)?;
+    for maint_name in maintainers
+        .iter()
+        .filter(|item| !module_maintainers.contains(&item.to_string()))
+        .collect::<Vec<_>>()
+    {
+        module_maintainer::add(conn, &existing_module.id, maint_name)?;
     }
 
-    //
-
+    // Check for field changes
     let mut changes: Vec<(&str, &str, &str)> = Vec::new();
-    let module_auto_install_str = module.auto_install.to_string();
     let auto_install_str = module_info.auto_install.to_string();
-    let module_installable_str = module.installable.to_string();
     let installable_str = module_info.installable.to_string();
-    let module_application_str = module.application.to_string();
     let application_str = module_info.application.to_string();
-    let module_folder_size_str = module.folder_size.to_string();
-    let folder_size_str = module_info.folder_size.to_string();
+    let folder_size_str = (module_info.folder_size as i64).to_string();
+    let module_auto_install_str = existing_module.auto_install.to_string();
+    let module_installable_str = existing_module.installable.to_string();
+    let module_application_str = existing_module.application.to_string();
+    let module_folder_size_str = existing_module.folder_size.to_string();
 
-    if !module.name.eq(&module_info.name) {
-        changes.push(("Name", &module.name, module_info.name.as_str()));
+    if existing_module.name != module_info.name {
+        changes.push(("Name", &existing_module.name, &module_info.name));
     }
-    if !module.version_module.eq(&module_info.version_module) {
+    if existing_module.version_module != module_info.version_module {
         changes.push((
             "Version Module",
-            &module.version_module,
-            module_info.version_module.as_str(),
+            &existing_module.version_module,
+            &module_info.version_module,
         ));
     }
-    if !module.description.eq(&module_info.description) {
-        changes.push((
-            "Description",
-            &module.description,
-            module_info.description.as_str(),
-        ));
+    let existing_desc = existing_module.description_str().to_string();
+    if existing_desc != module_info.description {
+        changes.push(("Description", &existing_desc, &module_info.description));
     }
-    if !module.website.eq(&module_info.website) {
-        changes.push(("Website", &module.website, module_info.website.as_str()));
+    let existing_website = existing_module.website_str().to_string();
+    if existing_website != module_info.website {
+        changes.push(("Website", &existing_website, &module_info.website));
     }
-    if !module.license.eq(&module_info.license) {
-        changes.push(("License", &module.license, module_info.license.as_str()));
+    let existing_license = existing_module.license_str().to_string();
+    if existing_license != module_info.license {
+        changes.push(("License", &existing_license, &module_info.license));
     }
-    if !module.category.eq(&module_info.category) {
-        changes.push(("Category", &module.category, module_info.category.as_str()));
+    let existing_category = existing_module.category_str().to_string();
+    if existing_category != module_info.category {
+        changes.push(("Category", &existing_category, &module_info.category));
     }
-    if !module.auto_install.eq(&module_info.auto_install) {
+    if existing_module.auto_install != module_info.auto_install {
         changes.push(("Auto Install", &module_auto_install_str, &auto_install_str));
     }
-    if !module.installable.eq(&module_info.installable) {
+    if existing_module.installable != module_info.installable {
         changes.push(("Installable", &module_installable_str, &installable_str));
     }
-    if !module.application.eq(&module_info.application) {
+    if existing_module.application != module_info.application {
         changes.push(("Application", &module_application_str, &application_str));
     }
-    if !module.folder_size.eq(&module_info.folder_size) {
+    if existing_module.folder_size != module_info.folder_size as i64 {
         changes.push(("Folder Size", &module_folder_size_str, &folder_size_str));
     }
 
     if changes.is_empty() {
-        return Ok(module);
+        return Ok(existing_module);
     }
-    let update_date: String = get_sqlite_utc_now();
-    conn.execute(
-        format!(
-            "UPDATE {} SET name = ?1, \
-        version_module = ?2, description = ?3, \
-        website = ?4, license = ?5, category = ?6, \
-        auto_install = ?7, application = ?8, installable = ?9, \
-        update_date = ?10, folder_size = ?11 WHERE id = ?12",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![
-            &module_info.name,
-            &module_info.version_module,
-            &module_info.description,
-            &module_info.website,
-            &module_info.license,
-            &module_info.category,
-            &module_info.auto_install,
-            &module_info.application,
-            &module_info.installable,
-            &update_date,
-            &module_info.folder_size,
-            &module.id
-        ],
-    )?;
-    let new_module_opt = get_by_technical_name(
-        conn,
-        module_info.technical_name.as_str(),
-        &module_info.version_odoo,
-        &gh_repo.id,
-    );
+
+    let update_date = get_sqlite_utc_now();
+    diesel::update(module::table.filter(module::id.eq(existing_module.id)))
+        .set((
+            module::name.eq(&module_info.name),
+            module::version_module.eq(&module_info.version_module),
+            module::description.eq(description),
+            module::website.eq(website),
+            module::license.eq(license),
+            module::category.eq(category),
+            module::auto_install.eq(module_info.auto_install),
+            module::application.eq(module_info.application),
+            module::installable.eq(module_info.installable),
+            module::update_date.eq(&update_date),
+            module::folder_size.eq(module_info.folder_size as i64),
+        ))
+        .execute(conn)?;
+
     let odoo_ver = odoo_version_u8_to_string(&module_info.version_odoo);
-    let log_upd_module_info = LogUpdateModuleInfo {
+    let log_info = LogUpdateModuleInfo {
         module_technical_name: module_info.technical_name.as_str(),
         module_name: module_info.name.as_str(),
         module_version: module_info.version_module.as_str(),
@@ -880,314 +866,19 @@ pub fn add(conn: &Connection, module_info: &ManifestInfo) -> Result<Model, rusql
         repo_name: module_info.git_repo.as_str(),
         module_version_odoo: odoo_ver.as_str(),
         module_changes: &changes,
-        last_commit_hash: &module.last_commit_hash,
-        last_commit_author: &module.last_commit_author,
-        last_commit_date: &module.last_commit_date,
-        last_commit_name: &module.last_commit_name,
-        last_commit_partof: &module.last_commit_partof,
+        last_commit_hash: &existing_module.last_commit_hash,
+        last_commit_author: &existing_module.last_commit_author,
+        last_commit_date: &existing_module.last_commit_date,
+        last_commit_name: &existing_module.last_commit_name,
+        last_commit_partof: existing_module.last_commit_partof_str(),
     };
-    let _ = system_event::register_update_module(conn, &log_upd_module_info);
-    Ok(new_module_opt.unwrap())
-}
+    let _ = system_event::register_update_module(conn, &log_info);
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn count(conn: &Connection) -> Vec<ModuleCountInfo> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT version_odoo, count(*) as num FROM {} GROUP BY version_odoo",
-                &TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleCountInfo {
-                version_odoo: row.get(0)?,
-                count: row.get(1)?,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleCountInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn count_organization(conn: &Connection) -> Vec<ModuleCountByOrganizationInfo> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT version_odoo, count(*) as num, org.name \
-        FROM {} as mod \
-        INNER JOIN gh_repository as repo \
-        ON mod.gh_repository_id = repo.id \
-        INNER JOIN gh_organization as org \
-        ON repo.gh_organization_id = org.id \
-        GROUP BY org.id, version_odoo \
-        ORDER BY num DESC",
-                &TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleCountByOrganizationInfo {
-                version_odoo: row.get(0)?,
-                count: row.get(1)?,
-                org_name: row.get(2)?,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleCountByOrganizationInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn rank_contributor(conn: &Connection) -> Vec<ModuleRankContributorInfo> {
-    let mut stmt = conn.prepare(
-        format!("SELECT * FROM (
-            SELECT version_odoo, count(*) as num, au.name, RANK() OVER (PARTITION BY version_odoo ORDER BY count(*) DESC) AS contribRank
-            FROM {} as mod
-            INNER JOIN module_author as mod_au
-            ON mod.id = mod_au.module_id
-            INNER JOIN author as au
-            ON mod_au.author_id = au.id
-            WHERE au.name NOT LIKE '% (OCA)' AND au.name NOT LIKE 'OpenERP %' AND au.name NOT LIKE 'Odoo %'
-            GROUP BY au.id, version_odoo 
-            ORDER BY num DESC
-        ) WHERE contribRank <= 5 ORDER BY contribRank ASC", &TABLE_NAME).as_str()
-    ).unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleRankContributorInfo {
-                version_odoo: row.get(0)?,
-                count: row.get(1)?,
-                contrib_name: row.get(2)?,
-                rank: row.get(3)?,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleRankContributorInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn rank_committer(conn: &Connection) -> Vec<ModuleRankCommitterInfo> {
-    let mut stmt = conn.prepare(
-        format!("SELECT * FROM (
-            SELECT version_odoo, SUM(commits), com.name, RANK() OVER (PARTITION BY version_odoo ORDER BY SUM(commits) DESC) AS commitsRank
-            FROM {} as mod
-            INNER JOIN module_committer as mod_com
-            ON mod.id = mod_com.module_id
-            INNER JOIN committer as com
-            ON mod_com.committer_id = com.id
-            WHERE com.name NOT IN ('Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci')
-            GROUP BY com.id, version_odoo 
-        ) WHERE commitsRank <= 5 ORDER BY commitsRank ASC", &TABLE_NAME).as_str()
-    ).unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleRankCommitterInfo {
-                version_odoo: row.get(0)?,
-                count: row.get(1)?,
-                committer_name: row.get(2)?,
-                rank: row.get(3)?,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleRankCommitterInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 900,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn get_latest_modules_created(conn: &Connection) -> Vec<ModuleLastCreatedInfo> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT mod.id, mod.version_odoo, mod.technical_name, date(mod.create_date), gh_org.name 
-                FROM {} as mod
-                INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id 
-                INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id 
-                ORDER BY mod.create_date DESC LIMIT 10",
-                &TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
-            Ok(ModuleLastCreatedInfo {
-                id: row.get(0)?,
-                version_odoo: row.get(1)?,
-                technical_name: row.get(2)?,
-                create_date: row.get(3)?,
-                org_name: row.get(4)?,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleLastCreatedInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 900,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn list(conn: &Connection) -> Vec<ModuleListInfo> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT DISTINCT mod.technical_name, gh_org.name, GROUP_CONCAT(mod.version_odoo)  
-                FROM {} as mod 
-                INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id 
-                INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id 
-                GROUP BY gh_org.name, technical_name",
-                &TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| {
-            let technical_name = row.get(0)?;
-            let org_name = row.get(1)?;
-            let versions_raw: String = row.get(2)?;
-            let versions_odoo: Vec<u8> = versions_raw
-                .split(',')
-                .filter_map(|s| s.trim().parse::<u8>().ok())
-                .collect();
-            Ok(ModuleListInfo {
-                technical_name,
-                org_name,
-                versions_odoo,
-            })
-        })
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleListInfo>>()
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    convert = r#"{ format!("") }"#
-)]
-pub fn get_odoo_versions(conn: &Connection) -> Vec<u8> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT version_odoo FROM {} GROUP BY version_odoo ORDER BY version_odoo DESC",
-                &TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(params![], |row: &rusqlite::Row<'_>| row.get(0))
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<u8>>()
-}
-
-pub fn get_module_repository(
-    conn: &Connection,
-    version_odoo: &u8,
-    modules: &[String],
-) -> Vec<ModuleRepositoryInfo> {
-    let mod_placeholders = modules
-        .iter()
-        .map(|_| "?".to_string())
-        .collect::<Vec<String>>()
-        .join(", ");
-    let mut params_vec: Vec<&dyn rusqlite::ToSql> = modules
-        .iter()
-        .map(|module_name| module_name as &dyn rusqlite::ToSql)
-        .collect();
-    params_vec.push(version_odoo as &dyn rusqlite::ToSql);
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT mod.technical_name, gh_repo.name 
-            FROM {} AS mod 
-            INNER JOIN gh_repository as gh_repo 
-            ON gh_repo.id = mod.gh_repository_id 
-            WHERE mod.technical_name IN ({}) 
-                AND mod.version_odoo = ? 
-            GROUP BY mod.technical_name",
-                &TABLE_NAME, mod_placeholders
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let module_rows = stmt
-        .query_map(
-            params_from_iter(params_vec.iter()),
-            |row: &rusqlite::Row<'_>| {
-                Ok(ModuleRepositoryInfo {
-                    technical_name: row.get(0)?,
-                    repository_name: row.get(1)?,
-                })
-            },
-        )
-        .unwrap();
-    let modules_iter = module_rows.map(|x| x.unwrap());
-
-    modules_iter.collect::<Vec<ModuleRepositoryInfo>>()
-}
-
-pub fn delete_outdated(
-    conn: &Connection,
-    gh_repo_id: &i64,
-    version_odoo: &u8,
-    module_ids: &[i64],
-) -> Result<usize, rusqlite::Error> {
-    if !module_ids.is_empty() {
-        let ids_str = module_ids
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>()
-            .join(", ");
-        return conn.execute(
-            &format!("DELETE FROM {} WHERE gh_repository_id = ?1 AND version_odoo = ?2 AND id not in ({})", &TABLE_NAME, &ids_str),
-            params![&gh_repo_id, &version_odoo],
-        );
-    }
-    Ok(0)
+    get_by_technical_name(
+        conn,
+        module_info.technical_name.as_str(),
+        &module_info.version_odoo,
+        &gh_repo.id,
+    )
+    .ok_or_else(|| diesel::result::Error::NotFound)
 }

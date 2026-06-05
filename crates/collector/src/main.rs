@@ -7,7 +7,6 @@ mod gitclient;
 mod pypi;
 
 use named_lock::NamedLock;
-use r2d2_sqlite::{self, SqliteConnectionManager};
 use regex::Regex;
 use std::collections::HashMap;
 use std::env;
@@ -23,7 +22,7 @@ use config::{GitType, OGHCollectorConfig};
 use gitclient::{GitClient, RepoInfo};
 use oghutils::version::odoo_version_u8_to_string;
 use pypi::PypiClient;
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
 
 fn try_lock(config: &OGHCollectorConfig) {
     let source_info = config.get_source().split('/').collect::<Vec<&str>>();
@@ -66,16 +65,10 @@ async fn main() {
     if !Path::new(db_path).exists() {
         File::create(db_path).unwrap();
     }
-    let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
-        )
-    });
-    let pool = Pool::new(manager).unwrap();
-    let conn = pool.get().unwrap();
 
-    models::prepare_schema(&conn).expect("Can't create the database");
-    models::populate_basics(&conn).expect("Can't initialize the database");
+    let pool = sqlitedb::new_write_pool(db_path);
+    let mut conn = pool.get().unwrap();
+    sqlitedb::run_migrations(&mut conn).expect("Can't run migrations");
 
     let odoo_ver = config.get_version_odoo();
     let odoo_ver_str = odoo_version_u8_to_string(odoo_ver);
@@ -116,29 +109,33 @@ async fn main() {
     if manifest_count.gt(&0) {
         log::info!("Saving '{}' repos info...", manifest_infos.len());
         let mut module_ids_by_repo: HashMap<i64, Vec<i64>> = HashMap::new();
-        let dep_type_module = models::dependency_type::get_by_name_no_cache(&conn, "module")
+        let dep_type_module = models::dependency_type::get_by_name_no_cache(&mut conn, "module")
             .expect("Can't found the module dependecy type");
-        let dep_type_python = models::dependency_type::get_by_name_no_cache(&conn, "python")
+        let dep_type_python = models::dependency_type::get_by_name_no_cache(&mut conn, "python")
             .expect("Can't found the python dependecy type");
-        let dep_type_bin = models::dependency_type::get_by_name_no_cache(&conn, "bin")
+        let dep_type_bin = models::dependency_type::get_by_name_no_cache(&mut conn, "bin")
             .expect("Can't found the bin dependecy type");
         let re = Regex::new(r"^([^><=]+).+?([^><=]+)$").unwrap();
         for manifest in manifest_infos {
             let mut new_module_info = manifest.clone();
             new_module_info.version_odoo = *odoo_ver; // It is forced because some modules do not have this data correctly.
-            let new_module = models::module::add(&conn, &new_module_info).unwrap();
+            let new_module = models::module::add(&mut conn, &new_module_info).unwrap();
             let module_ids = module_ids_by_repo
-                .entry(new_module.gh_repository_id.0)
+                .entry(new_module.gh_repository_id)
                 .or_default();
             module_ids.push(new_module.id);
 
             // Check Odoo Version
             if manifest.version_odoo.ne(odoo_ver) && manifest.installable {
+                let repo_name =
+                    models::gh_repository::get_by_id(&mut conn, &new_module.gh_repository_id)
+                        .map(|r| r.name)
+                        .unwrap_or_default();
                 let _ = models::system_event::register_problem_module_version(
-                    &conn,
+                    &mut conn,
                     &new_module.technical_name,
                     &new_module.name,
-                    &new_module.gh_repository_id.1,
+                    &repo_name,
                     odoo_version_u8_to_string(&manifest.version_odoo).as_str(),
                     &odoo_ver_str,
                 );
@@ -146,7 +143,7 @@ async fn main() {
 
             // Add Odoo deps.
             let module_depends = models::dependency_module::get_names_no_cache(
-                &conn,
+                &mut conn,
                 &new_module.id,
                 &dep_type_module.id,
             );
@@ -160,30 +157,30 @@ async fn main() {
                 .filter(|item| !module_depends.contains(&item.to_string()))
                 .collect();
             for module_depend_name in module_depends_to_remove {
-                let module_depend_id_opt = models::dependency::get_by_name_no_cache(
-                    &conn,
+                let module_depend_id_opt = models::dependency::get_by_name(
+                    &mut conn,
                     &dep_type_module.id,
                     module_depend_name,
                 );
                 if let Some(module_depend_id) = module_depend_id_opt {
                     let _ = models::dependency_module::delete_by_module_id_dependecy_id(
-                        &conn,
+                        &mut conn,
                         &new_module.id,
                         &module_depend_id.id,
                     );
                     let _ = models::system_event::register_delete_module_dependency(
-                        &conn,
+                        &mut conn,
                         &module_depend_id.name,
                         "Odoo",
-                        &new_module.name,
                         &new_module.technical_name,
-                        odoo_version_u8_to_string(&new_module.version_odoo).as_str(),
+                        &new_module.name,
+                        odoo_version_u8_to_string(&(new_module.version_odoo as u8)).as_str(),
                     );
                 }
             }
             for module_depend_name in module_depends_to_add {
                 models::dependency_module::add(
-                    &conn,
+                    &mut conn,
                     &dep_type_module.id,
                     module_depend_name,
                     &new_module.id,
@@ -193,7 +190,7 @@ async fn main() {
 
             // Add python deps.
             let module_depends_python = models::dependency_module::get_names_no_cache(
-                &conn,
+                &mut conn,
                 &new_module.id,
                 &dep_type_python.id,
             );
@@ -207,30 +204,30 @@ async fn main() {
                 .filter(|item| !module_depends_python.contains(&item.to_string()))
                 .collect();
             for module_depends_python_name in module_depends_python_to_remove {
-                let module_depend_python_id_opt = models::dependency::get_by_name_no_cache(
-                    &conn,
+                let module_depend_python_id_opt = models::dependency::get_by_name(
+                    &mut conn,
                     &dep_type_python.id,
                     module_depends_python_name,
                 );
                 if let Some(module_depend_id) = module_depend_python_id_opt {
                     let _ = models::dependency_module::delete_by_module_id_dependecy_id(
-                        &conn,
+                        &mut conn,
                         &new_module.id,
                         &module_depend_id.id,
                     );
                     let _ = models::system_event::register_delete_module_dependency(
-                        &conn,
+                        &mut conn,
                         &module_depend_id.name,
                         "Python",
-                        &new_module.name,
                         &new_module.technical_name,
-                        odoo_version_u8_to_string(&new_module.version_odoo).as_str(),
+                        &new_module.name,
+                        odoo_version_u8_to_string(&(new_module.version_odoo as u8)).as_str(),
                     );
                 }
             }
             for module_depends_python_name in module_depends_python_to_add {
                 let dep_mod = models::dependency_module::add(
-                    &conn,
+                    &mut conn,
                     &dep_type_python.id,
                     module_depends_python_name,
                     &new_module.id,
@@ -280,7 +277,7 @@ async fn main() {
                                 .collect::<Vec<&str>>()
                                 .join(", ");
                             models::dependency_osv::add(
-                                &conn,
+                                &mut conn,
                                 &dep_mod.id,
                                 vuln["id"].as_str().unwrap(),
                                 vuln["details"].as_str().unwrap(),
@@ -294,7 +291,7 @@ async fn main() {
 
             // Add bin deps.
             let module_depends_bin = models::dependency_module::get_names_no_cache(
-                &conn,
+                &mut conn,
                 &new_module.id,
                 &dep_type_bin.id,
             );
@@ -309,30 +306,30 @@ async fn main() {
                 .filter(|item| !module_depends_bin.contains(&item.to_string()))
                 .collect();
             for module_depends_bin_name in module_depends_bin_to_remove {
-                let module_depend_bin_id_opt = models::dependency::get_by_name_no_cache(
-                    &conn,
+                let module_depend_bin_id_opt = models::dependency::get_by_name(
+                    &mut conn,
                     &dep_type_bin.id,
                     module_depends_bin_name,
                 );
                 if let Some(module_depend_id) = module_depend_bin_id_opt {
                     let _ = models::dependency_module::delete_by_module_id_dependecy_id(
-                        &conn,
+                        &mut conn,
                         &new_module.id,
                         &module_depend_id.id,
                     );
                     let _ = models::system_event::register_delete_module_dependency(
-                        &conn,
+                        &mut conn,
                         &module_depend_id.name,
                         "Bin",
-                        &new_module.name,
                         &new_module.technical_name,
-                        odoo_version_u8_to_string(&new_module.version_odoo).as_str(),
+                        &new_module.name,
+                        odoo_version_u8_to_string(&(new_module.version_odoo as u8)).as_str(),
                     );
                 }
             }
             for module_depends_bin_name in module_depends_bin_to_add {
                 models::dependency_module::add(
-                    &conn,
+                    &mut conn,
                     &dep_type_bin.id,
                     module_depends_bin_name,
                     &new_module.id,
@@ -344,12 +341,12 @@ async fn main() {
         log::info!("Removing outdated modules info...");
         for (key, value) in module_ids_by_repo {
             if !value.is_empty() {
-                models::module::delete_outdated(&conn, &key, config.get_version_odoo(), &value)
+                models::module::delete_outdated(&mut conn, &key, config.get_version_odoo(), &value)
                     .unwrap();
             }
         }
         let _ = models::system_event::register_finished_task_collector(
-            &conn,
+            &mut conn,
             &start_time.elapsed().as_secs().to_string(),
             &manifest_count.to_string(),
             repo_infos[0].get_org(),

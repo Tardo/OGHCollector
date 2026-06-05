@@ -2,14 +2,12 @@
 use crate::routes::api::v1::module::{process_modules_db, ModuleDependencyInfoResponse};
 use actix_multipart::form::{text::Text, MultipartForm};
 use actix_web::{get, post, web, Error as AWError, HttpRequest, HttpResponse, Responder, Result};
+use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use oghutils::version::odoo_version_string_to_u8;
 use std::collections::HashMap;
 
-use sqlitedb::{
-    models::{self, module::ModuleRepositoryInfo, Connection},
-    Pool,
-};
+use sqlitedb::{models, Pool};
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
@@ -43,15 +41,13 @@ pub async fn route_doodba_converter(
 }
 
 fn get_doodba_addons(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     mods: &[Text<String>],
     odoo_version: &str,
-) -> Vec<ModuleRepositoryInfo> {
+) -> Vec<sqlitedb::models::module::ModuleRepositoryInfo> {
     let odoo_ver = odoo_version_string_to_u8(odoo_version);
     let modules: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
-    let module_repos: Vec<ModuleRepositoryInfo> =
-        models::module::get_module_repository(conn, &odoo_ver, modules.as_slice());
-    module_repos
+    models::module::get_module_repository(conn, &odoo_ver, modules.as_slice())
 }
 
 #[post("/doodba/converter/addons")]
@@ -59,9 +55,11 @@ pub async fn route_doodba_converter_addons(
     pool: web::Data<Pool>,
     form: MultipartForm<ConverterForm>,
 ) -> Result<HttpResponse, AWError> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
-    let result =
-        web::block(move || get_doodba_addons(&conn, &form.modules, &form.odoo_version)).await?;
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        get_doodba_addons(&mut conn, &form.modules, &form.odoo_version)
+    })
+    .await?;
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -82,13 +80,12 @@ pub async fn route_doodba_dependency_resolver(
 }
 
 fn get_doodba_addons_full(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     mods: &[Text<String>],
     odoo_version: &str,
 ) -> ModuleDependencyInfoResponse {
     let odoo_ver = odoo_version_string_to_u8(odoo_version);
     let modules: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
-
     let modules = models::module::get_by_technical_name_odoo_version(conn, &modules, &odoo_ver);
     let modules_infos = process_modules_db(conn, &modules);
 
@@ -105,7 +102,6 @@ fn get_doodba_addons_full(
         if !main_odoo_deps.contains(&module_info.technical_name) {
             main_odoo_deps.push(module_info.technical_name);
         }
-
         for (key, values) in module_info.dependencies.odoo {
             let new_key = match key.split_once('/') {
                 Some((_, repo_name)) => repo_name.to_string(),
@@ -137,9 +133,10 @@ pub async fn route_doodba_dependency_resolver_addons(
     pool: web::Data<Pool>,
     form: MultipartForm<DepResolverForm>,
 ) -> Result<HttpResponse, AWError> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
-    let result =
-        web::block(move || get_doodba_addons_full(&conn, &form.modules, &form.odoo_version))
-            .await?;
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        get_doodba_addons_full(&mut conn, &form.modules, &form.odoo_version)
+    })
+    .await?;
     Ok(HttpResponse::Ok().json(result))
 }

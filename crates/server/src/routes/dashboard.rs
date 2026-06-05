@@ -11,7 +11,7 @@ use sqlitedb::{models, Pool};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleCountInfoResponse {
-    pub count: u32,
+    pub count: i64,
     pub version_odoo: String,
 }
 
@@ -30,26 +30,28 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let conn = web::block(move || pool.get()).await?.unwrap();
-
-    let modules_count = models::module::count(&conn)
-        .iter()
-        .map(|x| ModuleCountInfoResponse {
-            count: x.count,
-            version_odoo: odoo_version_u8_to_string(&x.version_odoo),
-        })
-        .collect::<Vec<ModuleCountInfoResponse>>();
-
-    let modules_latest: Vec<LastestCreatedInfo> = models::module::get_latest_modules_created(&conn)
-        .iter()
-        .map(|x| LastestCreatedInfo {
-            id: x.id,
-            version: odoo_version_u8_to_string(&x.version_odoo),
-            technical_name: x.technical_name.to_string(),
-            org_name: x.org_name.to_string(),
-            create_date: x.create_date.to_string(),
-        })
-        .collect();
+    let (modules_count, modules_latest) = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let count = models::module::count(&mut conn)
+            .into_iter()
+            .map(|x| ModuleCountInfoResponse {
+                count: x.count,
+                version_odoo: odoo_version_u8_to_string(&(x.version_odoo as u8)),
+            })
+            .collect::<Vec<ModuleCountInfoResponse>>();
+        let latest = models::module::get_latest_modules_created(&mut conn)
+            .into_iter()
+            .map(|x| LastestCreatedInfo {
+                id: x.id,
+                version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
+                technical_name: x.technical_name,
+                org_name: x.org_name,
+                create_date: x.create_date,
+            })
+            .collect::<Vec<LastestCreatedInfo>>();
+        (count, latest)
+    })
+    .await?;
 
     tmpl_env.render(
         "pages/dashboard.html",

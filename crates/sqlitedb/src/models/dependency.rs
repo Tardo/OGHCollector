@@ -1,230 +1,130 @@
 // Copyright Alexandre D. Díaz
-use cached::proc_macro::cached;
-use rusqlite::{params, Result, ToSql};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::{dependency_module, dependency_type, gh_organization, gh_repository, module};
+use crate::schema::dependency;
 
-pub type Connection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
-
-pub static TABLE_NAME: &str = "dependency";
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
+#[diesel(table_name = dependency, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
     pub id: i64,
-    pub dependency_type_id: (i64, String),
+    pub dependency_type_id: i64,
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct DependencyModuleInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub org: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub repo: String,
-    pub module_id: (i64, String),
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub module_id: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub module_name: String,
 }
 
-pub fn create_table(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
-        format!(
-            "CREATE TABLE IF NOT EXISTS {0} (
-            id integer primary key,
-            dependency_type_id integer not null references {1}(id),
-            name text not null,
-            CONSTRAINT fk_dependency_type
-                FOREIGN KEY (dependency_type_id)
-                REFERENCES {1}(id)
-                ON DELETE CASCADE
-        )",
-            &TABLE_NAME,
-            &dependency_type::TABLE_NAME
+#[derive(Insertable)]
+#[diesel(table_name = dependency)]
+struct NewDependency<'a> {
+    dependency_type_id: i64,
+    name: &'a str,
+}
+
+pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
+    dependency::table
+        .filter(dependency::id.eq(id))
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in dependency::get_by_id")
+}
+
+pub fn get_by_name(conn: &mut SqliteConnection, dep_type_id: &i64, name: &str) -> Option<Model> {
+    dependency::table
+        .filter(
+            dependency::dependency_type_id
+                .eq(dep_type_id)
+                .and(dependency::name.eq(name)),
         )
-        .as_str(),
-        params![],
-    )?;
-    conn.execute(
-        format!(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_dep_type_name ON {}(dependency_type_id, name)",
-            &TABLE_NAME
-        )
-        .as_str(),
-        params![],
-    )
+        .first::<Model>(conn)
+        .optional()
+        .expect("DB error in dependency::get_by_name")
 }
 
-fn query(
-    conn: &Connection,
-    extra_sql: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<Model>, rusqlite::Error> {
-    let sql: String = format!(
-        "SELECT dep.id, dep.dependency_type_id, dt.name, dep.name \
-    FROM {} as dep \
-    INNER JOIN {} as dt \
-    ON dt.id = dep.dependency_type_id \
-    {}",
-        &TABLE_NAME,
-        &dependency_type::TABLE_NAME,
-        &extra_sql
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params, |row| {
-        Ok(Model {
-            id: row.get(0)?,
-            dependency_type_id: (row.get(1)?, row.get(2)?),
-            name: row.get(3)?,
-        })
-    })?;
-    let iter = rows.map(|x| x.unwrap());
-    let records = iter.collect::<Vec<Model>>();
-    Ok(records)
+pub fn get_by_name_no_cache(
+    conn: &mut SqliteConnection,
+    dep_type_id: &i64,
+    name: &str,
+) -> Option<Model> {
+    get_by_name(conn, dep_type_id, name)
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}", id) }"#
-)]
-pub fn get_by_id(conn: &Connection, id: &i64) -> Option<Model> {
-    let deps = query(conn, "WHERE dep.id = ?1 LIMIT 1", params![&id]).unwrap();
-    if deps.is_empty() {
-        return None;
-    }
-    Some(deps[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    option = true,
-    convert = r#"{ format!("{}{}", dep_type_id, name) }"#
-)]
-pub fn get_by_name(conn: &Connection, dep_type_id: &i64, name: &str) -> Option<Model> {
-    let deps = query(
-        conn,
-        "WHERE dep.dependency_type_id = ?1 AND dep.name = ?2 LIMIT 1",
-        params![&dep_type_id, &name],
-    )
-    .unwrap();
-    if deps.is_empty() {
-        return None;
-    }
-    Some(deps[0].clone())
-}
-
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}{}", module_id, dep_type) }"#
-)]
 pub fn get_module_external_dependency_names(
-    conn: &Connection,
+    conn: &mut SqliteConnection,
     module_id: &i64,
     dep_type: &str,
 ) -> Vec<String> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT dep.name \
-        FROM {0} as dep \
-        INNER JOIN {1} as dep_mod \
-        ON dep_mod.dependency_id = dep.id \
-        INNER JOIN {2} as dep_type \
-        on dep_type.id = dep.dependency_type_id \
-        INNER JOIN {3} as mod \
-        on mod.id = dep_mod.module_id \
-        WHERE mod.id = ?1 AND dep_type.name = ?2",
-                &TABLE_NAME,
-                &dependency_module::TABLE_NAME,
-                &dependency_type::TABLE_NAME,
-                &module::TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let deps_rows = stmt
-        .query_map(params![&module_id, &dep_type], |row| row.get(0))
-        .unwrap();
-
-    let depends_iter = deps_rows.map(|x| x.unwrap());
-
-    depends_iter.collect::<Vec<String>>()
+    diesel::sql_query(
+        "SELECT dep.name \
+         FROM dependency as dep \
+         INNER JOIN dependency_module as dep_mod ON dep_mod.dependency_id = dep.id \
+         INNER JOIN dependency_type as dep_type ON dep_type.id = dep.dependency_type_id \
+         INNER JOIN module as mod ON mod.id = dep_mod.module_id \
+         WHERE mod.id = ? AND dep_type.name = ?",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(module_id)
+    .bind::<diesel::sql_types::Text, _>(dep_type)
+    .load::<crate::models::NameRow>(conn)
+    .expect("DB error in dependency::get_module_external_dependency_names")
+    .into_iter()
+    .map(|r| r.name)
+    .collect()
 }
 
-#[cached(
-    key = "String",
-    time = 3600,
-    time_refresh = true,
-    size = 1000,
-    convert = r#"{ format!("{}", module_id) }"#
-)]
-pub fn get_module_dependency_info(conn: &Connection, module_id: &i64) -> Vec<DependencyModuleInfo> {
-    let mut stmt = conn
-        .prepare(
-            format!(
-                "SELECT ghorg.name, ghrepo.name, mod_dep.id, dep.name \
-        FROM {0} as dep \
-        INNER JOIN {1} as dep_mod \
-        ON dep_mod.dependency_id = dep.id \
-        INNER JOIN {2} as dep_type \
-        on dep_type.id = dep.dependency_type_id \
-        INNER JOIN {3} as mod \
-        on mod.id = dep_mod.module_id \
-        INNER JOIN {3} as mod_dep \
-        on mod_dep.technical_name = dep.name AND mod_dep.version_odoo = mod.version_odoo \
-        INNER JOIN {4} as ghrepo \
-        on ghrepo.id = mod_dep.gh_repository_id \
-        INNER JOIN {5} as ghorg \
-        on ghorg.id = ghrepo.gh_organization_id \
-        WHERE mod.id = ?1",
-                &TABLE_NAME,
-                &dependency_module::TABLE_NAME,
-                &dependency_type::TABLE_NAME,
-                &module::TABLE_NAME,
-                &gh_repository::TABLE_NAME,
-                &gh_organization::TABLE_NAME
-            )
-            .as_str(),
-        )
-        .unwrap();
-    let deps_rows = stmt
-        .query_map(params![&module_id], |row| {
-            Ok(DependencyModuleInfo {
-                org: row.get(0)?,
-                repo: row.get(1)?,
-                module_id: (row.get(2)?, row.get(3)?),
-            })
+pub fn get_module_dependency_info(
+    conn: &mut SqliteConnection,
+    module_id: &i64,
+) -> Vec<DependencyModuleInfo> {
+    diesel::sql_query(
+        "SELECT ghorg.name as org, ghrepo.name as repo, mod_dep.id as module_id, dep.name as module_name \
+         FROM dependency as dep \
+         INNER JOIN dependency_module as dep_mod ON dep_mod.dependency_id = dep.id \
+         INNER JOIN dependency_type as dep_type ON dep_type.id = dep.dependency_type_id \
+         INNER JOIN module as mod ON mod.id = dep_mod.module_id \
+         INNER JOIN module as mod_dep ON mod_dep.technical_name = dep.name AND mod_dep.version_odoo = mod.version_odoo \
+         INNER JOIN gh_repository as ghrepo ON ghrepo.id = mod_dep.gh_repository_id \
+         INNER JOIN gh_organization as ghorg ON ghorg.id = ghrepo.gh_organization_id \
+         WHERE mod.id = ?",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(module_id)
+    .load::<DependencyModuleInfo>(conn)
+    .expect("DB error in dependency::get_module_dependency_info")
+}
+
+pub fn add(conn: &mut SqliteConnection, dep_type_id: &i64, name: &str) -> QueryResult<Model> {
+    let inserted = diesel::insert_into(dependency::table)
+        .values(NewDependency {
+            dependency_type_id: *dep_type_id,
+            name,
         })
-        .unwrap();
+        .on_conflict((dependency::dependency_type_id, dependency::name))
+        .do_nothing()
+        .execute(conn)?;
 
-    let depends_iter = deps_rows.map(|x| x.unwrap());
-
-    depends_iter.collect::<Vec<DependencyModuleInfo>>()
-}
-
-pub fn add(conn: &Connection, dep_type_id: &i64, name: &str) -> Result<Model, rusqlite::Error> {
-    let dep_opt = get_by_name(conn, dep_type_id, name);
-    if dep_opt.is_none() {
-        let dep_type = dependency_type::get_by_id(conn, dep_type_id).unwrap();
-        conn.execute(
-            format!(
-                "INSERT INTO {}(dependency_type_id, name) VALUES (?1, ?2)",
-                &TABLE_NAME
+    if inserted == 0 {
+        dependency::table
+            .filter(
+                dependency::dependency_type_id
+                    .eq(dep_type_id)
+                    .and(dependency::name.eq(name)),
             )
-            .as_str(),
-            params![&dep_type.id, &name],
-        )?;
-        return Ok(Model {
-            id: conn.last_insert_rowid(),
-            dependency_type_id: (dep_type.id, dep_type.name.clone()),
+            .first::<Model>(conn)
+    } else {
+        let id = crate::models::last_insert_rowid(conn);
+        Ok(Model {
+            id,
+            dependency_type_id: *dep_type_id,
             name: name.to_string(),
-        });
+        })
     }
-    Ok(dep_opt.unwrap())
 }
