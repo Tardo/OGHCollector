@@ -48,14 +48,16 @@ COPY --from=build /usr/local/bin/collector /usr/local/bin/oghcollector
 COPY --from=build /usr/local/bin/static /app/static/
 COPY --from=build /usr/local/bin/web/templates /app/web/templates
 COPY ./files/pip_names.txt /app/files/pip_names.txt
+COPY ./docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN set -ex; \
     mkdir /app/data; \
     chown -R appuser:appuser /app; \
-    chmod 755 /usr/local/bin/oghserver /usr/local/bin/oghcollector /usr/local/bin/diesel;
+    chmod 755 /usr/local/bin/oghserver /usr/local/bin/oghcollector /usr/local/bin/diesel /usr/local/bin/docker-entrypoint.sh;
 
 USER appuser
 EXPOSE 8080
 
 WORKDIR /app
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["oghserver"]

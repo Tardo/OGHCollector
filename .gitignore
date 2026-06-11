@@ -12,3 +12,4 @@ docker-compose.*.yaml
 .eslintcache
 CLAUDE.md
 .claude/
+AGENTS.md
