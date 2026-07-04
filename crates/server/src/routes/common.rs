@@ -42,6 +42,13 @@ pub struct CommitterRankInfo {
     pub rank: i64,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommitterListInfo {
+    pub name: String,
+    pub total_commits: i64,
+    pub modules_touched: i64,
+}
+
 fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<OdooVersionInfo> {
     models::module::get_odoo_versions(conn)
         .into_iter()
@@ -102,6 +109,17 @@ fn get_odoo_committer_rank(conn: &mut SqliteConnection) -> Vec<CommitterRankInfo
         .collect()
 }
 
+fn get_odoo_committer_list(conn: &mut SqliteConnection) -> Vec<CommitterListInfo> {
+    models::committer::list(conn)
+        .into_iter()
+        .map(|x| CommitterListInfo {
+            name: x.name,
+            total_commits: x.total_commits,
+            modules_touched: x.modules_touched,
+        })
+        .collect()
+}
+
 #[get("/common/odoo/versions")]
 pub async fn route_odoo_versions(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
@@ -147,6 +165,16 @@ pub async fn route_odoo_committer_rank(pool: web::Data<Pool>) -> Result<HttpResp
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_committer_rank(&mut conn)
+    })
+    .await?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+#[get("/common/odoo/committer/list")]
+pub async fn route_odoo_committer_list(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        get_odoo_committer_list(&mut conn)
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))

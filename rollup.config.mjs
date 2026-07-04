@@ -24,6 +24,7 @@ export default [
       'web/js/pages/logs.mjs',
       'web/js/pages/module.mjs',
       'web/js/pages/committer.mjs',
+      'web/js/pages/committers.mjs',
     ],
     output: {
       sourcemap: (!is_production && 'inline') || false,

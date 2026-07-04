@@ -1,0 +1,53 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% block title %}Committers{% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/committers.css" as="style">
+    <script type="module" src="/static/auto/committers.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+
+<template id="template-mirlo-committer-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/committer-search.css" as="style" />
+    <input type="text" id="search" autocomplete="off" placeholder="Search committer (name)..." autofocus />
+    <ul id="results"></ul>
+</template>
+
+
+<h2>Committers</h2>
+<span>{{ total_committers }} human committers tracked (bots/automation accounts excluded)</span>
+
+<div class="row position-relative mx-1 mt-3" id="committer_search">
+    <mirlo-committer-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
+</div>
+
+<div class="row user-select-none mt-5" id="top_committers">
+    <div class="col-12">
+        <h3>Top {{ top_committers | length }} Committers (all-time, by commits)</h3>
+        <table class="table table-striped table-striped-columns table-hover">
+            <thead>
+                <tr>
+                    <th class="text-center">Rank</th>
+                    <th>Committer</th>
+                    <th class="text-center">Commits</th>
+                    <th class="d-none d-lg-table-cell text-center">Modules Touched</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for committer in top_committers %}
+                <tr>
+                    <td class="text-center">#{{ committer.rank }}</td>
+                    <td><a href="/committer/{{ committer.name | urlencode }}">{{ committer.name }}</a></td>
+                    <td class="text-center">{{ committer.total_commits }}</td>
+                    <td class="d-none d-lg-table-cell text-center">{{ committer.modules_touched }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
