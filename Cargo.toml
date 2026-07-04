@@ -35,7 +35,7 @@ pyo3 = { version = "0.19", features = ["auto-initialize"] }
 chrono = { version = "0.4" }
 chrono-tz = "0.8"
 cached = { version = "0.46" }
-minijinja = { version = "1", features = ["loader"] }
+minijinja = { version = "1", features = ["loader", "urlencode"] }
 minijinja-autoreload = "1"
 config = "0.13"
 url = "2"

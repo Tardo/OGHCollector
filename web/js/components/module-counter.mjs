@@ -122,7 +122,10 @@ class ModuleCounter extends AnimatedComponent {
     for (const index in committer_rank_infos) {
       const committer_rank_info = committer_rank_infos[index];
       const li_el = document.createElement('li');
-      li_el.textContent = `${committer_rank_info.committer.toUpperCase()}: ${committer_rank_info.count}`;
+      const a_el = document.createElement('a');
+      a_el.href = `/committer/${encodeURIComponent(committer_rank_info.committer)}`;
+      a_el.textContent = `${committer_rank_info.committer.toUpperCase()}: ${committer_rank_info.count}`;
+      li_el.appendChild(a_el);
       committer_rank_ul_el.appendChild(li_el);
     }
     this.#el_committer_rank.replaceChildren(committer_rank_ul_el);

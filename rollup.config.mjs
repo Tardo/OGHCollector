@@ -23,6 +23,7 @@ export default [
       'web/js/pages/atlas.mjs',
       'web/js/pages/logs.mjs',
       'web/js/pages/module.mjs',
+      'web/js/pages/committer.mjs',
     ],
     output: {
       sourcemap: (!is_production && 'inline') || false,

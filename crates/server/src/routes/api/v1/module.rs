@@ -32,6 +32,7 @@ pub struct ModuleFullInfoResponse {
     pub application: bool,
     pub installable: bool,
     pub maintainers: Vec<String>,
+    pub committers: Vec<String>,
     pub dependencies: ModuleDependencyInfoResponse,
     pub update_date: String,
     pub git: String,
@@ -121,6 +122,7 @@ pub fn process_modules_db(
         };
         let authors = models::module_author::get_names_by_module_id(conn, &module.id);
         let maintainers = models::module_maintainer::get_names_by_module_id(conn, &module.id);
+        let committers = models::module_committer::get_names_by_module_id(conn, &module.id);
         let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id).unwrap();
         let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
         let git = get_module_git(conn, module);
@@ -137,6 +139,7 @@ pub fn process_modules_db(
             application: module.application,
             installable: module.installable,
             maintainers,
+            committers,
             dependencies,
             update_date: module.update_date.clone(),
             git,

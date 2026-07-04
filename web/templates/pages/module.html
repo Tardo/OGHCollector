@@ -78,6 +78,8 @@
                 <tr><th class="col-2 d-none d-lg-table-cell">AUTHORS</th><td>{{ module.authors | join(', ')  }}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">MAINTAINERS</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">MAINTAINERS</th><td>{{ module.maintainers | join(', ') }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">COMMITTERS</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">COMMITTERS</th><td>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">WEBSITE</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">WEBSITE</th><td><a href="{{ module.website }}">{{ module.website }}</a></td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">LAST TRACKING UPDATE</th></tr>

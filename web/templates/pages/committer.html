@@ -1,0 +1,134 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% block title %}Committer: {{ committer_name }} {% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/committer.css" as="style">
+    <script type="module" src="/static/auto/committer.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+
+<template id="template-mirlo-module-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
+    <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
+    <ul id="results"></ul>
+</template>
+
+
+<div id="module_search" class="position-fixed start-50 w-50 translate-middle-x shadow rounded d-none">
+    <mirlo-module-search class="border-warning-subtle d-block rounded p-2" />
+</div>
+
+{% if not stats.versions %}
+<h2>{{ committer_name }}</h2>
+<p>No data found for this committer.</p>
+{% else %}
+<h2>{{ committer_name }}</h2>
+<span>{{ stats.total_commits }} tracked commit{{ stats.total_commits != 1 and 's' or '' }} across {{ stats.total_modules }} module{{ stats.total_modules != 1 and 's' or '' }}</span>
+
+<div class="row mb-3 gx-sm-5 user-select-none mt-4" id="committer_stats">
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-success-subtle p-3 text-center">
+            <div class="fs-3">{{ stats.total_commits }}</div>
+            <div>Total Commits</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-secondary-subtle p-3 text-center">
+            <div class="fs-3">{{ stats.total_modules }}</div>
+            <div>Modules Touched</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-primary-subtle p-3 text-center">
+            <div class="fs-3">{{ stats.total_repositories }}</div>
+            <div>Repositories</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-warning-subtle p-3 text-center">
+            <div class="fs-3">{{ stats.total_organizations }}</div>
+            <div>Organizations</div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3 gx-sm-5 user-select-none">
+    <div class="col-lg-6 col-12 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">Most Active Odoo Version</div>
+            {% if stats.best_version %}
+            <div class="fs-3">{{ stats.best_version }}</div>
+            <div>{{ stats.best_version_commits }} commit{{ stats.best_version_commits != 1 and 's' or '' }}</div>
+            {% else %}
+            <div>No data</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-lg-6 col-12 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">Global Rank (by commits)</div>
+            {% if stats.global_rank %}
+            <div class="fs-3">#{{ stats.global_rank }} <span class="fs-6">of {{ stats.total_committers }} committers</span></div>
+            {% else %}
+            <div>Not ranked (excluded bot/automation account)</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3 gx-sm-5 user-select-none">
+    <div class="col-12">
+        <h3>Top Repositories</h3>
+        <table class="table table-striped table-striped-columns table-hover">
+            <tbody>
+                {% for repo in stats.top_repos %}
+                <tr>
+                    <td class="col-1 text-center">#{{ loop.index }}</td>
+                    <td class="col-8"><a href="https://github.com/{{ repo.organization }}/{{ repo.repository }}">{{ repo.organization }}/{{ repo.repository }}</a></td>
+                    <td class="col-3 text-center">{{ repo.commits }} commit{{ repo.commits != 1 and 's' or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<h3>Modules Touched by Odoo Version</h3>
+<ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
+    {% for version in stats.versions %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {{ loop.first and 'active' or '' }}" id="version-{{ version.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#version-{{ version.odoo_version }}" type="button" role="tab" aria-controls="version-{{ version.odoo_version }}">{{ version.odoo_version }} <span class="badge text-bg-secondary">{{ version.modules | length }}</span></button>
+    </li>
+    {% endfor %}
+</ul>
+<div class="tab-content" id="versions-tabContent">
+    {% for version in stats.versions %}
+    <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ version.odoo_version }}-tab" tabindex="0">
+        <div class="mb-2">{{ version.total_commits }} commit{{ version.total_commits != 1 and 's' or '' }} in this version</div>
+        <table class="table table-striped table-striped-columns table-hover">
+            <thead>
+                <tr>
+                    <th>Module</th>
+                    <th class="d-none d-lg-table-cell">Repository</th>
+                    <th class="text-center">Commits</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for module in version.modules %}
+                <tr>
+                    <td><a href="/module/{{ module.organization }}/{{ module.technical_name }}">{{ module.name }}</a></td>
+                    <td class="d-none d-lg-table-cell">{{ module.organization }}/{{ module.repository }}</td>
+                    <td class="text-center">{{ module.commits }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -70,6 +70,42 @@ pub fn get_names_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> V
         .collect()
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct CommitterModuleActivity {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub organization: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub commits: i32,
+}
+
+pub fn get_activity_by_committer_name(
+    conn: &mut SqliteConnection,
+    committer_name: &str,
+) -> Vec<CommitterModuleActivity> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, mod.name, mod.version_odoo, \
+         gh_org.name as organization, gh_repo.name as repository, mod_com.commits as commits \
+         FROM module_committer as mod_com \
+         INNER JOIN committer as com ON mod_com.committer_id = com.id \
+         INNER JOIN module as mod ON mod_com.module_id = mod.id \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         WHERE com.name = ? \
+         ORDER BY mod.version_odoo DESC, mod_com.commits DESC",
+    )
+    .bind::<diesel::sql_types::Text, _>(committer_name)
+    .load::<CommitterModuleActivity>(conn)
+    .expect("DB error in module_committer::get_activity_by_committer_name")
+}
+
 pub fn add(
     conn: &mut SqliteConnection,
     module_id: &i64,
