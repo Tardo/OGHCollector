@@ -226,7 +226,46 @@
         \"folder_size\": 5146591,
         \"repository\": \"web\",
         \"organization\": \"OCA\",
-        \"odoo_version\": \"15.0\"
+        \"odoo_version\": \"15.0\",
+        \"views\": [
+            {
+                \"xml_id\": \"assets_backend\",
+                \"name\": \"web_responsive.assets_backend\",
+                \"model\": \"ir.ui.view\",
+                \"inherit_xml_id\": \"web.assets_backend\",
+                \"is_new\": false,
+                \"view_type\": \"xpath\"
+            }
+        ],
+        \"models\": [
+            {
+                \"model_name\": \"res.users\",
+                \"class_name\": \"ResUsers\",
+                \"inherit_from\": [\"res.users\"],
+                \"is_new_model\": false,
+                \"docstring\": \"Extends res.users with backend UI preferences.\",
+                \"attrs\": {\"kind\": \"Model\"},
+                \"fields\": [
+                    {
+                        \"name\": \"chatter_position\",
+                        \"field_type\": \"Selection\",
+                        \"relation\": null,
+                        \"attrs\": {
+                            \"args\": [\"[('normal', 'Normal'), ('sided', 'Sided')]\"],
+                            \"default\": \"'normal'\"
+                        }
+                    }
+                ],
+                \"methods\": [
+                    {
+                        \"name\": \"get_default_menu\",
+                        \"decorators\": [\"api.model\"],
+                        \"signature\": \"(self)\",
+                        \"docstring\": \"Returns the default backend menu id for this user.\"
+                    }
+                ]
+            }
+        ]
     }
 ]",
                 "{
@@ -253,7 +292,35 @@
     \"folder_size\": Number,
     \"repository\": string,
     \"organization\": string,
-    \"odoo_version\": string
+    \"odoo_version\": string,
+    \"views\": Array[{
+        \"xml_id\": string,
+        \"name\": string,
+        \"model\": string,
+        \"inherit_xml_id\": string|null,
+        \"is_new\": boolean,
+        \"view_type\": string|null
+    }],
+    \"models\": Array[{
+        \"model_name\": string,
+        \"class_name\": string,
+        \"inherit_from\": Array[string],
+        \"is_new_model\": boolean,
+        \"docstring\": string|null,
+        \"attrs\": Object|null,
+        \"fields\": Array[{
+            \"name\": string,
+            \"field_type\": string,
+            \"relation\": string|null,
+            \"attrs\": Object|null
+        }],
+        \"methods\": Array[{
+            \"name\": string,
+            \"decorators\": Array[string],
+            \"signature\": string,
+            \"docstring\": string|null
+        }]
+    }]
 }"
             ) }}
         </div>

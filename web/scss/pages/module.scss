@@ -8,3 +8,71 @@ mirlo-module-search {
     z-index: 3;
     top: 25%;
 }
+
+.module-model-accordion {
+    .accordion-button {
+        align-items: flex-start;
+
+        &::after {
+            margin-top: 0.25rem;
+        }
+    }
+}
+
+.module-model-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: 100%;
+    text-align: left;
+
+    &-title {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+
+        code {
+            font-size: 1rem;
+        }
+    }
+
+    &-meta {
+        font-size: 0.825rem;
+        color: var(--bs-secondary-color);
+    }
+
+    &-doc {
+        display: block;
+        font-size: 0.825rem;
+        font-style: italic;
+        color: var(--bs-secondary-color);
+    }
+}
+
+.module-field-list,
+.module-method-list {
+    > li {
+        padding-block: 0.4rem;
+        border-bottom: 1px solid var(--bs-border-color-translucent);
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+}
+
+.module-field-attrs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.75rem;
+    margin-top: 0.15rem;
+
+    code {
+        font-size: 0.8em;
+    }
+}
+
+.module-method-doc {
+    margin-top: 0.15rem;
+}

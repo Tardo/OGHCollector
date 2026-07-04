@@ -10,9 +10,14 @@ pub mod gh_repository;
 pub mod maintainer;
 pub mod module;
 pub mod module_author;
+pub mod module_code_analysis;
 pub mod module_committer;
 pub mod module_committer_period;
 pub mod module_maintainer;
+pub mod module_model;
+pub mod module_model_field;
+pub mod module_model_method;
+pub mod module_view;
 pub mod pull_request;
 pub mod system_event;
 pub mod system_event_type;
@@ -236,6 +241,7 @@ mod tests {
             last_commit_name: "Initial commit".to_string(),
             last_commit_partof: "".to_string(),
             committers: HashMap::new(),
+            analysis: Default::default(),
         };
 
         let module = super::module::add(&mut conn, &info).unwrap();
@@ -279,6 +285,7 @@ mod tests {
             last_commit_name: "Add module".to_string(),
             last_commit_partof: String::new(),
             committers: HashMap::new(),
+            analysis: Default::default(),
         };
 
         let m1 = super::module::add(&mut conn, &info).unwrap();
@@ -317,6 +324,7 @@ mod tests {
             last_commit_name: "Add dep".to_string(),
             last_commit_partof: String::new(),
             committers: HashMap::new(),
+            analysis: Default::default(),
         };
 
         let module = super::module::add(&mut conn, &module_info).unwrap();
@@ -369,6 +377,7 @@ mod tests {
             last_commit_name: "commit".to_string(),
             last_commit_partof: String::new(),
             committers: HashMap::new(),
+            analysis: Default::default(),
         };
 
         super::module::add(&mut conn, &make_info("mod_v15", 15)).unwrap();
@@ -410,6 +419,7 @@ mod tests {
             last_commit_name: "commit".to_string(),
             last_commit_partof: String::new(),
             committers: HashMap::new(),
+            analysis: Default::default(),
         };
 
         super::module::add(&mut conn, &make_info("mod_x")).unwrap();
@@ -463,6 +473,7 @@ mod tests {
             last_commit_name: "commit".to_string(),
             last_commit_partof: String::new(),
             committers: HashMap::new(),
+            analysis: Default::default(),
         };
 
         let m1 = super::module::add(&mut conn, &make_info("mod_a")).unwrap();
@@ -588,6 +599,7 @@ mod tests {
                 last_commit_name: "commit".to_string(),
                 last_commit_partof: String::new(),
                 committers,
+                analysis: Default::default(),
             }
         };
 
@@ -619,6 +631,164 @@ mod tests {
         assert_eq!(march[0].total_commits, 7);
         assert!(
             super::module_committer_period::rank_by_period(&mut conn, 2024, Some(1), 10).is_empty()
+        );
+    }
+
+    fn make_bare_module_info(name: &str) -> super::module::ManifestInfo {
+        super::module::ManifestInfo {
+            technical_name: name.to_string(),
+            version_odoo: 16,
+            name: name.to_string(),
+            version_module: "16.0.1.0.0".to_string(),
+            description: String::new(),
+            author: String::new(),
+            website: String::new(),
+            license: String::new(),
+            category: String::new(),
+            auto_install: false,
+            application: false,
+            installable: true,
+            maintainer: String::new(),
+            git_org: "AnalysisOrg".to_string(),
+            git_repo: "analysis-repo".to_string(),
+            depends: vec![],
+            external_depends_python: vec![],
+            external_depends_bin: vec![],
+            folder_size: 1,
+            last_commit_hash: "aaa".to_string(),
+            last_commit_author: "Dev".to_string(),
+            last_commit_date: "2024-07-01".to_string(),
+            last_commit_name: "commit".to_string(),
+            last_commit_partof: String::new(),
+            committers: std::collections::HashMap::new(),
+            analysis: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_module_view_replace_for_module() {
+        use super::module_code_analysis::ViewAnalysisInfo;
+        let mut conn = setup_db();
+        let module = super::module::add(&mut conn, &make_bare_module_info("view_test")).unwrap();
+
+        let views = vec![
+            ViewAnalysisInfo {
+                xml_id: "view_a".to_string(),
+                name: Some("A".to_string()),
+                model: Some("res.partner".to_string()),
+                inherit_xml_id: None,
+                view_type: Some("form".to_string()),
+            },
+            ViewAnalysisInfo {
+                xml_id: "view_b".to_string(),
+                name: Some("B".to_string()),
+                model: Some("res.partner".to_string()),
+                inherit_xml_id: Some("base.view_partner_form".to_string()),
+                view_type: Some("form".to_string()),
+            },
+        ];
+        super::module_view::replace_for_module(&mut conn, &module.id, &views).unwrap();
+        assert_eq!(
+            super::module_view::get_by_module_id(&mut conn, &module.id).len(),
+            2
+        );
+
+        // Re-analyzing with a smaller set must replace, not accumulate.
+        let views2 = vec![views[0].clone()];
+        super::module_view::replace_for_module(&mut conn, &module.id, &views2).unwrap();
+        let found = super::module_view::get_by_module_id(&mut conn, &module.id);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].xml_id, "view_a");
+        assert_eq!(found[0].view_type.as_deref(), Some("form"));
+    }
+
+    #[test]
+    fn test_module_model_replace_for_module_no_orphans() {
+        use super::module_code_analysis::{
+            FieldAnalysisInfo, MethodAnalysisInfo, ModelAnalysisInfo,
+        };
+        let mut conn = setup_db();
+        let module = super::module::add(&mut conn, &make_bare_module_info("model_test")).unwrap();
+
+        let models_v1 = vec![ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            class_name: "ResPartner".to_string(),
+            inherit_from: vec!["res.partner".to_string()],
+            is_new_model: false,
+            docstring: Some("Extends res.partner with x_foo.".to_string()),
+            attrs: Some(serde_json::json!({"kind": "Model"})),
+            fields: vec![FieldAnalysisInfo {
+                name: "x_foo".to_string(),
+                field_type: "Char".to_string(),
+                relation: None,
+                attrs: Some(serde_json::json!({"required": "True", "help": "'A help text'"})),
+            }],
+            methods: vec![MethodAnalysisInfo {
+                name: "do_thing".to_string(),
+                // Deliberately a decorator with a comma-containing argument
+                // list: decorators are stored as JSON, not comma-joined text,
+                // specifically so this doesn't get shredded on the round trip.
+                decorators: vec!["api.depends('x_foo', 'x_bar')".to_string()],
+                signature: "(self, vals, force=False)".to_string(),
+                docstring: Some("Does the thing.".to_string()),
+            }],
+        }];
+        super::module_model::replace_for_module(&mut conn, &module.id, &models_v1).unwrap();
+        let stored = super::module_model::get_by_module_id(&mut conn, &module.id);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].docstring.as_deref(),
+            Some("Extends res.partner with x_foo.")
+        );
+        assert_eq!(
+            stored[0].attrs_value(),
+            Some(serde_json::json!({"kind": "Model"}))
+        );
+        let old_model_id = stored[0].id;
+        let fields = super::module_model_field::get_by_module_model_id(&mut conn, &old_model_id);
+        assert_eq!(fields.len(), 1);
+        assert_eq!(
+            fields[0].attrs_value(),
+            Some(serde_json::json!({"required": "True", "help": "'A help text'"}))
+        );
+        let methods = super::module_model_method::get_by_module_model_id(&mut conn, &old_model_id);
+        assert_eq!(methods.len(), 1);
+        assert_eq!(
+            methods[0].decorators_vec(),
+            vec!["api.depends('x_foo', 'x_bar')".to_string()]
+        );
+        assert_eq!(methods[0].signature, "(self, vals, force=False)");
+        assert_eq!(methods[0].docstring.as_deref(), Some("Does the thing."));
+
+        // Re-analyzing must drop the old fields/methods rather than leaving
+        // them orphaned under a module_model id that no longer exists.
+        let models_v2 = vec![ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            class_name: "ResPartner".to_string(),
+            inherit_from: vec!["res.partner".to_string()],
+            is_new_model: false,
+            docstring: None,
+            attrs: None,
+            fields: vec![],
+            methods: vec![],
+        }];
+        super::module_model::replace_for_module(&mut conn, &module.id, &models_v2).unwrap();
+        let stored2 = super::module_model::get_by_module_id(&mut conn, &module.id);
+        assert_eq!(stored2.len(), 1);
+        let new_model_id = stored2[0].id;
+        assert!(new_model_id != old_model_id);
+        assert!(
+            super::module_model_field::get_by_module_model_id(&mut conn, &new_model_id).is_empty()
+        );
+        assert!(
+            super::module_model_method::get_by_module_model_id(&mut conn, &new_model_id).is_empty()
+        );
+        // The old (now-dead) module_model id must not still have children hanging off it.
+        assert!(
+            super::module_model_field::get_by_module_model_id(&mut conn, &old_model_id).is_empty()
+        );
+        assert!(
+            super::module_model_method::get_by_module_model_id(&mut conn, &old_model_id).is_empty()
         );
     }
 }

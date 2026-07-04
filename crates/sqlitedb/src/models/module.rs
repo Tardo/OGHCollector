@@ -7,8 +7,9 @@ use crate::schema::module;
 use crate::utils::date::get_sqlite_utc_now;
 
 use super::{
-    author, gh_organization, gh_repository, maintainer, module_author, module_committer,
-    module_committer_period, module_maintainer, system_event,
+    author, gh_organization, gh_repository, maintainer, module_author,
+    module_code_analysis::ModuleAnalysisInfo, module_committer, module_committer_period,
+    module_maintainer, system_event,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -94,6 +95,7 @@ pub struct ManifestInfo {
     pub last_commit_name: String,
     pub last_commit_partof: String,
     pub committers: HashMap<String, CommitterActivity>,
+    pub analysis: ModuleAnalysisInfo,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]

@@ -19,6 +19,44 @@ pub struct ModuleDependencyInfoResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleViewResponse {
+    pub xml_id: String,
+    pub name: String,
+    pub model: String,
+    pub inherit_xml_id: Option<String>,
+    pub is_new: bool,
+    pub view_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleModelFieldResponse {
+    pub name: String,
+    pub field_type: String,
+    pub relation: Option<String>,
+    pub attrs: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleModelMethodResponse {
+    pub name: String,
+    pub decorators: Vec<String>,
+    pub signature: String,
+    pub docstring: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleModelResponse {
+    pub model_name: String,
+    pub class_name: String,
+    pub inherit_from: Vec<String>,
+    pub is_new_model: bool,
+    pub docstring: Option<String>,
+    pub attrs: Option<serde_json::Value>,
+    pub fields: Vec<ModuleModelFieldResponse>,
+    pub methods: Vec<ModuleModelMethodResponse>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleFullInfoResponse {
     pub technical_name: String,
     pub name: String,
@@ -40,6 +78,8 @@ pub struct ModuleFullInfoResponse {
     pub repository: String,
     pub organization: String,
     pub odoo_version: String,
+    pub views: Vec<ModuleViewResponse>,
+    pub models: Vec<ModuleModelResponse>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -99,6 +139,63 @@ fn get_module_git(conn: &mut SqliteConnection, module: &models::module::Model) -
     format!("https://github.com/{}/{}.git", &org.name, &repo.name)
 }
 
+fn get_module_views(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleViewResponse> {
+    models::module_view::get_by_module_id(conn, module_id)
+        .into_iter()
+        .map(|v| ModuleViewResponse {
+            is_new: v.inherit_xml_id.is_none(),
+            xml_id: v.xml_id,
+            name: v.name.unwrap_or_default(),
+            model: v.model.unwrap_or_default(),
+            inherit_xml_id: v.inherit_xml_id,
+            view_type: v.view_type,
+        })
+        .collect()
+}
+
+fn get_module_models(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleModelResponse> {
+    models::module_model::get_by_module_id(conn, module_id)
+        .into_iter()
+        .map(|m| {
+            let fields = models::module_model_field::get_by_module_model_id(conn, &m.id)
+                .into_iter()
+                .map(|f| {
+                    let attrs = f.attrs_value();
+                    ModuleModelFieldResponse {
+                        name: f.name,
+                        field_type: f.field_type,
+                        relation: f.relation,
+                        attrs,
+                    }
+                })
+                .collect();
+            let methods = models::module_model_method::get_by_module_model_id(conn, &m.id)
+                .into_iter()
+                .map(|meth| ModuleModelMethodResponse {
+                    decorators: meth.decorators_vec(),
+                    name: meth.name,
+                    signature: meth.signature,
+                    docstring: meth.docstring,
+                })
+                .collect();
+            let attrs = m.attrs_value();
+            ModuleModelResponse {
+                model_name: m.model_name,
+                class_name: m.class_name,
+                inherit_from: m
+                    .inherit_from
+                    .map(|s| s.split(',').map(|x| x.to_string()).collect())
+                    .unwrap_or_default(),
+                is_new_model: m.is_new_model,
+                docstring: m.docstring,
+                attrs,
+                fields,
+                methods,
+            }
+        })
+        .collect()
+}
+
 pub fn process_modules_db(
     conn: &mut SqliteConnection,
     modules: &[models::module::Model],
@@ -126,6 +223,8 @@ pub fn process_modules_db(
         let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id).unwrap();
         let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
         let git = get_module_git(conn, module);
+        let views = get_module_views(conn, &module.id);
+        let module_models = get_module_models(conn, &module.id);
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version: module.version_module.clone(),
@@ -147,6 +246,8 @@ pub fn process_modules_db(
             repository: repo.name.clone(),
             organization: org.name.clone(),
             odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+            views,
+            models: module_models,
         });
     }
     res

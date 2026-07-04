@@ -149,6 +149,22 @@ async fn main() {
                 .or_default();
             module_ids.push(new_module.id);
 
+            // Replace the module's code analysis (views touched, models
+            // defined/extended with their fields and public methods) on
+            // every run, independent of whether any manifest field changed.
+            models::module_view::replace_for_module(
+                &mut conn,
+                &new_module.id,
+                &new_module_info.analysis.views,
+            )
+            .unwrap();
+            models::module_model::replace_for_module(
+                &mut conn,
+                &new_module.id,
+                &new_module_info.analysis.models,
+            )
+            .unwrap();
+
             // Check Odoo Version
             if manifest.version_odoo.ne(odoo_ver) && manifest.installable {
                 let repo_name =

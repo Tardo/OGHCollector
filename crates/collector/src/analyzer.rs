@@ -12,8 +12,353 @@ use std::process::ExitStatus;
 
 use oghutils::version::OdooVersion;
 use sqlitedb::models::module::{CommitterActivity, ManifestInfo};
+use sqlitedb::models::module_code_analysis::ModuleAnalysisInfo;
 
 use crate::gitclient::RepoInfo;
+
+// Embedded Python analysis script: walks a module folder and, without
+// executing any of its code, extracts the model classes it defines/extends
+// (with their public methods - signature, decorators, docstring - and
+// `fields.X(...)` assignments, including all keyword args) and the
+// ir.ui.view/template records its XML files declare. Uses only the stdlib
+// (ast, xml.etree, os, json) so it runs with any Python available at build
+// time - no odoo import required, and no ast.unparse (keeps it working on
+// Python 3.8, which lacks it). Returns a single JSON string.
+//
+// The extra detail here (signatures, docstrings, decorator arguments, every
+// field/model keyword argument) is deliberately captured beyond what the UI
+// currently renders: the goal is for this data to be useful to an LLM (and
+// eventually served over MCP), not just for the module detail page.
+const ANALYZER_PY_SRC: &str = r#"
+import ast
+import json
+import os
+import xml.etree.ElementTree as ET
+
+SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations"}
+MODEL_BASE_ATTRS = {"Model", "TransientModel", "AbstractModel"}
+RELATIONAL_FIELD_TYPES = {"Many2one", "One2many", "Many2many"}
+DOCSTRING_LIMIT = 4000
+
+
+def _truncate(s):
+    if s is None:
+        return None
+    return s if len(s) <= DOCSTRING_LIMIT else s[:DOCSTRING_LIMIT] + "..."
+
+
+def _expr_repr(node):
+    # Reconstructs a best-effort, human/LLM-readable source representation of
+    # a literal-ish expression (decorator args, field kwargs, arg defaults/
+    # annotations) without relying on ast.unparse (Python 3.9+ only).
+    if node is None:
+        return None
+    if isinstance(node, ast.Constant):
+        return repr(node.value)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        opening, closing = {"List": ("[", "]"), "Tuple": ("(", ")"), "Set": ("{", "}")}[
+            type(node).__name__
+        ]
+        items = [x for x in (_expr_repr(el) for el in node.elts) if x is not None]
+        return f"{opening}{', '.join(items)}{closing}"
+    if isinstance(node, ast.Dict):
+        pairs = []
+        for k, v in zip(node.keys, node.values):
+            k_repr = _expr_repr(k) if k is not None else "**"
+            v_repr = _expr_repr(v)
+            if v_repr is not None:
+                pairs.append(f"{k_repr}: {v_repr}")
+        return "{" + ", ".join(pairs) + "}"
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _expr_repr(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        inner = _expr_repr(node.operand)
+        return f"-{inner}" if inner is not None else None
+    if isinstance(node, ast.Starred):
+        inner = _expr_repr(node.value)
+        return f"*{inner}" if inner is not None else "*"
+    if isinstance(node, ast.Call):
+        func = _expr_repr(node.func) or "?"
+        args = [x for x in (_expr_repr(a) for a in node.args) if x is not None]
+        kwargs = [
+            f"{kw.arg}={_expr_repr(kw.value)}" for kw in node.keywords if kw.arg is not None
+        ]
+        return f"{func}({', '.join(args + kwargs)})"
+    return "<expr>"
+
+
+def _is_model_class(node):
+    for base in node.bases:
+        if isinstance(base, ast.Attribute) and base.attr in MODEL_BASE_ATTRS:
+            return True
+        if isinstance(base, ast.Name) and base.id in MODEL_BASE_ATTRS:
+            return True
+    return False
+
+
+def _const_str_list(value):
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return [value.value]
+    if isinstance(value, (ast.List, ast.Tuple)):
+        out = []
+        for el in value.elts:
+            if isinstance(el, ast.Constant) and isinstance(el.value, str):
+                out.append(el.value)
+        return out
+    return []
+
+
+def _field_info(call):
+    # Only `fields.Char(...)`, `fields.Many2one(...)`, etc. - not just any
+    # `foo.bar()` call assigned at class level.
+    if not isinstance(call.func, ast.Attribute):
+        return None
+    if not isinstance(call.func.value, ast.Name) or call.func.value.id != "fields":
+        return None
+    field_type = call.func.attr
+    relation = None
+    if field_type in RELATIONAL_FIELD_TYPES and call.args:
+        first = call.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            relation = first.value
+    # Every keyword arg, verbatim (string/help/required/readonly/store/
+    # compute/related/default/selection/size/digits/tracking/...) - Odoo field
+    # kwargs aren't a fixed set, so capture them all rather than a curated few.
+    attrs = {}
+    # Positional args too (e.g. a Selection's option list, or a Char's label,
+    # both commonly passed positionally rather than as a kwarg).
+    positional = [x for x in (_expr_repr(a) for a in call.args) if x is not None]
+    if positional:
+        attrs["args"] = positional
+    for kw in call.keywords:
+        if kw.arg is None:
+            continue
+        if kw.arg == "comodel_name" and isinstance(kw.value, ast.Constant):
+            relation = kw.value.value
+        value_repr = _expr_repr(kw.value)
+        if value_repr is not None:
+            attrs[kw.arg] = value_repr
+    return field_type, relation, (attrs or None)
+
+
+def _arg_str(a, default=None):
+    s = a.arg
+    if a.annotation is not None:
+        ann = _expr_repr(a.annotation)
+        if ann:
+            s += f": {ann}"
+    if default is not None:
+        d = _expr_repr(default)
+        s += f"={d}" if d is not None else "=..."
+    return s
+
+
+def _signature(func):
+    args = func.args
+    parts = []
+    posonly = list(args.posonlyargs)
+    positional = posonly + list(args.args)
+    defaults = list(args.defaults)
+    num_no_default = len(positional) - len(defaults)
+    for i, a in enumerate(positional):
+        default = defaults[i - num_no_default] if i >= num_no_default else None
+        parts.append(_arg_str(a, default))
+        if posonly and i == len(posonly) - 1:
+            parts.append("/")
+    if args.vararg:
+        parts.append("*" + _arg_str(args.vararg))
+    elif args.kwonlyargs:
+        parts.append("*")
+    for a, d in zip(args.kwonlyargs, args.kw_defaults):
+        parts.append(_arg_str(a, d))
+    if args.kwarg:
+        parts.append("**" + _arg_str(args.kwarg))
+    signature = "(" + ", ".join(parts) + ")"
+    if func.returns is not None:
+        ret = _expr_repr(func.returns)
+        if ret:
+            signature += f" -> {ret}"
+    return signature
+
+
+def _analyze_python_source(source):
+    out = []
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return out
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or not _is_model_class(node):
+            continue
+        model_name = None
+        inherit_names = []
+        model_attrs = {}
+        fields = []
+        methods = []
+        for base in node.bases:
+            name = (
+                base.attr
+                if isinstance(base, ast.Attribute)
+                else (base.id if isinstance(base, ast.Name) else None)
+            )
+            if name in MODEL_BASE_ATTRS:
+                model_attrs["kind"] = name
+                break
+        for stmt in node.body:
+            if (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+            ):
+                target_name = stmt.targets[0].id
+                if target_name == "_name":
+                    values = _const_str_list(stmt.value)
+                    if values:
+                        model_name = values[0]
+                elif target_name == "_inherit":
+                    inherit_names = _const_str_list(stmt.value)
+                elif target_name in ("_description", "_rec_name", "_order", "_table"):
+                    values = _const_str_list(stmt.value)
+                    if values:
+                        model_attrs[target_name.lstrip("_")] = values[0]
+                elif target_name == "_inherits" and isinstance(stmt.value, ast.Dict):
+                    delegation = {}
+                    for k, v in zip(stmt.value.keys, stmt.value.values):
+                        if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
+                            delegation[k.value] = v.value
+                    if delegation:
+                        model_attrs["inherits_delegation"] = delegation
+                elif isinstance(stmt.value, ast.Call):
+                    info = _field_info(stmt.value)
+                    if info:
+                        field_type, relation, attrs = info
+                        fields.append(
+                            {
+                                "name": target_name,
+                                "field_type": field_type,
+                                "relation": relation,
+                                "attrs": attrs,
+                            }
+                        )
+            elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if stmt.name.startswith("_"):
+                    continue
+                decorators = [
+                    x for x in (_expr_repr(dec) for dec in stmt.decorator_list) if x
+                ]
+                methods.append(
+                    {
+                        "name": stmt.name,
+                        "decorators": decorators,
+                        "signature": _signature(stmt),
+                        "docstring": _truncate(ast.get_docstring(stmt, clean=True)),
+                    }
+                )
+        effective_model = model_name or (inherit_names[0] if inherit_names else None)
+        if not effective_model:
+            continue
+        is_new_model = model_name is not None and model_name not in inherit_names
+        out.append(
+            {
+                "class_name": node.name,
+                "model_name": effective_model,
+                "inherit_from": inherit_names,
+                "is_new_model": is_new_model,
+                "docstring": _truncate(ast.get_docstring(node, clean=True)),
+                "attrs": model_attrs or None,
+                "fields": fields,
+                "methods": methods,
+            }
+        )
+    return out
+
+
+def _arch_root_tag(field_el):
+    # First child element inside <field name="arch" type="xml">, e.g. "form",
+    # "tree", "search", "kanban" - tells an LLM what kind of view this is
+    # without needing to load/parse the whole arch.
+    for child in field_el:
+        return child.tag
+    return None
+
+
+def _analyze_xml_source(data):
+    out = []
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return out
+    for record in root.iter("record"):
+        if record.attrib.get("model") != "ir.ui.view":
+            continue
+        xml_id = record.attrib.get("id")
+        if not xml_id:
+            continue
+        name = None
+        model = None
+        inherit_xml_id = None
+        view_type = None
+        for field in record.findall("field"):
+            fname = field.attrib.get("name")
+            if fname == "name":
+                name = (field.text or "").strip() or None
+            elif fname == "model":
+                model = (field.text or "").strip() or None
+            elif fname == "inherit_id":
+                inherit_xml_id = field.attrib.get("ref")
+            elif fname == "arch":
+                view_type = _arch_root_tag(field)
+        out.append(
+            {
+                "xml_id": xml_id,
+                "name": name,
+                "model": model,
+                "inherit_xml_id": inherit_xml_id,
+                "view_type": view_type,
+            }
+        )
+    for template in root.iter("template"):
+        xml_id = template.attrib.get("id")
+        if not xml_id:
+            continue
+        out.append(
+            {
+                "xml_id": xml_id,
+                "name": template.attrib.get("name") or xml_id,
+                "model": "ir.ui.view",
+                "inherit_xml_id": template.attrib.get("inherit_id"),
+                "view_type": "qweb",
+            }
+        )
+    return out
+
+
+def analyze_module(module_path):
+    views = []
+    models = []
+    for dirpath, dirnames, filenames in os.walk(module_path):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for filename in filenames:
+            full_path = os.path.join(dirpath, filename)
+            if filename.endswith(".py"):
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="replace") as fh:
+                        source = fh.read()
+                except OSError:
+                    continue
+                models.extend(_analyze_python_source(source))
+            elif filename.endswith(".xml"):
+                try:
+                    with open(full_path, "rb") as fh:
+                        data = fh.read()
+                except OSError:
+                    continue
+                views.extend(_analyze_xml_source(data))
+    return json.dumps({"views": views, "models": models})
+"#;
 
 #[derive(Debug)]
 pub struct GitInfo {
@@ -381,8 +726,40 @@ impl OGHCollectorAnalyzer {
                 last_commit_date: String::new(),
                 last_commit_partof: String::new(),
                 committers: HashMap::new(),
+                analysis: ModuleAnalysisInfo::default(),
             })
         })
+    }
+
+    /// Walks `module_path`'s Python/XML files (without executing any module
+    /// code) to record which views it touches and which models it defines or
+    /// extends, along with their public methods and `fields.X(...)`
+    /// assignments. Best-effort: any failure just yields an empty analysis.
+    fn analyze_module_source(&self, module_path: &std::path::Path) -> ModuleAnalysisInfo {
+        let result = Python::with_gil(|py| -> PyResult<String> {
+            let module = PyModule::from_code(
+                py,
+                ANALYZER_PY_SRC,
+                "oghcollector_analyzer.py",
+                "oghcollector_analyzer",
+            )?;
+            let analyze_fn = module.getattr("analyze_module")?;
+            let module_path_str = module_path.to_string_lossy().to_string();
+            analyze_fn.call1((module_path_str,))?.extract()
+        });
+        match result {
+            Ok(json_str) => serde_json::from_str(&json_str).unwrap_or_else(|err| {
+                log::warn!("Failed to parse module analysis JSON: {err}");
+                ModuleAnalysisInfo::default()
+            }),
+            Err(err) => {
+                log::warn!(
+                    "Module source analysis failed for {}: {err}",
+                    module_path.display()
+                );
+                ModuleAnalysisInfo::default()
+            }
+        }
     }
 
     pub fn get_module_info(
@@ -420,11 +797,177 @@ impl OGHCollectorAnalyzer {
                         manifest.last_commit_date = git_info.last_commit_date;
                         manifest.last_commit_partof = git_info.last_commit_partof;
                         manifest.committers = committers;
+                        manifest.analysis = self.analyze_module_source(&path);
                         manifest_infos.push(manifest);
                     }
                 }
             }
         }
         manifest_infos
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Exercises the full runtime seam: analyze_module_source -> PyO3-embedded
+    // Python -> JSON -> serde deserialization into the DTOs. The standalone
+    // Python script and the DB replace fns are each tested separately, but
+    // this is the only test that proves the two ends actually agree (a
+    // field-name mismatch here would fail silently via unwrap_or_default()).
+    // Every LLM-oriented addition (docstrings, signatures, decorator args,
+    // field/model attrs, view_type) is asserted with a real, non-null value -
+    // not just "present" - since the failure mode here is a silent None.
+    #[test]
+    fn test_analyze_module_source_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "analyze_module_source_end_to_end"
+        ));
+        let models_dir = dir.join("models");
+        let views_dir = dir.join("views");
+        fs::create_dir_all(&models_dir).unwrap();
+        fs::create_dir_all(&views_dir).unwrap();
+
+        fs::write(
+            models_dir.join("res_partner.py"),
+            r#"
+from odoo import api, fields, models
+
+
+class ResPartner(models.Model):
+    """Extends res.partner with a couple of demo fields."""
+
+    _inherit = "res.partner"
+    _description = "Partner (demo)"
+
+    x_foo = fields.Many2one("res.partner")
+    x_label = fields.Char("Some Label")
+    x_kind = fields.Selection([("a", "A"), ("b", "B")], string="Kind", required=True)
+
+    @api.model
+    @api.constrains("x_foo", "x_label")
+    def do_it(self, force=False):
+        """Does the thing and returns None."""
+        pass
+
+    def _private_helper(self):
+        pass
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            views_dir.join("res_partner_views.xml"),
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record model="ir.ui.view" id="view_res_partner_form_x">
+        <field name="name">res.partner.form.x</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside"/>
+        </field>
+    </record>
+    <record model="ir.ui.view" id="view_res_partner_kind_tree">
+        <field name="name">res.partner.kind.tree</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="x_kind"/>
+            </tree>
+        </field>
+    </record>
+    <template id="portal_my_partner_kind" name="My Partner Kind">
+        <div>Hello</div>
+    </template>
+</odoo>
+"#,
+        )
+        .unwrap();
+
+        let analyzer = OGHCollectorAnalyzer::new(&17u8);
+        let result = analyzer.analyze_module_source(&dir);
+
+        fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(result.views.len(), 3);
+        let inheriting_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_form_x")
+            .unwrap();
+        assert_eq!(
+            inheriting_view.inherit_xml_id.as_deref(),
+            Some("base.view_partner_form")
+        );
+        assert_eq!(inheriting_view.view_type.as_deref(), Some("xpath"));
+
+        let new_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_kind_tree")
+            .unwrap();
+        assert_eq!(new_view.inherit_xml_id, None);
+        assert_eq!(new_view.view_type.as_deref(), Some("tree"));
+
+        let template_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "portal_my_partner_kind")
+            .unwrap();
+        assert_eq!(template_view.view_type.as_deref(), Some("qweb"));
+
+        assert_eq!(result.models.len(), 1);
+        let model = &result.models[0];
+        assert_eq!(model.model_name, "res.partner");
+        assert_eq!(model.class_name, "ResPartner");
+        assert!(!model.is_new_model);
+        assert_eq!(
+            model.docstring.as_deref(),
+            Some("Extends res.partner with a couple of demo fields.")
+        );
+        let model_attrs = model.attrs.as_ref().unwrap();
+        assert_eq!(model_attrs["kind"], "Model");
+        assert_eq!(model_attrs["description"], "Partner (demo)");
+
+        let foo_field = model.fields.iter().find(|f| f.name == "x_foo").unwrap();
+        assert_eq!(foo_field.field_type, "Many2one");
+        assert_eq!(foo_field.relation.as_deref(), Some("res.partner"));
+
+        // A Char's first positional arg is a label, not a comodel - must stay None.
+        let label_field = model.fields.iter().find(|f| f.name == "x_label").unwrap();
+        assert_eq!(label_field.field_type, "Char");
+        assert_eq!(label_field.relation, None);
+
+        // Selection's option list is positional, not a kwarg - must still surface.
+        let kind_field = model.fields.iter().find(|f| f.name == "x_kind").unwrap();
+        assert_eq!(kind_field.field_type, "Selection");
+        let kind_attrs = kind_field.attrs.as_ref().unwrap();
+        assert_eq!(kind_attrs["required"], "True");
+        assert_eq!(kind_attrs["string"], "'Kind'");
+        assert!(kind_attrs["args"][0]
+            .as_str()
+            .unwrap()
+            .contains("('a', 'A')"));
+
+        // Only the public method should surface, not the underscore-prefixed helper.
+        assert_eq!(model.methods.len(), 1);
+        let method = &model.methods[0];
+        assert_eq!(method.name, "do_it");
+        assert_eq!(method.signature, "(self, force=False)");
+        assert_eq!(
+            method.docstring.as_deref(),
+            Some("Does the thing and returns None.")
+        );
+        assert_eq!(
+            method.decorators,
+            vec![
+                "api.model".to_string(),
+                "api.constrains('x_foo', 'x_label')".to_string(),
+            ]
+        );
     }
 }

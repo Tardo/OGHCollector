@@ -136,6 +136,53 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_model (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        model_name -> Text,
+        class_name -> Text,
+        inherit_from -> Nullable<Text>,
+        is_new_model -> Bool,
+        docstring -> Nullable<Text>,
+        attrs -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    module_model_field (id) {
+        id -> BigInt,
+        module_model_id -> BigInt,
+        name -> Text,
+        field_type -> Text,
+        relation -> Nullable<Text>,
+        attrs -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    module_model_method (id) {
+        id -> BigInt,
+        module_model_id -> BigInt,
+        name -> Text,
+        decorators -> Nullable<Text>,
+        signature -> Text,
+        docstring -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    module_view (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        xml_id -> Text,
+        name -> Nullable<Text>,
+        model -> Nullable<Text>,
+        inherit_xml_id -> Nullable<Text>,
+        view_type -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
     pull_request (id) {
         id -> BigInt,
         name -> Text,
@@ -177,6 +224,10 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_committer,
     module_committer_period,
     module_maintainer,
+    module_model,
+    module_model_field,
+    module_model_method,
+    module_view,
     pull_request,
     system_event,
     system_event_type,
