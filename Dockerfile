@@ -1,26 +1,35 @@
 FROM rust:slim AS build
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y python3 python3-dev pkg-config libssl-dev npm && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl gnupg python3 python3-dev pkg-config libssl-dev libsqlite3-dev && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/* && \
+    corepack enable && \
+    corepack prepare pnpm@11.2.2 --activate
 
 RUN set -ex; \
     cargo install diesel_cli --no-default-features --features sqlite-bundled --force; \
-    cp -r ~/.cargo/bin/diesel /usr/local/bin/diesel;
+    cp -r "${CARGO_HOME:-$HOME/.cargo}/bin/diesel" /usr/local/bin/diesel;
 
 RUN --mount=type=bind,source=/static,target=static,rw \
     --mount=type=bind,source=/web,target=web \
     --mount=type=bind,source=/crates,target=crates \
+    --mount=type=bind,source=/migrations,target=migrations \
     --mount=type=bind,source=/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=/package.json,target=package.json \
+    --mount=type=bind,source=/pnpm-lock.yaml,target=pnpm-lock.yaml \
+    --mount=type=bind,source=/pnpm-workspace.yaml,target=pnpm-workspace.yaml \
     --mount=type=bind,source=/rollup.config.mjs,target=rollup.config.mjs \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     <<EOF
 set -e
+export HUSKY=0
 cargo build --locked --release
-npm install -y
-npm run build:prod
+pnpm install --frozen-lockfile
+pnpm run build:prod
 cp ./target/release/server /usr/local/bin/server
 cp ./target/release/collector /usr/local/bin/collector
 cp -r ./static /usr/local/bin/static
@@ -29,7 +38,7 @@ EOF
 
 
 FROM debian:stable-slim AS final
-RUN apt-get update && apt-get install -y git python3 python3-dev libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git python3 python3-dev libssl-dev libsqlite3-0 && rm -rf /var/lib/apt/lists/*
 
 ARG UID=10001
 RUN adduser \

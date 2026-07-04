@@ -89,9 +89,11 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
     }
 
     let mut versions: Vec<CommitterVersionGroup> = versions.into_values().collect();
-    versions.sort_by(|a, b| b.version_key.cmp(&a.version_key));
+    versions.sort_by_key(|v| std::cmp::Reverse(v.version_key));
     for version in versions.iter_mut() {
-        version.modules.sort_by(|a, b| b.commits.cmp(&a.commits));
+        version
+            .modules
+            .sort_by_key(|m| std::cmp::Reverse(m.commits));
     }
 
     let best = versions.iter().max_by_key(|v| v.total_commits);
@@ -106,7 +108,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
             commits,
         })
         .collect();
-    top_repos.sort_by(|a, b| b.commits.cmp(&a.commits));
+    top_repos.sort_by_key(|r| std::cmp::Reverse(r.commits));
     top_repos.truncate(3);
 
     let rank_info = models::committer::get_global_rank_by_name(conn, name);
