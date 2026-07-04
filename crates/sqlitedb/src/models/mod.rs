@@ -476,4 +476,79 @@ mod tests {
         assert!(super::module::get_by_id(&mut conn, &m2.id).is_some());
         assert!(super::module::get_by_id(&mut conn, &m3.id).is_none());
     }
+
+    #[test]
+    fn test_pull_request_add_and_upsert() {
+        let mut conn = setup_db();
+        let org = super::gh_organization::add(&mut conn, "PrOrg").unwrap();
+        let repo = super::gh_repository::add(&mut conn, &org.id, "pr-repo").unwrap();
+
+        let pr1 = super::pull_request::add(
+            &mut conn,
+            "[16.0][MIG] sale_commission",
+            "sale_commission",
+            &42,
+            &16u8,
+            &repo.id,
+        )
+        .unwrap();
+        assert_eq!(pr1.prid, 42);
+        assert_eq!(pr1.module_technical_name, "sale_commission");
+
+        // Same (repo, prid) must update in place, not duplicate.
+        let pr1_updated = super::pull_request::add(
+            &mut conn,
+            "[16.0][MIG] sale_commission (renamed)",
+            "sale_commission",
+            &42,
+            &16u8,
+            &repo.id,
+        )
+        .unwrap();
+        assert_eq!(pr1_updated.id, pr1.id);
+        assert_eq!(pr1_updated.name, "[16.0][MIG] sale_commission (renamed)");
+
+        // A PR number in a different repo must not collide with repo A's #42.
+        let other_repo = super::gh_repository::add(&mut conn, &org.id, "other-repo").unwrap();
+        let pr_other_repo = super::pull_request::add(
+            &mut conn,
+            "[16.0][MIG] other_module",
+            "other_module",
+            &42,
+            &16u8,
+            &other_repo.id,
+        )
+        .unwrap();
+        assert_ne!(pr_other_repo.id, pr1.id);
+
+        let found = super::pull_request::get_by_technical_name_organization_name(
+            &mut conn,
+            "sale_commission",
+            "PrOrg",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, pr1.id);
+    }
+
+    #[test]
+    fn test_pull_request_delete_outdated() {
+        let mut conn = setup_db();
+        let org = super::gh_organization::add(&mut conn, "PrOrg2").unwrap();
+        let repo = super::gh_repository::add(&mut conn, &org.id, "pr-repo-2").unwrap();
+
+        let pr1 =
+            super::pull_request::add(&mut conn, "mig 1", "mod_1", &1, &16u8, &repo.id).unwrap();
+        let _pr2 =
+            super::pull_request::add(&mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id).unwrap();
+
+        // Keep only #1, #2 must be removed since it's not in the "still open" list.
+        super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[1]).unwrap();
+        assert!(super::pull_request::get_by_id(&mut conn, &pr1.id).is_some());
+        assert!(super::pull_request::get_by_id(&mut conn, &_pr2.id).is_none());
+
+        // Unlike module::delete_outdated, an empty list must clear everything left
+        // (all migration PRs for this repo/version got merged or closed).
+        super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[]).unwrap();
+        assert!(super::pull_request::get_by_id(&mut conn, &pr1.id).is_none());
+    }
 }

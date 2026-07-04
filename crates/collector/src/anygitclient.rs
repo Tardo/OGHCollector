@@ -1,6 +1,6 @@
 use crate::clients::github::GithubClient;
 use crate::clients::gitlab::GitlabClient;
-use crate::gitclient::{GitClient, RepoInfo};
+use crate::gitclient::{GitClient, PullRequestInfo, RepoInfo};
 
 pub enum AnyGitClient {
     Github(GithubClient),
@@ -42,6 +42,36 @@ impl GitClient for AnyGitClient {
         match self {
             AnyGitClient::Github(c) => c.clone_org_repos(org_name, branch, dest).await,
             AnyGitClient::Gitlab(c) => c.clone_org_repos(org_name, branch, dest).await,
+        }
+    }
+
+    async fn get_repo_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+        per_page: &usize,
+        page: &usize,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        match self {
+            AnyGitClient::Github(c) => {
+                c.get_repo_pull_requests(full_path, branch, per_page, page)
+                    .await
+            }
+            AnyGitClient::Gitlab(c) => {
+                c.get_repo_pull_requests(full_path, branch, per_page, page)
+                    .await
+            }
+        }
+    }
+
+    async fn get_open_migration_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+    ) -> Vec<PullRequestInfo> {
+        match self {
+            AnyGitClient::Github(c) => c.get_open_migration_pull_requests(full_path, branch).await,
+            AnyGitClient::Gitlab(c) => c.get_open_migration_pull_requests(full_path, branch).await,
         }
     }
 }

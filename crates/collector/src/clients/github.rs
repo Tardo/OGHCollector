@@ -1,5 +1,5 @@
 // Copyright Alexandre D. Díaz
-use crate::gitclient::{GitClient, RepoInfo};
+use crate::gitclient::{extract_migration_module_name, GitClient, PullRequestInfo, RepoInfo};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
@@ -92,5 +92,58 @@ impl GitClient for GithubClient {
             page_count += 1;
         }
         repos
+    }
+
+    async fn get_repo_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+        per_page: &usize,
+        page: &usize,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.request_json(
+            format!(
+                "repos/{full_path}/pulls?state=open&base={branch}&per_page={per_page}&page={page}"
+            )
+            .as_str(),
+        )
+        .await
+    }
+
+    async fn get_open_migration_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+    ) -> Vec<PullRequestInfo> {
+        let mut page_count: usize = 1;
+        let mut prs: Vec<PullRequestInfo> = Vec::new();
+        while page_count < GITHUB_LIMIT_PAGES {
+            let pulls = self
+                .get_repo_pull_requests(full_path, branch, &GITHUB_LIMIT_PER_PAGE, &page_count)
+                .await
+                .unwrap();
+            let pull_items = match pulls.as_array() {
+                Some(arr) => arr,
+                _ => break,
+            };
+            if pull_items.is_empty() {
+                break;
+            }
+            for pull in pull_items {
+                let head_ref = pull["head"]["ref"].as_str().unwrap_or("");
+                if let Some(module_technical_name) = extract_migration_module_name(head_ref) {
+                    prs.push(PullRequestInfo {
+                        number: pull["number"].as_i64().unwrap_or(0),
+                        title: pull["title"].as_str().unwrap_or("").to_string(),
+                        module_technical_name,
+                    });
+                }
+            }
+            if pull_items.len() < GITHUB_LIMIT_PER_PAGE {
+                break;
+            }
+            page_count += 1;
+        }
+        prs
     }
 }

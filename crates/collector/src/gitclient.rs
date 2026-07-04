@@ -1,5 +1,6 @@
 // Copyright Alexandre D. Díaz
 use duct::cmd;
+use regex::Regex;
 use std::fs;
 use std::path::Path;
 
@@ -7,6 +8,7 @@ pub struct RepoInfo {
     pub name: String,
     pub org: String,
     pub clone_path: String,
+    pub full_path: String,
 }
 
 impl RepoInfo {
@@ -19,6 +21,25 @@ impl RepoInfo {
     pub fn get_clone_path(&self) -> &str {
         &self.clone_path
     }
+    pub fn get_full_path(&self) -> &str {
+        &self.full_path
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PullRequestInfo {
+    pub number: i64,
+    pub title: String,
+    pub module_technical_name: String,
+}
+
+/// OCA migration convention: head branch `{version}-mig-{module_technical_name}`
+/// (e.g. `16.0-mig-sale_commission`). Returns the module technical name if it matches.
+pub fn extract_migration_module_name(head_ref: &str) -> Option<String> {
+    let re = Regex::new(r"^[0-9]+\.[0-9]+-mig-(.+)$").unwrap();
+    re.captures(head_ref)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
 }
 
 pub trait GitClient {
@@ -82,6 +103,7 @@ pub trait GitClient {
             name: repo_name.into(),
             org: org_name.into(),
             clone_path,
+            full_path: format!("{org_name}/{repo_name}"),
         })
     }
 
@@ -100,4 +122,43 @@ pub trait GitClient {
     ) -> Result<serde_json::Value, reqwest::Error>;
 
     async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo>;
+
+    async fn get_repo_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+        per_page: &usize,
+        page: &usize,
+    ) -> Result<serde_json::Value, reqwest::Error>;
+
+    async fn get_open_migration_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+    ) -> Vec<PullRequestInfo>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_migration_module_name;
+
+    #[test]
+    fn test_extract_migration_module_name_matches_oca_convention() {
+        assert_eq!(
+            extract_migration_module_name("16.0-mig-sale_commission"),
+            Some("sale_commission".to_string())
+        );
+        assert_eq!(
+            extract_migration_module_name("17.0-mig-account_analytic_tag_taxonomies"),
+            Some("account_analytic_tag_taxonomies".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_migration_module_name_rejects_non_migration_branches() {
+        assert_eq!(extract_migration_module_name("16.0-fix-foo"), None);
+        assert_eq!(extract_migration_module_name("master"), None);
+        assert_eq!(extract_migration_module_name("16.0-mig-"), None);
+        assert_eq!(extract_migration_module_name("mig-sale_commission"), None);
+    }
 }

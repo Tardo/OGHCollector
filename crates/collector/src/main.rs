@@ -102,6 +102,30 @@ async fn main() {
         }
     }
 
+    log::info!("Scanning '{}' repos for migration PRs...", repo_infos.len());
+    for repo_info in &repo_infos {
+        let gh_org = models::gh_organization::add(&mut conn, repo_info.get_org()).unwrap();
+        let gh_repo =
+            models::gh_repository::add(&mut conn, &gh_org.id, repo_info.get_name()).unwrap();
+        let migration_prs = git_client
+            .get_open_migration_pull_requests(repo_info.get_full_path(), config.get_branch())
+            .await;
+        let mut prids: Vec<i64> = Vec::with_capacity(migration_prs.len());
+        for pr in &migration_prs {
+            prids.push(pr.number);
+            models::pull_request::add(
+                &mut conn,
+                &pr.title,
+                &pr.module_technical_name,
+                &pr.number,
+                odoo_ver,
+                &gh_repo.id,
+            )
+            .unwrap();
+        }
+        let _ = models::pull_request::delete_outdated(&mut conn, &gh_repo.id, odoo_ver, &prids);
+    }
+
     log::info!("Analazyng '{}' repos...", repo_infos.len());
     let analyzer = OGHCollectorAnalyzer::new(odoo_ver);
     let manifest_infos = analyzer.get_module_info(config.get_read_paths(), &repo_infos);

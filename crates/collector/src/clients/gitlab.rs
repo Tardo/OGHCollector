@@ -1,6 +1,6 @@
 // Copyright Alexandre D. Díaz
 // Adapted for GitLab
-use crate::gitclient::{GitClient, RepoInfo};
+use crate::gitclient::{extract_migration_module_name, GitClient, PullRequestInfo, RepoInfo};
 
 const GITLAB_BASE_URL: &str = "https://gitlab.com/api/v4/";
 const GITLAB_LIMIT_PER_PAGE: usize = 100; // GitLab permite hasta 100
@@ -116,7 +116,12 @@ impl GitClient for GitlabClient {
                 );
 
                 match repo_info_opt {
-                    Some(info) => repos.push(info),
+                    // `repo_owner_login` is only the first segment of `path_with_namespace`,
+                    // so it drops nested subgroups. Restore the real project path here.
+                    Some(mut info) => {
+                        info.full_path = repo_path_with_namespace.to_string();
+                        repos.push(info);
+                    }
                     _ => log::info!("'{repo_http_url}' Is not a valid Odoo modules repository!"),
                 }
             }
@@ -129,5 +134,62 @@ impl GitClient for GitlabClient {
         }
 
         repos
+    }
+
+    async fn get_repo_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+        per_page: &usize,
+        page: &usize,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.request_json(
+            format!(
+                "projects/{}/merge_requests?state=opened&target_branch={}&per_page={}&page={}",
+                urlencoding::encode(full_path),
+                urlencoding::encode(branch),
+                per_page,
+                page
+            )
+            .as_str(),
+        )
+        .await
+    }
+
+    async fn get_open_migration_pull_requests(
+        &self,
+        full_path: &str,
+        branch: &str,
+    ) -> Vec<PullRequestInfo> {
+        let mut page_count: usize = 1;
+        let mut prs: Vec<PullRequestInfo> = Vec::new();
+        while page_count < GITLAB_LIMIT_PAGES {
+            let merge_requests = self
+                .get_repo_pull_requests(full_path, branch, &GITLAB_LIMIT_PER_PAGE, &page_count)
+                .await
+                .unwrap();
+            let mr_items = match merge_requests.as_array() {
+                Some(arr) => arr,
+                _ => break,
+            };
+            if mr_items.is_empty() {
+                break;
+            }
+            for mr in mr_items {
+                let source_branch = mr["source_branch"].as_str().unwrap_or("");
+                if let Some(module_technical_name) = extract_migration_module_name(source_branch) {
+                    prs.push(PullRequestInfo {
+                        number: mr["iid"].as_i64().unwrap_or(0),
+                        title: mr["title"].as_str().unwrap_or("").to_string(),
+                        module_technical_name,
+                    });
+                }
+            }
+            if mr_items.len() < GITLAB_LIMIT_PER_PAGE {
+                break;
+            }
+            page_count += 1;
+        }
+        prs
     }
 }

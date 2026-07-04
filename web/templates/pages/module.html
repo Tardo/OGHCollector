@@ -1,7 +1,7 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 {% set modules = module_infos | reverse %}
 {% extends "minimal_layout.html" %}
-{% block title %}Module: {{ modules[0].technical_name }} {% endblock %}
+{% block title %}Module: {{ technical_name }} {% endblock %}
 {% block base_head_content %}
 {{ super() }}
 
@@ -34,12 +34,21 @@
     </div>
 </div>
 
-<h2>{{ modules[0].name }}</h2>
-<span>{{ modules[0].technical_name }}</span>
+{% if not modules and not pull_requests %}
+<h2>{{ technical_name }}</h2>
+<p>No data found for this module.</p>
+{% else %}
+<h2>{{ modules[0].name if modules else technical_name }}</h2>
+<span>{{ technical_name }}</span>
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
     {% for module in modules %}
     <li class="nav-item" role="presentation">
         <button class="nav-link {{ loop.first and 'active' or '' }}" id="version-{{ module.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#version-{{ module.odoo_version }}" type="button" role="tab" aria-controls="version-{{ module.odoo_version }}">{{ module.odoo_version }}</button>
+    </li>
+    {% endfor %}
+    {% for pr in pull_requests %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {{ (not modules and loop.first) and 'active' or '' }}" id="pr-{{ loop.index }}-tab" data-bs-toggle="pill" data-bs-target="#pr-{{ loop.index }}" type="button" role="tab" aria-controls="pr-{{ loop.index }}">{{ pr.odoo_version }} <span class="badge text-bg-warning">PR</span></button>
     </li>
     {% endfor %}
 </ul>
@@ -108,5 +117,20 @@
         </table>
     </div>
     {% endfor %}
+    {% for pr in pull_requests %}
+    <div class="tab-pane fade {{ (not modules and loop.first) and 'show active' or '' }}" id="pr-{{ loop.index }}" role="tabpanel" aria-labelledby="pr-{{ loop.index }}-tab" tabindex="0">
+        <table class="table table-striped-columns">
+            <tbody>
+                <tr class="col-2 d-lg-none"><th colspan="2">STATUS</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">STATUS</th><td><span class="badge text-bg-warning">Open migration PR</span> - not merged yet for this version</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">REPOSITORY</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">REPOSITORY</th><td>{{ pr.organization }}/{{ pr.repository }}</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">PULL REQUEST</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">PULL REQUEST</th><td><a href="{{ pr.url }}">{{ pr.title }} (#{{ pr.prid }})</a></td></tr>
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
 </div>
+{% endif %}
 {% endblock %}
