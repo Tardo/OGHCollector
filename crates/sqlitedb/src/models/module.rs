@@ -8,7 +8,7 @@ use crate::utils::date::get_sqlite_utc_now;
 
 use super::{
     author, gh_organization, gh_repository, maintainer, module_author, module_committer,
-    module_maintainer, system_event,
+    module_committer_period, module_maintainer, system_event,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -58,6 +58,15 @@ impl Model {
     }
 }
 
+/// A committer's activity within a module: total commit count plus a
+/// (year, month) -> commits breakdown, both derived from the same `git log`
+/// run so they always agree (see module_committer vs module_committer_period).
+#[derive(Clone, Default)]
+pub struct CommitterActivity {
+    pub total: u32,
+    pub periods: HashMap<(i32, i32), u32>,
+}
+
 #[derive(Clone)]
 pub struct ManifestInfo {
     pub technical_name: String,
@@ -84,7 +93,7 @@ pub struct ManifestInfo {
     pub last_commit_date: String,
     pub last_commit_name: String,
     pub last_commit_partof: String,
-    pub committers: HashMap<String, u32>,
+    pub committers: HashMap<String, CommitterActivity>,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -701,8 +710,15 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
         {
             module_maintainer::add(conn, &new_module.id, item)?;
         }
-        for (com_name, com_count) in &module_info.committers {
-            module_committer::add(conn, &new_module.id, com_name.as_str(), com_count)?;
+        for (com_name, activity) in &module_info.committers {
+            let mc =
+                module_committer::add(conn, &new_module.id, com_name.as_str(), &activity.total)?;
+            module_committer_period::replace_for_committer(
+                conn,
+                &new_module.id,
+                &mc.committer_id,
+                &activity.periods,
+            )?;
         }
 
         let _ = system_event::register_new_module(
@@ -720,8 +736,19 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     let existing_module = existing.unwrap();
 
     // Update committers
-    for (com_name, com_count) in &module_info.committers {
-        module_committer::add(conn, &existing_module.id, com_name.as_str(), com_count)?;
+    for (com_name, activity) in &module_info.committers {
+        let mc = module_committer::add(
+            conn,
+            &existing_module.id,
+            com_name.as_str(),
+            &activity.total,
+        )?;
+        module_committer_period::replace_for_committer(
+            conn,
+            &existing_module.id,
+            &mc.committer_id,
+            &activity.periods,
+        )?;
     }
 
     // Check authors

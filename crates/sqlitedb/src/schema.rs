@@ -117,6 +117,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_committer_period (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        committer_id -> BigInt,
+        year -> Integer,
+        month -> Integer,
+        commits -> Integer,
+    }
+}
+
+diesel::table! {
     module_maintainer (id) {
         id -> BigInt,
         module_id -> BigInt,
@@ -164,6 +175,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module,
     module_author,
     module_committer,
+    module_committer_period,
     module_maintainer,
     pull_request,
     system_event,

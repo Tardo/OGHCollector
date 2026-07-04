@@ -19,7 +19,7 @@
 
 
 <h2>Committers</h2>
-<span>{{ total_committers }} human committers tracked (bots/automation accounts excluded)</span>
+<span>Human committers tracked (bots/automation accounts excluded)</span>
 
 <div class="row position-relative mx-1 mt-3" id="committer_search">
     <mirlo-committer-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
@@ -27,27 +27,44 @@
 
 <div class="row user-select-none mt-5" id="top_committers">
     <div class="col-12">
-        <h3>Top {{ top_committers | length }} Committers (all-time, by commits)</h3>
-        <table class="table table-striped table-striped-columns table-hover">
-            <thead>
-                <tr>
-                    <th class="text-center">Rank</th>
-                    <th>Committer</th>
-                    <th class="text-center">Commits</th>
-                    <th class="d-none d-lg-table-cell text-center">Modules Touched</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for committer in top_committers %}
-                <tr>
-                    <td class="text-center">#{{ committer.rank }}</td>
-                    <td><a href="/committer/{{ committer.name | urlencode }}">{{ committer.name }}</a></td>
-                    <td class="text-center">{{ committer.total_commits }}</td>
-                    <td class="d-none d-lg-table-cell text-center">{{ committer.modules_touched }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <ul class="nav nav-pills mb-3" id="periods-tab" role="tablist">
+            {% for period in periods %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ loop.first and 'active' or '' }}" id="period-{{ period.key }}-tab" data-bs-toggle="pill" data-bs-target="#period-{{ period.key }}" type="button" role="tab" aria-controls="period-{{ period.key }}">{{ period.label }}</button>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="tab-content" id="periods-tabContent">
+            {% for period in periods %}
+            <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="period-{{ period.key }}" role="tabpanel" aria-labelledby="period-{{ period.key }}-tab" tabindex="0">
+                <div class="mb-2">{{ period.total_committers }} human committer{{ period.total_committers != 1 and 's' or '' }} tracked this period</div>
+                <h3>Top {{ period.committers | length }} Committers ({{ period.label }}, by commits)</h3>
+                <table class="table table-striped table-striped-columns table-hover">
+                    <thead>
+                        <tr>
+                            <th class="text-center">Rank</th>
+                            <th>Committer</th>
+                            <th class="text-center">Commits</th>
+                            <th class="d-none d-lg-table-cell text-center">Modules Touched</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for committer in period.committers %}
+                        <tr>
+                            <td class="text-center">#{{ committer.rank }}</td>
+                            <td><a href="/committer/{{ committer.name | urlencode }}">{{ committer.name }}</a></td>
+                            <td class="text-center">{{ committer.total_commits }}</td>
+                            <td class="d-none d-lg-table-cell text-center">{{ committer.modules_touched }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% if not period.committers %}
+                <p>No commit activity tracked for this period.</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
     </div>
 </div>
 {% endblock %}

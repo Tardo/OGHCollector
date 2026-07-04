@@ -11,23 +11,9 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 
 use oghutils::version::OdooVersion;
-use sqlitedb::models::module::ManifestInfo;
+use sqlitedb::models::module::{CommitterActivity, ManifestInfo};
 
 use crate::gitclient::RepoInfo;
-
-fn count_element_function<I>(it: I) -> HashMap<I::Item, u32>
-where
-    I: IntoIterator,
-    I::Item: Eq + core::hash::Hash,
-{
-    let mut result = HashMap::new();
-
-    for item in it {
-        *result.entry(item).or_insert(0) += 1;
-    }
-
-    result
-}
 
 #[derive(Debug)]
 pub struct GitInfo {
@@ -111,7 +97,7 @@ impl OGHCollectorAnalyzer {
     fn get_git_committers(
         &self,
         folder_path: &std::path::PathBuf,
-    ) -> Result<HashMap<String, u32>, ExitStatus> {
+    ) -> Result<HashMap<String, CommitterActivity>, ExitStatus> {
         log::info!("Get git committer info...");
         let version_branches_output = cmd!("git", "branch", "-a", "--format=%(refname:short)")
             .dir(folder_path)
@@ -154,12 +140,15 @@ impl OGHCollectorAnalyzer {
             return Ok(HashMap::new());
         };
 
+        // %cs is the committer date in `YYYY-MM-DD` (no time/tz), so year/month can be
+        // sliced directly. Kept on the same log line as %cn so the per-committer total
+        // and the per-(year, month) breakdown always come from the same commit set.
         let output = cmd!(
             "git",
             "--no-pager",
             "log",
             &log_range,
-            "--pretty=%cn",
+            "--pretty=%cn%x1f%cs",
             "--",
             "."
         )
@@ -167,9 +156,24 @@ impl OGHCollectorAnalyzer {
         .stdin_null()
         .read()
         .unwrap_or_else(|_| String::new());
-        let counter: HashMap<String, u32> =
-            count_element_function(output.lines().map(|l| l.to_string()));
-        Ok(counter)
+
+        let mut committers: HashMap<String, CommitterActivity> = HashMap::new();
+        for line in output.lines() {
+            let Some((name, date)) = line.split_once('\u{1f}') else {
+                continue;
+            };
+            if date.len() < 7 {
+                continue;
+            }
+            let (Ok(year), Ok(month)) = (date[0..4].parse::<i32>(), date[5..7].parse::<i32>())
+            else {
+                continue;
+            };
+            let activity = committers.entry(name.to_string()).or_default();
+            activity.total += 1;
+            *activity.periods.entry((year, month)).or_insert(0) += 1;
+        }
+        Ok(committers)
     }
 
     fn read_manifest(

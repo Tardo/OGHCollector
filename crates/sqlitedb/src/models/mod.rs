@@ -11,6 +11,7 @@ pub mod maintainer;
 pub mod module;
 pub mod module_author;
 pub mod module_committer;
+pub mod module_committer_period;
 pub mod module_maintainer;
 pub mod pull_request;
 pub mod system_event;
@@ -550,5 +551,74 @@ mod tests {
         // (all migration PRs for this repo/version got merged or closed).
         super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[]).unwrap();
         assert!(super::pull_request::get_by_id(&mut conn, &pr1.id).is_none());
+    }
+
+    #[test]
+    fn test_module_committer_period_written_and_ranked() {
+        let mut conn = setup_db();
+        use super::module::CommitterActivity;
+        use std::collections::HashMap;
+
+        let make_info = |periods: HashMap<(i32, i32), u32>, total: u32| {
+            let mut committers = HashMap::new();
+            committers.insert("Dave".to_string(), CommitterActivity { total, periods });
+            super::module::ManifestInfo {
+                technical_name: "period_test".to_string(),
+                version_odoo: 16,
+                name: "Period Test".to_string(),
+                version_module: "16.0.1.0.0".to_string(),
+                description: String::new(),
+                author: String::new(),
+                website: String::new(),
+                license: String::new(),
+                category: String::new(),
+                auto_install: false,
+                application: false,
+                installable: true,
+                maintainer: String::new(),
+                git_org: "PeriodOrg".to_string(),
+                git_repo: "period-repo".to_string(),
+                depends: vec![],
+                external_depends_python: vec![],
+                external_depends_bin: vec![],
+                folder_size: 128,
+                last_commit_hash: "period1".to_string(),
+                last_commit_author: "Dave".to_string(),
+                last_commit_date: "2024-02-15".to_string(),
+                last_commit_name: "commit".to_string(),
+                last_commit_partof: String::new(),
+                committers,
+            }
+        };
+
+        let mut periods = HashMap::new();
+        periods.insert((2024, 1), 2);
+        periods.insert((2024, 2), 3);
+        super::module::add(&mut conn, &make_info(periods, 5)).unwrap();
+
+        let jan = super::module_committer_period::rank_by_period(&mut conn, 2024, Some(1), 10);
+        assert_eq!(jan.len(), 1);
+        assert_eq!(jan[0].name, "Dave");
+        assert_eq!(jan[0].total_commits, 2);
+
+        let year = super::module_committer_period::rank_by_period(&mut conn, 2024, None, 10);
+        assert_eq!(year.len(), 1);
+        assert_eq!(year[0].total_commits, 5);
+
+        assert!(
+            super::module_committer_period::rank_by_period(&mut conn, 2099, None, 10).is_empty()
+        );
+
+        // Re-adding the same module with a different breakdown must replace, not
+        // accumulate (the collector recomputes the full range on every run).
+        let mut new_periods = HashMap::new();
+        new_periods.insert((2024, 3), 7);
+        super::module::add(&mut conn, &make_info(new_periods, 7)).unwrap();
+
+        let march = super::module_committer_period::rank_by_period(&mut conn, 2024, Some(3), 10);
+        assert_eq!(march[0].total_commits, 7);
+        assert!(
+            super::module_committer_period::rank_by_period(&mut conn, 2024, Some(1), 10).is_empty()
+        );
     }
 }
