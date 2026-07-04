@@ -47,7 +47,9 @@
 </template>
 
 
-<div class="row position-relative mx-1" id="module_search">
+<span>{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations</span>
+
+<div class="row position-relative mx-1 mt-3" id="module_search">
     <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
 </div>
 

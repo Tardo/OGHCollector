@@ -129,6 +129,12 @@ pub struct ModuleCountInfo {
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleDistinctCountInfo {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
+}
+
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleCountByOrganizationInfo {
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub version_odoo: i32,
@@ -459,6 +465,15 @@ pub fn count(conn: &mut SqliteConnection) -> Vec<ModuleCountInfo> {
     diesel::sql_query("SELECT version_odoo, count(*) as count FROM module GROUP BY version_odoo")
         .load::<ModuleCountInfo>(conn)
         .expect("DB error in module::count")
+}
+
+pub fn count_distinct(conn: &mut SqliteConnection) -> i64 {
+    diesel::sql_query("SELECT count(DISTINCT technical_name) as count FROM module")
+        .load::<ModuleDistinctCountInfo>(conn)
+        .expect("DB error in module::count_distinct")
+        .first()
+        .map(|x| x.count)
+        .unwrap_or(0)
 }
 
 pub fn count_organization(conn: &mut SqliteConnection) -> Vec<ModuleCountByOrganizationInfo> {
