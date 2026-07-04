@@ -153,11 +153,9 @@ pub struct ModuleRankCommitterInfo {
     pub rank: i64,
 }
 
-#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleRepositoryInfo {
-    #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
-    #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository_name: String,
 }
 
@@ -540,14 +538,12 @@ pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
 }
 
 pub fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<i32> {
-    diesel::sql_query(
-        "SELECT version_odoo FROM module GROUP BY version_odoo ORDER BY version_odoo DESC",
-    )
-    .load::<crate::models::IntRow>(conn)
-    .expect("DB error in module::get_odoo_versions")
-    .into_iter()
-    .map(|r| r.value)
-    .collect()
+    module::table
+        .select(module::version_odoo)
+        .distinct()
+        .order(module::version_odoo.desc())
+        .load::<i32>(conn)
+        .expect("DB error in module::get_odoo_versions")
 }
 
 pub fn get_module_repository(
@@ -555,24 +551,30 @@ pub fn get_module_repository(
     version_odoo: &u8,
     modules: &[String],
 ) -> Vec<ModuleRepositoryInfo> {
+    use crate::schema::gh_repository;
     if modules.is_empty() {
         return vec![];
     }
-    let names_list = modules
-        .iter()
-        .map(|n| format!("'{}'", n.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    diesel::sql_query(format!(
-        "SELECT mod.technical_name, gh_repo.name as repository_name \
-         FROM module AS mod \
-         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
-         WHERE mod.technical_name IN ({names_list}) AND mod.version_odoo = ? \
-         GROUP BY mod.technical_name"
-    ))
-    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
-    .load::<ModuleRepositoryInfo>(conn)
-    .expect("DB error in module::get_module_repository")
+    let rows = module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .filter(
+            module::technical_name
+                .eq_any(modules)
+                .and(module::version_odoo.eq(*version_odoo as i32)),
+        )
+        .select((module::technical_name, gh_repository::name))
+        .load::<(String, String)>(conn)
+        .expect("DB error in module::get_module_repository");
+
+    // One row per technical_name (same as the previous GROUP BY behavior).
+    let mut seen = std::collections::HashSet::new();
+    rows.into_iter()
+        .filter(|(technical_name, _)| seen.insert(technical_name.clone()))
+        .map(|(technical_name, repository_name)| ModuleRepositoryInfo {
+            technical_name,
+            repository_name,
+        })
+        .collect()
 }
 
 pub fn delete_outdated(

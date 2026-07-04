@@ -32,7 +32,3 @@ pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
         .optional()
         .expect("DB error in dependency_type::get_by_name")
 }
-
-pub fn get_by_name_no_cache(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
-    get_by_name(conn, name)
-}

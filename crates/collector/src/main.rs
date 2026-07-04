@@ -109,11 +109,11 @@ async fn main() {
     if manifest_count.gt(&0) {
         log::info!("Saving '{}' repos info...", manifest_infos.len());
         let mut module_ids_by_repo: HashMap<i64, Vec<i64>> = HashMap::new();
-        let dep_type_module = models::dependency_type::get_by_name_no_cache(&mut conn, "module")
+        let dep_type_module = models::dependency_type::get_by_name(&mut conn, "module")
             .expect("Can't found the module dependecy type");
-        let dep_type_python = models::dependency_type::get_by_name_no_cache(&mut conn, "python")
+        let dep_type_python = models::dependency_type::get_by_name(&mut conn, "python")
             .expect("Can't found the python dependecy type");
-        let dep_type_bin = models::dependency_type::get_by_name_no_cache(&mut conn, "bin")
+        let dep_type_bin = models::dependency_type::get_by_name(&mut conn, "bin")
             .expect("Can't found the bin dependecy type");
         let re = Regex::new(r"^([^><=]+).+?([^><=]+)$").unwrap();
         for manifest in manifest_infos {
@@ -142,7 +142,7 @@ async fn main() {
             }
 
             // Add Odoo deps.
-            let module_depends = models::dependency_module::get_names_no_cache(
+            let module_depends = models::dependency_module::get_names(
                 &mut conn,
                 &new_module.id,
                 &dep_type_module.id,
@@ -189,7 +189,7 @@ async fn main() {
             }
 
             // Add python deps.
-            let module_depends_python = models::dependency_module::get_names_no_cache(
+            let module_depends_python = models::dependency_module::get_names(
                 &mut conn,
                 &new_module.id,
                 &dep_type_python.id,
@@ -290,11 +290,8 @@ async fn main() {
             }
 
             // Add bin deps.
-            let module_depends_bin = models::dependency_module::get_names_no_cache(
-                &mut conn,
-                &new_module.id,
-                &dep_type_bin.id,
-            );
+            let module_depends_bin =
+                models::dependency_module::get_names(&mut conn, &new_module.id, &dep_type_bin.id);
 
             let module_depends_bin_to_remove: Vec<&String> = module_depends_bin
                 .iter()

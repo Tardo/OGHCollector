@@ -83,14 +83,6 @@ pub fn get_names(conn: &mut SqliteConnection, module_id: &i64, dep_type_id: &i64
     .collect()
 }
 
-pub fn get_names_no_cache(
-    conn: &mut SqliteConnection,
-    module_id: &i64,
-    dep_type_id: &i64,
-) -> Vec<String> {
-    get_names(conn, module_id, dep_type_id)
-}
-
 pub fn add(
     conn: &mut SqliteConnection,
     dep_type_id: &i64,

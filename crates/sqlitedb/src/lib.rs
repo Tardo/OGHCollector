@@ -43,7 +43,7 @@ struct ReadCustomizer;
 impl CustomizeConnection<SqliteConnection, R2d2Error> for ReadCustomizer {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), R2d2Error> {
         use diesel::connection::SimpleConnection;
-        conn.batch_execute("PRAGMA query_only = ON;")
+        conn.batch_execute("PRAGMA query_only = ON; PRAGMA busy_timeout = 5000;")
             .map_err(R2d2Error::QueryError)
     }
 }

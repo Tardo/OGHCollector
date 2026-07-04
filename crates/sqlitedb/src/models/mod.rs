@@ -29,12 +29,6 @@ pub struct NameRow {
 }
 
 #[derive(diesel::QueryableByName)]
-pub struct IntRow {
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub value: i32,
-}
-
-#[derive(diesel::QueryableByName)]
 struct LastIdRow {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     id: i64,
@@ -341,6 +335,100 @@ mod tests {
         let event = super::system_event::add(&mut conn, "internal", "Test event").unwrap();
         assert_eq!(event.message, "Test event");
         assert_eq!(event.event_type_name, "internal");
+    }
+
+    #[test]
+    fn test_module_get_odoo_versions() {
+        let mut conn = setup_db();
+        use std::collections::HashMap;
+
+        let make_info = |name: &str, ver: u8| super::module::ManifestInfo {
+            technical_name: name.to_string(),
+            version_odoo: ver,
+            name: name.to_string(),
+            version_module: format!("{ver}.0.1.0.0"),
+            description: String::new(),
+            author: String::new(),
+            website: String::new(),
+            license: String::new(),
+            category: String::new(),
+            auto_install: false,
+            application: false,
+            installable: true,
+            maintainer: String::new(),
+            git_org: "VerOrg".to_string(),
+            git_repo: "ver-repo".to_string(),
+            depends: vec![],
+            external_depends_python: vec![],
+            external_depends_bin: vec![],
+            folder_size: 64,
+            last_commit_hash: "yyy".to_string(),
+            last_commit_author: "Dev".to_string(),
+            last_commit_date: "2024-05-01".to_string(),
+            last_commit_name: "commit".to_string(),
+            last_commit_partof: String::new(),
+            committers: HashMap::new(),
+        };
+
+        super::module::add(&mut conn, &make_info("mod_v15", 15)).unwrap();
+        super::module::add(&mut conn, &make_info("mod_v17", 17)).unwrap();
+        super::module::add(&mut conn, &make_info("mod_v17_b", 17)).unwrap();
+
+        let versions = super::module::get_odoo_versions(&mut conn);
+        assert_eq!(versions, vec![17, 15]);
+    }
+
+    #[test]
+    fn test_module_get_module_repository() {
+        let mut conn = setup_db();
+        use std::collections::HashMap;
+
+        let make_info = |name: &str| super::module::ManifestInfo {
+            technical_name: name.to_string(),
+            version_odoo: 16,
+            name: name.to_string(),
+            version_module: "16.0.1.0.0".to_string(),
+            description: String::new(),
+            author: String::new(),
+            website: String::new(),
+            license: String::new(),
+            category: String::new(),
+            auto_install: false,
+            application: false,
+            installable: true,
+            maintainer: String::new(),
+            git_org: "RepoOrg".to_string(),
+            git_repo: "repo-a".to_string(),
+            depends: vec![],
+            external_depends_python: vec![],
+            external_depends_bin: vec![],
+            folder_size: 64,
+            last_commit_hash: "zzz".to_string(),
+            last_commit_author: "Dev".to_string(),
+            last_commit_date: "2024-06-01".to_string(),
+            last_commit_name: "commit".to_string(),
+            last_commit_partof: String::new(),
+            committers: HashMap::new(),
+        };
+
+        super::module::add(&mut conn, &make_info("mod_x")).unwrap();
+        super::module::add(&mut conn, &make_info("mod_y")).unwrap();
+        // Name with a quote must not break the query.
+        super::module::add(&mut conn, &make_info("mod'z")).unwrap();
+
+        let names = vec![
+            "mod_x".to_string(),
+            "mod'z".to_string(),
+            "missing".to_string(),
+        ];
+        let mut infos = super::module::get_module_repository(&mut conn, &16u8, &names);
+        infos.sort_by(|a, b| a.technical_name.cmp(&b.technical_name));
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].technical_name, "mod'z");
+        assert_eq!(infos[0].repository_name, "repo-a");
+        assert_eq!(infos[1].technical_name, "mod_x");
+
+        assert!(super::module::get_module_repository(&mut conn, &16u8, &[]).is_empty());
     }
 
     #[test]

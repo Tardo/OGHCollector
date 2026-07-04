@@ -51,14 +51,6 @@ pub fn get_by_name(conn: &mut SqliteConnection, dep_type_id: &i64, name: &str) -
         .expect("DB error in dependency::get_by_name")
 }
 
-pub fn get_by_name_no_cache(
-    conn: &mut SqliteConnection,
-    dep_type_id: &i64,
-    name: &str,
-) -> Option<Model> {
-    get_by_name(conn, dep_type_id, name)
-}
-
 pub fn get_module_external_dependency_names(
     conn: &mut SqliteConnection,
     module_id: &i64,

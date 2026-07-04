@@ -15,16 +15,6 @@ pub struct Model {
     pub gh_repository_id: i64,
 }
 
-#[derive(Insertable)]
-#[diesel(table_name = pull_request)]
-struct NewPullRequest<'a> {
-    name: &'a str,
-    version_odoo: i32,
-    module_technical_name: &'a str,
-    prid: i64,
-    gh_repository_id: i64,
-}
-
 pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
     pull_request::table
         .filter(pull_request::id.eq(id))

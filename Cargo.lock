@@ -2896,7 +2896,6 @@ dependencies = [
  "minijinja",
  "minijinja-autoreload",
  "oghutils",
- "r2d2",
  "serde",
  "serde_json",
  "sqlitedb",
@@ -3040,12 +3039,10 @@ dependencies = [
 name = "sqlitedb"
 version = "0.1.0"
 dependencies = [
- "cached",
  "chrono",
  "diesel",
  "diesel_migrations",
  "oghutils",
- "r2d2",
  "serde",
  "serde_json",
 ]

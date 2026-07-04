@@ -22,7 +22,6 @@ actix-rt.workspace = true
 actix-session.workspace = true
 actix-csrf.workspace = true
 actix-multipart.workspace = true
-r2d2.workspace = true
 env_logger.workspace = true
 log.workspace = true
 futures-util.workspace = true

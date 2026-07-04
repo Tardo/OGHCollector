@@ -11,7 +11,5 @@ oghutils = { path = "../oghutils" }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-r2d2.workspace = true
-cached.workspace = true
 diesel = { workspace = true }
 diesel_migrations.workspace = true
