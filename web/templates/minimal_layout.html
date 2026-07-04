@@ -10,6 +10,7 @@
     <link rel="prefetch" href="/osv" />
     <link rel="prefetch" href="/doodba/converter" />
     <link rel="prefetch" href="/doodba/dependency-resolver" />
+    <link rel="prefetch" href="/doodba/migration" />
 
     <script type="module" src="/static/auto/main.mjs" async></script>
 {% endblock %}
@@ -35,13 +36,13 @@
                     <li class="nav-item"><a class="nav-link {% if page_name in ['committers', 'committer'] %}active{% endif %}" href="/committers">Committers</a></li>
                     <!--li class="{% if page_name == 'stats' %}active{% endif %}"><a>Stats</a></li-->
                     <li class="nav-item dropdown">
-                        <a class="nav-link {% if page_name in ['doodba_converter', 'doodba_dep_resolver'] %}active{% endif %} dropdown-toggle" id="navbarDropdown" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <a class="nav-link {% if page_name in ['doodba_converter', 'doodba_dep_resolver', 'doodba_migration_plan'] %}active{% endif %} dropdown-toggle" id="navbarDropdown" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             Doodba Tools
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
                             <li><a class="dropdown-item {% if page_name in ['doodba_converter'] %}active{% endif %}" href="/doodba/converter">Converter</a></li>
                             <li><a class="dropdown-item {% if page_name in ['doodba_dep_resolver'] %}active{% endif %}" href="/doodba/dependency-resolver">Dependency Resolver</a></li>
-                            <li><a class="dropdown-item disabled" href="/doodba/migration">Migration Plan <span class="badge text-bg-secondary">ToDo</span></a></li>
+                            <li><a class="dropdown-item {% if page_name in ['doodba_migration_plan'] %}active{% endif %}" href="/doodba/migration">Migration Plan</a></li>
                         </ul>
                     </li>
                     <li class="nav-item"><a class="nav-link {% if page_name == 'api' %}active{% endif %}" href="/api">API</a></li>

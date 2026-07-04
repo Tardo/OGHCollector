@@ -104,6 +104,8 @@ async fn main() -> std::io::Result<()> {
             .service(routes::doodba_tools::route_doodba_converter_addons)
             .service(routes::doodba_tools::route_doodba_dependency_resolver)
             .service(routes::doodba_tools::route_doodba_dependency_resolver_addons)
+            .service(routes::doodba_tools::route_doodba_migration_plan)
+            .service(routes::doodba_tools::route_doodba_migration_plan_addons)
             .service(routes::atlas::route)
             .service(routes::atlas::route_atlas_data)
             .service(

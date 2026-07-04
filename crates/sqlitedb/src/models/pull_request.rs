@@ -33,6 +33,27 @@ pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
         .expect("DB error in pull_request::get_by_id")
 }
 
+/// Batch lookup used by the migration plan tool: finds open migration PRs for a
+/// set of modules at a given target version, regardless of organization (the
+/// caller doesn't know in advance which org/repo a not-yet-merged module lives in).
+pub fn get_by_technical_names_odoo_version(
+    conn: &mut SqliteConnection,
+    technical_names: &[String],
+    version_odoo: &u8,
+) -> Vec<Model> {
+    if technical_names.is_empty() {
+        return vec![];
+    }
+    pull_request::table
+        .filter(
+            pull_request::module_technical_name
+                .eq_any(technical_names)
+                .and(pull_request::version_odoo.eq(*version_odoo as i32)),
+        )
+        .load::<Model>(conn)
+        .expect("DB error in pull_request::get_by_technical_names_odoo_version")
+}
+
 pub fn get_by_technical_name_organization_name(
     conn: &mut SqliteConnection,
     technical_name: &str,

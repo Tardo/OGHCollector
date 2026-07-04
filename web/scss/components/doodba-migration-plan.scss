@@ -1,0 +1,112 @@
+// Copyright 2026 Alexandre D. Díaz
+#doodba_migration_plan_drag_panel {
+    position: relative;
+    background-color: #252735;
+    width: 100%;
+    height: 50vh;
+    border: 1px solid rgb(76 86 157);
+    background: linear-gradient(-45deg, #1a1a1a, #2d1b69, #0f0f23, #1e3c72);
+    background-size: 400% 400%;
+    animation: mainGadrientEffect 20s ease infinite;
+    cursor: pointer;
+
+    span {
+        top: 25vh;
+        left: 50%;
+        position: absolute;
+        transform: translate(-50%, -50%);
+    }
+}
+
+#doodba_migration_plan_result {
+    width: 100%;
+
+    .migration-step {
+        border: 1px solid rgb(76 86 157);
+        border-radius: 3px;
+        margin-bottom: 1.5em;
+        padding: 0.5em 1em 1em;
+    }
+
+    .migration-step h4 {
+        margin: 0 0 0.5em;
+    }
+
+    .migration-step-columns {
+        display: flex;
+        gap: 1em;
+        flex-wrap: wrap;
+    }
+
+    .migration-step-col {
+        flex: 1 1 320px;
+        display: flex;
+        flex-direction: column;
+
+        label {
+            font-weight: bold;
+            margin-bottom: 0.2em;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 30vh;
+            resize: vertical;
+        }
+    }
+
+    .migration-step-pending {
+        margin-top: 0.5em;
+        color: #e0a02e;
+    }
+
+    .migration-step-missing {
+        margin-top: 0.5em;
+        color: #e05252;
+    }
+}
+
+#doodba_migration_plan_save {
+    &:hover {
+        background-color: rgb(76 86 157);
+        cursor: pointer;
+    }
+}
+
+.no_mouse {
+    user-select: none;
+}
+
+.search_container {
+    user-select: none;
+    background-color: rgb(76 86 157);
+    padding: 0.3em;
+    border-radius: 3px 3px 0 0;
+    color: white;
+
+    .search_input {
+        padding: 5px;
+        outline: none;
+        background-color: transparent;
+        border: 0;
+        color: white;
+        font-weight: bold;
+
+        &:hover:not(:disabled) {
+            background-color: rgb(68, 78, 136);
+            cursor: pointer;
+        }
+    }
+}
+
+@keyframes mainGadrientEffect {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}

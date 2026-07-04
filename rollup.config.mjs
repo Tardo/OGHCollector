@@ -19,6 +19,7 @@ export default [
       'web/js/pages/osv.mjs',
       'web/js/pages/doodba_tools/converter.mjs',
       'web/js/pages/doodba_tools/dependency-resolver.mjs',
+      'web/js/pages/doodba_tools/migration-plan.mjs',
       'web/js/pages/api-doc.mjs',
       'web/js/pages/atlas.mjs',
       'web/js/pages/logs.mjs',
