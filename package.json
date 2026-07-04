@@ -1,4 +1,5 @@
 {
+  "packageManager": "pnpm@11.2.2",
   "scripts": {
     "clean": "rm -rf ./static/auto",
     "build:watch": "rollup -c -w",

@@ -20,10 +20,12 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: '*'
           check-latest: true
+          cache: pnpm
       - uses: docker/setup-compose-action@v1
         with:
           version: latest
@@ -32,19 +34,14 @@ jobs:
           path: |
             .venv
             .cache
-            .npm
-            node_modules
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/Cargo.lock') }}
-      - run: |
-          npm ci --cache .npm --prefer-offline
-          npm install --global npm
-          npm install
+          key: ${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml', '**/Cargo.lock') }}
+      - run: pnpm install --frozen-lockfile
       - name: Linters
-        run: npm run lint
-      - name: CArgo Tests
+        run: pnpm run lint
+      - name: Cargo Tests
         run: cargo test
       - name: Build Image
         run: docker compose build
