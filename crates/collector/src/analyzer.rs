@@ -444,44 +444,64 @@ impl OGHCollectorAnalyzer {
         folder_path: &std::path::PathBuf,
     ) -> Result<HashMap<String, CommitterActivity>, ExitStatus> {
         log::info!("Get git committer info...");
-        let version_branches_output = cmd!("git", "branch", "-a", "--format=%(refname:short)")
+        // `clone_or_update_repo` clones with `--no-single-branch --branch <ver>`,
+        // which fetches every remote branch but only ever creates a *local* ref
+        // for the checked-out version. So `git branch -a` lists just one bare
+        // `X.Y` local branch (the current one) plus every other version as
+        // `origin/X.Y`. Matching only bare `X.Y` names here meant `pos` was
+        // always 0, and the `main` fallback below always failed (no local
+        // `main` ref either), leaving `log_range` empty/invalid and committers
+        // silently empty for virtually every module. Read positions off the
+        // `origin/*` refs instead, and use `HEAD` for the current side since
+        // it's always in sync with `origin/<version>` right after clone/reset.
+        let branches_output = cmd!("git", "branch", "-a", "--format=%(refname:short)")
             .dir(folder_path)
             .stdin_null()
             .read()
             .unwrap_or_else(|_| String::new());
-        let mut version_branches: Vec<String> = str::from_utf8(version_branches_output.as_bytes())
-            .expect("Invalid UTF-8")
+        let version_re = Regex::new(r"^origin/([0-9]+\.[0-9]+)$").unwrap();
+        let mut versions: Vec<String> = branches_output
             .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .map(|l| l.trim())
+            .filter_map(|l| version_re.captures(l).map(|c| c[1].to_string()))
             .collect();
-        let version_re = Regex::new(r"^[0-9]+\.[0-9]+$").unwrap();
-        version_branches.retain(|b| version_re.is_match(b));
-        version_branches.sort_by(|a, b| {
+        versions.sort_by(|a, b| {
             let a_parts: Vec<u32> = a.split('.').map(|p| p.parse().unwrap_or(0)).collect();
             let b_parts: Vec<u32> = b.split('.').map(|p| p.parse().unwrap_or(0)).collect();
             a_parts.cmp(&b_parts)
         });
+        versions.dedup();
 
-        let current = cmd!("git", "rev-parse", "--abbrev-ref", "HEAD")
-            .dir(folder_path)
-            .stdin_null()
-            .read()
-            .unwrap_or_else(|_| String::new());
+        let current = oghutils::version::odoo_version_u8_to_string(&self.version_odoo);
 
-        let log_range = if let Some(pos) = version_branches.iter().position(|b| b == &current) {
+        let log_range = if let Some(pos) = versions.iter().position(|v| v == &current) {
             if pos > 0 {
-                let prev = &version_branches[pos - 1];
-                format!("{}..{}", prev, current)
+                format!("origin/{}..HEAD", versions[pos - 1])
             } else {
-                let base = cmd!("git", "merge-base", "main", &current)
-                    .dir(folder_path)
-                    .stdin_null()
-                    .read()
-                    .unwrap_or_else(|_| String::new());
-                format!("{}..{}", base, current)
+                let default_branch = ["origin/main", "origin/master"]
+                    .into_iter()
+                    .find(|b| branches_output.lines().any(|l| l.trim() == *b));
+                match default_branch {
+                    Some(default_branch) => {
+                        let base = cmd!("git", "merge-base", default_branch, "HEAD")
+                            .dir(folder_path)
+                            .stdin_null()
+                            .read()
+                            .unwrap_or_else(|_| String::new());
+                        let base = base.trim();
+                        if base.is_empty() {
+                            "HEAD".to_string()
+                        } else {
+                            format!("{base}..HEAD")
+                        }
+                    }
+                    None => "HEAD".to_string(),
+                }
             }
         } else {
+            log::warn!(
+                "get_git_committers: current version {current} not found among origin/* branches ({versions:?}); skipping committer collection"
+            );
             return Ok(HashMap::new());
         };
 
