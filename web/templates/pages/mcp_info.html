@@ -1,0 +1,179 @@
+{# Copyright 2025 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% block title %}MCP{% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/mcp-info.css" as="style">
+    <script type="module" src="/static/auto/mcp-info.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<h2>🔌 MCP (Model Context Protocol)</h2>
+<p class="fs-5 text-secondary-emphasis">
+    This server also exposes an <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">MCP</a>
+    endpoint: <code>search_modules</code> and <code>get_module</code> tools, giving an LLM client the same
+    module search, dependency-graph and code-analysis data (views, models, fields, methods) shown in this
+    dashboard. It's read-only and served over Streamable HTTP, so any client that speaks MCP can reach it
+    directly by URL &mdash; no local binary or database file of its own.
+</p>
+
+<div class="border rounded p-3 mb-4 text-bg-secondary" id="mcp-endpoint-box">
+    <div class="fs-6 text-uppercase text-secondary-emphasis mb-1">MCP endpoint URL</div>
+    <code class="text-light fs-5" id="mcp-endpoint-url">{{ MCP_URL }}</code>
+</div>
+
+<p class="text-secondary-emphasis">
+    Use this URL below wherever a client asks for a "remote MCP server" / "server URL". If the endpoint is
+    reachable only from your own machine (e.g. <code>localhost</code>), any client that runs locally can
+    connect to it directly &mdash; but a cloud-hosted client (like Claude's own Connectors UI) needs the
+    URL to be reachable over the public internet. See the
+    <a href="#" onclick="document.getElementById('mcp-pills-desktop-tab').click(); return false;">Claude Desktop</a>
+    and
+    <a href="#" onclick="document.getElementById('mcp-pills-other-tab').click(); return false;">other clients / local bridge</a>
+    tabs below for both cases. If this endpoint is deployed under a public hostname, make sure
+    <code>OGHCOLLECTOR_MCP_ALLOWED_HOSTS</code> includes it, or the MCP server will reject the request
+    (DNS-rebinding protection).
+</p>
+
+<div class="d-flex flex-column flex-md-row align-items-start mt-4">
+    <div class="nav flex-column nav-pills me-3 d-none d-md-flex" id="mcp-pills-tab" role="tablist" aria-orientation="vertical">
+        <button class="nav-link active" id="mcp-pills-claude-code-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-claude-code" type="button" role="tab" aria-controls="mcp-pills-claude-code" aria-selected="true">Claude Code</button>
+        <button class="nav-link" id="mcp-pills-desktop-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-desktop" type="button" role="tab" aria-controls="mcp-pills-desktop" aria-selected="false">Claude Desktop / claude.ai</button>
+        <button class="nav-link" id="mcp-pills-cursor-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-cursor" type="button" role="tab" aria-controls="mcp-pills-cursor" aria-selected="false">Cursor</button>
+        <button class="nav-link" id="mcp-pills-vscode-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-vscode" type="button" role="tab" aria-controls="mcp-pills-vscode" aria-selected="false">VS Code (Copilot)</button>
+        <button class="nav-link" id="mcp-pills-other-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-other" type="button" role="tab" aria-controls="mcp-pills-other" aria-selected="false">Other clients / local</button>
+    </div>
+    <ul class="nav nav-pills mb-3 d-flex d-md-none mb-5" id="mcp-pills-tab-mobile" role="tablist">
+        <li class="nav-item dropdown bg-primary-subtle">
+            <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Select client</a>
+            <ul class="dropdown-menu">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#mcp-pills-claude-code" type="button" role="tab" aria-controls="mcp-pills-claude-code" aria-selected="true">Claude Code</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-desktop" type="button" role="tab" aria-controls="mcp-pills-desktop" aria-selected="false">Claude Desktop / claude.ai</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-cursor" type="button" role="tab" aria-controls="mcp-pills-cursor" aria-selected="false">Cursor</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-vscode" type="button" role="tab" aria-controls="mcp-pills-vscode" aria-selected="false">VS Code (Copilot)</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-other" type="button" role="tab" aria-controls="mcp-pills-other" aria-selected="false">Other clients / local</button>
+                </li>
+            </ul>
+        </li>
+    </ul>
+    <div class="tab-content flex-grow-1" id="mcp-pills-tabContent">
+
+        <div class="tab-pane fade show active" id="mcp-pills-claude-code" role="tabpanel" aria-labelledby="mcp-pills-claude-code-tab" tabindex="0">
+            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Command line</h4>
+            <div class="p-3 text-bg-secondary mb-4">
+                <pre class="mb-0"><code class="text-light">claude mcp add --transport http oghcollector {{ MCP_URL }}</code></pre>
+            </div>
+            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Or via <code>.mcp.json</code> (project-scoped, checked into git)</h4>
+            <div class="p-3 text-bg-secondary">
+                <pre class="mb-0"><code class="text-light">{
+  "mcpServers": {
+    "oghcollector": {
+      "type": "http",
+      "url": "{{ MCP_URL }}"
+    }
+  }
+}</code></pre>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="mcp-pills-desktop" role="tabpanel" aria-labelledby="mcp-pills-desktop-tab" tabindex="0">
+            <p class="text-secondary-emphasis">
+                Claude Desktop and claude.ai connect to custom connectors from Anthropic's cloud, not from
+                your own machine &mdash; the URL below must be reachable over the public internet
+                (a <code>localhost</code> URL will not work here; use the
+                <a href="#" onclick="document.getElementById('mcp-pills-other-tab').click(); return false;">local bridge</a>
+                tab instead for local development).
+            </p>
+            <ol class="text-secondary-emphasis">
+                <li class="mb-2"><span class="fw-bold text-light">Pro / Max plan:</span> go to <em>Settings &rarr; Customize &rarr; Connectors</em>, click <strong>+</strong>, choose <strong>Add custom connector</strong>.</li>
+                <li class="mb-2"><span class="fw-bold text-light">Team / Enterprise plan:</span> an owner goes to <em>Organization settings &rarr; Connectors</em>, clicks <strong>Add</strong> &rarr; <strong>Custom</strong> &rarr; <strong>Web</strong>; members then enable it from <em>Settings &rarr; Customize &rarr; Connectors</em>.</li>
+                <li class="mb-2">Paste the endpoint URL:</li>
+            </ol>
+            <div class="p-3 text-bg-secondary mb-3">
+                <pre class="mb-0"><code class="text-light">{{ MCP_URL }}</code></pre>
+            </div>
+            <p class="text-secondary-emphasis">
+                Click <strong>Add</strong>, then enable the connector for a conversation from the
+                <strong>+</strong> menu in the chat composer.
+            </p>
+        </div>
+
+        <div class="tab-pane fade" id="mcp-pills-cursor" role="tabpanel" aria-labelledby="mcp-pills-cursor-tab" tabindex="0">
+            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">
+                <code>.cursor/mcp.json</code> (project) or <code>~/.cursor/mcp.json</code> (global)
+            </h4>
+            <div class="p-3 text-bg-secondary">
+                <pre class="mb-0"><code class="text-light">{
+  "mcpServers": {
+    "oghcollector": {
+      "url": "{{ MCP_URL }}"
+    }
+  }
+}</code></pre>
+            </div>
+            <p class="text-secondary-emphasis mt-3">
+                Cursor runs locally, so a <code>localhost</code> URL works fine here. Fully quit and reopen
+                Cursor afterwards &mdash; MCP servers are only loaded at startup.
+            </p>
+        </div>
+
+        <div class="tab-pane fade" id="mcp-pills-vscode" role="tabpanel" aria-labelledby="mcp-pills-vscode-tab" tabindex="0">
+            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">
+                <code>.vscode/mcp.json</code> (workspace) or the user profile <code>mcp.json</code>
+            </h4>
+            <div class="p-3 text-bg-secondary">
+                <pre class="mb-0"><code class="text-light">{
+  "servers": {
+    "oghcollector": {
+      "type": "http",
+      "url": "{{ MCP_URL }}"
+    }
+  }
+}</code></pre>
+            </div>
+            <p class="text-secondary-emphasis mt-3">
+                Open the Command Palette &rarr; <em>MCP: Add Server&hellip;</em> to have VS Code write this
+                for you, or edit the file directly. VS Code runs locally too, so <code>localhost</code>
+                works fine.
+            </p>
+        </div>
+
+        <div class="tab-pane fade" id="mcp-pills-other" role="tabpanel" aria-labelledby="mcp-pills-other-tab" tabindex="0">
+            <p class="text-secondary-emphasis">
+                Any client that only supports launching a local <em>stdio</em> server (no native remote/HTTP
+                option) can still reach this endpoint through
+                <a href="https://www.npmjs.com/package/mcp-remote" target="_blank" rel="noopener">mcp-remote</a>,
+                a small bridge run with <code>npx</code>. Since it runs as a local process on your own
+                machine, this also works when the endpoint is on <code>localhost</code> &mdash; use it for
+                local development with clients whose connector UI requires a public URL.
+            </p>
+            <div class="p-3 text-bg-secondary">
+                <pre class="mb-0"><code class="text-light">{
+  "mcpServers": {
+    "oghcollector": {
+      "command": "npx",
+      "args": ["mcp-remote", "{{ MCP_URL }}"]
+    }
+  }
+}</code></pre>
+            </div>
+            <p class="text-secondary-emphasis mt-3">
+                Requires Node.js 18+. If the URL uses plain <code>http://</code> on a host other than
+                <code>localhost</code>, add the <code>--allow-http</code> flag to the <code>args</code> array.
+            </p>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

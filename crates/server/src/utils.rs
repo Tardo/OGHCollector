@@ -6,6 +6,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::LazyLock;
 
+use crate::config::SERVER_CONFIG;
+
 static PIP_NAMES_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     let path = "files/pip_names.txt";
     let file = match File::open(path) {
@@ -58,5 +60,7 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
         REQ_SCHEME => scheme.clone(),
         REQ_HOST => host.clone(),
         REQ_BASE_URL => format!("{}://{}", &scheme, &host),
+        MCP_INFO_ENABLED => SERVER_CONFIG.get_mcp_info_enabled(),
+        MCP_URL => SERVER_CONFIG.get_mcp_url().clone(),
     )
 }

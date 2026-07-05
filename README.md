@@ -115,6 +115,8 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `upload_limit` | int | Maximum upload size, in bytes | `2097152` |
 | `cache_ttl` | int | Seconds a cache entry stays valid | `3600` |
 | `db_pool_max_size` | int | Maximum number of pooled DB connections | `15` |
+| `mcp_info_enabled` | bool | Show the `/mcp` page explaining how to connect popular LLM clients to the MCP endpoint, and its nav link | `false` |
+| `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
 
 ```yaml
 # docker-compose.override.yaml

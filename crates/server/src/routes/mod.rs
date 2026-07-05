@@ -8,5 +8,6 @@ pub mod common;
 pub mod dashboard;
 pub mod doodba_tools;
 pub mod logs;
+pub mod mcp_info;
 pub mod module;
 pub mod osv;

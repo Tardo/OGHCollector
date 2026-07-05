@@ -11,6 +11,9 @@
     <link rel="prefetch" href="/doodba/converter" />
     <link rel="prefetch" href="/doodba/dependency-resolver" />
     <link rel="prefetch" href="/doodba/migration" />
+    {% if MCP_INFO_ENABLED %}
+    <link rel="prefetch" href="/mcp" />
+    {% endif %}
 
     <script type="module" src="/static/auto/main.mjs" async></script>
 {% endblock %}
@@ -46,6 +49,9 @@
                         </ul>
                     </li>
                     <li class="nav-item"><a class="nav-link {% if page_name == 'api' %}active{% endif %}" href="/api">API</a></li>
+                    {% if MCP_INFO_ENABLED %}
+                    <li class="nav-item"><a class="nav-link {% if page_name == 'mcp_info' %}active{% endif %}" href="/mcp">MCP</a></li>
+                    {% endif %}
                     <li class="nav-item"><a class="nav-link {% if page_name == 'logs' %}active{% endif %}" href="/logs">Logs</a></li>
                 </ul>
             </div>

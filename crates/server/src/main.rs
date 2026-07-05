@@ -108,6 +108,11 @@ async fn main() -> std::io::Result<()> {
             .service(routes::doodba_tools::route_doodba_migration_plan_addons)
             .service(routes::atlas::route)
             .service(routes::atlas::route_atlas_data)
+            .configure(|cfg| {
+                if SERVER_CONFIG.get_mcp_info_enabled() {
+                    cfg.service(routes::mcp_info::route);
+                }
+            })
             .service(
                 web::scope(routes::api::v1::PATH)
                     .service(routes::api::v1::module::route)
