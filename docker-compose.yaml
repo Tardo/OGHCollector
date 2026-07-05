@@ -21,6 +21,7 @@ services:
       - 8081:8081
     volumes:
       - app_data:/app/data
+      # - ./mcp.yaml:/app/mcp.yaml
     environment:
       RUST_LOG: info
       RUST_BACKTRACE: 0

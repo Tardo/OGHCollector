@@ -65,7 +65,18 @@
                 <tr class="col-2 d-lg-none"><th colspan="2">GIT FOLDER</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">GIT FOLDER</th><td><a href="{{ git_folder_url }}">{{ git_folder_url }}</a></td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">VERSION</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">VERSION</th><td>{{ module.version }}</td></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">VERSION</th><td>
+                    {% set history = module_versions[module.odoo_version] %}
+                    {% if history and history | length > 1 %}
+                    <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="Select module version">
+                        {% for v in history %}
+                        <option value="{{ v.version_module }}" {{ (v.version_module == module.version) and 'selected' or '' }}>{{ v.version_module }}{{ v.is_latest and ' (latest)' or '' }}</option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    {{ module.version }}
+                    {% endif %}
+                </td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">CATEGORY</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">CATEGORY</th><td>{{ module.category }}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">LICENSE</th></tr>

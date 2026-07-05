@@ -18,3 +18,5 @@ env_logger.workspace = true
 rmcp.workspace = true
 axum.workspace = true
 cached.workspace = true
+config.workspace = true
+lazy_static.workspace = true

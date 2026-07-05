@@ -112,6 +112,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope(routes::api::v1::PATH)
                     .service(routes::api::v1::module::route)
                     .service(routes::api::v1::module::route_odoo_version)
+                    .service(routes::api::v1::module::route_versions)
                     .service(routes::api::v1::repository::route)
                     .service(routes::api::v1::search::route),
             )

@@ -17,6 +17,7 @@ pub mod module_maintainer;
 pub mod module_model;
 pub mod module_model_field;
 pub mod module_model_method;
+pub mod module_version;
 pub mod module_view;
 pub mod pull_request;
 pub mod system_event;
@@ -670,6 +671,9 @@ mod tests {
         use super::module_code_analysis::ViewAnalysisInfo;
         let mut conn = setup_db();
         let module = super::module::add(&mut conn, &make_bare_module_info("view_test")).unwrap();
+        let module_version =
+            super::module_version::get_or_create(&mut conn, &module.id, &module.version_module)
+                .unwrap();
 
         let views = vec![
             ViewAnalysisInfo {
@@ -687,16 +691,18 @@ mod tests {
                 view_type: Some("form".to_string()),
             },
         ];
-        super::module_view::replace_for_module(&mut conn, &module.id, &views).unwrap();
+        super::module_view::replace_for_module(&mut conn, &module.id, &module_version.id, &views)
+            .unwrap();
         assert_eq!(
-            super::module_view::get_by_module_id(&mut conn, &module.id).len(),
+            super::module_view::get_by_module_version_id(&mut conn, &module_version.id).len(),
             2
         );
 
         // Re-analyzing with a smaller set must replace, not accumulate.
         let views2 = vec![views[0].clone()];
-        super::module_view::replace_for_module(&mut conn, &module.id, &views2).unwrap();
-        let found = super::module_view::get_by_module_id(&mut conn, &module.id);
+        super::module_view::replace_for_module(&mut conn, &module.id, &module_version.id, &views2)
+            .unwrap();
+        let found = super::module_view::get_by_module_version_id(&mut conn, &module_version.id);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].xml_id, "view_a");
         assert_eq!(found[0].view_type.as_deref(), Some("form"));
@@ -709,6 +715,9 @@ mod tests {
         };
         let mut conn = setup_db();
         let module = super::module::add(&mut conn, &make_bare_module_info("model_test")).unwrap();
+        let module_version =
+            super::module_version::get_or_create(&mut conn, &module.id, &module.version_module)
+                .unwrap();
 
         let models_v1 = vec![ModelAnalysisInfo {
             model_name: "res.partner".to_string(),
@@ -733,8 +742,14 @@ mod tests {
                 docstring: Some("Does the thing.".to_string()),
             }],
         }];
-        super::module_model::replace_for_module(&mut conn, &module.id, &models_v1).unwrap();
-        let stored = super::module_model::get_by_module_id(&mut conn, &module.id);
+        super::module_model::replace_for_module(
+            &mut conn,
+            &module.id,
+            &module_version.id,
+            &models_v1,
+        )
+        .unwrap();
+        let stored = super::module_model::get_by_module_version_id(&mut conn, &module_version.id);
         assert_eq!(stored.len(), 1);
         assert_eq!(
             stored[0].docstring.as_deref(),
@@ -772,8 +787,14 @@ mod tests {
             fields: vec![],
             methods: vec![],
         }];
-        super::module_model::replace_for_module(&mut conn, &module.id, &models_v2).unwrap();
-        let stored2 = super::module_model::get_by_module_id(&mut conn, &module.id);
+        super::module_model::replace_for_module(
+            &mut conn,
+            &module.id,
+            &module_version.id,
+            &models_v2,
+        )
+        .unwrap();
+        let stored2 = super::module_model::get_by_module_version_id(&mut conn, &module_version.id);
         assert_eq!(stored2.len(), 1);
         let new_model_id = stored2[0].id;
         assert!(new_model_id != old_model_id);
@@ -790,5 +811,105 @@ mod tests {
         assert!(
             super::module_model_method::get_by_module_model_id(&mut conn, &old_model_id).is_empty()
         );
+    }
+
+    // The correctness gate for the whole module_version feature: re-analyzing
+    // after a manifest version bump must start a *new* module_version row and
+    // leave the previous version's module_model/field/method rows untouched.
+    // Filtering replace_for_module's delete by module_id instead of
+    // module_version_id would wipe the old snapshot here while still passing
+    // test_module_model_replace_for_module_no_orphans above.
+    #[test]
+    fn test_module_version_history_preserves_old_snapshot_on_bump() {
+        use super::module_code_analysis::{FieldAnalysisInfo, ModelAnalysisInfo};
+        let mut conn = setup_db();
+
+        let mut info_v1 = make_bare_module_info("versioned_module");
+        info_v1.version_module = "1.0.0".to_string();
+        let module_v1 = super::module::add(&mut conn, &info_v1).unwrap();
+        let module_version_v1 =
+            super::module_version::get_or_create(&mut conn, &module_v1.id, &info_v1.version_module)
+                .unwrap();
+
+        let models_v1 = vec![ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            class_name: "ResPartner".to_string(),
+            inherit_from: vec!["res.partner".to_string()],
+            is_new_model: false,
+            docstring: Some("v1 docstring".to_string()),
+            attrs: None,
+            fields: vec![FieldAnalysisInfo {
+                name: "x_foo".to_string(),
+                field_type: "Char".to_string(),
+                relation: None,
+                attrs: None,
+            }],
+            methods: vec![],
+        }];
+        super::module_model::replace_for_module(
+            &mut conn,
+            &module_v1.id,
+            &module_version_v1.id,
+            &models_v1,
+        )
+        .unwrap();
+
+        // Second collector pass: the manifest version bumped to 1.0.1.
+        let mut info_v2 = info_v1.clone();
+        info_v2.version_module = "1.0.1".to_string();
+        let module_v2 = super::module::add(&mut conn, &info_v2).unwrap();
+        assert_eq!(module_v2.id, module_v1.id, "same module identity row");
+        assert_eq!(module_v2.version_module, "1.0.1");
+
+        let module_version_v2 =
+            super::module_version::get_or_create(&mut conn, &module_v2.id, &info_v2.version_module)
+                .unwrap();
+        assert_ne!(module_version_v2.id, module_version_v1.id);
+
+        let models_v2 = vec![ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            class_name: "ResPartner".to_string(),
+            inherit_from: vec!["res.partner".to_string()],
+            is_new_model: false,
+            docstring: Some("v2 docstring".to_string()),
+            attrs: None,
+            fields: vec![],
+            methods: vec![],
+        }];
+        super::module_model::replace_for_module(
+            &mut conn,
+            &module_v2.id,
+            &module_version_v2.id,
+            &models_v2,
+        )
+        .unwrap();
+
+        // Both versions must be permanently on record.
+        let history = super::module_version::get_by_module_id(&mut conn, &module_v1.id);
+        assert_eq!(history.len(), 2);
+
+        // The v1 snapshot must be untouched by the v2 re-analysis.
+        let v1_models =
+            super::module_model::get_by_module_version_id(&mut conn, &module_version_v1.id);
+        assert_eq!(v1_models.len(), 1);
+        assert_eq!(v1_models[0].docstring.as_deref(), Some("v1 docstring"));
+        assert_eq!(
+            super::module_model_field::get_by_module_model_id(&mut conn, &v1_models[0].id).len(),
+            1
+        );
+
+        // The v2 snapshot reflects the second pass only.
+        let v2_models =
+            super::module_model::get_by_module_version_id(&mut conn, &module_version_v2.id);
+        assert_eq!(v2_models.len(), 1);
+        assert_eq!(v2_models[0].docstring.as_deref(), Some("v2 docstring"));
+        assert!(
+            super::module_model_field::get_by_module_model_id(&mut conn, &v2_models[0].id)
+                .is_empty()
+        );
+
+        // Default resolution ("latest") must land on the v2 snapshot.
+        let current = super::module_version::resolve_current(&mut conn, &module_v2).unwrap();
+        assert_eq!(current.id, module_version_v2.id);
     }
 }

@@ -1,4 +1,5 @@
 // Copyright Alexandre D. Díaz
+mod config;
 mod tools;
 
 use std::path::PathBuf;
@@ -66,6 +67,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = resolve_db_path();
     log::info!("using SQLite DB at {}", db_path.display());
     let pool = sqlitedb::new_read_pool(&db_path.to_string_lossy(), 4);
+
+    // Touch MCP_CONFIG now so a malformed mcp.yaml fails at startup rather than on the
+    // first get_module call, and so the effective TTL is visible in the logs.
+    log::info!(
+        "get_module cache TTL: {}s",
+        *config::MCP_CONFIG.get_cache_ttl()
+    );
 
     let allowed_hosts = resolve_allowed_hosts();
     let service = StreamableHttpService::new(

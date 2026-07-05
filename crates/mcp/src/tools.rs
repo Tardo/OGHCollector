@@ -42,6 +42,36 @@ pub struct GetModuleParams {
     pub org: Option<String>,
     /// Restrict to a repository name.
     pub repo: Option<String>,
+    /// Specific module version to inspect, e.g. "1.0.2" (see
+    /// `list_module_versions`). Defaults to the latest known version.
+    pub version_module: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListModuleVersionsParams {
+    /// Module technical name, e.g. "sale_order_type".
+    pub technical_name: String,
+    /// Odoo version, e.g. "17.0".
+    pub odoo_version: String,
+    /// Restrict to a GitHub/GitLab organization name.
+    pub org: Option<String>,
+    /// Restrict to a repository name.
+    pub repo: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleVersionInfo {
+    pub version_module: String,
+    pub create_date: String,
+    pub update_date: String,
+    pub is_latest: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleVersionHistory {
+    pub organization: String,
+    pub repository: String,
+    pub versions: Vec<ModuleVersionInfo>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,9 +137,89 @@ pub struct ModuleFullInfo {
     pub organization: String,
     pub repository: String,
     pub git: String,
+    /// Date of the last git commit that touched this module, e.g.
+    /// "2026-01-15 10:32:00". Combined with `last_commit_author`, use this to
+    /// gauge whether a module is still actively maintained before
+    /// recommending it for a pack.
+    pub last_commit_date: String,
+    pub last_commit_author: String,
     pub dependencies: ModuleDependencies,
     pub views: Vec<ModuleView>,
     pub models: Vec<ModuleModel>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SearchRepositoriesParams {
+    /// Substring to match against a repository's name (SQL LIKE, \
+    /// case-sensitive), e.g. "spain" matches "l10n-spain".
+    pub name: String,
+    /// Restrict to a specific GitHub/GitLab organization, e.g. "OCA".
+    pub org: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RepositorySearchResult {
+    pub organization: String,
+    pub repository: String,
+    /// Odoo version -> number of modules recorded in this repository at that
+    /// version.
+    pub modules_by_odoo_version: HashMap<String, u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListRepositoryModulesParams {
+    /// Organization name exactly as returned by search_repositories, e.g. "OCA".
+    pub org: String,
+    /// Repository name exactly as returned by search_repositories, e.g. "l10n-spain".
+    pub repo: String,
+    /// Restrict to a specific Odoo version, e.g. "17.0". Recommended: a \
+    /// repository can carry many versions (one per branch), so omitting this \
+    /// returns every version's modules at once.
+    pub odoo_version: Option<String>,
+    /// Restrict to installable (true) or non-installable (false) modules.
+    pub installable: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleSummary {
+    pub technical_name: String,
+    pub name: String,
+    pub odoo_version: String,
+    pub module_version: String,
+    pub description: String,
+    pub category: String,
+    pub application: bool,
+    pub installable: bool,
+    pub auto_install: bool,
+    pub authors: Vec<String>,
+    pub maintainers: Vec<String>,
+    pub committers: Vec<String>,
+    pub last_commit_date: String,
+    pub last_commit_author: String,
+    /// Direct (one level) dependencies only, unlike get_module's transitive
+    /// closure - cheap to compute in bulk for every module in a repository.
+    /// The `odoo` map is keyed by "organization/repository" since a
+    /// dependency can live in a different repository than the module itself.
+    pub depends: ModuleDependencies,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetCommitterActivityParams {
+    /// Exact committer (git author) name, e.g. "Jane Doe". This project only
+    /// tracks git commit author names, not emails or GitHub logins - get real
+    /// names from the `committers` field of get_module or
+    /// list_repository_modules.
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitterActivityEntry {
+    pub technical_name: String,
+    pub name: String,
+    pub odoo_version: String,
+    pub organization: String,
+    pub repository: String,
+    pub commits: i32,
 }
 
 fn build_search_results(rows: Vec<models::module::ModuleGenericInfo>) -> Vec<ModuleSearchResult> {
@@ -131,8 +241,8 @@ fn build_search_results(rows: Vec<models::module::ModuleGenericInfo>) -> Vec<Mod
         .collect()
 }
 
-fn get_module_views(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleView> {
-    models::module_view::get_by_module_id(conn, module_id)
+fn get_module_views(conn: &mut SqliteConnection, module_version_id: &i64) -> Vec<ModuleView> {
+    models::module_view::get_by_module_version_id(conn, module_version_id)
         .into_iter()
         .map(|v| ModuleView {
             is_new: v.inherit_xml_id.is_none(),
@@ -145,8 +255,8 @@ fn get_module_views(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleV
         .collect()
 }
 
-fn get_module_models(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleModel> {
-    models::module_model::get_by_module_id(conn, module_id)
+fn get_module_models(conn: &mut SqliteConnection, module_version_id: &i64) -> Vec<ModuleModel> {
+    models::module_model::get_by_module_version_id(conn, module_version_id)
         .into_iter()
         .map(|m| {
             let fields = models::module_model_field::get_by_module_model_id(conn, &m.id)
@@ -185,17 +295,42 @@ fn get_module_models(conn: &mut SqliteConnection, module_id: &i64) -> Vec<Module
         .collect()
 }
 
-fn build_full_info(conn: &mut SqliteConnection, module: &models::module::Model) -> ModuleFullInfo {
+fn build_full_info(
+    conn: &mut SqliteConnection,
+    module: &models::module::Model,
+    version_module: Option<&str>,
+) -> ModuleFullInfo {
     let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id)
         .expect("module references a gh_repository row that does not exist");
     let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id)
         .expect("gh_repository references a gh_organization row that does not exist");
     let full_deps = models::dependency::get_full_dependency_info(conn, module);
+    // None (default) resolves to the latest version; an explicit request that
+    // doesn't match any known version comes back with empty views/models
+    // rather than silently falling back to "latest".
+    let resolved_version = match version_module {
+        Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
+        None => models::module_version::resolve_current(conn, module),
+    };
+    let (views, module_models, module_version) = match &resolved_version {
+        Some(mv) => (
+            get_module_views(conn, &mv.id),
+            get_module_models(conn, &mv.id),
+            mv.version_module.clone(),
+        ),
+        None => (
+            Vec::new(),
+            Vec::new(),
+            version_module
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| module.version_module.clone()),
+        ),
+    };
     ModuleFullInfo {
         technical_name: module.technical_name.clone(),
         name: module.name.clone(),
         odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
-        module_version: module.version_module.clone(),
+        module_version,
         description: module.description.clone().unwrap_or_default(),
         authors: models::module_author::get_names_by_module_id(conn, &module.id),
         maintainers: models::module_maintainer::get_names_by_module_id(conn, &module.id),
@@ -208,33 +343,166 @@ fn build_full_info(conn: &mut SqliteConnection, module: &models::module::Model) 
         git: format!("https://github.com/{}/{}.git", &org.name, &repo.name),
         organization: org.name,
         repository: repo.name,
+        last_commit_date: module.last_commit_date.clone(),
+        last_commit_author: module.last_commit_author.clone(),
         dependencies: ModuleDependencies {
             odoo: full_deps.odoo,
             pip: full_deps.pip,
             bin: full_deps.bin,
         },
-        views: get_module_views(conn, &module.id),
-        models: get_module_models(conn, &module.id),
+        views,
+        models: module_models,
     }
 }
 
-fn cache_ttl_secs() -> u64 {
-    std::env::var("OGHCOLLECTOR_MCP_CACHE_TTL")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3600)
+fn find_modules(
+    conn: &mut SqliteConnection,
+    technical_name: &str,
+    version_odoo: &u8,
+    org: &Option<String>,
+    repo: &Option<String>,
+) -> Vec<models::module::Model> {
+    match (org, repo) {
+        (Some(org), Some(repo)) => {
+            models::module::get_by_technical_name_odoo_version_organization_name_repository_name(
+                conn,
+                technical_name,
+                version_odoo,
+                org,
+                repo,
+            )
+        }
+        (Some(org), None) => models::module::get_by_technical_name_odoo_version_organization_name(
+            conn,
+            technical_name,
+            version_odoo,
+            org,
+        ),
+        (None, Some(repo)) => models::module::get_by_technical_name_odoo_version_repository_name(
+            conn,
+            technical_name,
+            version_odoo,
+            repo,
+        ),
+        (None, None) => {
+            let names = [technical_name.to_string()];
+            models::module::get_by_technical_name_odoo_version(conn, &names, version_odoo)
+        }
+    }
 }
 
-/// `get_module` resolves the full transitive dependency graph recursively (see
-/// `get_full_dependency_info`), which can mean dozens of DB round-trips for a module deep in
-/// the Odoo/OCA graph - the same cost shape as `atlas::get_graph_data`, which this mirrors.
-/// The DB only changes when the collector runs, so a TTL cache is safe; `pool` and `conn` are
-/// deliberately excluded from the cache key via `convert` (only the query parameters matter).
+fn build_repository_search_results(
+    rows: Vec<models::gh_repository::RepositoryInfo>,
+    org_filter: Option<&str>,
+) -> Vec<RepositorySearchResult> {
+    let mut by_repo: HashMap<(String, String), HashMap<String, u32>> = HashMap::new();
+    for row in rows {
+        if org_filter.is_some_and(|org| org != row.organization) {
+            continue;
+        }
+        by_repo
+            .entry((row.organization, row.name))
+            .or_default()
+            .insert(
+                odoo_version_u8_to_string(&(row.version_odoo as u8)),
+                row.num_modules as u32,
+            );
+    }
+    let mut results: Vec<RepositorySearchResult> = by_repo
+        .into_iter()
+        .map(
+            |((organization, repository), modules_by_odoo_version)| RepositorySearchResult {
+                organization,
+                repository,
+                modules_by_odoo_version,
+            },
+        )
+        .collect();
+    results.sort_by(|a, b| (&a.organization, &a.repository).cmp(&(&b.organization, &b.repository)));
+    results
+}
+
+fn build_module_direct_dependencies(
+    conn: &mut SqliteConnection,
+    module_id: &i64,
+) -> ModuleDependencies {
+    let mut odoo: HashMap<String, Vec<String>> = HashMap::new();
+    for dep in models::dependency::get_module_dependency_info(conn, module_id) {
+        odoo.entry(format!("{}/{}", dep.org, dep.repo))
+            .or_default()
+            .push(dep.module_name);
+    }
+    ModuleDependencies {
+        odoo,
+        pip: models::dependency::get_module_external_dependency_names(conn, module_id, "python"),
+        bin: models::dependency::get_module_external_dependency_names(conn, module_id, "bin"),
+    }
+}
+
+fn build_module_summary(
+    conn: &mut SqliteConnection,
+    module: &models::module::Model,
+) -> ModuleSummary {
+    ModuleSummary {
+        technical_name: module.technical_name.clone(),
+        name: module.name.clone(),
+        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        module_version: module.version_module.clone(),
+        description: module.description.clone().unwrap_or_default(),
+        category: module.category.clone().unwrap_or_default(),
+        application: module.application,
+        installable: module.installable,
+        auto_install: module.auto_install,
+        authors: models::module_author::get_names_by_module_id(conn, &module.id),
+        maintainers: models::module_maintainer::get_names_by_module_id(conn, &module.id),
+        committers: models::module_committer::get_names_by_module_id(conn, &module.id),
+        last_commit_date: module.last_commit_date.clone(),
+        last_commit_author: module.last_commit_author.clone(),
+        depends: build_module_direct_dependencies(conn, &module.id),
+    }
+}
+
+#[cached(
+    type = "TimedSizedCache<String, Vec<ModuleSummary>>",
+    key = "String",
+    create = r#"
+        {
+            let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+        }
+    "#,
+    convert = r#"{ format!("{org}|{repo}|{odoo_version:?}|{installable:?}") }"#
+)]
+fn list_repository_modules_cached(
+    pool: Pool,
+    org: String,
+    repo: String,
+    odoo_version: Option<String>,
+    installable: Option<bool>,
+) -> Vec<ModuleSummary> {
+    let mut conn = pool
+        .get()
+        .expect("failed to get a DB connection from the pool");
+    let modules = models::module::get_by_organization_repository_name(&mut conn, &org, &repo);
+    let version_filter = odoo_version.as_deref().map(odoo_version_string_to_u8);
+    modules
+        .iter()
+        .filter(|m| version_filter.is_none_or(|v| m.version_odoo as u8 == v))
+        .filter(|m| installable.is_none_or(|i| m.installable == i))
+        .map(|m| build_module_summary(&mut conn, m))
+        .collect::<Vec<_>>()
+}
+
 #[cached(
     type = "TimedSizedCache<String, Vec<ModuleFullInfo>>",
     key = "String",
-    create = "{ TimedSizedCache::with_size_and_lifespan_and_refresh(500, cache_ttl_secs(), true) }",
-    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+    create = r#"
+        {
+            let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+        }
+    "#,
+    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}|{version_module:?}") }"#
 )]
 fn get_module_cached(
     pool: Pool,
@@ -242,42 +510,16 @@ fn get_module_cached(
     odoo_version: String,
     org: Option<String>,
     repo: Option<String>,
+    version_module: Option<String>,
 ) -> Vec<ModuleFullInfo> {
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
     let version_odoo = odoo_version_string_to_u8(&odoo_version);
-    let modules = match (&org, &repo) {
-        (Some(org), Some(repo)) => {
-            models::module::get_by_technical_name_odoo_version_organization_name_repository_name(
-                &mut conn,
-                &technical_name,
-                &version_odoo,
-                org,
-                repo,
-            )
-        }
-        (Some(org), None) => models::module::get_by_technical_name_odoo_version_organization_name(
-            &mut conn,
-            &technical_name,
-            &version_odoo,
-            org,
-        ),
-        (None, Some(repo)) => models::module::get_by_technical_name_odoo_version_repository_name(
-            &mut conn,
-            &technical_name,
-            &version_odoo,
-            repo,
-        ),
-        (None, None) => models::module::get_by_technical_name_odoo_version(
-            &mut conn,
-            std::slice::from_ref(&technical_name),
-            &version_odoo,
-        ),
-    };
+    let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
     modules
         .iter()
-        .map(|m| build_full_info(&mut conn, m))
+        .map(|m| build_full_info(&mut conn, m, version_module.as_deref()))
         .collect::<Vec<_>>()
 }
 
@@ -301,7 +543,12 @@ impl OghMcp {
     #[tool(
         description = "Search Odoo modules by technical name substring, optionally filtered by \
                         Odoo version and/or installable flag. Returns, per matching repository, \
-                        the Odoo versions in which the module was found."
+                        the Odoo versions in which the module was found. Good when you already \
+                        know (part of) a module's technical name; if instead you're building a \
+                        module pack for a country/topic and don't know exact names, use \
+                        search_repositories + list_repository_modules instead, since not every \
+                        module in a repository follows a naming convention (e.g. \
+                        delivery_dhl_parcel lives in OCA/l10n-spain)."
     )]
     async fn search_modules(
         &self,
@@ -344,7 +591,9 @@ impl OghMcp {
                         metadata, authors/maintainers/committers, the transitive Odoo/pip/bin \
                         dependency closure, and a code analysis (XML views it defines or \
                         inherits, and the Odoo models it defines or extends with their fields \
-                        and methods, including docstrings and signatures)."
+                        and methods, including docstrings and signatures). Defaults to the \
+                        latest known module version; pass version_module (see \
+                        list_module_versions) to inspect an older one."
     )]
     async fn get_module(
         &self,
@@ -358,11 +607,165 @@ impl OghMcp {
                 params.odoo_version,
                 params.org,
                 params.repo,
+                params.version_module,
             )
         })
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         json_result(&infos)
+    }
+
+    #[tool(
+        description = "List every module version ever recorded for one module at one Odoo \
+                        version (per matching repository), each with its first/last-seen dates \
+                        and whether it's the latest. Use this to discover which version_module \
+                        values can be passed to get_module."
+    )]
+    async fn list_module_versions(
+        &self,
+        Parameters(params): Parameters<ListModuleVersionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let history = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            let version_odoo = odoo_version_string_to_u8(&params.odoo_version);
+            let modules = find_modules(
+                &mut conn,
+                &params.technical_name,
+                &version_odoo,
+                &params.org,
+                &params.repo,
+            );
+            modules
+                .iter()
+                .map(|m| {
+                    let repo = models::gh_repository::get_by_id(&mut conn, &m.gh_repository_id)
+                        .expect("module references a gh_repository row that does not exist");
+                    let org =
+                        models::gh_organization::get_by_id(&mut conn, &repo.gh_organization_id)
+                            .expect(
+                            "gh_repository references a gh_organization row that does not exist",
+                        );
+                    let versions = models::module_version::get_by_module_id(&mut conn, &m.id)
+                        .into_iter()
+                        .map(|v| ModuleVersionInfo {
+                            is_latest: v.version_module == m.version_module,
+                            version_module: v.version_module,
+                            create_date: v.create_date,
+                            update_date: v.update_date,
+                        })
+                        .collect();
+                    ModuleVersionHistory {
+                        organization: org.name,
+                        repository: repo.name,
+                        versions,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&history)
+    }
+
+    #[tool(
+        description = "Search GitHub/GitLab repositories by name substring (optionally scoped to \
+                        one organization), e.g. name=\"spain\" finds organization \"OCA\" \
+                        repository \"l10n-spain\". Returns, per matching repository, how many \
+                        modules it carries at each Odoo version. Repositories on OCA are \
+                        organized per country/topic (l10n-france, l10n-mexico, pos, \
+                        account-invoicing, ...), so this is the entry point for building a \
+                        module pack for a country or topic: find the repository here, then call \
+                        list_repository_modules on it."
+    )]
+    async fn search_repositories(
+        &self,
+        Parameters(params): Parameters<SearchRepositoriesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let rows = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            models::gh_repository::search_by_name(&mut conn, &params.name)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&build_repository_search_results(
+            rows,
+            params.org.as_deref(),
+        ))
+    }
+
+    #[tool(
+        description = "List every module recorded in one repository (as found via \
+                        search_repositories), optionally filtered by Odoo version and/or \
+                        installable flag. This is the core tool to assemble a module pack: it \
+                        returns every module a repository carries - not just ones matching a \
+                        naming pattern - with manifest metadata, authors/maintainers/committers, \
+                        last-commit date/author (to judge whether it's still maintained), and \
+                        each module's direct (one level) Odoo/pip/bin dependencies (the Odoo ones \
+                        grouped by which organization/repository carries them, since a dependency \
+                        can live outside this repository). Lighter than get_module: no XML views \
+                        or model/field/method code analysis, and dependencies are direct, not the \
+                        full transitive closure - call get_module on individual modules of \
+                        interest for that level of detail."
+    )]
+    async fn list_repository_modules(
+        &self,
+        Parameters(params): Parameters<ListRepositoryModulesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let summaries = tokio::task::spawn_blocking(move || {
+            list_repository_modules_cached(
+                pool,
+                params.org,
+                params.repo,
+                params.odoo_version,
+                params.installable,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&summaries)
+    }
+
+    #[tool(
+        description = "Given an exact committer (git author) name, list every module they've \
+                        committed to across all Odoo versions and repositories, with commit \
+                        counts, ordered by Odoo version then commit count. Use this to check who \
+                        is actually maintaining a module in practice (as opposed to the nominal \
+                        manifest authors/maintainers) - e.g. before recommending a module for a \
+                        pack, confirm its top committer is still active elsewhere. Get real names \
+                        from the committers field of get_module or list_repository_modules; this \
+                        is an exact match, not a substring search."
+    )]
+    async fn get_committer_activity(
+        &self,
+        Parameters(params): Parameters<GetCommitterActivityParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let entries = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            models::module_committer::get_activity_by_committer_name(&mut conn, &params.name)
+                .into_iter()
+                .map(|a| CommitterActivityEntry {
+                    technical_name: a.technical_name,
+                    name: a.name,
+                    odoo_version: odoo_version_u8_to_string(&(a.version_odoo as u8)),
+                    organization: a.organization,
+                    repository: a.repository,
+                    commits: a.commits,
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&entries)
     }
 }
 
@@ -376,10 +779,18 @@ impl ServerHandler for OghMcp {
             ))
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_instructions(
-                "Read-only access to the OGHCollector Odoo module metadata database. Use \
-                 search_modules to find a module's technical name and which repositories/Odoo \
-                 versions carry it, then get_module for full manifest, dependency and code \
-                 analysis details."
+                "Read-only access to the OGHCollector Odoo module metadata database. Two \
+                 discovery paths: (1) know (part of) a module's technical name? Use \
+                 search_modules, then get_module for full manifest, transitive dependency and \
+                 code analysis details. (2) building a module pack for a country or topic (e.g. \
+                 \"what does a Spain localization need\")? Use search_repositories to find the \
+                 relevant repository (OCA organizes these per country/topic), then \
+                 list_repository_modules to bulk-list every module it carries with direct \
+                 dependencies and maintenance signals (last commit, committers) - call \
+                 get_module on individual modules only when you need their full transitive \
+                 dependency closure or code analysis. Use list_module_versions to see a module's \
+                 recorded version history, and get_committer_activity to check what else a \
+                 specific person has committed to, e.g. to gauge whether they're still active."
                     .to_string(),
             )
     }

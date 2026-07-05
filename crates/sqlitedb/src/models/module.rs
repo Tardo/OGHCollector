@@ -9,7 +9,7 @@ use crate::utils::date::get_sqlite_utc_now;
 use super::{
     author, gh_organization, gh_repository, maintainer, module_author,
     module_code_analysis::ModuleAnalysisInfo, module_committer, module_committer_period,
-    module_maintainer, system_event,
+    module_maintainer, module_model, module_version, module_view, system_event,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -328,6 +328,33 @@ pub fn get_by_technical_name_odoo_version_organization_name(
         .expect("DB error in module::get_by_technical_name_odoo_version_organization_name")
 }
 
+/// Every module recorded for one repository, across all Odoo versions and
+/// module versions currently known. This is the bulk listing used to build a
+/// module pack (e.g. every module OCA carries for a country's localization,
+/// which is organized one repository per country) - filtering by
+/// technical_name substring would miss modules that don't follow the naming
+/// convention (e.g. `delivery_dhl_parcel` living in `OCA/l10n-spain`).
+pub fn get_by_organization_repository_name(
+    conn: &mut SqliteConnection,
+    org_name: &str,
+    repo_name: &str,
+) -> Vec<Model> {
+    use crate::schema::{gh_organization, gh_repository};
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(
+            gh_organization::name
+                .eq(org_name)
+                .and(gh_repository::name.eq(repo_name)),
+        )
+        .select(Model::as_select())
+        .load::<Model>(conn)
+        .expect("DB error in module::get_by_organization_repository_name")
+}
+
 pub fn get_by_technical_name_organization_name(
     conn: &mut SqliteConnection,
     technical_name: &str,
@@ -603,6 +630,11 @@ pub fn get_module_repository(
         .collect()
 }
 
+/// Deletes modules that vanished from a repo since the previous run. FK
+/// enforcement is off (see lib.rs), so nothing cascades automatically - the
+/// module_version rows for these modules (and their module_view/module_model
+/// snapshots) are deleted by hand first, otherwise they'd be left orphaned
+/// forever instead of just for one run's worth of stale data.
 pub fn delete_outdated(
     conn: &mut SqliteConnection,
     gh_repo_id: &i64,
@@ -612,15 +644,23 @@ pub fn delete_outdated(
     if module_ids.is_empty() {
         return Ok(0);
     }
-    diesel::delete(
-        module::table.filter(
+    let stale_ids: Vec<i64> = module::table
+        .filter(
             module::gh_repository_id
                 .eq(gh_repo_id)
                 .and(module::version_odoo.eq(*version_odoo as i32))
                 .and(module::id.ne_all(module_ids)),
-        ),
-    )
-    .execute(conn)
+        )
+        .select(module::id)
+        .load(conn)?;
+
+    for stale_id in &stale_ids {
+        module_model::delete_by_module_id(conn, stale_id)?;
+        module_view::delete_by_module_id(conn, stale_id)?;
+        module_version::delete_by_module_id(conn, stale_id)?;
+    }
+
+    diesel::delete(module::table.filter(module::id.eq_any(&stale_ids))).execute(conn)
 }
 
 pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResult<Model> {

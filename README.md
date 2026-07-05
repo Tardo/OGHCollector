@@ -99,6 +99,16 @@ To auto-update the database you can create a CRON that invokes the `update_db.sh
 For example (update every 6 hours): 
 ```0 */6 * * * * * cd /path/to/OGHCollector && ./update_db.sh```.
 
+# OGHMcp
+
+## Configuration
+
+You can add a volume to `/app/mcp.yaml` (you can use other formats like json if you prefer) to set your own configuration. Values can also be set with an `OGHCOLLECTOR_MCP_` prefixed environment variable (e.g. `OGHCOLLECTOR_MCP_CACHE_TTL`), which takes precedence over the file:
+
+| Name | Type | Description | default |
+| --- | --- | --- | --- |
+| cache_ttl | int | The seconds that the `get_module` result cache is valid | 3600 |
+
 # Extra Info
 
 If you want to modify the configuration of `docker-compose.yaml`, it is recommended to create a new file `docker-compose.override.yaml` where to make the modifications.

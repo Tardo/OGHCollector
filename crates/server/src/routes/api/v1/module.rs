@@ -94,6 +94,22 @@ pub struct ModuleGenericInfoResponse {
 pub struct RouteModuleRequest {
     org: Option<String>,
     repo: Option<String>,
+    version: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleVersionInfoResponse {
+    pub version_module: String,
+    pub create_date: String,
+    pub update_date: String,
+    pub is_latest: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleVersionHistoryResponse {
+    pub organization: String,
+    pub repository: String,
+    pub versions: Vec<ModuleVersionInfoResponse>,
 }
 
 fn get_module_git(conn: &mut SqliteConnection, module: &models::module::Model) -> String {
@@ -102,8 +118,11 @@ fn get_module_git(conn: &mut SqliteConnection, module: &models::module::Model) -
     format!("https://github.com/{}/{}.git", &org.name, &repo.name)
 }
 
-fn get_module_views(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleViewResponse> {
-    models::module_view::get_by_module_id(conn, module_id)
+fn get_module_views(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleViewResponse> {
+    models::module_view::get_by_module_version_id(conn, module_version_id)
         .into_iter()
         .map(|v| ModuleViewResponse {
             is_new: v.inherit_xml_id.is_none(),
@@ -116,8 +135,11 @@ fn get_module_views(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleV
         .collect()
 }
 
-fn get_module_models(conn: &mut SqliteConnection, module_id: &i64) -> Vec<ModuleModelResponse> {
-    models::module_model::get_by_module_id(conn, module_id)
+fn get_module_models(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleModelResponse> {
+    models::module_model::get_by_module_version_id(conn, module_version_id)
         .into_iter()
         .map(|m| {
             let fields = models::module_model_field::get_by_module_model_id(conn, &m.id)
@@ -162,6 +184,7 @@ fn get_module_models(conn: &mut SqliteConnection, module_id: &i64) -> Vec<Module
 pub fn process_modules_db(
     conn: &mut SqliteConnection,
     modules: &[models::module::Model],
+    version_module: Option<&str>,
 ) -> Vec<ModuleFullInfoResponse> {
     let mut res: Vec<ModuleFullInfoResponse> = Vec::new();
     for module in modules {
@@ -182,11 +205,30 @@ pub fn process_modules_db(
         let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id).unwrap();
         let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
         let git = get_module_git(conn, module);
-        let views = get_module_views(conn, &module.id);
-        let module_models = get_module_models(conn, &module.id);
+        // None (default) resolves to the latest version; an explicit request
+        // for a version that doesn't exist for this module comes back with
+        // empty views/models rather than silently falling back to "latest".
+        let resolved_version = match version_module {
+            Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
+            None => models::module_version::resolve_current(conn, module),
+        };
+        let (views, module_models, version) = match &resolved_version {
+            Some(mv) => (
+                get_module_views(conn, &mv.id),
+                get_module_models(conn, &mv.id),
+                mv.version_module.clone(),
+            ),
+            None => (
+                Vec::new(),
+                Vec::new(),
+                version_module
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| module.version_module.clone()),
+            ),
+        };
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
-            version: module.version_module.clone(),
+            version,
             description: module.description.clone().unwrap_or_default(),
             authors,
             website: module.website.clone().unwrap_or_default(),
@@ -265,6 +307,7 @@ pub async fn route_odoo_version(
 ) -> Result<HttpResponse, AWError> {
     let (module_name, odoo_version) = path.into_inner();
     let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let version_module = info.version.clone();
 
     if info.org.is_some() && info.repo.is_some() {
         let org_name = info.org.clone().unwrap();
@@ -274,7 +317,7 @@ pub async fn route_odoo_version(
             let modules = models::module::get_by_technical_name_odoo_version_organization_name_repository_name(
                 &mut conn, &module_name, &version_odoo, &org_name, &repo_name,
             );
-            process_modules_db(&mut conn, &modules)
+            process_modules_db(&mut conn, &modules, version_module.as_deref())
         })
         .await?;
         return Ok(HttpResponse::Ok().json(result));
@@ -288,7 +331,7 @@ pub async fn route_odoo_version(
                 &version_odoo,
                 &org_name,
             );
-            process_modules_db(&mut conn, &modules)
+            process_modules_db(&mut conn, &modules, version_module.as_deref())
         })
         .await?;
         return Ok(HttpResponse::Ok().json(result));
@@ -302,7 +345,7 @@ pub async fn route_odoo_version(
                 &version_odoo,
                 &repo_name,
             );
-            process_modules_db(&mut conn, &modules)
+            process_modules_db(&mut conn, &modules, version_module.as_deref())
         })
         .await?;
         return Ok(HttpResponse::Ok().json(result));
@@ -314,7 +357,72 @@ pub async fn route_odoo_version(
             &[module_name],
             &version_odoo,
         );
-        process_modules_db(&mut conn, &modules)
+        process_modules_db(&mut conn, &modules, version_module.as_deref())
+    })
+    .await?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+#[get("/module/{module_name}/{odoo_version}/versions")]
+pub async fn route_versions(
+    pool: web::Data<Pool>,
+    path: web::Path<(String, String)>,
+    info: web::Query<RouteModuleRequest>,
+) -> Result<HttpResponse, AWError> {
+    let (module_name, odoo_version) = path.into_inner();
+    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let org = info.org.clone();
+    let repo = info.repo.clone();
+
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let modules = match (&org, &repo) {
+            (Some(org), Some(repo)) => {
+                models::module::get_by_technical_name_odoo_version_organization_name_repository_name(
+                    &mut conn, &module_name, &version_odoo, org, repo,
+                )
+            }
+            (Some(org), None) => models::module::get_by_technical_name_odoo_version_organization_name(
+                &mut conn,
+                &module_name,
+                &version_odoo,
+                org,
+            ),
+            (None, Some(repo)) => models::module::get_by_technical_name_odoo_version_repository_name(
+                &mut conn,
+                &module_name,
+                &version_odoo,
+                repo,
+            ),
+            (None, None) => models::module::get_by_technical_name_odoo_version(
+                &mut conn,
+                std::slice::from_ref(&module_name),
+                &version_odoo,
+            ),
+        };
+        modules
+            .iter()
+            .map(|m| {
+                let repo_model = models::gh_repository::get_by_id(&mut conn, &m.gh_repository_id).unwrap();
+                let org_model =
+                    models::gh_organization::get_by_id(&mut conn, &repo_model.gh_organization_id)
+                        .unwrap();
+                let versions = models::module_version::get_by_module_id(&mut conn, &m.id)
+                    .into_iter()
+                    .map(|v| ModuleVersionInfoResponse {
+                        is_latest: v.version_module == m.version_module,
+                        version_module: v.version_module,
+                        create_date: v.create_date,
+                        update_date: v.update_date,
+                    })
+                    .collect();
+                ModuleVersionHistoryResponse {
+                    organization: org_model.name,
+                    repository: repo_model.name,
+                    versions,
+                }
+            })
+            .collect::<Vec<_>>()
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))

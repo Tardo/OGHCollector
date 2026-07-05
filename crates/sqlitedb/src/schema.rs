@@ -145,6 +145,7 @@ diesel::table! {
         is_new_model -> Bool,
         docstring -> Nullable<Text>,
         attrs -> Nullable<Text>,
+        module_version_id -> BigInt,
     }
 }
 
@@ -171,6 +172,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_version (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        version_module -> Text,
+        create_date -> Text,
+        update_date -> Text,
+    }
+}
+
+diesel::table! {
     module_view (id) {
         id -> BigInt,
         module_id -> BigInt,
@@ -179,6 +190,7 @@ diesel::table! {
         model -> Nullable<Text>,
         inherit_xml_id -> Nullable<Text>,
         view_type -> Nullable<Text>,
+        module_version_id -> BigInt,
     }
 }
 
@@ -227,6 +239,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_model,
     module_model_field,
     module_model_method,
+    module_version,
     module_view,
     pull_request,
     system_event,

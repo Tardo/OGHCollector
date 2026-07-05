@@ -73,6 +73,26 @@ pub fn get_info_by_name(conn: &mut SqliteConnection, repo_name: &str) -> Vec<Rep
     .expect("DB error in gh_repository::get_info_by_name")
 }
 
+/// Like `get_info_by_name`, but a substring (SQL LIKE) match intended for
+/// discovery (e.g. "spain" -> "l10n-spain") rather than an exact lookup.
+/// Grouped by repository id (not just org id) since several repositories
+/// across different organizations can match the same substring.
+pub fn search_by_name(conn: &mut SqliteConnection, name_substr: &str) -> Vec<RepositoryInfo> {
+    diesel::sql_query(
+        "SELECT gh_repo.name, gh_org.name as organization, count(mod.id) as num_modules, \
+         mod.version_odoo \
+         FROM gh_repository as gh_repo \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         INNER JOIN module as mod ON mod.gh_repository_id = gh_repo.id \
+         WHERE gh_repo.name LIKE ? \
+         GROUP BY gh_repo.id, mod.version_odoo \
+         ORDER BY gh_org.name, gh_repo.name",
+    )
+    .bind::<diesel::sql_types::Text, _>(format!("%{name_substr}%"))
+    .load::<RepositoryInfo>(conn)
+    .expect("DB error in gh_repository::search_by_name")
+}
+
 pub fn add(conn: &mut SqliteConnection, gh_org_id: &i64, name: &str) -> QueryResult<Model> {
     let create_date = get_sqlite_utc_now();
     let inserted = diesel::insert_into(gh_repository::table)

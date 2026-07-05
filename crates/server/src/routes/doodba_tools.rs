@@ -88,7 +88,7 @@ fn get_doodba_addons_full(
     let odoo_ver = odoo_version_string_to_u8(odoo_version);
     let modules: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
     let modules = models::module::get_by_technical_name_odoo_version(conn, &modules, &odoo_ver);
-    let modules_infos = process_modules_db(conn, &modules);
+    let modules_infos = process_modules_db(conn, &modules, None);
 
     let mut dependencies_info = ModuleDependencyInfoResponse {
         odoo: HashMap::new(),

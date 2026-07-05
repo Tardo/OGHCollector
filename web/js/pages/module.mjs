@@ -22,3 +22,12 @@ document.body.addEventListener('keydown', ev => {
     input.value = '';
   }
 });
+
+document.querySelectorAll('.module-version-select').forEach(select => {
+  select.addEventListener('change', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('version', select.value);
+    url.hash = `version-${select.dataset.odooVersion}`;
+    window.location.href = url.toString();
+  });
+});

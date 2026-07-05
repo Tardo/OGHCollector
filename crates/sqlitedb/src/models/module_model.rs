@@ -18,6 +18,7 @@ pub struct Model {
     pub is_new_model: bool,
     pub docstring: Option<String>,
     pub attrs: Option<String>,
+    pub module_version_id: i64,
 }
 
 impl Model {
@@ -42,8 +43,11 @@ struct NewModuleModel<'a> {
     is_new_model: bool,
     docstring: Option<&'a str>,
     attrs: Option<&'a str>,
+    module_version_id: i64,
 }
 
+/// All models ever recorded for this module, across every historical version
+/// (uses the denormalized `module_id` column, no join through module_version).
 pub fn get_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> Vec<Model> {
     module_model::table
         .filter(module_model::module_id.eq(module_id))
@@ -52,15 +56,23 @@ pub fn get_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> Vec<Mod
         .expect("DB error in module_model::get_by_module_id")
 }
 
-/// Replaces every model (and their fields/methods) for this module with
-/// `models`. FK enforcement is off (see lib.rs), so children must be deleted
-/// by hand before the parent rows disappear - otherwise re-analyzing a module
-/// leaves module_model_field/module_model_method rows pointing at dead ids.
-pub fn replace_for_module(
+/// Models for one specific version snapshot - what callers resolving "latest"
+/// or a historical `version_module` actually want.
+pub fn get_by_module_version_id(
     conn: &mut SqliteConnection,
-    module_id: &i64,
-    models: &[ModelAnalysisInfo],
-) -> QueryResult<()> {
+    module_version_id: &i64,
+) -> Vec<Model> {
+    module_model::table
+        .filter(module_model::module_version_id.eq(module_version_id))
+        .order(module_model::model_name.asc())
+        .load::<Model>(conn)
+        .expect("DB error in module_model::get_by_module_version_id")
+}
+
+/// Deletes every model (and their fields/methods) for this module, across all
+/// versions - used when the module itself is being removed entirely, not on
+/// routine re-analysis (see `replace_for_module`, which is scoped tighter).
+pub fn delete_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> QueryResult<()> {
     let existing_ids: Vec<i64> = module_model::table
         .filter(module_model::module_id.eq(module_id))
         .select(module_model::id)
@@ -81,6 +93,44 @@ pub fn replace_for_module(
             .execute(conn)?;
     }
 
+    Ok(())
+}
+
+/// Replaces every model (and their fields/methods) for this version snapshot
+/// with `models`. FK enforcement is off (see lib.rs), so children must be
+/// deleted by hand before the parent rows disappear - otherwise re-analyzing
+/// a module leaves module_model_field/module_model_method rows pointing at
+/// dead ids. Scoped to `module_version_id`, not `module_id`: filtering either
+/// the lookup or the deletes by `module_id` here would wipe every historical
+/// version's snapshot on every run, defeating the point of `module_version`.
+pub fn replace_for_module(
+    conn: &mut SqliteConnection,
+    module_id: &i64,
+    module_version_id: &i64,
+    models: &[ModelAnalysisInfo],
+) -> QueryResult<()> {
+    let existing_ids: Vec<i64> = module_model::table
+        .filter(module_model::module_version_id.eq(module_version_id))
+        .select(module_model::id)
+        .load(conn)?;
+
+    if !existing_ids.is_empty() {
+        diesel::delete(
+            module_model_field::table
+                .filter(module_model_field::module_model_id.eq_any(&existing_ids)),
+        )
+        .execute(conn)?;
+        diesel::delete(
+            module_model_method::table
+                .filter(module_model_method::module_model_id.eq_any(&existing_ids)),
+        )
+        .execute(conn)?;
+        diesel::delete(
+            module_model::table.filter(module_model::module_version_id.eq(module_version_id)),
+        )
+        .execute(conn)?;
+    }
+
     for model_info in models {
         let inherit_from = if model_info.inherit_from.is_empty() {
             None
@@ -97,6 +147,7 @@ pub fn replace_for_module(
                 is_new_model: model_info.is_new_model,
                 docstring: model_info.docstring.as_deref(),
                 attrs: attrs.as_deref(),
+                module_version_id: *module_version_id,
             })
             .execute(conn)?;
         let module_model_id = crate::models::last_insert_rowid(conn);

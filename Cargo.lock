@@ -2126,8 +2126,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "cached",
+ "config",
  "diesel",
  "env_logger",
+ "lazy_static",
  "log",
  "oghutils",
  "rmcp",

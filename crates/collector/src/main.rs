@@ -149,18 +149,29 @@ async fn main() {
                 .or_default();
             module_ids.push(new_module.id);
 
-            // Replace the module's code analysis (views touched, models
-            // defined/extended with their fields and public methods) on
-            // every run, independent of whether any manifest field changed.
+            // Resolve (or start) the history entry for this manifest version,
+            // then replace the module's code analysis (views touched, models
+            // defined/extended with their fields and public methods) scoped
+            // to that version, on every run, independent of whether any
+            // manifest field changed. A prior version's snapshot is left
+            // untouched - only its own module_version_id gets wiped/rebuilt.
+            let module_version = models::module_version::get_or_create(
+                &mut conn,
+                &new_module.id,
+                &new_module_info.version_module,
+            )
+            .unwrap();
             models::module_view::replace_for_module(
                 &mut conn,
                 &new_module.id,
+                &module_version.id,
                 &new_module_info.analysis.views,
             )
             .unwrap();
             models::module_model::replace_for_module(
                 &mut conn,
                 &new_module.id,
+                &module_version.id,
                 &new_module_info.analysis.models,
             )
             .unwrap();
