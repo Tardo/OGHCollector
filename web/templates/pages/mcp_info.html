@@ -15,27 +15,13 @@
     This server also exposes an <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">MCP</a>
     endpoint: <code>search_modules</code> and <code>get_module</code> tools, giving an LLM client the same
     module search, dependency-graph and code-analysis data (views, models, fields, methods) shown in this
-    dashboard. It's read-only and served over Streamable HTTP, so any client that speaks MCP can reach it
-    directly by URL &mdash; no local binary or database file of its own.
+    dashboard.
 </p>
 
 <div class="border rounded p-3 mb-4 text-bg-secondary" id="mcp-endpoint-box">
     <div class="fs-6 text-uppercase text-secondary-emphasis mb-1">MCP endpoint URL</div>
     <code class="text-light fs-5" id="mcp-endpoint-url">{{ MCP_URL }}</code>
 </div>
-
-<p class="text-secondary-emphasis">
-    Use this URL below wherever a client asks for a "remote MCP server" / "server URL". If the endpoint is
-    reachable only from your own machine (e.g. <code>localhost</code>), any client that runs locally can
-    connect to it directly &mdash; but a cloud-hosted client (like Claude's own Connectors UI) needs the
-    URL to be reachable over the public internet. See the
-    <a href="#" onclick="document.getElementById('mcp-pills-desktop-tab').click(); return false;">Claude Desktop</a>
-    and
-    <a href="#" onclick="document.getElementById('mcp-pills-other-tab').click(); return false;">other clients / local bridge</a>
-    tabs below for both cases. If this endpoint is deployed under a public hostname, make sure
-    <code>OGHCOLLECTOR_MCP_ALLOWED_HOSTS</code> includes it, or the MCP server will reject the request
-    (DNS-rebinding protection).
-</p>
 
 <div class="d-flex flex-column flex-md-row align-items-start mt-4">
     <div class="nav flex-column nav-pills me-3 d-none d-md-flex" id="mcp-pills-tab" role="tablist" aria-orientation="vertical">
