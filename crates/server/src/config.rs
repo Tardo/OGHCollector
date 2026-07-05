@@ -77,7 +77,9 @@ impl OGHServerConfig {
         if self.get_allowed_origins().is_empty() {
             return true;
         }
-        let url = Url::parse(origin).unwrap();
+        let Ok(url) = Url::parse(origin) else {
+            return false;
+        };
         for origin_url in self.get_allowed_origins() {
             if origin_url.scheme() == url.scheme()
                 && origin_url.domain() == url.domain()

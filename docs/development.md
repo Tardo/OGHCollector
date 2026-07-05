@@ -32,4 +32,4 @@ cargo run --bin server
 ```sh
 cargo run --bin collector -- OCA 15.0
 ```
-** set OGHCOLLECTOR_GITHUB_TOKEN in the environment variables
+** set `OGHCOLLECTOR_TOKEN_GH` (or `OGHCOLLECTOR_TOKEN_GL` for GitLab) in the environment variables
