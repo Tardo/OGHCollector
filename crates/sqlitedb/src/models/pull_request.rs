@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::pull_request;
 
+use super::{gh_repository, system_event};
+
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
 #[diesel(table_name = pull_request, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Model {
@@ -85,6 +87,16 @@ pub fn add(
     version_odoo: &u8,
     gh_repo_id: &i64,
 ) -> QueryResult<Model> {
+    let is_new = pull_request::table
+        .filter(
+            pull_request::gh_repository_id
+                .eq(gh_repo_id)
+                .and(pull_request::prid.eq(prid)),
+        )
+        .first::<Model>(conn)
+        .optional()?
+        .is_none();
+
     diesel::insert_into(pull_request::table)
         .values(NewPullRequest {
             name,
@@ -102,13 +114,29 @@ pub fn add(
         ))
         .execute(conn)?;
 
-    pull_request::table
+    let result = pull_request::table
         .filter(
             pull_request::gh_repository_id
                 .eq(gh_repo_id)
                 .and(pull_request::prid.eq(prid)),
         )
-        .first::<Model>(conn)
+        .first::<Model>(conn)?;
+
+    if is_new {
+        let repo_name = gh_repository::get_by_id(conn, gh_repo_id)
+            .map(|r| r.name)
+            .unwrap_or_default();
+        let _ = system_event::register_new_migration_pr(
+            conn,
+            module_technical_name,
+            name,
+            prid,
+            &repo_name,
+            version_odoo,
+        );
+    }
+
+    Ok(result)
 }
 
 /// Removes PRs that are no longer open (merged/closed/renamed away from the
@@ -123,23 +151,44 @@ pub fn delete_outdated(
     version_odoo: &u8,
     prids: &[i64],
 ) -> QueryResult<usize> {
-    if prids.is_empty() {
-        return diesel::delete(
-            pull_request::table.filter(
-                pull_request::gh_repository_id
-                    .eq(gh_repo_id)
-                    .and(pull_request::version_odoo.eq(*version_odoo as i32)),
-            ),
-        )
-        .execute(conn);
+    let base_filter = pull_request::gh_repository_id
+        .eq(gh_repo_id)
+        .and(pull_request::version_odoo.eq(*version_odoo as i32));
+
+    let removed: Vec<Model> = if prids.is_empty() {
+        pull_request::table
+            .filter(base_filter)
+            .load::<Model>(conn)?
+    } else {
+        pull_request::table
+            .filter(base_filter.and(pull_request::prid.ne_all(prids)))
+            .load::<Model>(conn)?
+    };
+
+    if removed.is_empty() {
+        return Ok(0);
     }
-    diesel::delete(
-        pull_request::table.filter(
-            pull_request::gh_repository_id
-                .eq(gh_repo_id)
-                .and(pull_request::version_odoo.eq(*version_odoo as i32))
-                .and(pull_request::prid.ne_all(prids)),
-        ),
-    )
-    .execute(conn)
+
+    let repo_name = gh_repository::get_by_id(conn, gh_repo_id)
+        .map(|r| r.name)
+        .unwrap_or_default();
+    for pr in &removed {
+        let _ = system_event::register_closed_migration_pr(
+            conn,
+            &pr.module_technical_name,
+            &pr.name,
+            &pr.prid,
+            &repo_name,
+            version_odoo,
+        );
+    }
+
+    if prids.is_empty() {
+        diesel::delete(pull_request::table.filter(base_filter)).execute(conn)
+    } else {
+        diesel::delete(
+            pull_request::table.filter(base_filter.and(pull_request::prid.ne_all(prids))),
+        )
+        .execute(conn)
+    }
 }

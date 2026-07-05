@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::dependency_osv;
 
-use super::{dependency, dependency_module};
+use super::{dependency, dependency_module, module, system_event};
+use oghutils::version::odoo_version_u8_to_string;
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
@@ -105,6 +106,18 @@ pub fn add(
         })
         .execute(conn)?;
     let new_id = crate::models::last_insert_rowid(conn);
+
+    if let Some(mod_info) = module::get_by_id(conn, &dep_mod.module_id) {
+        let _ = system_event::register_new_osv_vulnerability(
+            conn,
+            &dep.name,
+            osv_id,
+            &mod_info.technical_name,
+            &mod_info.name,
+            odoo_version_u8_to_string(&(mod_info.version_odoo as u8)).as_str(),
+        );
+    }
+
     Ok(Model {
         id: new_id,
         dependency_module_id: *dep_mod_id,

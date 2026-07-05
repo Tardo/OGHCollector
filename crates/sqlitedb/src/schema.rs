@@ -211,6 +211,8 @@ diesel::table! {
         message -> Text,
         date -> Text,
         event_type_id -> BigInt,
+        severity -> Text,
+        is_html -> Bool,
     }
 }
 

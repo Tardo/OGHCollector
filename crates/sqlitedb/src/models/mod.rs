@@ -342,9 +342,26 @@ mod tests {
     #[test]
     fn test_system_event_add() {
         let mut conn = setup_db();
-        let event = super::system_event::add(&mut conn, "internal", "Test event").unwrap();
+        let event = super::system_event::add(&mut conn, "internal", "info", "Test event").unwrap();
         assert_eq!(event.message, "Test event");
         assert_eq!(event.event_type_name, "internal");
+        assert_eq!(event.severity, "info");
+        assert!(!event.is_html);
+    }
+
+    // Event types used to be a closed, pre-seeded set: logging an unseeded type
+    // panicked (see system_event_type::get_by_name/expect before the fix). Now
+    // a brand-new type name is created on first use, so introducing a new kind
+    // of logged action never requires a seed migration.
+    #[test]
+    fn test_system_event_add_creates_new_type() {
+        let mut conn = setup_db();
+        let event = super::system_event::add(&mut conn, "brand_new_type", "warning", "Hi").unwrap();
+        assert_eq!(event.event_type_name, "brand_new_type");
+        assert_eq!(event.severity, "warning");
+
+        let event_type = super::system_event_type::get_by_name(&mut conn, "brand_new_type");
+        assert!(event_type.is_some());
     }
 
     #[test]

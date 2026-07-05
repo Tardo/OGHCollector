@@ -15,10 +15,10 @@
     <table class="table table-striped table-striped-columns table-hover">
         <tbody>
             {% for event in logs %}
-            <tr>
+            <tr class="log-severity-{{ event.severity }}">
                 <td class="col-2"><span>{{ event.date }}</span></td>
-                <td class="d-none d-lg-table-cell text-center">{{ event.event_type_id[1] }}</td>
-                <td>{{ event.message | safe }}</td>
+                <td class="d-none d-lg-table-cell text-center"><span class="log-type-badge">{{ event.event_type_name }}</span></td>
+                <td>{% if event.is_html %}{{ event.message | safe }}{% else %}{{ event.message }}{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>

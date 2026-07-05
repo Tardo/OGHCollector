@@ -73,6 +73,11 @@ async fn main() {
     let odoo_ver = config.get_version_odoo();
     let odoo_ver_str = odoo_version_u8_to_string(odoo_ver);
     let start_time = Instant::now();
+    let _ = models::system_event::register_started_task_collector(
+        &mut conn,
+        config.get_source(),
+        &odoo_ver_str,
+    );
     log::info!("Cloning/Updating ({})...", &odoo_ver_str);
     let mut repo_infos: Vec<RepoInfo> = Vec::new();
     if config.get_mode() == "org" {

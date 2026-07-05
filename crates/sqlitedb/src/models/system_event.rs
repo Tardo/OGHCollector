@@ -4,8 +4,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::system_event;
 use crate::utils::date::get_sqlite_utc_now;
+use oghutils::version::odoo_version_u8_to_string;
 
 use super::system_event_type;
+
+// Allowed `severity` values. Kept as plain strings (matching the rest of this
+// module's event-type-as-string convention) rather than a DB enum, since
+// severity only ever drives display styling in the template.
+const SEVERITY_INFO: &str = "info";
+const SEVERITY_SUCCESS: &str = "success";
+const SEVERITY_WARNING: &str = "warning";
+const SEVERITY_ERROR: &str = "error";
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
@@ -17,6 +26,10 @@ pub struct Model {
     pub event_type_id: i64,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub event_type_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub severity: String,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub is_html: bool,
 }
 
 pub struct LogUpdateModuleInfo<'a> {
@@ -40,11 +53,14 @@ struct NewSystemEvent<'a> {
     message: &'a str,
     date: &'a str,
     event_type_id: i64,
+    severity: &'a str,
+    is_html: bool,
 }
 
 pub fn get_messages_current_month(conn: &mut SqliteConnection) -> Vec<Model> {
     diesel::sql_query(
-        "SELECT se.message, se.date, se.event_type_id, syset.name as event_type_name \
+        "SELECT se.message, se.date, se.event_type_id, syset.name as event_type_name, \
+         se.severity, se.is_html \
          FROM system_event as se \
          INNER JOIN system_event_type as syset ON syset.id = se.event_type_id \
          WHERE date(se.date) >= date('now', 'start of month') \
@@ -55,20 +71,26 @@ pub fn get_messages_current_month(conn: &mut SqliteConnection) -> Vec<Model> {
     .expect("DB error in system_event::get_messages_current_month")
 }
 
+/// Records a plain-text event. `event_type_name` is created on first use (see
+/// `system_event_type::get_or_create`), so introducing a new kind of logged
+/// action never requires a migration. `message` must be plain text: it is
+/// rendered auto-escaped by the template, not as raw HTML.
 pub fn add(
     conn: &mut SqliteConnection,
     event_type_name: &str,
+    severity: &str,
     message: &str,
 ) -> QueryResult<Model> {
     let date = get_sqlite_utc_now();
-    let event_type =
-        system_event_type::get_by_name(conn, event_type_name).expect("system_event_type not found");
+    let event_type = system_event_type::get_or_create(conn, event_type_name);
 
     diesel::insert_into(system_event::table)
         .values(NewSystemEvent {
             message,
             date: &date,
             event_type_id: event_type.id,
+            severity,
+            is_html: false,
         })
         .execute(conn)?;
 
@@ -77,7 +99,18 @@ pub fn add(
         date,
         event_type_id: event_type.id,
         event_type_name: event_type.name,
+        severity: severity.to_string(),
+        is_html: false,
     })
+}
+
+pub fn register_started_task_collector(
+    conn: &mut SqliteConnection,
+    source: &str,
+    odoo_version: &str,
+) -> QueryResult<Model> {
+    let msg = format!("Scan started for '{source}' [{odoo_version}]");
+    add(conn, "collector", SEVERITY_INFO, &msg)
 }
 
 pub fn register_new_dependency_module(
@@ -87,16 +120,18 @@ pub fn register_new_dependency_module(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New dependency '<span class='dep_name'>{dep_name}</span>' added for '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "dependency", &msg)
+    let msg = format!(
+        "New dependency '{dep_name}' added for '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "dependency", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_new_gh_organization(
     conn: &mut SqliteConnection,
     org_name: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New organization '<span class='org_name'>{org_name}</span>' added");
-    add(conn, "organization", &msg)
+    let msg = format!("New organization '{org_name}' added");
+    add(conn, "organization", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_new_gh_repository(
@@ -104,8 +139,8 @@ pub fn register_new_gh_repository(
     org_name: &str,
     repo_name: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New repository '<span class='org_name'>{org_name}</span>/<span class='repo_name'>{repo_name}</span>' added");
-    add(conn, "repository", &msg)
+    let msg = format!("New repository '{org_name}/{repo_name}' added");
+    add(conn, "repository", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_new_module_author(
@@ -115,8 +150,10 @@ pub fn register_new_module_author(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New author '<span class='author_name'>{author_name}</span>' added for '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "author", &msg)
+    let msg = format!(
+        "New author '{author_name}' added for '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "author", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_new_module_maintainer(
@@ -126,8 +163,10 @@ pub fn register_new_module_maintainer(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New maintainer '<span class='maintainer_name'>{maintainer_name}</span>' added for '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "maintainer", &msg)
+    let msg = format!(
+        "New maintainer '{maintainer_name}' added for '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "maintainer", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_new_module_committer(
@@ -137,8 +176,10 @@ pub fn register_new_module_committer(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New committer '<span class='committer_name'>{committer_name}</span>' added for '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "committer", &msg)
+    let msg = format!(
+        "New committer '{committer_name}' added for '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "committer", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_new_module(
@@ -150,8 +191,10 @@ pub fn register_new_module(
     repo_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("New module '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_version'>{module_version}</span>] added in '<span class='org_name'>{org_name}</span>/<span class='repo_name'>{repo_name}</span>' [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "module", &msg)
+    let msg = format!(
+        "New module '{module_technical_name}' ({module_name}) [{module_version}] added in '{org_name}/{repo_name}' [{module_version_odoo}]"
+    );
+    add(conn, "module", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_delete_module_author(
@@ -161,8 +204,10 @@ pub fn register_delete_module_author(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("'<span class='author_name'>{author_name}</span>' has been removed as author of the module '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "author", &msg)
+    let msg = format!(
+        "'{author_name}' removed as author of '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "author", SEVERITY_WARNING, &msg)
 }
 
 pub fn register_delete_module_dependency(
@@ -173,8 +218,10 @@ pub fn register_delete_module_dependency(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("'<span class='dep_name'>{dep_name}</span>' has been removed as {dep_type} dependency of the module '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "dependency", &msg)
+    let msg = format!(
+        "'{dep_name}' removed as {dep_type} dependency of '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "dependency", SEVERITY_WARNING, &msg)
 }
 
 pub fn register_delete_module_maintainer(
@@ -184,23 +231,25 @@ pub fn register_delete_module_maintainer(
     module_name: &str,
     module_version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("'<span class='maintainer_name'>{maintainer_name}</span>' has been removed as maintainer of the module '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) [<span class='module_odoo_version'>{module_version_odoo}</span>]");
-    add(conn, "maintainer", &msg)
+    let msg = format!(
+        "'{maintainer_name}' removed as maintainer of '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "maintainer", SEVERITY_WARNING, &msg)
 }
 
 pub fn register_update_module(
     conn: &mut SqliteConnection,
     module_info: &LogUpdateModuleInfo,
 ) -> QueryResult<Model> {
-    let mut changes = String::new();
-    for change in module_info.module_changes {
-        changes += &format!(
-            "<li>{}: <span class='value_old'>{}</span> -> <span class='value_new'>{}</span></li>",
-            change.0, change.1, change.2
-        );
-    }
+    let changes = module_info
+        .module_changes
+        .iter()
+        .map(|change| format!("{}: {} -> {}", change.0, change.1, change.2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let short_hash = &module_info.last_commit_hash[..module_info.last_commit_hash.len().min(7)];
     let mut msg = format!(
-        "Module '<span class='module_tech_name'>{}</span>' (<span class='module_name'>{}</span>) [<span class='module_version'>{}</span>] in '<span class='org_name'>{}</span>/<span class='repo_name'>{}</span>' [<span class='module_odoo_version'>{}</span>] updated:<ul class='module_changes'>{}</ul><div class='commit_info'><a class='git_commit' href='https://github.com/{}/{}/commit/{}'>{}</a> - <span class='git_author'>{}</span> - <span class='git_date'>{}</span>",
+        "Module '{}' ({}) [{}] in '{}/{}' [{}] updated: {}. Commit \"{}\" ({}) by {} on {}",
         module_info.module_technical_name,
         module_info.module_name,
         module_info.module_version,
@@ -208,22 +257,17 @@ pub fn register_update_module(
         module_info.repo_name,
         module_info.module_version_odoo,
         changes,
-        module_info.org_name,
-        module_info.repo_name,
-        module_info.last_commit_hash,
         module_info.last_commit_name,
+        short_hash,
         module_info.last_commit_author,
         module_info.last_commit_date,
     );
+    // Not linkified: the commit/PR URL scheme depends on whether the repo is
+    // hosted on GitHub or GitLab, which gh_repository doesn't track today.
     if !module_info.last_commit_partof.is_empty() {
-        msg += &format!(
-            " - PR: <a class='git_pr' href='https://github.com/{}'>{}</a>",
-            module_info.last_commit_partof.replace('#', "/pull/"),
-            module_info.last_commit_partof,
-        );
+        msg += &format!(" (PR {})", module_info.last_commit_partof);
     }
-    msg += "</div>";
-    add(conn, "module", &msg)
+    add(conn, "module", SEVERITY_INFO, &msg)
 }
 
 pub fn register_finished_task_collector(
@@ -233,8 +277,10 @@ pub fn register_finished_task_collector(
     org_name: &str,
     odoo_version: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("Scan finished in {scan_seconds} seconds: <span class='number_modules'>{number_modules}</span> modules collected in '<span class='org_name'>{org_name}</span>' [<span class='odoo_version'>{odoo_version}</span>]");
-    add(conn, "internal", &msg)
+    let msg = format!(
+        "Scan finished in {scan_seconds} seconds: {number_modules} modules collected in '{org_name}' [{odoo_version}]"
+    );
+    add(conn, "collector", SEVERITY_SUCCESS, &msg)
 }
 
 pub fn register_problem_module_version(
@@ -245,6 +291,52 @@ pub fn register_problem_module_version(
     manifest_version_odoo: &str,
     version_odoo: &str,
 ) -> QueryResult<Model> {
-    let msg = format!("<span class='problem'>PROBLEM DETECTED: '<span class='module_tech_name'>{module_technical_name}</span>' (<span class='module_name'>{module_name}</span>) from <span class='module_repo'>{repo_name}</span> has an incorrect Odoo version: <span class='value_wrong'>{manifest_version_odoo}</span> should be <span class='value_good'>{version_odoo}</span></span>");
-    add(conn, "issue", &msg)
+    let msg = format!(
+        "PROBLEM DETECTED: '{module_technical_name}' ({module_name}) from {repo_name} has an incorrect Odoo version: {manifest_version_odoo} should be {version_odoo}"
+    );
+    add(conn, "issue", SEVERITY_ERROR, &msg)
+}
+
+pub fn register_new_migration_pr(
+    conn: &mut SqliteConnection,
+    module_technical_name: &str,
+    pr_name: &str,
+    prid: &i64,
+    repo_name: &str,
+    version_odoo: &u8,
+) -> QueryResult<Model> {
+    let version_odoo_str = odoo_version_u8_to_string(version_odoo);
+    let msg = format!(
+        "New migration PR #{prid} \"{pr_name}\" opened for '{module_technical_name}' in '{repo_name}' [{version_odoo_str}]"
+    );
+    add(conn, "migration_pr", SEVERITY_INFO, &msg)
+}
+
+pub fn register_closed_migration_pr(
+    conn: &mut SqliteConnection,
+    module_technical_name: &str,
+    pr_name: &str,
+    prid: &i64,
+    repo_name: &str,
+    version_odoo: &u8,
+) -> QueryResult<Model> {
+    let version_odoo_str = odoo_version_u8_to_string(version_odoo);
+    let msg = format!(
+        "Migration PR #{prid} \"{pr_name}\" for '{module_technical_name}' in '{repo_name}' [{version_odoo_str}] is no longer open (merged/closed)"
+    );
+    add(conn, "migration_pr", SEVERITY_INFO, &msg)
+}
+
+pub fn register_new_osv_vulnerability(
+    conn: &mut SqliteConnection,
+    dep_name: &str,
+    osv_id: &str,
+    module_technical_name: &str,
+    module_name: &str,
+    module_version_odoo: &str,
+) -> QueryResult<Model> {
+    let msg = format!(
+        "Vulnerability {osv_id} found in dependency '{dep_name}' used by '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
+    );
+    add(conn, "vulnerability", SEVERITY_ERROR, &msg)
 }

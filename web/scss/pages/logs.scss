@@ -1,5 +1,37 @@
 // Copyright 2025 Alexandre D. Díaz
 #logs {
+    .log-type-badge {
+        display: inline-block;
+        padding: 0.15em 0.5em;
+        border-radius: 0.375rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        background-color: var(--bs-secondary-bg);
+        color: var(--bs-secondary-color);
+    }
+
+    tr.log-severity-success td:first-child {
+        border-left: 3px solid var(--bs-success);
+    }
+    tr.log-severity-warning td:first-child {
+        border-left: 3px solid var(--bs-warning);
+    }
+    tr.log-severity-error td:first-child {
+        border-left: 3px solid var(--bs-danger);
+    }
+    tr.log-severity-error td:last-child {
+        color: var(--bs-danger-text-emphasis);
+        font-weight: bold;
+    }
+    tr.log-severity-info td:first-child {
+        border-left: 3px solid var(--bs-info);
+    }
+
+    // Kept for the sake of rows written before the severity-based styling
+    // above (message stored as raw HTML, event.is_html = true) - drop this
+    // once the current-month log view has fully rolled past that cutover.
     .dep_name, .module_tech_name, .author_name, .maintainer_name {
         font-weight: bold;
     }

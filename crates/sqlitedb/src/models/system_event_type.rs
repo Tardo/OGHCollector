@@ -32,3 +32,25 @@ pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
         .optional()
         .expect("DB error in system_event_type::get_by_name")
 }
+
+/// Looks up an event type by name, creating it on first use. Event types used
+/// to be a closed, pre-seeded set (see the migration), which meant logging a
+/// genuinely new kind of action required a seed migration first. Now any
+/// caller can introduce a new type just by naming it.
+pub fn get_or_create(conn: &mut SqliteConnection, name: &str) -> Model {
+    let inserted = diesel::insert_into(system_event_type::table)
+        .values(NewSystemEventType { name })
+        .on_conflict(system_event_type::name)
+        .do_nothing()
+        .execute(conn)
+        .expect("DB error in system_event_type::get_or_create");
+
+    if inserted == 0 {
+        get_by_name(conn, name).expect("system_event_type must exist after get_or_create")
+    } else {
+        Model {
+            id: crate::models::last_insert_rowid(conn),
+            name: name.to_string(),
+        }
+    }
+}
