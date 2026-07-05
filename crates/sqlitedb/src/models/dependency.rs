@@ -1,8 +1,11 @@
 // Copyright Alexandre D. Díaz
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 use crate::schema::dependency;
+
+use super::module;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
 #[diesel(table_name = dependency, check_for_backend(diesel::sqlite::Sqlite))]
@@ -91,6 +94,53 @@ pub fn get_module_dependency_info(
     .bind::<diesel::sql_types::BigInt, _>(module_id)
     .load::<DependencyModuleInfo>(conn)
     .expect("DB error in dependency::get_module_dependency_info")
+}
+
+/// Full (transitive) dependency closure of a module: every Odoo addon it
+/// depends on directly or indirectly (grouped by `org/repo`), plus the
+/// flattened, deduped external pip/bin dependencies of the whole closure.
+#[derive(Debug, Default, Clone)]
+pub struct FullDependencyInfo {
+    pub odoo: HashMap<String, Vec<String>>,
+    pub pip: Vec<String>,
+    pub bin: Vec<String>,
+}
+
+fn collect_full_dependency_info(
+    conn: &mut SqliteConnection,
+    mod_: &module::Model,
+    info: &mut FullDependencyInfo,
+) {
+    info.pip.extend(get_module_external_dependency_names(
+        conn, &mod_.id, "python",
+    ));
+    info.bin
+        .extend(get_module_external_dependency_names(conn, &mod_.id, "bin"));
+    for dep in get_module_dependency_info(conn, &mod_.id) {
+        let repo_deps = info
+            .odoo
+            .entry(format!("{}/{}", &dep.org, &dep.repo))
+            .or_default();
+        if !repo_deps.contains(&dep.module_name) {
+            repo_deps.push(dep.module_name.clone());
+            let dep_module = module::get_by_id(conn, &dep.module_id)
+                .expect("dependency module referenced by dependency table not found");
+            collect_full_dependency_info(conn, &dep_module, info);
+        }
+    }
+}
+
+pub fn get_full_dependency_info(
+    conn: &mut SqliteConnection,
+    mod_: &module::Model,
+) -> FullDependencyInfo {
+    let mut info = FullDependencyInfo::default();
+    collect_full_dependency_info(conn, mod_, &mut info);
+    let mut seen = HashSet::new();
+    info.pip.retain(|x| seen.insert(x.clone()));
+    seen.clear();
+    info.bin.retain(|x| seen.insert(x.clone()));
+    info
 }
 
 pub fn add(conn: &mut SqliteConnection, dep_type_id: &i64, name: &str) -> QueryResult<Model> {

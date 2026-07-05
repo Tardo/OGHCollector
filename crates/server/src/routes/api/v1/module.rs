@@ -96,43 +96,6 @@ pub struct RouteModuleRequest {
     repo: Option<String>,
 }
 
-fn construct_module_dependencies_info(
-    conn: &mut SqliteConnection,
-    module: &models::module::Model,
-    mod_depends_dict: &mut HashMap<String, Vec<String>>,
-    pip_depends: &mut Vec<String>,
-    bin_depends: &mut Vec<String>,
-) {
-    let mut pip_depends_list: Vec<String> =
-        models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
-    pip_depends_list = pip_depends_list
-        .into_iter()
-        .map(normalize_python_dep)
-        .collect();
-    pip_depends.append(&mut pip_depends_list);
-    let mut bin_depends_list: Vec<String> =
-        models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");
-    bin_depends.append(&mut bin_depends_list);
-    let mod_depends = models::dependency::get_module_dependency_info(conn, &module.id);
-    for mod_dep in mod_depends {
-        let repo_depends = mod_depends_dict
-            .entry(format!("{}/{}", &mod_dep.org, &mod_dep.repo))
-            .or_default();
-        let technical_name = mod_dep.module_name.clone();
-        if !repo_depends.contains(&technical_name) {
-            repo_depends.push(technical_name);
-            let dep_module = models::module::get_by_id(conn, &mod_dep.module_id).unwrap();
-            construct_module_dependencies_info(
-                conn,
-                &dep_module,
-                mod_depends_dict,
-                pip_depends,
-                bin_depends,
-            );
-        }
-    }
-}
-
 fn get_module_git(conn: &mut SqliteConnection, module: &models::module::Model) -> String {
     let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id).unwrap();
     let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
@@ -202,20 +165,16 @@ pub fn process_modules_db(
 ) -> Vec<ModuleFullInfoResponse> {
     let mut res: Vec<ModuleFullInfoResponse> = Vec::new();
     for module in modules {
-        let mut pip_dependencies: Vec<String> = Vec::new();
-        let mut bin_dependencies: Vec<String> = Vec::new();
-        let mut odoo_dependencies: HashMap<String, Vec<String>> = HashMap::new();
-        construct_module_dependencies_info(
-            conn,
-            module,
-            &mut odoo_dependencies,
-            &mut pip_dependencies,
-            &mut bin_dependencies,
-        );
+        let full_deps = models::dependency::get_full_dependency_info(conn, module);
         let dependencies = ModuleDependencyInfoResponse {
-            odoo: odoo_dependencies,
-            pip: pip_dependencies.unique(),
-            bin: bin_dependencies.unique(),
+            odoo: full_deps.odoo,
+            pip: full_deps
+                .pip
+                .into_iter()
+                .map(normalize_python_dep)
+                .collect::<Vec<_>>()
+                .unique(),
+            bin: full_deps.bin.unique(),
         };
         let authors = models::module_author::get_names_by_module_id(conn, &module.id);
         let maintainers = models::module_maintainer::get_names_by_module_id(conn, &module.id);

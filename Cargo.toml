@@ -48,3 +48,5 @@ urlencoding = "2.1"
 diesel = { version = "2.3", features = ["sqlite", "r2d2"] }
 diesel_migrations = "2"
 dotenvy = "0.15"
+rmcp = { version = "2.1.0", features = ["transport-streamable-http-server"] }
+axum = "0.8"

@@ -12,5 +12,22 @@ services:
       RUST_LOG: info
       RUST_BACKTRACE: 0
 
+  mcp:
+    build:
+      context: .
+      target: final
+    command: oghmcp
+    ports:
+      - 8081:8081
+    volumes:
+      - app_data:/app/data
+    environment:
+      RUST_LOG: info
+      RUST_BACKTRACE: 0
+      # Required for any client that isn't connecting via localhost/127.0.0.1 - rmcp
+      # rejects other Host headers by default (DNS-rebinding protection). Set this to
+      # the public hostname(s)/IP(s) clients will actually use, e.g.:
+      # OGHCOLLECTOR_MCP_ALLOWED_HOSTS: mcp.example.com,203.0.113.10
+
 volumes:
   app_data:
