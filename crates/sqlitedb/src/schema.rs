@@ -96,6 +96,8 @@ diesel::table! {
         last_commit_name -> Text,
         last_commit_date -> Text,
         last_commit_partof -> Nullable<Text>,
+        installation -> Nullable<Text>,
+        usage -> Nullable<Text>,
     }
 }
 

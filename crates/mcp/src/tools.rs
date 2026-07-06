@@ -42,6 +42,18 @@ pub struct GetModuleParams {
     pub org: Option<String>,
     /// Restrict to a repository name.
     pub repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetModuleCodeAnalysisParams {
+    /// Module technical name, e.g. "sale_order_type".
+    pub technical_name: String,
+    /// Odoo version, e.g. "17.0".
+    pub odoo_version: String,
+    /// Restrict to a GitHub/GitLab organization name.
+    pub org: Option<String>,
+    /// Restrict to a repository name.
+    pub repo: Option<String>,
     /// Specific module version to inspect, e.g. "1.0.2" (see
     /// `list_module_versions`). Defaults to the latest known version.
     pub version_module: Option<String>,
@@ -120,7 +132,7 @@ pub struct ModuleDependencies {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ModuleFullInfo {
+pub struct ModuleInfo {
     pub technical_name: String,
     pub name: String,
     pub odoo_version: String,
@@ -128,7 +140,6 @@ pub struct ModuleFullInfo {
     pub description: String,
     pub authors: Vec<String>,
     pub maintainers: Vec<String>,
-    pub committers: Vec<String>,
     pub license: String,
     pub category: String,
     pub application: bool,
@@ -143,7 +154,39 @@ pub struct ModuleFullInfo {
     /// recommending it for a pack.
     pub last_commit_date: String,
     pub last_commit_author: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDocs {
+    pub technical_name: String,
+    pub odoo_version: String,
+    pub organization: String,
+    pub repository: String,
+    /// Rendered `readme/INSTALL.md`, if the module has one - install-specific
+    /// steps beyond `pip install`/adding to `depends` (system packages,
+    /// config, etc.).
+    pub installation: String,
+    /// Rendered `readme/USAGE.md`, if the module has one - how to use the
+    /// module once installed (menus, workflow, etc.).
+    pub usage: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDependencyInfo {
+    pub technical_name: String,
+    pub odoo_version: String,
+    pub organization: String,
+    pub repository: String,
     pub dependencies: ModuleDependencies,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleCodeAnalysis {
+    pub technical_name: String,
+    pub odoo_version: String,
+    pub module_version: String,
+    pub organization: String,
+    pub repository: String,
     pub views: Vec<ModuleView>,
     pub models: Vec<ModuleModel>,
 }
@@ -207,8 +250,7 @@ pub struct ModuleSummary {
 pub struct GetCommitterActivityParams {
     /// Exact committer (git author) name, e.g. "Jane Doe". This project only
     /// tracks git commit author names, not emails or GitHub logins - get real
-    /// names from the `committers` field of get_module or
-    /// list_repository_modules.
+    /// names from the `committers` field of list_repository_modules.
     pub name: String,
 }
 
@@ -295,16 +337,77 @@ fn get_module_models(conn: &mut SqliteConnection, module_version_id: &i64) -> Ve
         .collect()
 }
 
-fn build_full_info(
+fn get_org_repo(
     conn: &mut SqliteConnection,
     module: &models::module::Model,
-    version_module: Option<&str>,
-) -> ModuleFullInfo {
+) -> (models::gh_organization::Model, models::gh_repository::Model) {
     let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id)
         .expect("module references a gh_repository row that does not exist");
     let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id)
         .expect("gh_repository references a gh_organization row that does not exist");
+    (org, repo)
+}
+
+fn build_module_info(conn: &mut SqliteConnection, module: &models::module::Model) -> ModuleInfo {
+    let (org, repo) = get_org_repo(conn, module);
+    ModuleInfo {
+        technical_name: module.technical_name.clone(),
+        name: module.name.clone(),
+        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        module_version: module.version_module.clone(),
+        description: module.description.clone().unwrap_or_default(),
+        authors: models::module_author::get_names_by_module_id(conn, &module.id),
+        maintainers: models::module_maintainer::get_names_by_module_id(conn, &module.id),
+        license: module.license.clone().unwrap_or_default(),
+        category: module.category.clone().unwrap_or_default(),
+        application: module.application,
+        installable: module.installable,
+        auto_install: module.auto_install,
+        git: format!("https://github.com/{}/{}.git", &org.name, &repo.name),
+        organization: org.name,
+        repository: repo.name,
+        last_commit_date: module.last_commit_date.clone(),
+        last_commit_author: module.last_commit_author.clone(),
+    }
+}
+
+fn build_module_docs(conn: &mut SqliteConnection, module: &models::module::Model) -> ModuleDocs {
+    let (org, repo) = get_org_repo(conn, module);
+    ModuleDocs {
+        technical_name: module.technical_name.clone(),
+        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        organization: org.name,
+        repository: repo.name,
+        installation: module.installation.clone().unwrap_or_default(),
+        usage: module.usage.clone().unwrap_or_default(),
+    }
+}
+
+fn build_module_dependency_info(
+    conn: &mut SqliteConnection,
+    module: &models::module::Model,
+) -> ModuleDependencyInfo {
+    let (org, repo) = get_org_repo(conn, module);
     let full_deps = models::dependency::get_full_dependency_info(conn, module);
+    ModuleDependencyInfo {
+        technical_name: module.technical_name.clone(),
+        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        organization: org.name,
+        repository: repo.name,
+        dependencies: ModuleDependencies {
+            odoo: full_deps.odoo,
+            pip: full_deps.pip,
+            bin: full_deps.bin,
+        },
+    }
+}
+
+fn build_module_code_analysis(
+    conn: &mut SqliteConnection,
+    module: &models::module::Model,
+    version_module: Option<&str>,
+) -> ModuleCodeAnalysis {
+    let (org, repo) = get_org_repo(conn, module);
     // None (default) resolves to the latest version; an explicit request that
     // doesn't match any known version comes back with empty views/models
     // rather than silently falling back to "latest".
@@ -326,30 +429,12 @@ fn build_full_info(
                 .unwrap_or_else(|| module.version_module.clone()),
         ),
     };
-    ModuleFullInfo {
+    ModuleCodeAnalysis {
         technical_name: module.technical_name.clone(),
-        name: module.name.clone(),
         odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
         module_version,
-        description: module.description.clone().unwrap_or_default(),
-        authors: models::module_author::get_names_by_module_id(conn, &module.id),
-        maintainers: models::module_maintainer::get_names_by_module_id(conn, &module.id),
-        committers: models::module_committer::get_names_by_module_id(conn, &module.id),
-        license: module.license.clone().unwrap_or_default(),
-        category: module.category.clone().unwrap_or_default(),
-        application: module.application,
-        installable: module.installable,
-        auto_install: module.auto_install,
-        git: format!("https://github.com/{}/{}.git", &org.name, &repo.name),
         organization: org.name,
         repository: repo.name,
-        last_commit_date: module.last_commit_date.clone(),
-        last_commit_author: module.last_commit_author.clone(),
-        dependencies: ModuleDependencies {
-            odoo: full_deps.odoo,
-            pip: full_deps.pip,
-            bin: full_deps.bin,
-        },
         views,
         models: module_models,
     }
@@ -494,7 +579,94 @@ fn list_repository_modules_cached(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleFullInfo>>",
+    type = "TimedSizedCache<String, Vec<ModuleInfo>>",
+    key = "String",
+    create = r#"
+        {
+            let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+        }
+    "#,
+    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+)]
+fn get_module_cached(
+    pool: Pool,
+    technical_name: String,
+    odoo_version: String,
+    org: Option<String>,
+    repo: Option<String>,
+) -> Vec<ModuleInfo> {
+    let mut conn = pool
+        .get()
+        .expect("failed to get a DB connection from the pool");
+    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
+    modules
+        .iter()
+        .map(|m| build_module_info(&mut conn, m))
+        .collect::<Vec<_>>()
+}
+
+#[cached(
+    type = "TimedSizedCache<String, Vec<ModuleDocs>>",
+    key = "String",
+    create = r#"
+        {
+            let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+        }
+    "#,
+    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+)]
+fn get_module_docs_cached(
+    pool: Pool,
+    technical_name: String,
+    odoo_version: String,
+    org: Option<String>,
+    repo: Option<String>,
+) -> Vec<ModuleDocs> {
+    let mut conn = pool
+        .get()
+        .expect("failed to get a DB connection from the pool");
+    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
+    modules
+        .iter()
+        .map(|m| build_module_docs(&mut conn, m))
+        .collect::<Vec<_>>()
+}
+
+#[cached(
+    type = "TimedSizedCache<String, Vec<ModuleDependencyInfo>>",
+    key = "String",
+    create = r#"
+        {
+            let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+        }
+    "#,
+    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+)]
+fn get_module_dependencies_cached(
+    pool: Pool,
+    technical_name: String,
+    odoo_version: String,
+    org: Option<String>,
+    repo: Option<String>,
+) -> Vec<ModuleDependencyInfo> {
+    let mut conn = pool
+        .get()
+        .expect("failed to get a DB connection from the pool");
+    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
+    modules
+        .iter()
+        .map(|m| build_module_dependency_info(&mut conn, m))
+        .collect::<Vec<_>>()
+}
+
+#[cached(
+    type = "TimedSizedCache<String, Vec<ModuleCodeAnalysis>>",
     key = "String",
     create = r#"
         {
@@ -504,14 +676,14 @@ fn list_repository_modules_cached(
     "#,
     convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}|{version_module:?}") }"#
 )]
-fn get_module_cached(
+fn get_module_code_analysis_cached(
     pool: Pool,
     technical_name: String,
     odoo_version: String,
     org: Option<String>,
     repo: Option<String>,
     version_module: Option<String>,
-) -> Vec<ModuleFullInfo> {
+) -> Vec<ModuleCodeAnalysis> {
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
@@ -519,7 +691,7 @@ fn get_module_cached(
     let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
     modules
         .iter()
-        .map(|m| build_full_info(&mut conn, m, version_module.as_deref()))
+        .map(|m| build_module_code_analysis(&mut conn, m, version_module.as_deref()))
         .collect::<Vec<_>>()
 }
 
@@ -548,7 +720,8 @@ impl OghMcp {
                         module pack for a country/topic and don't know exact names, use \
                         search_repositories + list_repository_modules instead, since not every \
                         module in a repository follows a naming convention (e.g. \
-                        delivery_dhl_parcel lives in OCA/l10n-spain)."
+                        delivery_dhl_parcel lives in OCA/l10n-spain). Follow up with get_module \
+                        for manifest metadata on a specific match."
     )]
     async fn search_modules(
         &self,
@@ -587,13 +760,13 @@ impl OghMcp {
     }
 
     #[tool(
-        description = "Get full information for one module at one Odoo version: manifest \
-                        metadata, authors/maintainers/committers, the transitive Odoo/pip/bin \
-                        dependency closure, and a code analysis (XML views it defines or \
-                        inherits, and the Odoo models it defines or extends with their fields \
-                        and methods, including docstrings and signatures). Defaults to the \
-                        latest known module version; pass version_module (see \
-                        list_module_versions) to inspect an older one."
+        description = "Get manifest metadata for one module at one Odoo version: description, \
+                        authors/maintainers, license/category/application/installable flags, and \
+                        which organization/repository carries it. This is the \
+                        lightweight entry point for one module - call get_module_docs for \
+                        install/usage instructions, get_module_dependencies for the dependency \
+                        closure, or get_module_code_analysis for its views/models/fields/methods, \
+                        only when you actually need that detail."
     )]
     async fn get_module(
         &self,
@@ -607,12 +780,92 @@ impl OghMcp {
                 params.odoo_version,
                 params.org,
                 params.repo,
-                params.version_module,
             )
         })
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         json_result(&infos)
+    }
+
+    #[tool(
+        description = "Get rendered readme/INSTALL.md and readme/USAGE.md for one module at one \
+                        Odoo version - install-specific steps beyond adding it to `depends` \
+                        (system packages, config, etc.), and how to use it once installed (menus, \
+                        workflow, etc.). Empty strings if the module doesn't have these files. \
+                        Call get_module first to confirm the module exists."
+    )]
+    async fn get_module_docs(
+        &self,
+        Parameters(params): Parameters<GetModuleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let docs = tokio::task::spawn_blocking(move || {
+            get_module_docs_cached(
+                pool,
+                params.technical_name,
+                params.odoo_version,
+                params.org,
+                params.repo,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&docs)
+    }
+
+    #[tool(
+        description = "Get the transitive Odoo/pip/bin dependency closure for one module at one \
+                        Odoo version. The `odoo` map is keyed by \"organization/repository\" \
+                        since a dependency can live in a different repository than the module \
+                        itself. For direct (one-level) dependencies of every module in a \
+                        repository at once, use list_repository_modules instead."
+    )]
+    async fn get_module_dependencies(
+        &self,
+        Parameters(params): Parameters<GetModuleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let deps = tokio::task::spawn_blocking(move || {
+            get_module_dependencies_cached(
+                pool,
+                params.technical_name,
+                params.odoo_version,
+                params.org,
+                params.repo,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&deps)
+    }
+
+    #[tool(
+        description = "Get the code analysis for one module at one Odoo version: XML views it \
+                        defines or inherits, and the Odoo models it defines or extends with their \
+                        fields and methods, including docstrings and signatures. This is the \
+                        heaviest tool in this server - only call it when you actually need \
+                        view/model/field/method detail, not just to check what a module does or \
+                        what it depends on. Defaults to the latest known module version; pass \
+                        version_module (see list_module_versions) to inspect an older one."
+    )]
+    async fn get_module_code_analysis(
+        &self,
+        Parameters(params): Parameters<GetModuleCodeAnalysisParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let analyses = tokio::task::spawn_blocking(move || {
+            get_module_code_analysis_cached(
+                pool,
+                params.technical_name,
+                params.odoo_version,
+                params.org,
+                params.repo,
+                params.version_module,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&analyses)
     }
 
     #[tool(
@@ -708,10 +961,10 @@ impl OghMcp {
                         last-commit date/author (to judge whether it's still maintained), and \
                         each module's direct (one level) Odoo/pip/bin dependencies (the Odoo ones \
                         grouped by which organization/repository carries them, since a dependency \
-                        can live outside this repository). Lighter than get_module: no XML views \
-                        or model/field/method code analysis, and dependencies are direct, not the \
-                        full transitive closure - call get_module on individual modules of \
-                        interest for that level of detail."
+                        can live outside this repository). Dependencies here are direct, not the \
+                        full transitive closure, and there's no views/models code analysis - call \
+                        get_module_dependencies or get_module_code_analysis on individual modules \
+                        of interest for that level of detail."
     )]
     async fn list_repository_modules(
         &self,
@@ -739,8 +992,8 @@ impl OghMcp {
                         is actually maintaining a module in practice (as opposed to the nominal \
                         manifest authors/maintainers) - e.g. before recommending a module for a \
                         pack, confirm its top committer is still active elsewhere. Get real names \
-                        from the committers field of get_module or list_repository_modules; this \
-                        is an exact match, not a substring search."
+                        from the committers field of list_repository_modules; this is an exact \
+                        match, not a substring search."
     )]
     async fn get_committer_activity(
         &self,
@@ -781,16 +1034,19 @@ impl ServerHandler for OghMcp {
             .with_instructions(
                 "Read-only access to the OGHCollector Odoo module metadata database. Two \
                  discovery paths: (1) know (part of) a module's technical name? Use \
-                 search_modules, then get_module for full manifest, transitive dependency and \
-                 code analysis details. (2) building a module pack for a country or topic (e.g. \
-                 \"what does a Spain localization need\")? Use search_repositories to find the \
-                 relevant repository (OCA organizes these per country/topic), then \
-                 list_repository_modules to bulk-list every module it carries with direct \
-                 dependencies and maintenance signals (last commit, committers) - call \
-                 get_module on individual modules only when you need their full transitive \
-                 dependency closure or code analysis. Use list_module_versions to see a module's \
-                 recorded version history, and get_committer_activity to check what else a \
-                 specific person has committed to, e.g. to gauge whether they're still active."
+                 search_modules, then get_module for its manifest metadata. (2) building a \
+                 module pack for a country or topic (e.g. \"what does a Spain localization \
+                 need\")? Use search_repositories to find the relevant repository (OCA organizes \
+                 these per country/topic), then list_repository_modules to bulk-list every \
+                 module it carries with direct dependencies and maintenance signals (last \
+                 commit, committers). Either way, get_module's response is intentionally light - \
+                 call get_module_docs (install/usage instructions), get_module_dependencies \
+                 (full transitive closure) or get_module_code_analysis (views/models/fields/\
+                 methods) on individual modules only when you actually need that detail, since \
+                 code analysis in particular can be large. Use list_module_versions to see a \
+                 module's recorded version history, and get_committer_activity to check what \
+                 else a specific person has committed to, e.g. to gauge whether they're still \
+                 active."
                     .to_string(),
             )
     }

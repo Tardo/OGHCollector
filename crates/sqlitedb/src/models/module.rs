@@ -39,6 +39,8 @@ pub struct Model {
     pub last_commit_name: String,
     pub last_commit_date: String,
     pub last_commit_partof: Option<String>,
+    pub installation: Option<String>,
+    pub usage: Option<String>,
 }
 
 impl Model {
@@ -56,6 +58,12 @@ impl Model {
     }
     pub fn last_commit_partof_str(&self) -> &str {
         self.last_commit_partof.as_deref().unwrap_or("")
+    }
+    pub fn installation_str(&self) -> &str {
+        self.installation.as_deref().unwrap_or("")
+    }
+    pub fn usage_str(&self) -> &str {
+        self.usage.as_deref().unwrap_or("")
     }
 }
 
@@ -75,6 +83,8 @@ pub struct ManifestInfo {
     pub name: String,
     pub version_module: String,
     pub description: String,
+    pub installation: String,
+    pub usage: String,
     pub author: String,
     pub website: String,
     pub license: String,
@@ -215,6 +225,8 @@ struct NewModule<'a> {
     name: &'a str,
     version_module: &'a str,
     description: Option<&'a str>,
+    installation: Option<&'a str>,
+    usage: Option<&'a str>,
     website: Option<&'a str>,
     license: Option<&'a str>,
     category: Option<&'a str>,
@@ -672,6 +684,16 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     } else {
         Some(module_info.description.as_str())
     };
+    let installation = if module_info.installation.is_empty() {
+        None
+    } else {
+        Some(module_info.installation.as_str())
+    };
+    let usage = if module_info.usage.is_empty() {
+        None
+    } else {
+        Some(module_info.usage.as_str())
+    };
     let website = if module_info.website.is_empty() {
         None
     } else {
@@ -709,6 +731,8 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
                 name: &module_info.name,
                 version_module: &module_info.version_module,
                 description,
+                installation,
+                usage,
                 website,
                 license,
                 category,
@@ -734,6 +758,8 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             name: module_info.name.clone(),
             version_module: module_info.version_module.clone(),
             description: description.map(|s| s.to_string()),
+            installation: installation.map(|s| s.to_string()),
+            usage: usage.map(|s| s.to_string()),
             website: website.map(|s| s.to_string()),
             license: license.map(|s| s.to_string()),
             category: category.map(|s| s.to_string()),
@@ -897,6 +923,18 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     if existing_desc != module_info.description {
         changes.push(("Description", &existing_desc, &module_info.description));
     }
+    let existing_installation = existing_module.installation_str().to_string();
+    if existing_installation != module_info.installation {
+        changes.push((
+            "Installation",
+            &existing_installation,
+            &module_info.installation,
+        ));
+    }
+    let existing_usage = existing_module.usage_str().to_string();
+    if existing_usage != module_info.usage {
+        changes.push(("Usage", &existing_usage, &module_info.usage));
+    }
     let existing_website = existing_module.website_str().to_string();
     if existing_website != module_info.website {
         changes.push(("Website", &existing_website, &module_info.website));
@@ -932,6 +970,8 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             module::name.eq(&module_info.name),
             module::version_module.eq(&module_info.version_module),
             module::description.eq(description),
+            module::installation.eq(installation),
+            module::usage.eq(usage),
             module::website.eq(website),
             module::license.eq(license),
             module::category.eq(category),

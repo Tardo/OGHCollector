@@ -216,12 +216,14 @@ mod tests {
         let mut conn = setup_db();
         use std::collections::HashMap;
 
-        let info = super::module::ManifestInfo {
+        let mut info = super::module::ManifestInfo {
             technical_name: "test_module".to_string(),
             version_odoo: 16,
             name: "Test Module".to_string(),
             version_module: "16.0.1.0.0".to_string(),
             description: "A test module".to_string(),
+            installation: "pip install foo".to_string(),
+            usage: "Go to Settings > Foo".to_string(),
             author: "Alice".to_string(),
             website: "https://example.com".to_string(),
             license: "LGPL-3".to_string(),
@@ -250,9 +252,20 @@ mod tests {
         assert_eq!(module.version_odoo, 16);
         assert!(module.id > 0);
 
-        let found = super::module::get_by_id(&mut conn, &module.id);
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().name, "Test Module");
+        let found = super::module::get_by_id(&mut conn, &module.id).unwrap();
+        assert_eq!(found.name, "Test Module");
+        assert_eq!(found.installation_str(), "pip install foo");
+        assert_eq!(found.usage_str(), "Go to Settings > Foo");
+
+        // Re-adding with changed install/usage text must update the existing
+        // row in place (the UPDATE branch of module::add), not just the
+        // INSERT branch exercised above.
+        info.installation = "pip install foo --upgrade".to_string();
+        info.usage = "Go to Settings > Foo > Bar".to_string();
+        let updated = super::module::add(&mut conn, &info).unwrap();
+        assert_eq!(updated.id, module.id);
+        assert_eq!(updated.installation_str(), "pip install foo --upgrade");
+        assert_eq!(updated.usage_str(), "Go to Settings > Foo > Bar");
     }
 
     #[test]
@@ -266,6 +279,8 @@ mod tests {
             name: "Dup Module".to_string(),
             version_module: "17.0.1.0.0".to_string(),
             description: String::new(),
+            installation: String::new(),
+            usage: String::new(),
             author: String::new(),
             website: String::new(),
             license: String::new(),
@@ -305,6 +320,8 @@ mod tests {
             name: "Dep Test".to_string(),
             version_module: "16.0.1.0.0".to_string(),
             description: String::new(),
+            installation: String::new(),
+            usage: String::new(),
             author: String::new(),
             website: String::new(),
             license: String::new(),
@@ -433,6 +450,8 @@ mod tests {
             name: name.to_string(),
             version_module: format!("{ver}.0.1.0.0"),
             description: String::new(),
+            installation: String::new(),
+            usage: String::new(),
             author: String::new(),
             website: String::new(),
             license: String::new(),
@@ -475,6 +494,8 @@ mod tests {
             name: name.to_string(),
             version_module: "16.0.1.0.0".to_string(),
             description: String::new(),
+            installation: String::new(),
+            usage: String::new(),
             author: String::new(),
             website: String::new(),
             license: String::new(),
@@ -529,6 +550,8 @@ mod tests {
             name: name.to_string(),
             version_module: "16.0.1.0.0".to_string(),
             description: String::new(),
+            installation: String::new(),
+            usage: String::new(),
             author: String::new(),
             website: String::new(),
             license: String::new(),
@@ -655,6 +678,8 @@ mod tests {
                 name: "Period Test".to_string(),
                 version_module: "16.0.1.0.0".to_string(),
                 description: String::new(),
+                installation: String::new(),
+                usage: String::new(),
                 author: String::new(),
                 website: String::new(),
                 license: String::new(),
@@ -717,6 +742,8 @@ mod tests {
             name: name.to_string(),
             version_module: "16.0.1.0.0".to_string(),
             description: String::new(),
+            installation: String::new(),
+            usage: String::new(),
             author: String::new(),
             website: String::new(),
             license: String::new(),

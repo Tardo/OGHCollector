@@ -13,14 +13,98 @@
 <h2>🔌 MCP (Model Context Protocol)</h2>
 <p class="fs-5 text-secondary-emphasis">
     This server also exposes an <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">MCP</a>
-    endpoint: <code>search_modules</code> and <code>get_module</code> tools, giving an LLM client the same
-    module search, dependency-graph and code-analysis data (views, models, fields, methods) shown in this
-    dashboard.
+    endpoint, giving an LLM client the same module search, dependency-graph, code-analysis and maintenance
+    data shown in this dashboard. It's split into small, single-purpose tools instead of one big
+    "give me everything" call, so a client only fetches the detail it actually needs for a given question -
+    look up a module's contents, its dependencies and its code are three separate tools rather than one
+    reply carrying all three every time.
 </p>
 
 <div class="border rounded p-3 mb-4 text-bg-secondary" id="mcp-endpoint-box">
     <div class="fs-6 text-uppercase text-secondary-emphasis mb-1">MCP endpoint URL</div>
     <code class="text-light fs-5" id="mcp-endpoint-url">{{ MCP_URL }}</code>
+</div>
+
+<h3 class="fs-4 fw-bold mt-5 mb-3">Available tools</h3>
+<div class="row">
+    <div class="col-12 col-lg-6 mb-4">
+        <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Find modules &amp; repositories</h4>
+        <ul class="list-unstyled">
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">search_modules</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    Find modules by (part of) their technical name, optionally filtered by Odoo version
+                    or whether they're installable.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">search_repositories</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    Find a GitHub/GitLab repository by name - e.g. locate OCA's per-country/topic repos
+                    such as <code>l10n-spain</code> or <code>account-invoicing</code>.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">list_repository_modules</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    List every module in a repository at once, with maintenance signals (last commit,
+                    committers) and direct dependencies - the go-to tool for assembling a module pack.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">list_module_versions</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    See every recorded version of a module, with first/last-seen dates and which one
+                    is the latest.
+                </div>
+            </li>
+        </ul>
+    </div>
+    <div class="col-12 col-lg-6 mb-4">
+        <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">One module in detail</h4>
+        <ul class="list-unstyled">
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">get_module</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    Manifest metadata for one module: description, authors/maintainers, license,
+                    category and install flags.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">get_module_docs</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    Rendered install/usage instructions for the module, when its repository documents
+                    them.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">get_module_dependencies</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    The full dependency closure for one module: every Odoo module, Python package and
+                    system binary it needs, directly or transitively.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">get_module_code_analysis</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    The XML views and Odoo models/fields/methods the module defines or extends. The
+                    most detailed - and heaviest - tool on this server.
+                </div>
+            </li>
+        </ul>
+    </div>
+</div>
+<div class="mb-4">
+    <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Maintainers</h4>
+    <ul class="list-unstyled">
+        <li class="mb-3">
+            <span class="badge text-bg-secondary">get_committer_activity</span>
+            <div class="mt-2 text-secondary-emphasis">
+                What else a specific person has committed to, e.g. to check whether a module's top
+                contributor is still active elsewhere before relying on it.
+            </div>
+        </li>
+    </ul>
 </div>
 
 <div class="d-flex flex-column flex-md-row align-items-start mt-4">

@@ -541,9 +541,10 @@ impl OGHCollectorAnalyzer {
         Ok(committers)
     }
 
-    /// Best-effort read of `<module>/readme/DESCRIPTION.md` - not every module has one.
-    fn read_description_md(module_path: &std::path::Path) -> Option<String> {
-        let text = fs::read_to_string(module_path.join("readme").join("DESCRIPTION.md")).ok()?;
+    /// Best-effort read of `<module>/readme/<filename>` - not every module has
+    /// one (used for DESCRIPTION.md, INSTALL.md, USAGE.md).
+    fn read_readme_fragment(module_path: &std::path::Path, filename: &str) -> Option<String> {
+        let text = fs::read_to_string(module_path.join("readme").join(filename)).ok()?;
         let text = text.trim();
         (!text.is_empty()).then(|| text.to_string())
     }
@@ -577,10 +578,20 @@ impl OGHCollectorAnalyzer {
             } else {
                 String::new()
             };
-            let description = std::path::Path::new(manifest_path)
-                .parent()
-                .and_then(Self::read_description_md)
+            let module_dir = std::path::Path::new(manifest_path).parent();
+            let description = module_dir
+                .and_then(|p| Self::read_readme_fragment(p, "DESCRIPTION.md"))
                 .unwrap_or(description);
+            // readme/INSTALL.md and readme/USAGE.md (ponytail: module-level like
+            // description, not per module_version - see the analyzer's ManifestInfo
+            // note) let get_module answer "how do I install/use this module"
+            // straight from what the module's own repo documents.
+            let installation = module_dir
+                .and_then(|p| Self::read_readme_fragment(p, "INSTALL.md"))
+                .unwrap_or_default();
+            let usage = module_dir
+                .and_then(|p| Self::read_readme_fragment(p, "USAGE.md"))
+                .unwrap_or_default();
             // author
             let author_opt = manifest.get_item("author");
             let author: String = if let Some(author_value) = author_opt {
@@ -739,6 +750,8 @@ impl OGHCollectorAnalyzer {
                 name,
                 version_module,
                 description,
+                installation,
+                usage,
                 author,
                 website,
                 license,
@@ -845,15 +858,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_read_description_md() {
+    fn test_read_readme_fragment() {
         let dir = std::env::temp_dir().join(format!(
             "oghcollector_analyzer_test_{}_{}",
             std::process::id(),
-            "read_description_md"
+            "read_readme_fragment"
         ));
         fs::create_dir_all(dir.join("readme")).unwrap();
 
-        assert_eq!(OGHCollectorAnalyzer::read_description_md(&dir), None);
+        assert_eq!(
+            OGHCollectorAnalyzer::read_readme_fragment(&dir, "DESCRIPTION.md"),
+            None
+        );
 
         fs::write(
             dir.join("readme").join("DESCRIPTION.md"),
@@ -861,12 +877,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            OGHCollectorAnalyzer::read_description_md(&dir),
+            OGHCollectorAnalyzer::read_readme_fragment(&dir, "DESCRIPTION.md"),
             Some("Hello module.".to_string())
         );
 
         fs::write(dir.join("readme").join("DESCRIPTION.md"), "   \n").unwrap();
-        assert_eq!(OGHCollectorAnalyzer::read_description_md(&dir), None);
+        assert_eq!(
+            OGHCollectorAnalyzer::read_readme_fragment(&dir, "DESCRIPTION.md"),
+            None
+        );
+
+        // A different fragment file (INSTALL.md/USAGE.md) is read the same way.
+        fs::write(dir.join("readme").join("INSTALL.md"), "pip install foo\n").unwrap();
+        assert_eq!(
+            OGHCollectorAnalyzer::read_readme_fragment(&dir, "INSTALL.md"),
+            Some("pip install foo".to_string())
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }
