@@ -91,6 +91,39 @@
     </div>
 </div>
 
+{% if stats.fun_facts %}
+<h3>Fun Facts</h3>
+<div class="row mb-3 gx-sm-5 user-select-none">
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">First Module Touched</div>
+            <div class="fs-5"><a href="/module/{{ stats.fun_facts.first_module_organization }}/{{ stats.fun_facts.first_module_technical_name }}">{{ stats.fun_facts.first_module_name }}</a></div>
+            <div>{{ stats.fun_facts.first_seen }}</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">Last Seen</div>
+            <div class="fs-5"><a href="/module/{{ stats.fun_facts.last_module_organization }}/{{ stats.fun_facts.last_module_technical_name }}">{{ stats.fun_facts.last_module_name }}</a></div>
+            <div>{{ stats.fun_facts.last_seen }}</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">Busiest Month</div>
+            <div class="fs-5">{{ stats.fun_facts.busiest_period }}</div>
+            <div>{{ stats.fun_facts.busiest_period_commits }} commit{{ stats.fun_facts.busiest_period_commits != 1 and 's' or '' }}</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">Active Span</div>
+            <div class="fs-5">{{ stats.fun_facts.active_span }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-12">
         <h3>Top Repositories</h3>

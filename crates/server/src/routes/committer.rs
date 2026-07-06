@@ -9,8 +9,18 @@ use serde::{Deserialize, Serialize};
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
+use chrono::Month;
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
+
+fn month_year_label(year: i32, month: i32) -> String {
+    let month_name = u8::try_from(month)
+        .ok()
+        .and_then(|m| Month::try_from(m).ok())
+        .map(|m| m.name())
+        .unwrap_or("?");
+    format!("{month_name} {year}")
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CommitterModuleRow {
@@ -37,6 +47,21 @@ pub struct CommitterRepoStat {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommitterFunFacts {
+    pub first_seen: String,
+    pub first_module_name: String,
+    pub first_module_technical_name: String,
+    pub first_module_organization: String,
+    pub last_seen: String,
+    pub last_module_name: String,
+    pub last_module_technical_name: String,
+    pub last_module_organization: String,
+    pub busiest_period: String,
+    pub busiest_period_commits: i32,
+    pub active_span: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CommitterStats {
     pub total_commits: i64,
     pub total_modules: usize,
@@ -48,6 +73,42 @@ pub struct CommitterStats {
     pub top_repos: Vec<CommitterRepoStat>,
     pub global_rank: Option<i64>,
     pub total_committers: Option<i64>,
+    pub fun_facts: Option<CommitterFunFacts>,
+}
+
+fn build_fun_facts(conn: &mut SqliteConnection, name: &str) -> Option<CommitterFunFacts> {
+    let periods = models::module_committer_period::get_activity_by_committer_name(conn, name);
+    let first = periods.first()?;
+    let last = periods.last()?;
+
+    let busiest = periods.iter().max_by_key(|p| p.commits)?;
+
+    let months_active = (last.year - first.year) * 12 + (last.month - first.month);
+    let (years, months) = (months_active / 12, months_active % 12);
+    let active_span = match (years, months) {
+        (0, 0) => "less than a month".to_string(),
+        (0, m) => format!("{m} month{}", if m != 1 { "s" } else { "" }),
+        (y, 0) => format!("{y} year{}", if y != 1 { "s" } else { "" }),
+        (y, m) => format!(
+            "{y} year{}, {m} month{}",
+            if y != 1 { "s" } else { "" },
+            if m != 1 { "s" } else { "" }
+        ),
+    };
+
+    Some(CommitterFunFacts {
+        first_seen: month_year_label(first.year, first.month),
+        first_module_name: first.name.clone(),
+        first_module_technical_name: first.technical_name.clone(),
+        first_module_organization: first.organization.clone(),
+        last_seen: month_year_label(last.year, last.month),
+        last_module_name: last.name.clone(),
+        last_module_technical_name: last.technical_name.clone(),
+        last_module_organization: last.organization.clone(),
+        busiest_period: month_year_label(busiest.year, busiest.month),
+        busiest_period_commits: busiest.commits,
+        active_span,
+    })
 }
 
 fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterStats {
@@ -109,9 +170,10 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
         })
         .collect();
     top_repos.sort_by_key(|r| std::cmp::Reverse(r.commits));
-    top_repos.truncate(3);
+    top_repos.truncate(5);
 
     let rank_info = models::committer::get_global_rank_by_name(conn, name);
+    let fun_facts = build_fun_facts(conn, name);
 
     CommitterStats {
         total_commits,
@@ -124,6 +186,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
         top_repos,
         global_rank: rank_info.as_ref().map(|r| r.rank),
         total_committers: rank_info.as_ref().map(|r| r.total_committers),
+        fun_facts,
     }
 }
 

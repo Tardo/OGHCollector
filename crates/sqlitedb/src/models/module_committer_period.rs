@@ -66,6 +66,45 @@ pub fn replace_for_committer(
     Ok(())
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct PeriodActivity {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub organization: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub year: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub month: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub commits: i32,
+}
+
+/// Per-(year, month) activity for a committer, joined with the module touched
+/// that period. Ordered chronologically so callers can take the first/last
+/// row for "first module touched"/"last seen" trivia.
+pub fn get_activity_by_committer_name(
+    conn: &mut SqliteConnection,
+    committer_name: &str,
+) -> Vec<PeriodActivity> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, mod.name, gh_org.name as organization, \
+         mcp.year as year, mcp.month as month, mcp.commits as commits \
+         FROM module_committer_period as mcp \
+         INNER JOIN committer as com ON mcp.committer_id = com.id \
+         INNER JOIN module as mod ON mcp.module_id = mod.id \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         WHERE com.name = ? \
+         ORDER BY mcp.year ASC, mcp.month ASC",
+    )
+    .bind::<diesel::sql_types::Text, _>(committer_name)
+    .load::<PeriodActivity>(conn)
+    .expect("DB error in module_committer_period::get_activity_by_committer_name")
+}
+
 // Bots/automation accounts excluded so rankings reflect human contributors
 // (kept in sync with committer::rank_global's exclusion list).
 const BOT_COMMITTERS: &str = "'Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci'";
