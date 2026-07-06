@@ -32,6 +32,8 @@ pub struct DependencyModuleOSVInfo {
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub module_technical_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
+    pub org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub osv_id: String,
@@ -73,11 +75,13 @@ fn get_by_dep_mod_id_osv_id_impl(
 pub fn get_osv_info(conn: &mut SqliteConnection) -> Vec<DependencyModuleOSVInfo> {
     diesel::sql_query(
         "SELECT mod.version_odoo, mod.name as module_name, mod.technical_name as module_technical_name, \
-         dep.name, dep_o.osv_id, dep_o.details, dep_o.fixed_in \
+         org.name as org_name, dep.name, dep_o.osv_id, dep_o.details, dep_o.fixed_in \
          FROM dependency_osv as dep_o \
          INNER JOIN dependency_module as dep_mod ON dep_mod.id = dep_o.dependency_module_id \
          INNER JOIN dependency as dep ON dep.id = dep_mod.dependency_id \
-         INNER JOIN module as mod ON mod.id = dep_mod.module_id",
+         INNER JOIN module as mod ON mod.id = dep_mod.module_id \
+         INNER JOIN gh_repository as repo ON repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as org ON org.id = repo.gh_organization_id",
     )
     .load::<DependencyModuleOSVInfo>(conn)
     .expect("DB error in dependency_osv::get_osv_info")
