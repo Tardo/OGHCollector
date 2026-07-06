@@ -541,6 +541,13 @@ impl OGHCollectorAnalyzer {
         Ok(committers)
     }
 
+    /// Best-effort read of `<module>/readme/DESCRIPTION.md` - not every module has one.
+    fn read_description_md(module_path: &std::path::Path) -> Option<String> {
+        let text = fs::read_to_string(module_path.join("readme").join("DESCRIPTION.md")).ok()?;
+        let text = text.trim();
+        (!text.is_empty()).then(|| text.to_string())
+    }
+
     fn read_manifest(
         &self,
         org_name: &str,
@@ -559,7 +566,9 @@ impl OGHCollectorAnalyzer {
             } else {
                 String::new()
             };
-            // description
+            // description - readme/DESCRIPTION.md (OCA's rendered readme fragment) wins
+            // over the manifest's `description` key when present, since the manifest
+            // value is often stale or just a placeholder for the generated readme.
             let description_opt = manifest.get_item("description");
             let description: String = if let Some(description_value) = description_opt {
                 description_value
@@ -568,6 +577,10 @@ impl OGHCollectorAnalyzer {
             } else {
                 String::new()
             };
+            let description = std::path::Path::new(manifest_path)
+                .parent()
+                .and_then(Self::read_description_md)
+                .unwrap_or(description);
             // author
             let author_opt = manifest.get_item("author");
             let author: String = if let Some(author_value) = author_opt {
@@ -830,6 +843,33 @@ impl OGHCollectorAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_description_md() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "read_description_md"
+        ));
+        fs::create_dir_all(dir.join("readme")).unwrap();
+
+        assert_eq!(OGHCollectorAnalyzer::read_description_md(&dir), None);
+
+        fs::write(
+            dir.join("readme").join("DESCRIPTION.md"),
+            "  Hello module.  \n",
+        )
+        .unwrap();
+        assert_eq!(
+            OGHCollectorAnalyzer::read_description_md(&dir),
+            Some("Hello module.".to_string())
+        );
+
+        fs::write(dir.join("readme").join("DESCRIPTION.md"), "   \n").unwrap();
+        assert_eq!(OGHCollectorAnalyzer::read_description_md(&dir), None);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     // Exercises the full runtime seam: analyze_module_source -> PyO3-embedded
     // Python -> JSON -> serde deserialization into the DTOs. The standalone
