@@ -1,9 +1,10 @@
 // Copyright 2025 Alexandre D. Díaz
 #sigma_atlas_mod_dep_control {
-    margin-top: 10px;
-    font-size: 2em;
     background-color: transparent;
+    color: var(--bs-body-color);
     border: 0;
+    font-size: 1.5em;
+    cursor: pointer;
 }
 
 #sigma_atlas_mod_dep_graph {
@@ -12,16 +13,16 @@
     display: block;
     position: relative;
 }
-    
+
 #sigma_atlas_mod_dep_search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6em;
     top: 80px;
     right: 15px;
     position: absolute;
     z-index: 2;
-}
-
-#sigma_atlas_mod_dep_search_input {
-    width: 250px;
 }
 
 #sigma_atlas_mod_dep_graph_loading_msg {
@@ -36,8 +37,21 @@
 }
 
 .search_input {
-    border: 1px solid black;
-    padding: 5px;
-
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+    padding: 0.35em 0.6em;
+    font: inherit;
+    font-size: 0.9rem;
     outline: none;
+
+    &:focus-visible {
+        outline: 2px solid var(--bs-primary);
+        outline-offset: 1px;
+    }
+}
+
+#sigma_atlas_mod_dep_search_input {
+    width: 220px;
 }

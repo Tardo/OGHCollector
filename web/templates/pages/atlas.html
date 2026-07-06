@@ -12,14 +12,10 @@
 <template id="template-mirlo-atlas">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/atlas.css" as="style" />
     <div id="sigma_atlas_mod_dep_search">
-        <div>
-            <input list="sigma_atlas_mod_dep_search_dependencies" class="search_input" id="sigma_atlas_mod_dep_search_input" placeholder="Search by dependency name"></select>
-            <datalist id="sigma_atlas_mod_dep_search_dependencies"></datalist>
-            <select class="search_input" id="sigma_atlas_mod_dep_search_select_ver"></select>
-        </div>
-        <div style="text-align: right">
-            <button type="button" id="sigma_atlas_mod_dep_control">⏹️</button>
-        </div>
+        <input list="sigma_atlas_mod_dep_search_dependencies" class="search_input" id="sigma_atlas_mod_dep_search_input" placeholder="Search by dependency name">
+        <datalist id="sigma_atlas_mod_dep_search_dependencies"></datalist>
+        <select class="search_input" id="sigma_atlas_mod_dep_search_select_ver"></select>
+        <button type="button" id="sigma_atlas_mod_dep_control">⏹️</button>
     </div>
     <span id="sigma_atlas_mod_dep_graph_loading_msg">LOADING...</span>
     <div id="sigma_atlas_mod_dep_graph"></div>
