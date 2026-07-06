@@ -1,0 +1,195 @@
+// Copyright 2026 Alexandre D. Díaz
+:host {
+    --year-h: 2.4rem;
+    --month-h: 2rem;
+    --day-h: 1.7rem;
+}
+
+#toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75em;
+    margin-bottom: 1.25em;
+    padding: 0.75em 1em;
+    background-color: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+}
+
+.toolbar-range,
+.toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6em;
+}
+
+.toolbar-range label {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--bs-secondary-color);
+}
+
+input[type='date'] {
+    color-scheme: dark;
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+    padding: 0.35em 0.6em;
+    font: inherit;
+    font-size: 0.9rem;
+}
+
+input[type='date']:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 1px;
+}
+
+#toolbar button {
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 999px;
+    padding: 0.35em 0.9em;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+        border-color: var(--bs-primary);
+        color: var(--bs-primary);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--bs-primary);
+        outline-offset: 1px;
+    }
+}
+
+#clear_filter {
+    background-color: transparent;
+    border-color: transparent;
+    color: var(--bs-secondary-color);
+    text-decoration: underline;
+    padding: 0.35em 0.4em;
+
+    &:hover {
+        border-color: transparent;
+        color: var(--bs-body-color);
+    }
+}
+
+.year-header,
+.month-header,
+.day-header {
+    position: sticky;
+    display: flex;
+    align-items: center;
+    padding: 0 0.6em;
+    box-sizing: border-box;
+}
+
+.year-header {
+    top: 0;
+    z-index: 3;
+    height: var(--year-h);
+    background-color: var(--bs-body-bg);
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+
+.month-header {
+    top: var(--year-h);
+    z-index: 2;
+    height: var(--month-h);
+    background-color: var(--bs-secondary-bg);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.day-header {
+    top: calc(var(--year-h) + var(--month-h));
+    z-index: 1;
+    height: var(--day-h);
+    background-color: var(--bs-tertiary-bg);
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+}
+
+.log-row {
+    display: grid;
+    grid-template-columns: 6em 8em 1fr;
+    gap: 0.6em;
+    padding: 0.4em 0.6em;
+    border-bottom: 1px solid var(--bs-border-color);
+
+    &:hover {
+        background-color: var(--bs-tertiary-bg);
+    }
+}
+
+.log-time {
+    white-space: nowrap;
+}
+
+.log-type-badge {
+    display: inline-block;
+    align-self: start;
+    padding: 0.15em 0.5em;
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-secondary-color);
+    text-align: center;
+}
+
+.log-row.log-severity-success {
+    border-left: 3px solid var(--bs-success);
+}
+.log-row.log-severity-warning {
+    border-left: 3px solid var(--bs-warning);
+}
+.log-row.log-severity-error {
+    border-left: 3px solid var(--bs-danger);
+}
+.log-row.log-severity-error .log-message {
+    color: var(--bs-danger-text-emphasis);
+    font-weight: bold;
+}
+.log-row.log-severity-info {
+    border-left: 3px solid var(--bs-info);
+}
+
+// Kept for the sake of rows written before the severity-based styling above
+// (message stored as raw HTML, event.is_html = true).
+.dep_name, .module_tech_name, .author_name, .maintainer_name {
+    font-weight: bold;
+}
+.dep_name {
+    color: #54a390;
+}
+.module_tech_name {
+    color: #ffef7e;
+}
+.problem {
+    color: #ff6d6d;
+    font-weight: bold;
+}
+
+#status {
+    text-align: center;
+    color: var(--bs-secondary-color);
+    padding: 1em 0;
+}

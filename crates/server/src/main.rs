@@ -99,6 +99,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::committers::route)
             .service(routes::api_doc::route)
             .service(routes::logs::route)
+            .service(routes::logs::route_data)
             .service(routes::osv::route)
             .service(routes::doodba_tools::route_doodba_converter)
             .service(routes::doodba_tools::route_doodba_converter_addons)

@@ -349,6 +349,64 @@ mod tests {
         assert!(!event.is_html);
     }
 
+    #[test]
+    fn test_system_event_get_messages_page() {
+        let mut conn = setup_db();
+        for i in 0..5 {
+            super::system_event::add(&mut conn, "internal", "info", &format!("event {i}")).unwrap();
+        }
+
+        // Cursor pagination: first page newest-first, second page picks up where it left off.
+        let page1 = super::system_event::get_messages_page(&mut conn, i64::MAX, None, None, 2);
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].message, "event 4");
+        assert_eq!(page1[1].message, "event 3");
+
+        let page2 = super::system_event::get_messages_page(&mut conn, page1[1].id, None, None, 2);
+        assert_eq!(page2.len(), 2);
+        assert_eq!(page2[0].message, "event 2");
+        assert_eq!(page2[1].message, "event 1");
+
+        // Date filter: today's range includes everything, a past range excludes it all.
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let in_range = super::system_event::get_messages_page(
+            &mut conn,
+            i64::MAX,
+            Some(today.as_str()),
+            Some(today.as_str()),
+            10,
+        );
+        assert_eq!(in_range.len(), 5);
+
+        let out_of_range = super::system_event::get_messages_page(
+            &mut conn,
+            i64::MAX,
+            Some("2000-01-01"),
+            Some("2000-01-01"),
+            10,
+        );
+        assert!(out_of_range.is_empty());
+
+        // One-sided ranges: only a lower or only an upper bound.
+        let from_only = super::system_event::get_messages_page(
+            &mut conn,
+            i64::MAX,
+            Some(today.as_str()),
+            None,
+            10,
+        );
+        assert_eq!(from_only.len(), 5);
+
+        let to_only_past = super::system_event::get_messages_page(
+            &mut conn,
+            i64::MAX,
+            None,
+            Some("2000-01-01"),
+            10,
+        );
+        assert!(to_only_past.is_empty());
+    }
+
     // Event types used to be a closed, pre-seeded set: logging an unseeded type
     // panicked (see system_event_type::get_by_name/expect before the fix). Now
     // a brand-new type name is created on first use, so introducing a new kind

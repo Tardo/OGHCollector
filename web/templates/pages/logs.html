@@ -10,18 +10,26 @@
 {% block content %}
 {{ super() }}
 
-<h2>🗓️ Monthly Logs (last 1000 events)</h2>
-<div id="logs">
-    <table class="table table-striped table-striped-columns table-hover">
-        <tbody>
-            {% for event in logs %}
-            <tr class="log-severity-{{ event.severity }}">
-                <td class="col-2"><span>{{ event.date }}</span></td>
-                <td class="d-none d-lg-table-cell text-center"><span class="log-type-badge">{{ event.event_type_name }}</span></td>
-                <td>{% if event.is_html %}{{ event.message | safe }}{% else %}{{ event.message }}{% endif %}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+<h2>🗓️ System Logs</h2>
+
+<template id="template-mirlo-logs-viewer">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/logs-viewer.css" as="style" />
+    <div id="toolbar">
+        <div class="toolbar-range">
+            <label>From <input type="date" id="date_from" /></label>
+            <label>To <input type="date" id="date_to" /></label>
+            <button type="button" id="clear_filter">Clear</button>
+        </div>
+        <div class="toolbar-actions">
+            <button type="button" id="quick_today">Today</button>
+            <button type="button" id="quick_month">This Month</button>
+            <button type="button" id="quick_year">This Year</button>
+        </div>
+    </div>
+    <div id="rows"></div>
+    <div id="sentinel"></div>
+    <div id="status"></div>
+</template>
+
+<mirlo-logs-viewer></mirlo-logs-viewer>
 {% endblock %}

@@ -18,6 +18,8 @@ const SEVERITY_ERROR: &str = "error";
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub id: i64,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub message: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
@@ -57,18 +59,59 @@ struct NewSystemEvent<'a> {
     is_html: bool,
 }
 
-pub fn get_messages_current_month(conn: &mut SqliteConnection) -> Vec<Model> {
-    diesel::sql_query(
-        "SELECT se.message, se.date, se.event_type_id, syset.name as event_type_name, \
+/// Fetches one page of events, newest-first, for infinite scroll.
+/// `before_id` is the cursor (pass `i64::MAX` for the first page; then the
+/// `id` of the last row received). `date_from`/`date_to` are an inclusive
+/// `YYYY-MM-DD` day range, either end independently optional (open-ended).
+pub fn get_messages_page(
+    conn: &mut SqliteConnection,
+    before_id: i64,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+    limit: i64,
+) -> Vec<Model> {
+    const SELECT: &str =
+        "SELECT se.id, se.message, se.date, se.event_type_id, syset.name as event_type_name, \
          se.severity, se.is_html \
          FROM system_event as se \
-         INNER JOIN system_event_type as syset ON syset.id = se.event_type_id \
-         WHERE date(se.date) >= date('now', 'start of month') \
-           AND date(se.date) <= date('now', 'start of month', '+1 month', '-1 day') \
-         ORDER BY se.date DESC, se.id DESC LIMIT 1000",
-    )
-    .load::<Model>(conn)
-    .expect("DB error in system_event::get_messages_current_month")
+         INNER JOIN system_event_type as syset ON syset.id = se.event_type_id ";
+    const ERR: &str = "DB error in system_event::get_messages_page";
+
+    match (date_from, date_to) {
+        (Some(from), Some(to)) => diesel::sql_query(format!(
+            "{SELECT}WHERE se.id < ? AND date(se.date) >= date(?) AND date(se.date) <= date(?) \
+             ORDER BY se.id DESC LIMIT ?"
+        ))
+        .bind::<diesel::sql_types::BigInt, _>(before_id)
+        .bind::<diesel::sql_types::Text, _>(from)
+        .bind::<diesel::sql_types::Text, _>(to)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
+        .load::<Model>(conn)
+        .expect(ERR),
+        (Some(from), None) => diesel::sql_query(format!(
+            "{SELECT}WHERE se.id < ? AND date(se.date) >= date(?) ORDER BY se.id DESC LIMIT ?"
+        ))
+        .bind::<diesel::sql_types::BigInt, _>(before_id)
+        .bind::<diesel::sql_types::Text, _>(from)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
+        .load::<Model>(conn)
+        .expect(ERR),
+        (None, Some(to)) => diesel::sql_query(format!(
+            "{SELECT}WHERE se.id < ? AND date(se.date) <= date(?) ORDER BY se.id DESC LIMIT ?"
+        ))
+        .bind::<diesel::sql_types::BigInt, _>(before_id)
+        .bind::<diesel::sql_types::Text, _>(to)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
+        .load::<Model>(conn)
+        .expect(ERR),
+        (None, None) => diesel::sql_query(format!(
+            "{SELECT}WHERE se.id < ? ORDER BY se.id DESC LIMIT ?"
+        ))
+        .bind::<diesel::sql_types::BigInt, _>(before_id)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
+        .load::<Model>(conn)
+        .expect(ERR),
+    }
 }
 
 /// Records a plain-text event. `event_type_name` is created on first use (see
@@ -93,8 +136,10 @@ pub fn add(
             is_html: false,
         })
         .execute(conn)?;
+    let id = crate::models::last_insert_rowid(conn);
 
     Ok(Model {
+        id,
         message: message.to_string(),
         date,
         event_type_id: event_type.id,
