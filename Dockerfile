@@ -33,6 +33,7 @@ pnpm run build:prod
 cp ./target/release/server /usr/local/bin/server
 cp ./target/release/collector /usr/local/bin/collector
 cp ./target/release/mcp /usr/local/bin/mcp
+cp ./target/release/migrate /usr/local/bin/migrate
 cp -r ./static /usr/local/bin/static
 cp -r ./web /usr/local/bin/web
 EOF
@@ -56,6 +57,7 @@ COPY --from=build /usr/local/bin/diesel /usr/local/bin/diesel
 COPY --from=build /usr/local/bin/server /usr/local/bin/oghserver
 COPY --from=build /usr/local/bin/collector /usr/local/bin/oghcollector
 COPY --from=build /usr/local/bin/mcp /usr/local/bin/oghmcp
+COPY --from=build /usr/local/bin/migrate /usr/local/bin/oghmigrate
 COPY --from=build /usr/local/bin/static /app/static/
 COPY --from=build /usr/local/bin/web/templates /app/web/templates
 COPY ./files/pip_names.txt /app/files/pip_names.txt
@@ -64,7 +66,7 @@ COPY ./docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN set -ex; \
     mkdir /app/data; \
     chown -R appuser:appuser /app; \
-    chmod 755 /usr/local/bin/oghserver /usr/local/bin/oghcollector /usr/local/bin/oghmcp /usr/local/bin/diesel /usr/local/bin/docker-entrypoint.sh;
+    chmod 755 /usr/local/bin/oghserver /usr/local/bin/oghcollector /usr/local/bin/oghmcp /usr/local/bin/oghmigrate /usr/local/bin/diesel /usr/local/bin/docker-entrypoint.sh;
 
 USER appuser
 EXPOSE 8080

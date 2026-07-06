@@ -3347,6 +3347,7 @@ dependencies = [
  "chrono",
  "diesel",
  "diesel_migrations",
+ "named-lock",
  "oghutils",
  "serde",
  "serde_json",
