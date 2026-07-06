@@ -29,6 +29,42 @@ pub struct CommitterModuleRow {
     pub organization: String,
     pub repository: String,
     pub commits: i32,
+    pub insertions: i32,
+    pub deletions: i32,
+}
+
+/// Rough "how much text is that" fun fact from total lines added. Both
+/// constants are ballpark estimates (source lines aren't prose), good enough
+/// for a trivia line, not a serious measurement.
+/// ponytail: naive heuristic, revisit if this should ever be exact.
+fn quijote_fun_fact(total_insertions: i64) -> Option<String> {
+    if total_insertions <= 0 {
+        return None;
+    }
+    const AVG_CHARS_PER_LINE: f64 = 45.0;
+    const QUIJOTE_CHARS: f64 = 2_000_000.0;
+    const PAGE_CHARS: f64 = 2_000.0;
+
+    let total_chars = total_insertions as f64 * AVG_CHARS_PER_LINE;
+    let quijotes = total_chars / QUIJOTE_CHARS;
+    let pages = total_chars / PAGE_CHARS;
+
+    Some(if pages < 1.0 {
+        format!("{total_chars:.0} characters written so far - not quite a full book page yet.")
+    } else if quijotes < 0.1 {
+        format!("About {pages:.0} pages written - roughly a short story's worth of text.")
+    } else if quijotes < 1.0 {
+        format!(
+            "Enough text for {:.0}% of a Don Quixote ({pages:.0} pages so far).",
+            quijotes * 100.0
+        )
+    } else if quijotes < 10.0 {
+        format!("Enough text to write {quijotes:.1} copies of Don Quixote.")
+    } else {
+        format!(
+            "Enough text for {quijotes:.0} copies of Don Quixote - practically a library shelf."
+        )
+    })
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -67,6 +103,8 @@ pub struct CommitterStats {
     pub total_modules: usize,
     pub total_repositories: usize,
     pub total_organizations: usize,
+    pub total_insertions: i64,
+    pub total_deletions: i64,
     pub versions: Vec<CommitterVersionGroup>,
     pub best_version: Option<String>,
     pub best_version_commits: i64,
@@ -74,6 +112,7 @@ pub struct CommitterStats {
     pub global_rank: Option<i64>,
     pub total_committers: Option<i64>,
     pub fun_facts: Option<CommitterFunFacts>,
+    pub quijote_fun_fact: Option<String>,
 }
 
 fn build_fun_facts(conn: &mut SqliteConnection, name: &str) -> Option<CommitterFunFacts> {
@@ -120,9 +159,13 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
     let mut repos_seen: HashSet<(String, String)> = HashSet::new();
     let mut orgs_seen: HashSet<String> = HashSet::new();
     let mut total_commits: i64 = 0;
+    let mut total_insertions: i64 = 0;
+    let mut total_deletions: i64 = 0;
 
     for row in &rows {
         total_commits += row.commits as i64;
+        total_insertions += row.insertions as i64;
+        total_deletions += row.deletions as i64;
         modules_seen.insert(row.technical_name.clone());
         repos_seen.insert((row.organization.clone(), row.repository.clone()));
         orgs_seen.insert(row.organization.clone());
@@ -142,6 +185,8 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
             organization: row.organization.clone(),
             repository: row.repository.clone(),
             commits: row.commits,
+            insertions: row.insertions,
+            deletions: row.deletions,
         });
 
         *repo_totals
@@ -180,6 +225,8 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
         total_modules: modules_seen.len(),
         total_repositories: repos_seen.len(),
         total_organizations: orgs_seen.len(),
+        total_insertions,
+        total_deletions,
         versions,
         best_version,
         best_version_commits,
@@ -187,6 +234,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
         global_rank: rank_info.as_ref().map(|r| r.rank),
         total_committers: rank_info.as_ref().map(|r| r.total_committers),
         fun_facts,
+        quijote_fun_fact: quijote_fun_fact(total_insertions),
     }
 }
 

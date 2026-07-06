@@ -262,6 +262,8 @@ pub struct CommitterActivityEntry {
     pub organization: String,
     pub repository: String,
     pub commits: i32,
+    pub insertions: i32,
+    pub deletions: i32,
 }
 
 fn build_search_results(rows: Vec<models::module::ModuleGenericInfo>) -> Vec<ModuleSearchResult> {
@@ -988,7 +990,8 @@ impl OghMcp {
     #[tool(
         description = "Given an exact committer (git author) name, list every module they've \
                         committed to across all Odoo versions and repositories, with commit \
-                        counts, ordered by Odoo version then commit count. Use this to check who \
+                        counts and lines inserted/deleted, ordered by Odoo version then commit \
+                        count. Use this to check who \
                         is actually maintaining a module in practice (as opposed to the nominal \
                         manifest authors/maintainers) - e.g. before recommending a module for a \
                         pack, confirm its top committer is still active elsewhere. Get real names \
@@ -1013,6 +1016,8 @@ impl OghMcp {
                     organization: a.organization,
                     repository: a.repository,
                     commits: a.commits,
+                    insertions: a.insertions,
+                    deletions: a.deletions,
                 })
                 .collect::<Vec<_>>()
         })

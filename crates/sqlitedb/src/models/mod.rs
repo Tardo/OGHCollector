@@ -671,7 +671,14 @@ mod tests {
 
         let make_info = |periods: HashMap<(i32, i32), u32>, total: u32| {
             let mut committers = HashMap::new();
-            committers.insert("Dave".to_string(), CommitterActivity { total, periods });
+            committers.insert(
+                "Dave".to_string(),
+                CommitterActivity {
+                    total,
+                    periods,
+                    ..Default::default()
+                },
+            );
             super::module::ManifestInfo {
                 technical_name: "period_test".to_string(),
                 version_odoo: 16,

@@ -73,6 +73,8 @@ impl Model {
 #[derive(Clone, Default)]
 pub struct CommitterActivity {
     pub total: u32,
+    pub insertions: u32,
+    pub deletions: u32,
     pub periods: HashMap<(i32, i32), u32>,
 }
 
@@ -794,8 +796,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             module_maintainer::add(conn, &new_module.id, item)?;
         }
         for (com_name, activity) in &module_info.committers {
-            let mc =
-                module_committer::add(conn, &new_module.id, com_name.as_str(), &activity.total)?;
+            let mc = module_committer::add(conn, &new_module.id, com_name.as_str(), activity)?;
             module_committer_period::replace_for_committer(
                 conn,
                 &new_module.id,
@@ -820,12 +821,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
 
     // Update committers
     for (com_name, activity) in &module_info.committers {
-        let mc = module_committer::add(
-            conn,
-            &existing_module.id,
-            com_name.as_str(),
-            &activity.total,
-        )?;
+        let mc = module_committer::add(conn, &existing_module.id, com_name.as_str(), activity)?;
         module_committer_period::replace_for_committer(
             conn,
             &existing_module.id,

@@ -115,6 +115,8 @@ diesel::table! {
         module_id -> BigInt,
         committer_id -> BigInt,
         commits -> Integer,
+        insertions -> Integer,
+        deletions -> Integer,
     }
 }
 

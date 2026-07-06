@@ -65,7 +65,30 @@
             <div>Organizations</div>
         </div>
     </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-success-subtle p-3 text-center">
+            <div class="fs-3">+{{ stats.total_insertions }}</div>
+            <div>Lines Added</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-6 pb-3">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-danger-subtle p-3 text-center">
+            <div class="fs-3">-{{ stats.total_deletions }}</div>
+            <div>Lines Removed</div>
+        </div>
+    </div>
 </div>
+
+{% if stats.quijote_fun_fact %}
+<div class="row mb-3 gx-sm-5 user-select-none">
+    <div class="col-12">
+        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
+            <div class="committer-subtitle">Trivia</div>
+            <div class="fs-5">{{ stats.quijote_fun_fact }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-lg-6 col-12 pb-3">
@@ -159,6 +182,7 @@
                     <th>Module</th>
                     <th class="d-none d-lg-table-cell">Repository</th>
                     <th class="text-center">Commits</th>
+                    <th class="text-center d-none d-md-table-cell">Lines +/-</th>
                 </tr>
             </thead>
             <tbody>
@@ -167,6 +191,7 @@
                     <td><a href="/module/{{ module.organization }}/{{ module.technical_name }}">{{ module.name }}</a></td>
                     <td class="d-none d-lg-table-cell">{{ module.organization }}/{{ module.repository }}</td>
                     <td class="text-center">{{ module.commits }}</td>
+                    <td class="text-center d-none d-md-table-cell"><span class="text-success">+{{ module.insertions }}</span> <span class="text-danger">-{{ module.deletions }}</span></td>
                 </tr>
                 {% endfor %}
             </tbody>

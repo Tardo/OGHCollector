@@ -508,11 +508,16 @@ impl OGHCollectorAnalyzer {
         // %cs is the committer date in `YYYY-MM-DD` (no time/tz), so year/month can be
         // sliced directly. Kept on the same log line as %cn so the per-committer total
         // and the per-(year, month) breakdown always come from the same commit set.
+        // `--shortstat` adds one "N files changed, X insertions(+), Y deletions(-)"
+        // line after each commit (either half omitted when zero); since it never
+        // contains \x1f, the split_once branch below always skips it, so we only
+        // need a second pass to fold it into whichever committer we last saw.
         let output = cmd!(
             "git",
             "--no-pager",
             "log",
             &log_range,
+            "--shortstat",
             "--pretty=%cn%x1f%cs",
             "--",
             "."
@@ -522,21 +527,40 @@ impl OGHCollectorAnalyzer {
         .read()
         .unwrap_or_else(|_| String::new());
 
+        let shortstat_re = Regex::new(
+            r"^\s*\d+ files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?\s*$",
+        )
+        .unwrap();
+
         let mut committers: HashMap<String, CommitterActivity> = HashMap::new();
+        let mut current_committer: Option<String> = None;
         for line in output.lines() {
-            let Some((name, date)) = line.split_once('\u{1f}') else {
-                continue;
-            };
-            if date.len() < 7 {
+            if let Some((name, date)) = line.split_once('\u{1f}') {
+                current_committer = None;
+                if date.len() < 7 {
+                    continue;
+                }
+                let (Ok(year), Ok(month)) = (date[0..4].parse::<i32>(), date[5..7].parse::<i32>())
+                else {
+                    continue;
+                };
+                let activity = committers.entry(name.to_string()).or_default();
+                activity.total += 1;
+                *activity.periods.entry((year, month)).or_insert(0) += 1;
+                current_committer = Some(name.to_string());
                 continue;
             }
-            let (Ok(year), Ok(month)) = (date[0..4].parse::<i32>(), date[5..7].parse::<i32>())
-            else {
-                continue;
-            };
-            let activity = committers.entry(name.to_string()).or_default();
-            activity.total += 1;
-            *activity.periods.entry((year, month)).or_insert(0) += 1;
+            if let (Some(name), Some(caps)) = (&current_committer, shortstat_re.captures(line)) {
+                let activity = committers.entry(name.clone()).or_default();
+                activity.insertions += caps
+                    .get(1)
+                    .and_then(|m| m.as_str().parse::<u32>().ok())
+                    .unwrap_or(0);
+                activity.deletions += caps
+                    .get(2)
+                    .and_then(|m| m.as_str().parse::<u32>().ok())
+                    .unwrap_or(0);
+            }
         }
         Ok(committers)
     }
@@ -1055,5 +1079,112 @@ class ResPartner(models.Model):
                 "api.constrains('x_foo', 'x_label')".to_string(),
             ]
         );
+    }
+
+    // Exercises get_git_committers end to end against a real repo: two fake
+    // `origin/X.Y` refs bound the log range, and two authors each contribute a
+    // commit inside it, so this proves the --shortstat parsing added alongside
+    // the existing %cn/%cs line-splitting (insertions/deletions folded onto
+    // the last-seen committer) attributes lines to the right person.
+    #[test]
+    fn test_get_git_committers_counts_lines_per_author() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "get_git_committers"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let git = |args: &[&str]| {
+            cmd(
+                "git",
+                args.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
+            )
+            .dir(&dir)
+            .stdin_null()
+            .stdout_null()
+            .stderr_null()
+            .run()
+            .unwrap();
+        };
+
+        git(&["init", "-q", "-b", "work"]);
+        fs::write(dir.join("file.txt"), "1\n2\n3\n4\n5\n").unwrap();
+        git(&["add", "-A"]);
+        git(&[
+            "-c",
+            "user.name=Alice",
+            "-c",
+            "user.email=alice@test.com",
+            "commit",
+            "-q",
+            "-m",
+            "base",
+        ]);
+        let base_hash = cmd!("git", "rev-parse", "HEAD")
+            .dir(&dir)
+            .read()
+            .unwrap()
+            .trim()
+            .to_string();
+        git(&["update-ref", "refs/remotes/origin/15.0", &base_hash]);
+
+        // Bob: 1 deletion (line "3") + 3 insertions.
+        fs::write(dir.join("file.txt"), "1\n2\n4\n5\na\nb\nc\n").unwrap();
+        git(&["add", "-A"]);
+        git(&[
+            "-c",
+            "user.name=Bob",
+            "-c",
+            "user.email=bob@test.com",
+            "commit",
+            "-q",
+            "-m",
+            "bob change",
+        ]);
+
+        // Alice again: 10 insertions, 0 deletions.
+        let mut content = fs::read_to_string(dir.join("file.txt")).unwrap();
+        for n in 0..10 {
+            content.push_str(&format!("extra{n}\n"));
+        }
+        fs::write(dir.join("file.txt"), content).unwrap();
+        git(&["add", "-A"]);
+        git(&[
+            "-c",
+            "user.name=Alice",
+            "-c",
+            "user.email=alice@test.com",
+            "commit",
+            "-q",
+            "-m",
+            "alice change 2",
+        ]);
+        let head_hash = cmd!("git", "rev-parse", "HEAD")
+            .dir(&dir)
+            .read()
+            .unwrap()
+            .trim()
+            .to_string();
+        git(&["update-ref", "refs/remotes/origin/16.0", &head_hash]);
+
+        // version_odoo is Odoo-version*10 (see OdooVersion::new), so "16.0" is 160.
+        let analyzer = OGHCollectorAnalyzer::new(&160u8);
+        let committers = analyzer.get_git_committers(&dir).unwrap();
+
+        let bob = committers.get("Bob").expect("Bob should have committed");
+        assert_eq!(bob.total, 1);
+        assert_eq!(bob.insertions, 3);
+        assert_eq!(bob.deletions, 1);
+
+        let alice = committers
+            .get("Alice")
+            .expect("Alice should have committed");
+        assert_eq!(alice.total, 1, "base commit is outside origin/15.0..HEAD");
+        assert_eq!(alice.insertions, 10);
+        assert_eq!(alice.deletions, 0);
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

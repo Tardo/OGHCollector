@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::module_committer;
 
+use super::module::CommitterActivity;
 use super::{committer, module, system_event};
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -14,6 +15,8 @@ pub struct Model {
     pub module_id: i64,
     pub committer_id: i64,
     pub commits: i32,
+    pub insertions: i32,
+    pub deletions: i32,
 }
 
 #[derive(Insertable)]
@@ -22,6 +25,8 @@ struct NewModuleCommitter {
     module_id: i64,
     committer_id: i64,
     commits: i32,
+    insertions: i32,
+    deletions: i32,
 }
 
 pub fn get_by_id(
@@ -84,6 +89,10 @@ pub struct CommitterModuleActivity {
     pub repository: String,
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub commits: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub insertions: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub deletions: i32,
 }
 
 pub fn get_activity_by_committer_name(
@@ -92,7 +101,8 @@ pub fn get_activity_by_committer_name(
 ) -> Vec<CommitterModuleActivity> {
     diesel::sql_query(
         "SELECT mod.technical_name, mod.name, mod.version_odoo, \
-         gh_org.name as organization, gh_repo.name as repository, mod_com.commits as commits \
+         gh_org.name as organization, gh_repo.name as repository, mod_com.commits as commits, \
+         mod_com.insertions as insertions, mod_com.deletions as deletions \
          FROM module_committer as mod_com \
          INNER JOIN committer as com ON mod_com.committer_id = com.id \
          INNER JOIN module as mod ON mod_com.module_id = mod.id \
@@ -110,13 +120,18 @@ pub fn add(
     conn: &mut SqliteConnection,
     module_id: &i64,
     name: &str,
-    commits: &u32,
+    activity: &CommitterActivity,
 ) -> QueryResult<Model> {
     let com = committer::add(conn, name)?;
-    let commits_i32 = *commits as i32;
+    let commits_i32 = activity.total as i32;
+    let insertions_i32 = activity.insertions as i32;
+    let deletions_i32 = activity.deletions as i32;
 
     if let Some(existing) = get_by_id(conn, module_id, &com.id) {
-        if existing.commits != commits_i32 {
+        if existing.commits != commits_i32
+            || existing.insertions != insertions_i32
+            || existing.deletions != deletions_i32
+        {
             diesel::update(
                 module_committer::table.filter(
                     module_committer::module_id
@@ -124,7 +139,11 @@ pub fn add(
                         .and(module_committer::committer_id.eq(com.id)),
                 ),
             )
-            .set(module_committer::commits.eq(commits_i32))
+            .set((
+                module_committer::commits.eq(commits_i32),
+                module_committer::insertions.eq(insertions_i32),
+                module_committer::deletions.eq(deletions_i32),
+            ))
             .execute(conn)?;
         }
         return Ok(Model {
@@ -132,6 +151,8 @@ pub fn add(
             module_id: existing.module_id,
             committer_id: existing.committer_id,
             commits: commits_i32,
+            insertions: insertions_i32,
+            deletions: deletions_i32,
         });
     }
 
@@ -140,6 +161,8 @@ pub fn add(
             module_id: *module_id,
             committer_id: com.id,
             commits: commits_i32,
+            insertions: insertions_i32,
+            deletions: deletions_i32,
         })
         .execute(conn)?;
     let new_id = crate::models::last_insert_rowid(conn);
@@ -156,5 +179,7 @@ pub fn add(
         module_id: *module_id,
         committer_id: com.id,
         commits: commits_i32,
+        insertions: insertions_i32,
+        deletions: deletions_i32,
     })
 }
