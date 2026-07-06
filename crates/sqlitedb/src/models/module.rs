@@ -135,6 +135,24 @@ pub struct ModuleGenericInfo {
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleCriteriaInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub category: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub installable: bool,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub application: bool,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub organization: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository: String,
+}
+
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleCountInfo {
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub version_odoo: i32,
@@ -488,6 +506,54 @@ pub fn get_generic_info_by_installable(
     .bind::<diesel::sql_types::Bool, _>(*installable)
     .load::<ModuleGenericInfo>(conn)
     .expect("DB error in module::get_generic_info_by_installable")
+}
+
+/// Cross-repository discovery by category / free-text term / reverse Odoo
+/// dependency (which modules depend on `depends_on`), unlike search_modules
+/// (technical_name only) or list_repository_modules (needs a known
+/// repository first). All filters are optional and combined with the
+/// `(? IS NULL OR ...)` idiom so this stays one query instead of the
+/// combinatorial set of hand-written variants used by get_generic_info*.
+#[allow(clippy::too_many_arguments)]
+pub fn search_by_criteria(
+    conn: &mut SqliteConnection,
+    version_odoo: &u8,
+    search_term: Option<&str>,
+    category: Option<&str>,
+    depends_on: Option<&str>,
+    limit: i64,
+) -> Vec<ModuleCriteriaInfo> {
+    let search_pattern = search_term.map(|s| format!("%{s}%"));
+    diesel::sql_query(
+        "SELECT mod.technical_name, mod.name, mod.category, mod.installable, mod.application, \
+         gh_org.name as organization, gh_repo.name as repository \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         WHERE mod.version_odoo = ? \
+           AND (? IS NULL OR mod.technical_name LIKE ? OR mod.name LIKE ? OR mod.description LIKE ?) \
+           AND (? IS NULL OR mod.category = ?) \
+           AND (? IS NULL OR mod.id IN ( \
+                 SELECT dep_mod.module_id FROM dependency_module as dep_mod \
+                 INNER JOIN dependency as dep ON dep.id = dep_mod.dependency_id \
+                 INNER JOIN dependency_type as dt ON dt.id = dep.dependency_type_id \
+                 WHERE dt.name = 'module' AND dep.name = ? \
+               )) \
+         ORDER BY mod.technical_name \
+         LIMIT ?",
+    )
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(search_pattern.clone())
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(search_pattern.clone())
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(search_pattern.clone())
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(search_pattern)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(category)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(category)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(depends_on)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(depends_on)
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .load::<ModuleCriteriaInfo>(conn)
+    .expect("DB error in module::search_by_criteria")
 }
 
 pub fn get_info(conn: &mut SqliteConnection, technical_name: &str) -> Vec<ModuleInfo> {

@@ -33,6 +33,35 @@ pub struct ModuleSearchResult {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListModulesByCriteriaParams {
+    /// Odoo version, e.g. "17.0".
+    pub odoo_version: String,
+    /// Substring matched against technical name, display name, or
+    /// description (SQL LIKE, case-sensitive).
+    pub search_term: Option<String>,
+    /// Exact manifest `category`, e.g. "Sales", "Accounting", "Localization".
+    pub category: Option<String>,
+    /// Technical name of another module; restricts results to modules that \
+    /// declare it as an Odoo dependency. Reverse lookup - answers "what \
+    /// depends on X" / "what would break if X were removed".
+    pub depends_on: Option<String>,
+    /// Max rows to return. Defaults to 50, capped at 200.
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleCriteriaResult {
+    pub technical_name: String,
+    pub name: String,
+    pub odoo_version: String,
+    pub category: String,
+    pub installable: bool,
+    pub application: bool,
+    pub organization: String,
+    pub repository: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetModuleParams {
     /// Module technical name, e.g. "sale_order_type".
     pub technical_name: String,
@@ -728,6 +757,51 @@ fn get_module_code_analysis_cached(
         .collect::<Vec<_>>()
 }
 
+#[cached(
+    type = "TimedSizedCache<String, Vec<ModuleCriteriaResult>>",
+    key = "String",
+    create = r#"
+        {
+            let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+        }
+    "#,
+    convert = r#"{ format!("{odoo_version}|{search_term:?}|{category:?}|{depends_on:?}|{limit}") }"#
+)]
+fn list_modules_by_criteria_cached(
+    pool: Pool,
+    odoo_version: String,
+    search_term: Option<String>,
+    category: Option<String>,
+    depends_on: Option<String>,
+    limit: i64,
+) -> Vec<ModuleCriteriaResult> {
+    let mut conn = pool
+        .get()
+        .expect("failed to get a DB connection from the pool");
+    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    models::module::search_by_criteria(
+        &mut conn,
+        &version_odoo,
+        search_term.as_deref(),
+        category.as_deref(),
+        depends_on.as_deref(),
+        limit,
+    )
+    .into_iter()
+    .map(|m| ModuleCriteriaResult {
+        technical_name: m.technical_name,
+        name: m.name,
+        odoo_version: odoo_version.clone(),
+        category: m.category.unwrap_or_default(),
+        installable: m.installable,
+        application: m.application,
+        organization: m.organization,
+        repository: m.repository,
+    })
+    .collect()
+}
+
 fn json_result<T: Serialize>(value: &T) -> Result<CallToolResult, McpError> {
     let text = serde_json::to_string_pretty(value)
         .map_err(|e| McpError::internal_error(format!("failed to serialize result: {e}"), None))?;
@@ -790,6 +864,39 @@ impl OghMcp {
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         json_result(&build_search_results(rows))
+    }
+
+    #[tool(
+        description = "Discover modules across every repository by category, a free-text term \
+                        (matched against technical name, display name, and description), and/or \
+                        reverse Odoo dependency (which modules depend on a given module - \
+                        useful for \"what would break if I removed X\"). Unlike search_modules \
+                        (technical_name substring only) or list_repository_modules (needs a known \
+                        repository first), this is the entry point when you know a topic/category \
+                        or a dependency but not which repository carries the modules. All filters \
+                        are optional and ANDed together; at least one should be set or you'll get \
+                        an unfiltered (but still limited) listing. Returns lightweight rows - call \
+                        get_module for full manifest detail on matches of interest."
+    )]
+    async fn list_modules_by_criteria(
+        &self,
+        Parameters(params): Parameters<ListModulesByCriteriaParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let limit = params.limit.unwrap_or(50).min(200) as i64;
+        let results = tokio::task::spawn_blocking(move || {
+            list_modules_by_criteria_cached(
+                pool,
+                params.odoo_version,
+                params.search_term,
+                params.category,
+                params.depends_on,
+                limit,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&results)
     }
 
     #[tool(
@@ -1076,14 +1183,17 @@ impl ServerHandler for OghMcp {
             ))
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_instructions(
-                "Read-only access to the OGHCollector Odoo module metadata database. Two \
+                "Read-only access to the OGHCollector Odoo module metadata database. Three \
                  discovery paths: (1) know (part of) a module's technical name? Use \
                  search_modules, then get_module for its manifest metadata. (2) building a \
                  module pack for a country or topic (e.g. \"what does a Spain localization \
                  need\")? Use search_repositories to find the relevant repository (OCA organizes \
                  these per country/topic), then list_repository_modules to bulk-list every \
                  module it carries with direct dependencies and maintenance signals (last \
-                 commit, committers). Either way, get_module's response is intentionally light - \
+                 commit, committers). (3) know a category or a dependency but not which \
+                 repository carries the modules (e.g. \"what depends on account_move_line \
+                 anywhere\")? Use list_modules_by_criteria. Either way, get_module's response is \
+                 intentionally light - \
                  call get_module_docs (install/usage instructions), get_module_dependencies \
                  (full transitive closure) or get_module_code_analysis (views/models/fields/\
                  methods) on individual modules only when you actually need that detail, since \
