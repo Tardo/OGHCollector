@@ -96,6 +96,18 @@ pub struct ModuleView {
     pub view_type: Option<String>,
 }
 
+/// Any non-view record the module touches: security groups (res.groups),
+/// record rules (ir.rule), cron jobs, access rights (from
+/// ir.model.access.csv), demo/reference data, etc. `noupdate` tells an LLM
+/// whether this is init-once data or gets overwritten on every upgrade.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleRecord {
+    pub xml_id: String,
+    pub model: String,
+    pub noupdate: bool,
+    pub fields: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleModelField {
     pub name: String,
@@ -189,6 +201,7 @@ pub struct ModuleCodeAnalysis {
     pub repository: String,
     pub views: Vec<ModuleView>,
     pub models: Vec<ModuleModel>,
+    pub records: Vec<ModuleRecord>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -295,6 +308,21 @@ fn get_module_views(conn: &mut SqliteConnection, module_version_id: &i64) -> Vec
             model: v.model.unwrap_or_default(),
             inherit_xml_id: v.inherit_xml_id,
             view_type: v.view_type,
+        })
+        .collect()
+}
+
+fn get_module_records(conn: &mut SqliteConnection, module_version_id: &i64) -> Vec<ModuleRecord> {
+    models::module_record::get_by_module_version_id(conn, module_version_id)
+        .into_iter()
+        .map(|r| {
+            let fields = r.fields_value();
+            ModuleRecord {
+                xml_id: r.xml_id,
+                model: r.model,
+                noupdate: r.noupdate,
+                fields,
+            }
         })
         .collect()
 }
@@ -417,13 +445,15 @@ fn build_module_code_analysis(
         Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
         None => models::module_version::resolve_current(conn, module),
     };
-    let (views, module_models, module_version) = match &resolved_version {
+    let (views, module_models, module_records, module_version) = match &resolved_version {
         Some(mv) => (
             get_module_views(conn, &mv.id),
             get_module_models(conn, &mv.id),
+            get_module_records(conn, &mv.id),
             mv.version_module.clone(),
         ),
         None => (
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             version_module
@@ -439,6 +469,7 @@ fn build_module_code_analysis(
         repository: repo.name,
         views,
         models: module_models,
+        records: module_records,
     }
 }
 
@@ -767,8 +798,9 @@ impl OghMcp {
                         which organization/repository carries it. This is the \
                         lightweight entry point for one module - call get_module_docs for \
                         install/usage instructions, get_module_dependencies for the dependency \
-                        closure, or get_module_code_analysis for its views/models/fields/methods, \
-                        only when you actually need that detail."
+                        closure, or get_module_code_analysis for its views/models/fields/methods/ \
+                        records (access groups, rules, permissions, ...), only when you actually \
+                        need that detail."
     )]
     async fn get_module(
         &self,
@@ -843,11 +875,18 @@ impl OghMcp {
 
     #[tool(
         description = "Get the code analysis for one module at one Odoo version: XML views it \
-                        defines or inherits, and the Odoo models it defines or extends with their \
-                        fields and methods, including docstrings and signatures. This is the \
-                        heaviest tool in this server - only call it when you actually need \
-                        view/model/field/method detail, not just to check what a module does or \
-                        what it depends on. Defaults to the latest known module version; pass \
+                        defines or inherits, the Odoo models it defines or extends with their \
+                        fields and methods (including docstrings and signatures), and every \
+                        other record it touches - security groups (res.groups), record rules \
+                        (ir.rule), cron jobs, access rights (from ir.model.access.csv), demo/ \
+                        reference data, etc. Each record carries `noupdate`, so you can tell \
+                        data that only loads once from data overwritten on every module upgrade \
+                        - filter `records` by `model` to answer things like \"does this add a \
+                        new access group\" (model == \"res.groups\") or \"does this change \
+                        permissions\" (model == \"ir.model.access\"). This is the heaviest tool \
+                        in this server - only call it when you actually need view/model/field/ \
+                        method/record detail, not just to check what a module does or what it \
+                        depends on. Defaults to the latest known module version; pass \
                         version_module (see list_module_versions) to inspect an older one."
     )]
     async fn get_module_code_analysis(

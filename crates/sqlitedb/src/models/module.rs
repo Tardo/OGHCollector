@@ -9,7 +9,7 @@ use crate::utils::date::get_sqlite_utc_now;
 use super::{
     author, gh_organization, gh_repository, maintainer, module_author,
     module_code_analysis::ModuleAnalysisInfo, module_committer, module_committer_period,
-    module_maintainer, module_model, module_version, module_view, system_event,
+    module_maintainer, module_model, module_record, module_version, module_view, system_event,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -646,9 +646,9 @@ pub fn get_module_repository(
 
 /// Deletes modules that vanished from a repo since the previous run. FK
 /// enforcement is off (see lib.rs), so nothing cascades automatically - the
-/// module_version rows for these modules (and their module_view/module_model
-/// snapshots) are deleted by hand first, otherwise they'd be left orphaned
-/// forever instead of just for one run's worth of stale data.
+/// module_version rows for these modules (and their module_view/module_model/
+/// module_record snapshots) are deleted by hand first, otherwise they'd be
+/// left orphaned forever instead of just for one run's worth of stale data.
 pub fn delete_outdated(
     conn: &mut SqliteConnection,
     gh_repo_id: &i64,
@@ -671,6 +671,7 @@ pub fn delete_outdated(
     for stale_id in &stale_ids {
         module_model::delete_by_module_id(conn, stale_id)?;
         module_view::delete_by_module_id(conn, stale_id)?;
+        module_record::delete_by_module_id(conn, stale_id)?;
         module_version::delete_by_module_id(conn, stale_id)?;
     }
 

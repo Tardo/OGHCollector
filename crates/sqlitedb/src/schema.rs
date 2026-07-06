@@ -199,6 +199,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_record (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        xml_id -> Text,
+        model -> Text,
+        noupdate -> Bool,
+        fields -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
     pull_request (id) {
         id -> BigInt,
         name -> Text,
@@ -245,6 +257,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_model,
     module_model_field,
     module_model_method,
+    module_record,
     module_version,
     module_view,
     pull_request,

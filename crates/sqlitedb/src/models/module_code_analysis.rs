@@ -54,8 +54,26 @@ pub struct ModelAnalysisInfo {
     pub methods: Vec<MethodAnalysisInfo>,
 }
 
+// Every other record a module touches - security groups (res.groups),
+// record rules (ir.rule), cron jobs, access rights (from
+// ir.model.access.csv), demo/reference data, etc. `noupdate` is resolved at
+// analysis time (inherited from the wrapping <data>/<odoo>, per-record
+// overridable; always false for CSV rows). ir.ui.view records are excluded
+// here - they're already fully covered by `ModuleAnalysisInfo::views`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct RecordAnalysisInfo {
+    pub xml_id: String,
+    pub model: String,
+    #[serde(default)]
+    pub noupdate: bool,
+    #[serde(default)]
+    pub fields: Option<serde_json::Value>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ModuleAnalysisInfo {
     pub views: Vec<ViewAnalysisInfo>,
     pub models: Vec<ModelAnalysisInfo>,
+    #[serde(default)]
+    pub records: Vec<RecordAnalysisInfo>,
 }

@@ -17,6 +17,7 @@ pub mod module_maintainer;
 pub mod module_model;
 pub mod module_model_field;
 pub mod module_model_method;
+pub mod module_record;
 pub mod module_version;
 pub mod module_view;
 pub mod pull_request;
@@ -815,6 +816,57 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].xml_id, "view_a");
         assert_eq!(found[0].view_type.as_deref(), Some("form"));
+    }
+
+    #[test]
+    fn test_module_record_replace_for_module() {
+        use super::module_code_analysis::RecordAnalysisInfo;
+        let mut conn = setup_db();
+        let module = super::module::add(&mut conn, &make_bare_module_info("record_test")).unwrap();
+        let module_version =
+            super::module_version::get_or_create(&mut conn, &module.id, &module.version_module)
+                .unwrap();
+
+        let records = vec![
+            RecordAnalysisInfo {
+                xml_id: "group_a".to_string(),
+                model: "res.groups".to_string(),
+                noupdate: true,
+                fields: Some(serde_json::json!({"name": "Group A"})),
+            },
+            RecordAnalysisInfo {
+                xml_id: "access_a".to_string(),
+                model: "ir.model.access".to_string(),
+                noupdate: false,
+                fields: Some(serde_json::json!({"perm_read": "1"})),
+            },
+        ];
+        super::module_record::replace_for_module(
+            &mut conn,
+            &module.id,
+            &module_version.id,
+            &records,
+        )
+        .unwrap();
+        assert_eq!(
+            super::module_record::get_by_module_version_id(&mut conn, &module_version.id).len(),
+            2
+        );
+
+        // Re-analyzing with a smaller set must replace, not accumulate.
+        let records2 = vec![records[0].clone()];
+        super::module_record::replace_for_module(
+            &mut conn,
+            &module.id,
+            &module_version.id,
+            &records2,
+        )
+        .unwrap();
+        let found = super::module_record::get_by_module_version_id(&mut conn, &module_version.id);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].xml_id, "group_a");
+        assert!(found[0].noupdate);
+        assert_eq!(found[0].fields_value().unwrap()["name"], "Group A");
     }
 
     #[test]

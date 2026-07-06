@@ -156,10 +156,12 @@ async fn main() {
 
             // Resolve (or start) the history entry for this manifest version,
             // then replace the module's code analysis (views touched, models
-            // defined/extended with their fields and public methods) scoped
-            // to that version, on every run, independent of whether any
-            // manifest field changed. A prior version's snapshot is left
-            // untouched - only its own module_version_id gets wiped/rebuilt.
+            // defined/extended with their fields and public methods, and
+            // every other record it touches - access groups, record rules,
+            // access rights, ...) scoped to that version, on every run,
+            // independent of whether any manifest field changed. A prior
+            // version's snapshot is left untouched - only its own
+            // module_version_id gets wiped/rebuilt.
             let module_version = models::module_version::get_or_create(
                 &mut conn,
                 &new_module.id,
@@ -178,6 +180,13 @@ async fn main() {
                 &new_module.id,
                 &module_version.id,
                 &new_module_info.analysis.models,
+            )
+            .unwrap();
+            models::module_record::replace_for_module(
+                &mut conn,
+                &new_module.id,
+                &module_version.id,
+                &new_module_info.analysis.records,
             )
             .unwrap();
 

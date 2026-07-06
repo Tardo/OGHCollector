@@ -19,11 +19,16 @@ use crate::gitclient::RepoInfo;
 // Embedded Python analysis script: walks a module folder and, without
 // executing any of its code, extracts the model classes it defines/extends
 // (with their public methods - signature, decorators, docstring - and
-// `fields.X(...)` assignments, including all keyword args) and the
-// ir.ui.view/template records its XML files declare. Uses only the stdlib
-// (ast, xml.etree, os, json) so it runs with any Python available at build
-// time - no odoo import required, and no ast.unparse (keeps it working on
-// Python 3.8, which lacks it). Returns a single JSON string.
+// `fields.X(...)` assignments, including all keyword args), the
+// ir.ui.view/template records its XML files declare, and every other record
+// the module touches (security groups, record rules, cron jobs, access
+// rights from ir.model.access.csv, ...) with its resolved noupdate flag -
+// so a caller can tell "does this add a new access group" or "does this
+// write demo data that only loads once" without re-parsing XML itself. Uses
+// only the stdlib (ast, csv, xml.etree, os, json) so it runs with any Python
+// available at build time - no odoo import required, and no ast.unparse
+// (keeps it working on Python 3.8, which lacks it). Returns a single JSON
+// string.
 //
 // The extra detail here (signatures, docstrings, decorator arguments, every
 // field/model keyword argument) is deliberately captured beyond what the UI
@@ -31,11 +36,13 @@ use crate::gitclient::RepoInfo;
 // eventually served over MCP), not just for the module detail page.
 const ANALYZER_PY_SRC: &str = r#"
 import ast
+import csv
 import json
 import os
 import xml.etree.ElementTree as ET
 
 SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations"}
+ACCESS_CSV_FILENAME = "ir.model.access.csv"
 MODEL_BASE_ATTRS = {"Model", "TransientModel", "AbstractModel"}
 RELATIONAL_FIELD_TYPES = {"Many2one", "One2many", "Many2many"}
 DOCSTRING_LIMIT = 4000
@@ -336,9 +343,99 @@ def _analyze_xml_source(data):
     return out
 
 
+def _field_value_repr(field_el):
+    # A `<field>` inside a non-view record: a `ref`/`eval` attribute or its
+    # text content, whichever is set - reused for both res.groups/ir.rule/
+    # ir.cron-style XML records and CSV access-right rows below. Truncated
+    # like docstrings since some fields (ir.actions.server code, qweb/
+    # mail.template bodies) can be arbitrarily large.
+    ref = field_el.attrib.get("ref")
+    if ref:
+        return f"ref({ref!r})"
+    eval_attr = field_el.attrib.get("eval")
+    if eval_attr is not None:
+        eval_attr = eval_attr.strip()
+        return _truncate(eval_attr) if eval_attr else None
+    text = (field_el.text or "").strip()
+    return _truncate(text) if text else None
+
+
+def _analyze_xml_records(data):
+    # Every non-view `<record>` a module defines: security groups
+    # (res.groups), record rules (ir.rule), cron jobs (ir.cron), server
+    # actions, demo/reference data, etc. - one generic mechanism instead of a
+    # model-specific case for each, so "did this module add an access group"
+    # is just "any record with model == res.groups" for the caller. noupdate
+    # is resolved from the nearest ancestor `<data>`/`<odoo>` that sets it
+    # (Odoo default: False), with per-record overrides honored.
+    out = []
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return out
+
+    def walk(elem, noupdate):
+        raw = elem.attrib.get("noupdate")
+        current = raw.strip().lower() in ("1", "true") if raw is not None else noupdate
+        if elem.tag == "record":
+            model = elem.attrib.get("model")
+            xml_id = elem.attrib.get("id")
+            if model and xml_id and model != "ir.ui.view":
+                fields = {}
+                for field in elem.findall("field"):
+                    fname = field.attrib.get("name")
+                    if not fname:
+                        continue
+                    value = _field_value_repr(field)
+                    if value is not None:
+                        fields[fname] = value
+                out.append(
+                    {
+                        "xml_id": xml_id,
+                        "model": model,
+                        "noupdate": current,
+                        "fields": fields or None,
+                    }
+                )
+        for child in elem:
+            walk(child, current)
+
+    walk(root, False)
+    return out
+
+
+def _analyze_access_csv(text):
+    # security/ir.model.access.csv - the standard Odoo access-control table
+    # (one row per model x group permission set). Emitted as records shaped
+    # just like the XML ones above (same model, "ir.model.access") so a
+    # caller doesn't need to know the source was a CSV, not a record.
+    out = []
+    for row in csv.DictReader(text.splitlines()):
+        xml_id = (row.get("id") or "").strip()
+        if not xml_id:
+            continue
+        fields = {}
+        for key, value in row.items():
+            if key == "id" or not value:
+                continue
+            value = value.strip()
+            if value:
+                fields[key] = value
+        out.append(
+            {
+                "xml_id": xml_id,
+                "model": "ir.model.access",
+                "noupdate": False,
+                "fields": fields or None,
+            }
+        )
+    return out
+
+
 def analyze_module(module_path):
     views = []
     models = []
+    records = []
     for dirpath, dirnames, filenames in os.walk(module_path):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for filename in filenames:
@@ -357,7 +454,18 @@ def analyze_module(module_path):
                 except OSError:
                     continue
                 views.extend(_analyze_xml_source(data))
-    return json.dumps({"views": views, "models": models})
+                records.extend(_analyze_xml_records(data))
+            elif filename == ACCESS_CSV_FILENAME:
+                try:
+                    # utf-8-sig: a BOM-prefixed file (common after a Windows
+                    # edit) would otherwise turn the first header into
+                    # "﻿id", silently dropping every row below.
+                    with open(full_path, "r", encoding="utf-8-sig", errors="replace") as fh:
+                        text = fh.read()
+                except OSError:
+                    continue
+                records.extend(_analyze_access_csv(text))
+    return json.dumps({"views": views, "models": models, "records": records})
 "#;
 
 #[derive(Debug)]
@@ -998,6 +1106,35 @@ class ResPartner(models.Model):
         )
         .unwrap();
 
+        let security_dir = dir.join("security");
+        fs::create_dir_all(&security_dir).unwrap();
+        fs::write(
+            security_dir.join("security.xml"),
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record model="res.groups" id="group_partner_kind_manager">
+            <field name="name">Partner Kind Manager</field>
+            <field name="category_id" ref="base.module_category_hidden"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+        <record model="ir.rule" id="rule_partner_kind_manager_only" noupdate="0">
+            <field name="name">Partner Kind: manager only</field>
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="domain_force">[('x_kind', '!=', False)]</field>
+        </record>
+    </data>
+</odoo>
+"#,
+        )
+        .unwrap();
+        fs::write(
+            security_dir.join("ir.model.access.csv"),
+            "id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink\n\
+             access_res_partner_kind_manager,res.partner.kind.manager,model_res_partner,group_partner_kind_manager,1,1,1,0\n",
+        )
+        .unwrap();
+
         let analyzer = OGHCollectorAnalyzer::new(&17u8);
         let result = analyzer.analyze_module_source(&dir);
 
@@ -1079,6 +1216,53 @@ class ResPartner(models.Model):
                 "api.constrains('x_foo', 'x_label')".to_string(),
             ]
         );
+
+        // ir.ui.view records must not leak into the generic records list -
+        // they're already fully covered by `views` above.
+        assert!(result.records.iter().all(|r| r.model != "ir.ui.view"));
+
+        let group = result
+            .records
+            .iter()
+            .find(|r| r.xml_id == "group_partner_kind_manager")
+            .unwrap();
+        assert_eq!(group.model, "res.groups");
+        // Inherited from the wrapping <data noupdate="1">.
+        assert!(group.noupdate);
+        let group_fields = group.fields.as_ref().unwrap();
+        assert_eq!(group_fields["name"], "Partner Kind Manager");
+        assert_eq!(
+            group_fields["category_id"],
+            "ref('base.module_category_hidden')"
+        );
+        assert!(group_fields["implied_ids"]
+            .as_str()
+            .unwrap()
+            .contains("group_user"));
+
+        let rule = result
+            .records
+            .iter()
+            .find(|r| r.xml_id == "rule_partner_kind_manager_only")
+            .unwrap();
+        assert_eq!(rule.model, "ir.rule");
+        // Per-record noupdate="0" must override the wrapping <data noupdate="1">.
+        assert!(!rule.noupdate);
+        let rule_fields = rule.fields.as_ref().unwrap();
+        assert_eq!(rule_fields["domain_force"], "[('x_kind', '!=', False)]");
+
+        let access = result
+            .records
+            .iter()
+            .find(|r| r.xml_id == "access_res_partner_kind_manager")
+            .unwrap();
+        assert_eq!(access.model, "ir.model.access");
+        assert!(!access.noupdate);
+        let access_fields = access.fields.as_ref().unwrap();
+        assert_eq!(access_fields["model_id:id"], "model_res_partner");
+        assert_eq!(access_fields["group_id:id"], "group_partner_kind_manager");
+        assert_eq!(access_fields["perm_read"], "1");
+        assert_eq!(access_fields["perm_unlink"], "0");
     }
 
     // Exercises get_git_committers end to end against a real repo: two fake
