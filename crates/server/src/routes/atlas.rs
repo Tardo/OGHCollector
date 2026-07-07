@@ -90,7 +90,22 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
             gh_repo_odoo_id = gh_repo_odoo.id;
         }
     }
-    let main_modules = models::module::get_by_odoo_version(conn, odoo_version);
+    // A technical_name can exist in more than one org for the same Odoo
+    // version (e.g. a module donated from OCA into Odoo core keeps living in
+    // both repos for a while) - keep the odoo/odoo row when there is one so
+    // the graph node reflects that it's core, instead of whichever org's row
+    // SQLite happens to return last silently overwriting the node.
+    let mut main_modules_by_name: HashMap<String, models::module::Model> = HashMap::new();
+    for module in models::module::get_by_odoo_version(conn, odoo_version) {
+        let is_odoo_core = module.gh_repository_id == gh_repo_odoo_id;
+        let already_odoo_core = main_modules_by_name
+            .get(&module.technical_name)
+            .is_some_and(|existing| existing.gh_repository_id == gh_repo_odoo_id);
+        if is_odoo_core || !already_odoo_core {
+            main_modules_by_name.insert(module.technical_name.clone(), module);
+        }
+    }
+    let main_modules: Vec<_> = main_modules_by_name.into_values().collect();
     let main_modules_names: Vec<String> = main_modules
         .iter()
         .map(|item| item.technical_name.clone())

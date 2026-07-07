@@ -106,9 +106,16 @@ class ModuleSearch extends Component {
 
   async #filterResults(query) {
     const modules = this.getFetchData('modules');
-    const filtered = modules.filter(item =>
-      item.technical_name.includes(query.toLowerCase()),
-    );
+    // A module can live in more than one org (e.g. moved from OCA into Odoo
+    // core) - sorting by technical_name keeps its org rows adjacent, so they
+    // read as one entry while each still links to its own org's page.
+    const filtered = modules
+      .filter(item => item.technical_name.includes(query.toLowerCase()))
+      .sort(
+        (a, b) =>
+          a.technical_name.localeCompare(b.technical_name) ||
+          a.org_name.localeCompare(b.org_name),
+      );
     return [query, filtered];
   }
 
