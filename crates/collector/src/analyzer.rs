@@ -362,10 +362,25 @@ def _analyze_controllers(tree):
     return out
 
 
-# Arch root tags that mark an inheriting view rather than describe its type:
-# the real type is the parent view's, which _resolve_inherited_view_types
+# Odoo's actual ir.ui.view type values - the only tags that legitimately
+# describe a view. Anything else at the arch root (xpath/data, or a bare
+# locator tag like <group>/<page>/<button> used by the position="..."
+# shorthand instead of an explicit <xpath>) is an inheritance patch, not a
+# type: the real type is the parent view's, which _resolve_inherited_view_types
 # fills in below when the parent lives in the same module.
-VIEW_INHERIT_ARCH_TAGS = {"xpath", "data", "field"}
+BASE_VIEW_ARCH_TAGS = {
+    "form",
+    "tree",
+    "list",
+    "kanban",
+    "search",
+    "calendar",
+    "gantt",
+    "pivot",
+    "graph",
+    "activity",
+    "diagram",
+}
 
 
 def _arch_root_tag(field_el):
@@ -378,11 +393,23 @@ def _arch_root_tag(field_el):
     return None
 
 
+def _view_type_from_name(name):
+    # Last-resort guess for views a same-module inherit chain can't resolve:
+    # by convention the name/xml_id ends in the type, "."- or "_"-separated
+    # ("product.template.fieldservice.form", "view_product_fieldservice_form").
+    # Lower confidence than an explicit type or an inherit chain - only a
+    # recognized base tag counts, anything else stays None.
+    if not name:
+        return None
+    last = name.replace("_", ".").rsplit(".", 1)[-1]
+    return last if last in BASE_VIEW_ARCH_TAGS else None
+
+
 def _resolve_inherited_view_types(views, module_name):
     # Inheriting views (arch root xpath/data/field) get their type from the
     # parent view, mirroring ir.ui.view's own type compute. Only parents in
-    # this same module are resolvable statically; a cross-module parent stays
-    # None rather than storing a bogus "type".
+    # this same module are resolvable statically; a cross-module parent falls
+    # back to guessing from the name/xml_id rather than storing a bogus type.
     by_xml_id = {v["xml_id"]: v for v in views}
     prefix = module_name + "." if module_name else None
     for view in views:
@@ -399,6 +426,10 @@ def _resolve_inherited_view_types(views, module_name):
             current = parent
         if current is not view and current["view_type"]:
             view["view_type"] = current["view_type"]
+        if view["view_type"] is None:
+            view["view_type"] = _view_type_from_name(
+                view["name"]
+            ) or _view_type_from_name(view["xml_id"])
 
 
 def _analyze_xml_source(data):
@@ -430,14 +461,15 @@ def _analyze_xml_source(data):
                 explicit_type = (field.text or "").strip() or None
             elif fname == "arch":
                 arch_tag = _arch_root_tag(field)
-        # Explicit <field name="type"> wins; an inheritance-marker arch root
-        # is not a type, leave it unresolved for the post-pass.
+        # Explicit <field name="type"> wins; only a real base-view tag counts
+        # as a type, anything else (xpath/data, or a bare locator tag from
+        # the position="..." shorthand) is left unresolved for the post-pass.
         if explicit_type:
             view_type = explicit_type
-        elif arch_tag in VIEW_INHERIT_ARCH_TAGS:
-            view_type = None
-        else:
+        elif arch_tag in BASE_VIEW_ARCH_TAGS:
             view_type = arch_tag
+        else:
+            view_type = None
         out.append(
             {
                 "xml_id": xml_id,
@@ -1226,6 +1258,31 @@ class ResPartner(models.Model):
             <xpath expr="//sheet" position="inside"/>
         </field>
     </record>
+    <record model="ir.ui.view" id="view_res_partner_form_bare">
+        <field name="name">res.partner.form.bare</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <group name="some_group" position="after">
+                <field name="x_kind"/>
+            </group>
+        </field>
+    </record>
+    <record model="ir.ui.view" id="view_res_partner_kind_form_named">
+        <field name="name">res.partner.kind.form</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside"/>
+        </field>
+    </record>
+    <record model="ir.ui.view" id="view_res_partner_kind_tree_named">
+        <field name="name">res_partner_kind_tree</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <group name="dummy" position="after"/>
+        </field>
+    </record>
     <record model="ir.ui.view" id="view_res_partner_kind_tree">
         <field name="name">res.partner.kind.tree</field>
         <field name="model">res.partner</field>
@@ -1324,7 +1381,7 @@ class PartnerKindController(http.Controller):
 
         fs::remove_dir_all(&dir).unwrap();
 
-        assert_eq!(result.views.len(), 5);
+        assert_eq!(result.views.len(), 8);
         // Parent view lives in another module: the type is unknowable
         // statically, so it must be None - not the arch marker "xpath".
         let inheriting_view = result
@@ -1337,6 +1394,32 @@ class PartnerKindController(http.Controller):
             Some("base.view_partner_form")
         );
         assert_eq!(inheriting_view.view_type, None);
+
+        // Bare locator tag (position="..." shorthand, no <xpath> wrapper):
+        // "group" is not a view type either, must stay None just like xpath.
+        let bare_locator_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_form_bare")
+            .unwrap();
+        assert_eq!(bare_locator_view.view_type, None);
+
+        // Cross-module parent (unresolvable via inherit chain), but the
+        // "."-separated name ends in a real base type: last-resort guess.
+        let dot_named_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_kind_form_named")
+            .unwrap();
+        assert_eq!(dot_named_view.view_type.as_deref(), Some("form"));
+
+        // Same guess, but the name is "_"-separated instead of "."-separated.
+        let underscore_named_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_kind_tree_named")
+            .unwrap();
+        assert_eq!(underscore_named_view.view_type.as_deref(), Some("tree"));
 
         let new_view = result
             .views
