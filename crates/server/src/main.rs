@@ -12,7 +12,7 @@ use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{
     http::{header, StatusCode},
-    middleware::{DefaultHeaders, ErrorHandlers, Logger},
+    middleware::{self, DefaultHeaders, ErrorHandlers, Logger},
     web, App, HttpServer,
 };
 use minijinja::path_loader;
@@ -140,6 +140,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(ErrorHandlers::new().handler(StatusCode::NOT_FOUND, not_found::handler_fn))
             .wrap(Logger::default())
+            .wrap(middleware::Compress::default())
     })
     .bind((
         SERVER_CONFIG.get_bind_address().clone(),
