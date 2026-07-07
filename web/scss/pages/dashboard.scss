@@ -3,6 +3,14 @@ mirlo-module-search {
     background-color: rgb(200, 200, 200);
 }
 
+// ponytail: reserves the widget's rendered footprint before dashboard.mjs
+// upgrades the custom element, so it doesn't pop from ~0 to full height
+// (Chrome CLS "layout shift culprit"). Re-tune if module-counter's markup
+// changes noticeably in height.
+mirlo-module-counter {
+    min-height: 540px;
+}
+
 #module_search {
     margin-bottom: 8em;
     z-index: 3;

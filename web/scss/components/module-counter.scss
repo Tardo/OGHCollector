@@ -29,6 +29,15 @@ table {
     }
 }
 
+#counter_org {
+    // ponytail: reserves room for the per-org breakdown list before it's
+    // filled in, so the table doesn't grow (and shift the sections below
+    // it) once fetch data arrives. Bump if an org count entry commonly
+    // exceeds 3 lines.
+    display: block;
+    min-height: 3em;
+}
+
 hr {
     border-color: rgb(76 86 157);
     border-style: double;
