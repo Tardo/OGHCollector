@@ -2,12 +2,15 @@
 import {Component, registerComponent, HTTP_METHOD} from 'mirlo';
 import '@scss/components/committer-search.scss';
 
-const MAX_RESULTS = 50;
+const PAGE_SIZE = 50;
+const SCROLL_THRESHOLD_PX = 100;
 
 class CommitterSearch extends Component {
   #el_search_results = null;
   #last_query = null;
   #active_index = -1;
+  #filtered_results = [];
+  #rendered_count = 0;
 
   onSetup() {
     Component.useEvents({
@@ -16,6 +19,12 @@ class CommitterSearch extends Component {
         events: {
           input: this.onInputCommitterSearch,
           keydown: this.onKeyDownCommitterSearch,
+        },
+      },
+      results: {
+        mode: 'id',
+        events: {
+          scroll: this.onScrollResults,
         },
       },
     });
@@ -69,13 +78,31 @@ class CommitterSearch extends Component {
     }
   }
 
+  // ponytail: plain scroll listener, not IntersectionObserver like logs-viewer -
+  // results are already fully fetched in memory, so there's no request to
+  // prefetch, just an array slice to append.
+  onScrollResults() {
+    const el = this.#el_search_results;
+    if (
+      el.scrollTop + el.clientHeight >=
+      el.scrollHeight - SCROLL_THRESHOLD_PX
+    ) {
+      this.#renderNextBatch();
+    }
+  }
+
   #selectNextItem() {
+    if (
+      this.#active_index + 1 >= this.#rendered_count &&
+      this.#rendered_count < this.#filtered_results.length
+    ) {
+      this.#renderNextBatch();
+    }
     const len_results = this.#el_search_results.children.length;
-    const max = Math.min(len_results, MAX_RESULTS);
     const cur_active_item = this.#active_index;
     this.#active_index += 1;
-    if (this.#active_index === max) {
-      this.#active_index = max - 1;
+    if (this.#active_index >= len_results) {
+      this.#active_index = len_results - 1;
     }
     this.#updateActiveItem(cur_active_item);
   }
@@ -114,44 +141,45 @@ class CommitterSearch extends Component {
   }
 
   #fillResults(results) {
-    if (typeof results === 'undefined') {
+    this.#el_search_results.replaceChildren();
+    this.#filtered_results = results ?? [];
+    this.#rendered_count = 0;
+
+    if (this.#filtered_results.length === 0) {
       this.#el_search_results.style.display = 'none';
       return;
     }
 
-    this.#el_search_results.replaceChildren();
-    const count_items = results.length;
-    const results_to_render =
-      count_items > MAX_RESULTS ? results.slice(0, MAX_RESULTS) : results;
-    let result_items = results_to_render.map(committer => {
-      const item_container = document.createElement('li');
-      const item = document.createElement('a');
-      item.classList.add('item');
-      item.href = `/committer/${encodeURIComponent(committer.name)}`;
-      item.innerHTML = `<div>${committer.name}</div><div class="info">${committer.total_commits} commits - ${committer.modules_touched} modules</div>`;
-      item_container.appendChild(item);
-      return item_container;
-    });
-    if (results_to_render.length !== count_items) {
-      result_items = result_items.slice(0, MAX_RESULTS);
-      const item_container = document.createElement('li');
-      item_container.style.textAlign = 'center';
-      item_container.style.padding = '0.2em';
-      item_container.style.color = 'lightyellow';
-      item_container.style.backgroundColor = 'burlywood';
-      item_container.textContent = `${count_items - MAX_RESULTS} hidden...`;
-      result_items.push(item_container);
+    this.#renderNextBatch();
+    this.#el_search_results.style.display = '';
+    if (this.#active_index === -1) {
+      this.#active_index = 0;
+      this.#updateActiveItem();
     }
-    if (count_items === 0) {
-      this.#el_search_results.style.display = 'none';
-    } else {
-      this.#el_search_results.append(...result_items);
-      if (this.#active_index === -1) {
-        this.#active_index = 0;
-        this.#updateActiveItem();
-      }
-      this.#el_search_results.style.display = '';
+  }
+
+  #renderNextBatch() {
+    if (this.#rendered_count >= this.#filtered_results.length) {
+      return;
     }
+    const next_batch = this.#filtered_results.slice(
+      this.#rendered_count,
+      this.#rendered_count + PAGE_SIZE,
+    );
+    this.#rendered_count += next_batch.length;
+    this.#el_search_results.append(
+      ...next_batch.map(committer => this.#createResultItem(committer)),
+    );
+  }
+
+  #createResultItem(committer) {
+    const item_container = document.createElement('li');
+    const item = document.createElement('a');
+    item.classList.add('item');
+    item.href = `/committer/${encodeURIComponent(committer.name)}`;
+    item.innerHTML = `<div>${committer.name}</div><div class="info">${committer.total_commits} commits - ${committer.modules_touched} modules</div>`;
+    item_container.appendChild(item);
+    return item_container;
   }
 }
 
