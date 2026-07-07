@@ -1,6 +1,8 @@
 // Copyright Alexandre D. Díaz
 use config::Config;
+use ipnet::IpNet;
 use lazy_static::lazy_static;
+use std::net::IpAddr;
 use url::Url;
 
 #[derive(Debug)]
@@ -16,6 +18,7 @@ pub struct OGHServerConfig {
     db_pool_max_size: u32,
     mcp_info_enabled: bool,
     mcp_url: String,
+    trusted_proxies: Vec<IpNet>,
 }
 
 impl OGHServerConfig {
@@ -47,6 +50,18 @@ impl OGHServerConfig {
         let mcp_url = settings
             .get_string("mcp_url")
             .unwrap_or("http://localhost:8081/mcp".to_string());
+        let trusted_proxies = settings
+            .get_array("trusted_proxies")
+            .unwrap_or_else(|_| Vec::new())
+            .iter()
+            .filter_map(|x| {
+                let raw = x.to_string();
+                raw.parse::<IpNet>()
+                    .or_else(|_| raw.parse::<IpAddr>().map(IpNet::from))
+                    .inspect_err(|_| log::warn!("ignoring invalid trusted_proxies entry: {raw}"))
+                    .ok()
+            })
+            .collect::<Vec<IpNet>>();
         OGHServerConfig {
             bind_address,
             port,
@@ -59,6 +74,7 @@ impl OGHServerConfig {
             db_pool_max_size,
             mcp_info_enabled,
             mcp_url,
+            trusted_proxies,
         }
     }
 
@@ -121,6 +137,14 @@ impl OGHServerConfig {
 
     pub fn get_mcp_url(&self) -> &String {
         &self.mcp_url
+    }
+
+    pub fn get_trusted_proxies(&self) -> &Vec<IpNet> {
+        &self.trusted_proxies
+    }
+
+    pub fn is_trusted_proxy(&self, addr: IpAddr) -> bool {
+        self.trusted_proxies.iter().any(|net| net.contains(&addr))
     }
 }
 

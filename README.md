@@ -117,6 +117,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `db_pool_max_size` | int | Maximum number of pooled DB connections | `15` |
 | `mcp_info_enabled` | bool | Show the `/mcp` page explaining how to connect popular LLM clients to the MCP endpoint, and its nav link | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
+| `trusted_proxies` | list of strings | IPs/CIDRs (e.g. your reverse proxy's address, or the Docker network subnet) allowed to set `X-Forwarded-For`/`Forwarded`; honored only when the request's direct TCP peer matches one of these, otherwise the headers are stripped and the real peer address is used instead. Needed for correct client IPs in access logs (and `REQ_BASE_URL` scheme/host) behind Traefik/nginx/etc. | `[]` |
 
 ```yaml
 # docker-compose.override.yaml

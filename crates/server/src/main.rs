@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 use config::SERVER_CONFIG;
 use middlewares::not_found;
+use middlewares::trusted_proxy::strip_untrusted_forwarded_headers;
 use sqlitedb::Pool;
 
 #[actix_web::main]
@@ -71,6 +72,18 @@ async fn main() -> std::io::Result<()> {
         &SERVER_CONFIG.get_bind_address(),
         &SERVER_CONFIG.get_port()
     );
+
+    if SERVER_CONFIG.get_trusted_proxies().is_empty() {
+        log::info!(
+            "trusted_proxies is empty; access logs use the direct TCP peer address. Set it to \
+             your reverse proxy's IP/CIDR (e.g. the Docker network subnet) to log real client IPs"
+        );
+    } else {
+        log::info!(
+            "trusted_proxies: {:?}; X-Forwarded-For/Forwarded are honored only from these",
+            SERVER_CONFIG.get_trusted_proxies()
+        );
+    }
 
     // start HTTP server
     HttpServer::new(move || {
@@ -152,7 +165,10 @@ async fn main() -> std::io::Result<()> {
             ))
             .wrap(cors)
             .wrap(ErrorHandlers::new().handler(StatusCode::NOT_FOUND, not_found::handler_fn))
-            .wrap(Logger::default())
+            .wrap(Logger::new(
+                r#"%{r}a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#,
+            ))
+            .wrap(middleware::from_fn(strip_untrusted_forwarded_headers))
             .wrap(middleware::Compress::default())
     })
     .bind((

@@ -30,6 +30,7 @@ minijinja.workspace = true
 minijinja-autoreload.workspace = true
 config.workspace = true
 url.workspace = true
+ipnet.workspace = true
 lazy_static.workspace = true
 futures.workspace = true
 tokio_schedule.workspace = true
