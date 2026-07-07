@@ -86,7 +86,14 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(pool.clone()))
             .app_data(tmpl_reloader.clone())
             .app_data(MultipartFormConfig::default().total_limit(*SERVER_CONFIG.get_upload_limit()))
-            .service(afs::Files::new("/static", "./static").show_files_listing())
+            .service(
+                web::scope("/static")
+                    .wrap(
+                        DefaultHeaders::new()
+                            .add(("Cache-Control", "public, max-age=31536000, immutable")),
+                    )
+                    .service(afs::Files::new("/", "./static").show_files_listing()),
+            )
             .service(routes::common::route_odoo_versions)
             .service(routes::common::route_odoo_module_count)
             .service(routes::common::route_odoo_module_list)
