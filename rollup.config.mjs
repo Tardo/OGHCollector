@@ -33,7 +33,17 @@ export default [
       format: 'esm',
       dir: 'static/auto/',
       entryFileNames: '[name].mjs',
-      chunkFileNames: '[name]-[hash].mjs',
+      // Stable (unhashed) names for chunks we modulepreload from templates
+      // (see minimal_layout.html / dashboard.html), so the browser can fetch
+      // them in parallel with the entry script instead of discovering them
+      // only after it's parsed.
+      chunkFileNames: chunk =>
+        ['mirlo', 'module-search'].includes(chunk.name)
+          ? '[name].mjs'
+          // content-hashed chunks live under chunks/ so the server can cache
+          // that folder forever without risking stale unhashed files (see
+          // crates/server/src/main.rs)
+          : 'chunks/[name]-[hash].mjs',
     },
     plugins: [
       alias({

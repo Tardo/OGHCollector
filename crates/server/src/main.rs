@@ -87,11 +87,24 @@ async fn main() -> std::io::Result<()> {
             .app_data(tmpl_reloader.clone())
             .app_data(MultipartFormConfig::default().total_limit(*SERVER_CONFIG.get_upload_limit()))
             .service(
-                web::scope("/static")
+                // content-hashed bundle chunks (filename changes when content
+                // does) can be cached forever; must be registered before the
+                // general /static scope below to take precedence.
+                web::scope("/static/auto/chunks")
                     .wrap(
                         DefaultHeaders::new()
                             .add(("Cache-Control", "public, max-age=31536000, immutable")),
                     )
+                    .service(afs::Files::new("/", "./static/auto/chunks")),
+            )
+            .service(
+                // everything else here (entry bundles, mirlo.mjs/module-search.mjs,
+                // page CSS, favicon) keeps the same filename across deploys, so it
+                // must always revalidate rather than being cached as immutable;
+                // actix-files' built-in ETag/Last-Modified makes that a cheap 304
+                // when unchanged.
+                web::scope("/static")
+                    .wrap(DefaultHeaders::new().add(("Cache-Control", "no-cache")))
                     .service(afs::Files::new("/", "./static").show_files_listing()),
             )
             .service(routes::common::route_odoo_versions)
