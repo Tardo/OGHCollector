@@ -1,6 +1,4 @@
-// Copyright Alexandre D. Díaz
-// Manually maintained – do NOT regenerate with `diesel print-schema` without reviewing.
-// SQLite INTEGER PRIMARY KEY = i64; all FKs are also i64.
+// @generated automatically by Diesel CLI.
 
 diesel::table! {
     author (id) {
@@ -132,6 +130,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_controller (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        class_name -> Text,
+        name -> Text,
+        routes -> Text,
+        auth -> Nullable<Text>,
+        http_type -> Text,
+        methods -> Nullable<Text>,
+        csrf -> Nullable<Bool>,
+        website -> Bool,
+        uses_sudo -> Bool,
+        signature -> Text,
+        docstring -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
     module_maintainer (id) {
         id -> BigInt,
         module_id -> BigInt,
@@ -176,6 +193,30 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_record (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        xml_id -> Text,
+        model -> Text,
+        noupdate -> Bool,
+        fields -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
+    module_security_warning (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        severity -> Text,
+        code -> Text,
+        message -> Text,
+        xml_id -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
     module_version (id) {
         id -> BigInt,
         module_id -> BigInt,
@@ -194,49 +235,6 @@ diesel::table! {
         model -> Nullable<Text>,
         inherit_xml_id -> Nullable<Text>,
         view_type -> Nullable<Text>,
-        module_version_id -> BigInt,
-    }
-}
-
-diesel::table! {
-    module_record (id) {
-        id -> BigInt,
-        module_id -> BigInt,
-        xml_id -> Text,
-        model -> Text,
-        noupdate -> Bool,
-        fields -> Nullable<Text>,
-        module_version_id -> BigInt,
-    }
-}
-
-diesel::table! {
-    module_controller (id) {
-        id -> BigInt,
-        module_id -> BigInt,
-        class_name -> Text,
-        name -> Text,
-        routes -> Text,
-        auth -> Nullable<Text>,
-        http_type -> Text,
-        methods -> Nullable<Text>,
-        csrf -> Nullable<Bool>,
-        website -> Bool,
-        uses_sudo -> Bool,
-        signature -> Text,
-        docstring -> Nullable<Text>,
-        module_version_id -> BigInt,
-    }
-}
-
-diesel::table! {
-    module_security_warning (id) {
-        id -> BigInt,
-        module_id -> BigInt,
-        severity -> Text,
-        code -> Text,
-        message -> Text,
-        xml_id -> Nullable<Text>,
         module_version_id -> BigInt,
     }
 }
@@ -269,6 +267,12 @@ diesel::table! {
         name -> Text,
     }
 }
+
+diesel::joinable!(module_controller -> module_version (module_version_id));
+diesel::joinable!(module_model -> module_version (module_version_id));
+diesel::joinable!(module_record -> module_version (module_version_id));
+diesel::joinable!(module_security_warning -> module_version (module_version_id));
+diesel::joinable!(module_view -> module_version (module_version_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     author,
