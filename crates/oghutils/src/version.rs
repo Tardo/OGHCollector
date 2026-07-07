@@ -44,3 +44,38 @@ impl OdooVersion {
         &self.version_module
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_u8_to_string_roundtrip() {
+        assert_eq!(odoo_version_u8_to_string(&150), "15.0");
+        assert_eq!(odoo_version_u8_to_string(&180), "18.0");
+        assert_eq!(odoo_version_string_to_u8("15.0"), 150);
+        assert_eq!(odoo_version_string_to_u8("18.0"), 180);
+        assert_eq!(
+            odoo_version_string_to_u8(&odoo_version_u8_to_string(&160)),
+            160
+        );
+    }
+
+    #[test]
+    fn test_odoo_version_manifest_style_splits_odoo_and_module_parts() {
+        // "15.0.1.0.0" (5 parts): first two are the Odoo version, rest is the module version.
+        let v = OdooVersion::new("15.0.1.0.0", &0);
+        assert_eq!(*v.get_version_odoo(), 150);
+        assert_eq!(v.get_version_module(), "1.0.0");
+        assert_eq!(v.get_raw(), "15.0.1.0.0");
+    }
+
+    #[test]
+    fn test_odoo_version_short_style_falls_back_to_default_odoo_version() {
+        // 3 parts or fewer: not enough to split off an Odoo version, whole
+        // string is treated as the module version and def_version is used.
+        let v = OdooVersion::new("1.0.0", &160);
+        assert_eq!(*v.get_version_odoo(), 160);
+        assert_eq!(v.get_version_module(), "1.0.0");
+    }
+}
