@@ -106,6 +106,14 @@ fn warning(
     }
 }
 
+/// ACLs named with an "_all" suffix (e.g. `access_res_partner_all`) follow
+/// the common Odoo convention for a deliberately global grant - the author
+/// meant "everyone", so the finding is demoted one level to cut false
+/// positives (grave -> log-only, minor -> silent).
+fn is_intentional_global(rec: &RecordAnalysisInfo) -> bool {
+    rec.xml_id.ends_with("_all") || field_str(rec, "name").is_some_and(|n| n.ends_with("_all"))
+}
+
 fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     let group = field_str(rec, "group_id").map(strip_ref);
     let model_ref = field_str(rec, "model_id").map(strip_ref);
@@ -114,16 +122,26 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
 
     match group {
         None => {
+            let intentional = is_intentional_global(rec);
             if !write_perms.is_empty() {
                 out.push(warning(
                     rec,
-                    SEVERITY_ERROR,
+                    if intentional {
+                        SEVERITY_WARNING
+                    } else {
+                        SEVERITY_ERROR
+                    },
                     "acl-global-write",
                     format!(
-                        "Access rule grants {write_perms} on '{model_label}' to EVERY user (portal/public included): no group is set"
+                        "Access rule grants {write_perms} on '{model_label}' to EVERY user (portal/public included): no group is set{}",
+                        if intentional {
+                            " ('_all' naming suggests it is intentional)"
+                        } else {
+                            ""
+                        }
                     ),
                 ));
-            } else if perm(rec, "perm_read") {
+            } else if perm(rec, "perm_read") && !intentional {
                 out.push(warning(
                     rec,
                     SEVERITY_WARNING,
@@ -335,6 +353,28 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "acl-global-read");
         assert_eq!(found[0].severity, SEVERITY_WARNING);
+    }
+
+    #[test]
+    fn test_all_suffix_marks_global_acl_intentional() {
+        // xml_id suffix: write demoted to log-only, read silenced.
+        let mut rec = access_csv("", ["1", "1", "0", "0"]);
+        rec.xml_id = "access_res_partner_all".to_string();
+        let found = analyze_records(&[rec]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "acl-global-write");
+        assert_eq!(found[0].severity, SEVERITY_WARNING);
+
+        let mut rec = access_csv("", ["1", "0", "0", "0"]);
+        rec.xml_id = "access_res_partner_all".to_string();
+        assert!(analyze_records(&[rec]).is_empty());
+
+        // "name" field suffix works too (CSV rows where the xml_id differs).
+        let mut rec = access_csv("", ["1", "0", "0", "0"]);
+        rec.fields.as_mut().unwrap()["name"] = serde_json::json!("res.partner all");
+        assert_eq!(analyze_records(&[rec.clone()]).len(), 1); // " all" ≠ "_all"
+        rec.fields.as_mut().unwrap()["name"] = serde_json::json!("access_res_partner_all");
+        assert!(analyze_records(&[rec]).is_empty());
     }
 
     #[test]
