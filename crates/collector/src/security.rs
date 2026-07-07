@@ -35,12 +35,14 @@ const PRIVILEGED_MODEL_XML_IDS: [&str; 6] = [
 const ADMIN_GROUP_XML_IDS: [&str; 2] = ["base.group_system", "base.group_erp_manager"];
 
 /// Field lookup tolerant to both sources: XML records store the plain field
-/// name ("group_id"), CSV rows keep the raw header, which carries the `:id`
-/// suffix for reference columns ("group_id:id").
+/// name ("group_id"), CSV rows keep the raw header, which carries a suffix
+/// for reference columns - Odoo accepts both "group_id:id" and "group_id/id"
+/// (e.g. addons/lunch uses `/id` while addons/sale uses `:id`).
 fn field_str<'a>(rec: &'a RecordAnalysisInfo, name: &str) -> Option<&'a str> {
     let obj = rec.fields.as_ref()?.as_object()?;
     obj.get(name)
         .or_else(|| obj.get(&format!("{name}:id")))
+        .or_else(|| obj.get(&format!("{name}/id")))
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -339,6 +341,28 @@ mod tests {
     fn test_normal_group_acl_is_clean() {
         let found = analyze_records(&[access_csv("base.group_user", ["1", "1", "1", "1"])]);
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn test_slash_id_csv_header_resolves_like_colon() {
+        // addons/lunch's ir.model.access.csv uses "model_id/id" / "group_id/id"
+        // instead of the ":id" suffix - a real group must not be mistaken for
+        // "no group set".
+        let rec = RecordAnalysisInfo {
+            xml_id: "lunch_alert_access".to_string(),
+            model: "ir.model.access".to_string(),
+            noupdate: false,
+            fields: Some(serde_json::json!({
+                "name": "access_lunch_alert_user",
+                "model_id/id": "model_lunch_alert",
+                "group_id/id": "base.group_user",
+                "perm_read": "1",
+                "perm_write": "0",
+                "perm_create": "0",
+                "perm_unlink": "0",
+            })),
+        };
+        assert!(analyze_records(&[rec]).is_empty());
     }
 
     #[test]
