@@ -5,6 +5,7 @@ mod clients;
 mod config;
 mod gitclient;
 mod pypi;
+mod security;
 
 use named_lock::NamedLock;
 use regex::Regex;
@@ -187,6 +188,42 @@ async fn main() {
                 &new_module.id,
                 &module_version.id,
                 &new_module_info.analysis.records,
+            )
+            .unwrap();
+            models::module_controller::replace_for_module(
+                &mut conn,
+                &new_module.id,
+                &module_version.id,
+                &new_module_info.analysis.controllers,
+            )
+            .unwrap();
+
+            // Static security checks over the records and HTTP controllers
+            // just analyzed: grave findings land in module_security_warning
+            // (shown on the module detail page), minor ones only leave a
+            // system_event log line.
+            let mut sec_warnings = security::analyze_records(&new_module_info.analysis.records);
+            sec_warnings.extend(security::analyze_controllers(
+                &new_module_info.analysis.controllers,
+            ));
+            for w in sec_warnings
+                .iter()
+                .filter(|w| w.severity != models::module_security_warning::SEVERITY_ERROR)
+            {
+                let _ = models::system_event::register_security_warning(
+                    &mut conn,
+                    &new_module.technical_name,
+                    &new_module.name,
+                    &odoo_ver_str,
+                    w.xml_id.as_deref(),
+                    &w.message,
+                );
+            }
+            models::module_security_warning::replace_for_module(
+                &mut conn,
+                &new_module.id,
+                &module_version.id,
+                &sec_warnings,
             )
             .unwrap();
 

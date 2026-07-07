@@ -211,6 +211,37 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_controller (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        class_name -> Text,
+        name -> Text,
+        routes -> Text,
+        auth -> Nullable<Text>,
+        http_type -> Text,
+        methods -> Nullable<Text>,
+        csrf -> Nullable<Bool>,
+        website -> Bool,
+        uses_sudo -> Bool,
+        signature -> Text,
+        docstring -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
+    module_security_warning (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        severity -> Text,
+        code -> Text,
+        message -> Text,
+        xml_id -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
     pull_request (id) {
         id -> BigInt,
         name -> Text,
@@ -253,11 +284,13 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_author,
     module_committer,
     module_committer_period,
+    module_controller,
     module_maintainer,
     module_model,
     module_model_field,
     module_model_method,
     module_record,
+    module_security_warning,
     module_version,
     module_view,
     pull_request,

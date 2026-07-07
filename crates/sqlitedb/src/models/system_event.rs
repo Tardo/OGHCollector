@@ -372,6 +372,23 @@ pub fn register_closed_migration_pr(
     add(conn, "migration_pr", SEVERITY_INFO, &msg)
 }
 
+/// Non-grave security finding from the collector's static analysis (grave
+/// ones go to module_security_warning and the module detail page instead).
+pub fn register_security_warning(
+    conn: &mut SqliteConnection,
+    module_technical_name: &str,
+    module_name: &str,
+    module_version_odoo: &str,
+    xml_id: Option<&str>,
+    warning_message: &str,
+) -> QueryResult<Model> {
+    let source = xml_id.map(|x| format!(" ('{x}')")).unwrap_or_default();
+    let msg = format!(
+        "Security notice in '{module_technical_name}' ({module_name}) [{module_version_odoo}]{source}: {warning_message}"
+    );
+    add(conn, "security", SEVERITY_WARNING, &msg)
+}
+
 pub fn register_new_osv_vulnerability(
     conn: &mut SqliteConnection,
     dep_name: &str,

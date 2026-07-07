@@ -21,8 +21,9 @@ use crate::gitclient::RepoInfo;
 // (with their public methods - signature, decorators, docstring - and
 // `fields.X(...)` assignments, including all keyword args), the
 // ir.ui.view/template records its XML files declare, and every other record
-// the module touches (security groups, record rules, cron jobs, access
-// rights from ir.model.access.csv, ...) with its resolved noupdate flag -
+// the module touches (security groups, record rules, cron jobs, rows from
+// any `<model>.csv` data file - ir.model.access.csv, res.groups.csv, ... -
+// where the filename is the model) with its resolved noupdate flag -
 // so a caller can tell "does this add a new access group" or "does this
 // write demo data that only loads once" without re-parsing XML itself. Uses
 // only the stdlib (ast, csv, xml.etree, os, json) so it runs with any Python
@@ -42,7 +43,6 @@ import os
 import xml.etree.ElementTree as ET
 
 SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations"}
-ACCESS_CSV_FILENAME = "ir.model.access.csv"
 MODEL_BASE_ATTRS = {"Model", "TransientModel", "AbstractModel"}
 RELATIONAL_FIELD_TYPES = {"Many2one", "One2many", "Many2many"}
 DOCSTRING_LIMIT = 4000
@@ -191,12 +191,8 @@ def _signature(func):
     return signature
 
 
-def _analyze_python_source(source):
+def _analyze_python_source(tree):
     out = []
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return out
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef) or not _is_model_class(node):
             continue
@@ -283,13 +279,126 @@ def _analyze_python_source(source):
     return out
 
 
+def _route_decorator(func_node):
+    # @route(...) / @http.route(...) / @odoo.http.route(...); a bare @route
+    # (no call) is a pure override of an inherited route and also counts.
+    for dec in func_node.decorator_list:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        name = (
+            target.attr
+            if isinstance(target, ast.Attribute)
+            else (target.id if isinstance(target, ast.Name) else None)
+        )
+        if name == "route":
+            return dec
+    return None
+
+
+def _uses_sudo(func_node):
+    for n in ast.walk(func_node):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "sudo":
+            return True
+    return False
+
+
+def _analyze_controllers(tree):
+    # Every HTTP endpoint a module exposes: any method decorated with
+    # http.route, whatever the class inherits from (matching on the decorator
+    # instead of the Controller base also catches classes extending existing
+    # controllers, e.g. `class Extended(WebsiteSale)`).
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for stmt in node.body:
+            if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            dec = _route_decorator(stmt)
+            if dec is None:
+                continue
+            paths = []
+            kwargs = {}
+            if isinstance(dec, ast.Call):
+                if dec.args:
+                    paths = _const_str_list(dec.args[0])
+                for kw in dec.keywords:
+                    if kw.arg:
+                        kwargs[kw.arg] = kw.value
+
+            def _const(name, default=None):
+                v = kwargs.get(name)
+                return v.value if isinstance(v, ast.Constant) else default
+
+            website = _const("website") is True
+            auth = _const("auth")
+            if auth is None and paths:
+                # Odoo defaults: "user", except website routes -> "public".
+                # An override route (no path) inherits the parent's auth,
+                # which we can't resolve statically: left as None.
+                auth = "public" if website else "user"
+            csrf = kwargs.get("csrf")
+            csrf = (
+                csrf.value
+                if isinstance(csrf, ast.Constant) and isinstance(csrf.value, bool)
+                else None
+            )
+            out.append(
+                {
+                    "class_name": node.name,
+                    "name": stmt.name,
+                    "routes": paths,
+                    "auth": auth,
+                    "http_type": _const("type") or "http",
+                    "methods": (
+                        _const_str_list(kwargs["methods"]) if "methods" in kwargs else []
+                    ),
+                    "csrf": csrf,  # None = framework default (enabled)
+                    "website": website,
+                    "uses_sudo": _uses_sudo(stmt),
+                    "signature": _signature(stmt),
+                    "docstring": _truncate(ast.get_docstring(stmt, clean=True)),
+                }
+            )
+    return out
+
+
+# Arch root tags that mark an inheriting view rather than describe its type:
+# the real type is the parent view's, which _resolve_inherited_view_types
+# fills in below when the parent lives in the same module.
+VIEW_INHERIT_ARCH_TAGS = {"xpath", "data", "field"}
+
+
 def _arch_root_tag(field_el):
     # First child element inside <field name="arch" type="xml">, e.g. "form",
     # "tree", "search", "kanban" - tells an LLM what kind of view this is
     # without needing to load/parse the whole arch.
     for child in field_el:
-        return child.tag
+        if isinstance(child.tag, str):
+            return child.tag
     return None
+
+
+def _resolve_inherited_view_types(views, module_name):
+    # Inheriting views (arch root xpath/data/field) get their type from the
+    # parent view, mirroring ir.ui.view's own type compute. Only parents in
+    # this same module are resolvable statically; a cross-module parent stays
+    # None rather than storing a bogus "type".
+    by_xml_id = {v["xml_id"]: v for v in views}
+    prefix = module_name + "." if module_name else None
+    for view in views:
+        current = view
+        seen = set()
+        while current["view_type"] is None and current["inherit_xml_id"]:
+            ref = current["inherit_xml_id"]
+            if prefix and ref.startswith(prefix):
+                ref = ref[len(prefix):]
+            parent = by_xml_id.get(ref)
+            if parent is None or id(parent) in seen:
+                break
+            seen.add(id(parent))
+            current = parent
+        if current is not view and current["view_type"]:
+            view["view_type"] = current["view_type"]
 
 
 def _analyze_xml_source(data):
@@ -307,7 +416,8 @@ def _analyze_xml_source(data):
         name = None
         model = None
         inherit_xml_id = None
-        view_type = None
+        explicit_type = None
+        arch_tag = None
         for field in record.findall("field"):
             fname = field.attrib.get("name")
             if fname == "name":
@@ -316,8 +426,18 @@ def _analyze_xml_source(data):
                 model = (field.text or "").strip() or None
             elif fname == "inherit_id":
                 inherit_xml_id = field.attrib.get("ref")
+            elif fname == "type":
+                explicit_type = (field.text or "").strip() or None
             elif fname == "arch":
-                view_type = _arch_root_tag(field)
+                arch_tag = _arch_root_tag(field)
+        # Explicit <field name="type"> wins; an inheritance-marker arch root
+        # is not a type, leave it unresolved for the post-pass.
+        if explicit_type:
+            view_type = explicit_type
+        elif arch_tag in VIEW_INHERIT_ARCH_TAGS:
+            view_type = None
+        else:
+            view_type = arch_tag
         out.append(
             {
                 "xml_id": xml_id,
@@ -404,31 +524,34 @@ def _analyze_xml_records(data):
     return out
 
 
-def _analyze_access_csv(text):
-    # security/ir.model.access.csv - the standard Odoo access-control table
-    # (one row per model x group permission set). Emitted as records shaped
-    # just like the XML ones above (same model, "ir.model.access") so a
-    # caller doesn't need to know the source was a CSV, not a record.
+def _analyze_data_csv(text, model):
+    # Odoo loads any `<model>.csv` data file (ir.model.access.csv is just the
+    # most common one; res.groups.csv etc. work the same way): one record per
+    # row, the filename is the model. Emitted shaped just like the XML records
+    # above so a caller doesn't need to know the source was a CSV.
     out = []
-    for row in csv.DictReader(text.splitlines()):
-        xml_id = (row.get("id") or "").strip()
-        if not xml_id:
-            continue
-        fields = {}
-        for key, value in row.items():
-            if key == "id" or not value:
+    try:
+        for row in csv.DictReader(text.splitlines()):
+            xml_id = (row.get("id") or "").strip()
+            if not xml_id:
                 continue
-            value = value.strip()
-            if value:
-                fields[key] = value
-        out.append(
-            {
-                "xml_id": xml_id,
-                "model": "ir.model.access",
-                "noupdate": False,
-                "fields": fields or None,
-            }
-        )
+            fields = {}
+            for key, value in row.items():
+                if key == "id" or not key or not value:
+                    continue
+                value = value.strip()
+                if value:
+                    fields[key] = _truncate(value)
+            out.append(
+                {
+                    "xml_id": xml_id,
+                    "model": model,
+                    "noupdate": False,
+                    "fields": fields or None,
+                }
+            )
+    except csv.Error:
+        pass
     return out
 
 
@@ -436,6 +559,7 @@ def analyze_module(module_path):
     views = []
     models = []
     records = []
+    controllers = []
     for dirpath, dirnames, filenames in os.walk(module_path):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for filename in filenames:
@@ -446,7 +570,12 @@ def analyze_module(module_path):
                         source = fh.read()
                 except OSError:
                     continue
-                models.extend(_analyze_python_source(source))
+                try:
+                    tree = ast.parse(source)
+                except (SyntaxError, ValueError):
+                    continue
+                models.extend(_analyze_python_source(tree))
+                controllers.extend(_analyze_controllers(tree))
             elif filename.endswith(".xml"):
                 try:
                     with open(full_path, "rb") as fh:
@@ -455,7 +584,10 @@ def analyze_module(module_path):
                     continue
                 views.extend(_analyze_xml_source(data))
                 records.extend(_analyze_xml_records(data))
-            elif filename == ACCESS_CSV_FILENAME:
+            elif filename.endswith(".csv") and "." in filename[: -len(".csv")]:
+                # Odoo data CSVs are named after their model (ir.model.access
+                # .csv, res.groups.csv, ...); a dotless stem can't be a model,
+                # so plain asset/fixture CSVs are skipped here.
                 try:
                     # utf-8-sig: a BOM-prefixed file (common after a Windows
                     # edit) would otherwise turn the first header into
@@ -464,8 +596,13 @@ def analyze_module(module_path):
                         text = fh.read()
                 except OSError:
                     continue
-                records.extend(_analyze_access_csv(text))
-    return json.dumps({"views": views, "models": models, "records": records})
+                records.extend(_analyze_data_csv(text, filename[: -len(".csv")]))
+    # The module folder name is its technical name, so refs like
+    # "my_module.view_x" from inside my_module resolve locally too.
+    _resolve_inherited_view_types(views, os.path.basename(os.path.normpath(module_path)))
+    return json.dumps(
+        {"views": views, "models": models, "records": records, "controllers": controllers}
+    )
 "#;
 
 #[derive(Debug)]
@@ -1098,10 +1235,49 @@ class ResPartner(models.Model):
             </tree>
         </field>
     </record>
+    <record model="ir.ui.view" id="view_res_partner_kind_tree_x">
+        <field name="name">res.partner.kind.tree.x</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="view_res_partner_kind_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='x_kind']" position="attributes"/>
+        </field>
+    </record>
+    <record model="ir.ui.view" id="view_res_partner_kind_typed">
+        <field name="name">res.partner.kind.typed</field>
+        <field name="model">res.partner</field>
+        <field name="type">search</field>
+        <field name="inherit_id" ref="base.view_res_partner_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside"/>
+        </field>
+    </record>
     <template id="portal_my_partner_kind" name="My Partner Kind">
         <div>Hello</div>
     </template>
 </odoo>
+"#,
+        )
+        .unwrap();
+
+        let controllers_dir = dir.join("controllers");
+        fs::create_dir_all(&controllers_dir).unwrap();
+        fs::write(
+            controllers_dir.join("main.py"),
+            r#"
+from odoo import http
+from odoo.http import request
+
+
+class PartnerKindController(http.Controller):
+    @http.route(["/partner_kind/webhook", "/partner_kind/hook"], type="http", auth="public", methods=["POST"], csrf=False)
+    def webhook(self, **kwargs):
+        """Receives external webhook calls."""
+        return request.env["res.partner"].sudo().search([])
+
+    @http.route("/partner_kind/mine", auth="user", website=True)
+    def my_kinds(self):
+        return request.render("partner_kind.tmpl", {})
 "#,
         )
         .unwrap();
@@ -1134,13 +1310,23 @@ class ResPartner(models.Model):
              access_res_partner_kind_manager,res.partner.kind.manager,model_res_partner,group_partner_kind_manager,1,1,1,0\n",
         )
         .unwrap();
+        fs::write(
+            security_dir.join("res.groups.csv"),
+            "id,name,implied_ids:id\n\
+             group_partner_kind_csv,Partner Kind (CSV),base.group_user\n",
+        )
+        .unwrap();
+        // Dotless stem: not a model name, must be ignored entirely.
+        fs::write(security_dir.join("fixtures.csv"), "id,name\nnope,Nope\n").unwrap();
 
         let analyzer = OGHCollectorAnalyzer::new(&17u8);
         let result = analyzer.analyze_module_source(&dir);
 
         fs::remove_dir_all(&dir).unwrap();
 
-        assert_eq!(result.views.len(), 3);
+        assert_eq!(result.views.len(), 5);
+        // Parent view lives in another module: the type is unknowable
+        // statically, so it must be None - not the arch marker "xpath".
         let inheriting_view = result
             .views
             .iter()
@@ -1150,7 +1336,7 @@ class ResPartner(models.Model):
             inheriting_view.inherit_xml_id.as_deref(),
             Some("base.view_partner_form")
         );
-        assert_eq!(inheriting_view.view_type.as_deref(), Some("xpath"));
+        assert_eq!(inheriting_view.view_type, None);
 
         let new_view = result
             .views
@@ -1159,6 +1345,22 @@ class ResPartner(models.Model):
             .unwrap();
         assert_eq!(new_view.inherit_xml_id, None);
         assert_eq!(new_view.view_type.as_deref(), Some("tree"));
+
+        // Parent view is in this same module: type resolved from it.
+        let local_inheriting_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_kind_tree_x")
+            .unwrap();
+        assert_eq!(local_inheriting_view.view_type.as_deref(), Some("tree"));
+
+        // Explicit <field name="type"> beats everything else.
+        let typed_view = result
+            .views
+            .iter()
+            .find(|v| v.xml_id == "view_res_partner_kind_typed")
+            .unwrap();
+        assert_eq!(typed_view.view_type.as_deref(), Some("search"));
 
         let template_view = result
             .views
@@ -1263,6 +1465,55 @@ class ResPartner(models.Model):
         assert_eq!(access_fields["group_id:id"], "group_partner_kind_manager");
         assert_eq!(access_fields["perm_read"], "1");
         assert_eq!(access_fields["perm_unlink"], "0");
+
+        // Groups created via res.groups.csv must surface like the XML ones.
+        let csv_group = result
+            .records
+            .iter()
+            .find(|r| r.xml_id == "group_partner_kind_csv")
+            .unwrap();
+        assert_eq!(csv_group.model, "res.groups");
+        let csv_group_fields = csv_group.fields.as_ref().unwrap();
+        assert_eq!(csv_group_fields["name"], "Partner Kind (CSV)");
+        assert_eq!(csv_group_fields["implied_ids:id"], "base.group_user");
+
+        // fixtures.csv has no dot in its stem - not an Odoo data file.
+        assert!(result.records.iter().all(|r| r.xml_id != "nope"));
+
+        // HTTP controllers: every routed method, with resolved auth/defaults.
+        assert_eq!(result.controllers.len(), 2);
+        let webhook = result
+            .controllers
+            .iter()
+            .find(|c| c.name == "webhook")
+            .unwrap();
+        assert_eq!(webhook.class_name, "PartnerKindController");
+        assert_eq!(
+            webhook.routes,
+            vec!["/partner_kind/webhook", "/partner_kind/hook"]
+        );
+        assert_eq!(webhook.auth.as_deref(), Some("public"));
+        assert_eq!(webhook.http_type, "http");
+        assert_eq!(webhook.methods, vec!["POST"]);
+        assert_eq!(webhook.csrf, Some(false));
+        assert!(webhook.uses_sudo);
+        assert!(!webhook.website);
+        assert_eq!(webhook.signature, "(self, **kwargs)");
+        assert_eq!(
+            webhook.docstring.as_deref(),
+            Some("Receives external webhook calls.")
+        );
+
+        let my_kinds = result
+            .controllers
+            .iter()
+            .find(|c| c.name == "my_kinds")
+            .unwrap();
+        assert_eq!(my_kinds.auth.as_deref(), Some("user"));
+        assert_eq!(my_kinds.csrf, None); // framework default, not recorded
+        assert!(my_kinds.website);
+        assert!(!my_kinds.uses_sudo);
+        assert!(my_kinds.methods.is_empty()); // all methods accepted
     }
 
     // Exercises get_git_committers end to end against a real repo: two fake

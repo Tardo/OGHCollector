@@ -56,6 +56,33 @@ pub struct ModuleModelResponse {
     pub methods: Vec<ModuleModelMethodResponse>,
 }
 
+// An HTTP endpoint the module exposes. `auth` is the resolved value (Odoo
+// defaults applied) or None for pure overrides of inherited routes; `csrf`
+// None means the framework default (enabled).
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleControllerResponse {
+    pub class_name: String,
+    pub name: String,
+    pub routes: Vec<String>,
+    pub auth: Option<String>,
+    pub http_type: String,
+    pub methods: Vec<String>,
+    pub csrf: Option<bool>,
+    pub website: bool,
+    pub uses_sudo: bool,
+    pub signature: String,
+    pub docstring: Option<String>,
+}
+
+// Grave security findings only ("error" severity): minor ones are log-lines
+// in system_event by design, not part of the module's public record.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleSecurityWarningResponse {
+    pub code: String,
+    pub message: String,
+    pub xml_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleFullInfoResponse {
     pub technical_name: String,
@@ -80,6 +107,8 @@ pub struct ModuleFullInfoResponse {
     pub odoo_version: String,
     pub views: Vec<ModuleViewResponse>,
     pub models: Vec<ModuleModelResponse>,
+    pub controllers: Vec<ModuleControllerResponse>,
+    pub security_warnings: Vec<ModuleSecurityWarningResponse>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -131,6 +160,43 @@ fn get_module_views(
             model: v.model.unwrap_or_default(),
             inherit_xml_id: v.inherit_xml_id,
             view_type: v.view_type,
+        })
+        .collect()
+}
+
+fn get_module_controllers(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleControllerResponse> {
+    models::module_controller::get_by_module_version_id(conn, module_version_id)
+        .into_iter()
+        .map(|c| ModuleControllerResponse {
+            routes: c.routes_vec(),
+            methods: c.methods_vec(),
+            class_name: c.class_name,
+            name: c.name,
+            auth: c.auth,
+            http_type: c.http_type,
+            csrf: c.csrf,
+            website: c.website,
+            uses_sudo: c.uses_sudo,
+            signature: c.signature,
+            docstring: c.docstring,
+        })
+        .collect()
+}
+
+fn get_module_security_warnings(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleSecurityWarningResponse> {
+    models::module_security_warning::get_by_module_version_id(conn, module_version_id)
+        .into_iter()
+        .filter(|w| w.severity == models::module_security_warning::SEVERITY_ERROR)
+        .map(|w| ModuleSecurityWarningResponse {
+            code: w.code,
+            message: w.message,
+            xml_id: w.xml_id,
         })
         .collect()
 }
@@ -212,20 +278,25 @@ pub fn process_modules_db(
             Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
             None => models::module_version::resolve_current(conn, module),
         };
-        let (views, module_models, version) = match &resolved_version {
-            Some(mv) => (
-                get_module_views(conn, &mv.id),
-                get_module_models(conn, &mv.id),
-                mv.version_module.clone(),
-            ),
-            None => (
-                Vec::new(),
-                Vec::new(),
-                version_module
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| module.version_module.clone()),
-            ),
-        };
+        let (views, module_models, controllers, security_warnings, version) =
+            match &resolved_version {
+                Some(mv) => (
+                    get_module_views(conn, &mv.id),
+                    get_module_models(conn, &mv.id),
+                    get_module_controllers(conn, &mv.id),
+                    get_module_security_warnings(conn, &mv.id),
+                    mv.version_module.clone(),
+                ),
+                None => (
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    version_module
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| module.version_module.clone()),
+                ),
+            };
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version,
@@ -249,6 +320,8 @@ pub fn process_modules_db(
             odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
             views,
             models: module_models,
+            controllers,
+            security_warnings,
         });
     }
     res

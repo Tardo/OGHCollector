@@ -137,6 +137,27 @@ pub struct ModuleRecord {
     pub fields: Option<serde_json::Value>,
 }
 
+/// An HTTP endpoint the module exposes (a method decorated with http.route).
+/// `auth` is the resolved value (Odoo defaults applied: "user", or "public"
+/// for website routes), or None for a pure override of an inherited route.
+/// `csrf: None` means the framework default (enabled). `uses_sudo` flags any
+/// `.sudo()` call inside the handler - on a public/none route that means
+/// privileged code reachable without login.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleController {
+    pub class_name: String,
+    pub name: String,
+    pub routes: Vec<String>,
+    pub auth: Option<String>,
+    pub http_type: String,
+    pub methods: Vec<String>,
+    pub csrf: Option<bool>,
+    pub website: bool,
+    pub uses_sudo: bool,
+    pub signature: String,
+    pub docstring: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleModelField {
     pub name: String,
@@ -231,6 +252,7 @@ pub struct ModuleCodeAnalysis {
     pub views: Vec<ModuleView>,
     pub models: Vec<ModuleModel>,
     pub records: Vec<ModuleRecord>,
+    pub controllers: Vec<ModuleController>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -356,6 +378,28 @@ fn get_module_records(conn: &mut SqliteConnection, module_version_id: &i64) -> V
         .collect()
 }
 
+fn get_module_controllers(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleController> {
+    models::module_controller::get_by_module_version_id(conn, module_version_id)
+        .into_iter()
+        .map(|c| ModuleController {
+            routes: c.routes_vec(),
+            methods: c.methods_vec(),
+            class_name: c.class_name,
+            name: c.name,
+            auth: c.auth,
+            http_type: c.http_type,
+            csrf: c.csrf,
+            website: c.website,
+            uses_sudo: c.uses_sudo,
+            signature: c.signature,
+            docstring: c.docstring,
+        })
+        .collect()
+}
+
 fn get_module_models(conn: &mut SqliteConnection, module_version_id: &i64) -> Vec<ModuleModel> {
     models::module_model::get_by_module_version_id(conn, module_version_id)
         .into_iter()
@@ -474,22 +518,25 @@ fn build_module_code_analysis(
         Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
         None => models::module_version::resolve_current(conn, module),
     };
-    let (views, module_models, module_records, module_version) = match &resolved_version {
-        Some(mv) => (
-            get_module_views(conn, &mv.id),
-            get_module_models(conn, &mv.id),
-            get_module_records(conn, &mv.id),
-            mv.version_module.clone(),
-        ),
-        None => (
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            version_module
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| module.version_module.clone()),
-        ),
-    };
+    let (views, module_models, module_records, module_controllers, module_version) =
+        match &resolved_version {
+            Some(mv) => (
+                get_module_views(conn, &mv.id),
+                get_module_models(conn, &mv.id),
+                get_module_records(conn, &mv.id),
+                get_module_controllers(conn, &mv.id),
+                mv.version_module.clone(),
+            ),
+            None => (
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                version_module
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| module.version_module.clone()),
+            ),
+        };
     ModuleCodeAnalysis {
         technical_name: module.technical_name.clone(),
         odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
@@ -499,6 +546,7 @@ fn build_module_code_analysis(
         views,
         models: module_models,
         records: module_records,
+        controllers: module_controllers,
     }
 }
 
@@ -990,7 +1038,11 @@ impl OghMcp {
                         data that only loads once from data overwritten on every module upgrade \
                         - filter `records` by `model` to answer things like \"does this add a \
                         new access group\" (model == \"res.groups\") or \"does this change \
-                        permissions\" (model == \"ir.model.access\"). This is the heaviest tool \
+                        permissions\" (model == \"ir.model.access\"). Also lists `controllers`: \
+                        every HTTP endpoint the module exposes (route paths, resolved auth, \
+                        http/json type, allowed methods, csrf, whether the handler calls \
+                        .sudo()) - useful for both API discovery and security review (e.g. \
+                        public routes calling sudo). This is the heaviest tool \
                         in this server - only call it when you actually need view/model/field/ \
                         method/record detail, not just to check what a module does or what it \
                         depends on. Defaults to the latest known module version; pass \

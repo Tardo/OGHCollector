@@ -70,10 +70,41 @@ pub struct RecordAnalysisInfo {
     pub fields: Option<serde_json::Value>,
 }
 
+// One HTTP endpoint the module exposes (a method decorated with http.route).
+// `auth` is the *resolved* value (Odoo defaults applied: "user", or "public"
+// for website routes) - None when the route is a pure override of an
+// inherited route, whose auth can't be known statically. `csrf: None` means
+// the framework default (enabled); only an explicit literal True/False is
+// recorded. `uses_sudo` flags any `.sudo()` call inside the method body.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ControllerAnalysisInfo {
+    pub class_name: String,
+    pub name: String,
+    pub routes: Vec<String>,
+    #[serde(default)]
+    pub auth: Option<String>,
+    #[serde(default)]
+    pub http_type: String,
+    #[serde(default)]
+    pub methods: Vec<String>,
+    #[serde(default)]
+    pub csrf: Option<bool>,
+    #[serde(default)]
+    pub website: bool,
+    #[serde(default)]
+    pub uses_sudo: bool,
+    #[serde(default)]
+    pub signature: String,
+    #[serde(default)]
+    pub docstring: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ModuleAnalysisInfo {
     pub views: Vec<ViewAnalysisInfo>,
     pub models: Vec<ModelAnalysisInfo>,
     #[serde(default)]
     pub records: Vec<RecordAnalysisInfo>,
+    #[serde(default)]
+    pub controllers: Vec<ControllerAnalysisInfo>,
 }

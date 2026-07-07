@@ -56,6 +56,17 @@
     {% for module in modules %}
     {% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.technical_name) %}
     <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ module.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ module.odoo_version }}-tab" tabindex="0">
+        {% if module.security_warnings %}
+        <div class="alert alert-danger" role="alert">
+            <h5 class="alert-heading">&#9888; Security warnings</h5>
+            <ul>
+                {% for w in module.security_warnings %}
+                <li>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }} <span class="badge text-bg-danger">{{ w.code }}</span></li>
+                {% endfor %}
+            </ul>
+            <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue.</p>
+        </div>
+        {% endif %}
         <table class="table table-striped-columns">
             <tbody>
                 <tr class="col-2 d-lg-none"><th colspan="2">REPOSITORY</th></tr>
@@ -129,7 +140,7 @@
             </tbody>
         </table>
 
-        <h4 class="mt-4">Code Analysis</h4>
+        <h4 class="mt-4">Code Analysis <span class="text-body-secondary fs-6" style="cursor: help;" title="Extracted automatically from the module's source code (best-effort static analysis, no code is executed): details may be incomplete or approximate.">&#9432;</span></h4>
         <h5>Views touched ({{ module.views | length }})</h5>
         {% if module.views %}
         <div class="table-responsive">
@@ -156,6 +167,37 @@
         </div>
         {% else %}
         <p class="text-muted">No views found for this module.</p>
+        {% endif %}
+
+        <h5>HTTP endpoints ({{ module.controllers | length }})</h5>
+        {% if module.controllers %}
+        <div class="table-responsive">
+        <table class="table table-sm table-striped-columns">
+            <thead><tr><th>Route(s)</th><th>Handler</th><th>Auth</th><th>Type</th><th>Methods</th><th>Flags</th></tr></thead>
+            <tbody>
+                {% for c in module.controllers %}
+                <tr>
+                    <td>{% if c.routes %}{% for r in c.routes %}<code>{{ r }}</code>{{ not loop.last and ', ' or '' }}{% endfor %}{% else %}<span class="text-muted">(inherited route override)</span>{% endif %}</td>
+                    <td><code>{{ c.class_name }}.{{ c.name }}</code></td>
+                    <td>
+                        {% if c.auth == "user" %}<span class="badge text-bg-secondary">user</span>
+                        {% elif c.auth %}<span class="badge text-bg-warning">{{ c.auth }}</span>
+                        {% else %}<span class="badge text-bg-light border">inherited</span>{% endif %}
+                    </td>
+                    <td><span class="badge text-bg-light border">{{ c.http_type }}</span></td>
+                    <td>{{ c.methods and c.methods | join(', ') or 'ALL' }}</td>
+                    <td>
+                        {% if c.csrf == false %}<span class="badge text-bg-danger">csrf off</span>{% endif %}
+                        {% if c.uses_sudo %}<span class="badge text-bg-warning">sudo</span>{% endif %}
+                        {% if c.website %}<span class="badge text-bg-info">website</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No HTTP endpoints found for this module.</p>
         {% endif %}
 
         <h5>Models touched ({{ module.models | length }})</h5>
