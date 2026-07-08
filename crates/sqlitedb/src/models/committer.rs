@@ -2,6 +2,7 @@
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::models::BOT_COMMITTERS;
 use crate::schema::committer;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
@@ -32,10 +33,6 @@ pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
         .optional()
         .expect("DB error in committer::get_by_name")
 }
-
-// Bots/automation accounts excluded so rankings reflect human contributors
-// (kept in sync with module::rank_committer's exclusion list).
-const BOT_COMMITTERS: &str = "'Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci'";
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct GlobalRank {

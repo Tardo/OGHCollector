@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::models::BOT_COMMITTERS;
 use crate::schema::module_committer_period;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
@@ -104,10 +105,6 @@ pub fn get_activity_by_committer_name(
     .load::<PeriodActivity>(conn)
     .expect("DB error in module_committer_period::get_activity_by_committer_name")
 }
-
-// Bots/automation accounts excluded so rankings reflect human contributors
-// (kept in sync with committer::rank_global's exclusion list).
-const BOT_COMMITTERS: &str = "'Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci'";
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct PeriodRankEntry {

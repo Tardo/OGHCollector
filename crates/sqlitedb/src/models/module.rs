@@ -10,6 +10,7 @@ use super::{
     author, gh_organization, gh_repository, maintainer, module_author,
     module_code_analysis::ModuleAnalysisInfo, module_committer, module_committer_period,
     module_maintainer, module_model, module_record, module_version, module_view, system_event,
+    BOT_COMMITTERS,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -617,18 +618,17 @@ pub fn rank_contributor(conn: &mut SqliteConnection) -> Vec<ModuleRankContributo
 }
 
 pub fn rank_committer(conn: &mut SqliteConnection) -> Vec<ModuleRankCommitterInfo> {
-    diesel::sql_query(
+    diesel::sql_query(format!(
         "SELECT * FROM (\
            SELECT mod.version_odoo, SUM(mod_com.commits) as count, com.name as committer_name, \
                   RANK() OVER (PARTITION BY mod.version_odoo ORDER BY SUM(mod_com.commits) DESC) AS rank \
            FROM module as mod \
            INNER JOIN module_committer as mod_com ON mod.id = mod_com.module_id \
            INNER JOIN committer as com ON mod_com.committer_id = com.id \
-           WHERE com.name NOT IN \
-                 ('Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci') \
+           WHERE com.name NOT IN ({BOT_COMMITTERS}) \
            GROUP BY com.id, mod.version_odoo \
-         ) WHERE rank <= 5 ORDER BY rank ASC",
-    )
+         ) WHERE rank <= 5 ORDER BY rank ASC"
+    ))
     .load::<ModuleRankCommitterInfo>(conn)
     .expect("DB error in module::rank_committer")
 }
