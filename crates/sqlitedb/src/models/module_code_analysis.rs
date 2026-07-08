@@ -75,7 +75,9 @@ pub struct RecordAnalysisInfo {
 // for website routes) - None when the route is a pure override of an
 // inherited route, whose auth can't be known statically. `csrf: None` means
 // the framework default (enabled); only an explicit literal True/False is
-// recorded. `uses_sudo` flags any `.sudo()` call inside the method body.
+// recorded. `uses_sudo` flags any `.sudo()` call inside the method body;
+// `checks_token_access` flags the portal pattern of validating record access
+// via `_document_check_access(..., access_token)` before acting.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ControllerAnalysisInfo {
     pub class_name: String,
@@ -93,6 +95,8 @@ pub struct ControllerAnalysisInfo {
     pub website: bool,
     #[serde(default)]
     pub uses_sudo: bool,
+    #[serde(default)]
+    pub checks_token_access: bool,
     #[serde(default)]
     pub signature: String,
     #[serde(default)]

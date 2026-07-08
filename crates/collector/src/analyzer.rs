@@ -294,9 +294,9 @@ def _route_decorator(func_node):
     return None
 
 
-def _uses_sudo(func_node):
+def _calls_method(func_node, method_name):
     for n in ast.walk(func_node):
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "sudo":
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == method_name:
             return True
     return False
 
@@ -354,7 +354,10 @@ def _analyze_controllers(tree):
                     ),
                     "csrf": csrf,  # None = framework default (enabled)
                     "website": website,
-                    "uses_sudo": _uses_sudo(stmt),
+                    "uses_sudo": _calls_method(stmt, "sudo"),
+                    # Portal token-validation pattern: the endpoint gates its
+                    # record access on _document_check_access(..., access_token).
+                    "checks_token_access": _calls_method(stmt, "_document_check_access"),
                     "signature": _signature(stmt),
                     "docstring": _truncate(ast.get_docstring(stmt, clean=True)),
                 }
@@ -1357,6 +1360,11 @@ class PartnerKindController(http.Controller):
     @http.route("/partner_kind/mine", auth="user", website=True)
     def my_kinds(self):
         return request.render("partner_kind.tmpl", {})
+
+    @http.route("/partner_kind/doc/<int:doc_id>", auth="public", website=True)
+    def portal_doc(self, doc_id, access_token=None):
+        doc = self._document_check_access("res.partner", doc_id, access_token)
+        return request.env["res.partner"].sudo().browse(doc.id)
 "#,
         )
         .unwrap();
@@ -1586,7 +1594,7 @@ class PartnerKindController(http.Controller):
         assert!(result.records.iter().all(|r| r.xml_id != "nope"));
 
         // HTTP controllers: every routed method, with resolved auth/defaults.
-        assert_eq!(result.controllers.len(), 2);
+        assert_eq!(result.controllers.len(), 3);
         let webhook = result
             .controllers
             .iter()
@@ -1602,6 +1610,7 @@ class PartnerKindController(http.Controller):
         assert_eq!(webhook.methods, vec!["POST"]);
         assert_eq!(webhook.csrf, Some(false));
         assert!(webhook.uses_sudo);
+        assert!(!webhook.checks_token_access);
         assert!(!webhook.website);
         assert_eq!(webhook.signature, "(self, **kwargs)");
         assert_eq!(
@@ -1619,6 +1628,15 @@ class PartnerKindController(http.Controller):
         assert!(my_kinds.website);
         assert!(!my_kinds.uses_sudo);
         assert!(my_kinds.methods.is_empty()); // all methods accepted
+
+        // Portal pattern: public + sudo, but gated by _document_check_access.
+        let portal_doc = result
+            .controllers
+            .iter()
+            .find(|c| c.name == "portal_doc")
+            .unwrap();
+        assert!(portal_doc.uses_sudo);
+        assert!(portal_doc.checks_token_access);
     }
 
     // Exercises get_git_committers end to end against a real repo: two fake

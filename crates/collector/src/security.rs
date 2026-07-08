@@ -252,6 +252,9 @@ fn controller_warning(
 /// public/none one is the normal webhook pattern and `.sudo()` inside a
 /// public route is extremely common in website modules - both are real
 /// review signals but not definite holes, so they only reach the log.
+/// A public `.sudo()` route that also calls `_document_check_access` (the
+/// portal access_token pattern) gates its record access itself and isn't
+/// reported at all.
 pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<SecurityWarningInfo> {
     let mut out = Vec::new();
     for ctrl in controllers {
@@ -285,7 +288,7 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                 ));
             }
         }
-        if is_public && ctrl.uses_sudo {
+        if is_public && ctrl.uses_sudo && !ctrl.checks_token_access {
             out.push(controller_warning(
                 ctrl,
                 SEVERITY_WARNING,
@@ -515,7 +518,7 @@ mod tests {
             website: false,
             uses_sudo: sudo,
             signature: "(self)".to_string(),
-            docstring: None,
+            ..Default::default()
         }
     }
 
@@ -554,6 +557,10 @@ mod tests {
 
         // sudo behind an authenticated route: normal, clean.
         assert!(analyze_controllers(&[route(Some("user"), None, &[], true)]).is_empty());
+        // Public sudo gated by _document_check_access (portal token): clean.
+        let mut portal = route(Some("public"), None, &[], true);
+        portal.checks_token_access = true;
+        assert!(analyze_controllers(&[portal]).is_empty());
         // Unknown auth (inherited-route override): no guessing, clean.
         assert!(analyze_controllers(&[route(None, None, &[], true)]).is_empty());
     }
