@@ -202,6 +202,15 @@ fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                 "Record rule with an always-true domain grants portal/public users access to every record of its model".to_string(),
             ));
         }
+        // An always-true rule scoped to a manager/admin group is the canonical
+        // Odoo pattern to lift restrictions for supervisors - not a finding.
+        Some(groups)
+            if groups.contains("manager")
+                || groups.contains("admin")
+                || ADMIN_GROUP_XML_IDS.iter().any(|g| groups.contains(g)) => {}
+        // "_all" naming (e.g. `rule_settlement_all`) marks a deliberately
+        // global grant, same convention as ACLs - not a finding.
+        Some(_) if is_intentional_global(rec) => {}
         Some(_) => {
             out.push(warning(
                 rec,
@@ -482,11 +491,24 @@ mod tests {
         assert_eq!(found[0].code, "rule-public-bypass");
         assert_eq!(found[0].severity, SEVERITY_ERROR);
 
-        // Internal group: minor (log-only). Also covers the `[]` domain form.
-        let found = analyze_records(&[rule(
+        // Manager/admin group: canonical unlock pattern, not a finding.
+        assert!(analyze_records(&[rule(
             "[]",
             Some("[(4, ref('sales_team.group_sale_manager'))]"),
-        )]);
+        )])
+        .is_empty());
+        assert!(
+            analyze_records(&[rule("[(1,'=',1)]", Some("[(4, ref('base.group_system'))]"),)])
+                .is_empty()
+        );
+
+        // "_all" naming marks a deliberately global rule: not a finding.
+        let mut all_rule = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
+        all_rule.xml_id = "rule_settlement_all".to_string();
+        assert!(analyze_records(&[all_rule]).is_empty());
+
+        // Plain internal group: minor (log-only). Also covers the `[]` domain form.
+        let found = analyze_records(&[rule("[]", Some("[(4, ref('base.group_user'))]"))]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "rule-group-bypass");
         assert_eq!(found[0].severity, SEVERITY_WARNING);

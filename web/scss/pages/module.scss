@@ -9,6 +9,12 @@ mirlo-module-search {
     top: 25%;
 }
 
+.module-description {
+    max-height: 20rem;
+    overflow: auto;
+    margin-bottom: 0;
+}
+
 .module-model-accordion {
     .accordion-button {
         align-items: flex-start;
