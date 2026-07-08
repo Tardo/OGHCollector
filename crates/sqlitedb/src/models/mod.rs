@@ -35,7 +35,7 @@ pub type Connection = PooledConnection<ConnectionManager<SqliteConnection>>;
 /// human contributors. Single source of truth for `committer`, `module` and
 /// `module_committer_period`'s ranking queries.
 pub const BOT_COMMITTERS: &str = "'Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci', \
-     'OCA Transbot', 'Launchpad translations on behalf of openerp', 'oca-travis'";
+     'OCA Transbot', 'Launchpad Translations on behalf of openerp', 'oca-travis', 'GitHub'";
 
 // Shared helper types for sql_query results.
 #[derive(diesel::QueryableByName)]
