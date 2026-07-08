@@ -1,6 +1,6 @@
 // Copyright 2025 Alexandre D. Díaz
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import '@scss/components/doodba-converter.scss';
 
 const MANIFEST_NAMES = ['__manifest__.py', '__openerp__.py'];

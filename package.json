@@ -1,5 +1,5 @@
 {
-  "packageManager": "pnpm@11.2.2",
+  "packageManager": "pnpm@11.10.0+sha512.0b7f8b98060031904c017e3a41eb187a16d40eeb829b95c4f8cb03681761fc4ab53dd219115b9b447f4dce1a05a214764461e7d3703392a9f32f9511ce8c86c8",
   "scripts": {
     "clean": "rm -rf ./static/auto",
     "build:watch": "rollup -c -w",
@@ -10,25 +10,25 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
-    "@babel/eslint-parser": "^7.29.7",
-    "@babel/plugin-syntax-flow": "^7.29.7",
-    "@babel/preset-flow": "^7.29.7",
+    "@babel/core": "^8.0.1",
+    "@babel/eslint-parser": "^8.0.1",
+    "@babel/plugin-syntax-flow": "^8.0.1",
+    "@babel/preset-flow": "^8.0.1",
     "@eslint/js": "^10.0.1",
-    "@rollup/plugin-alias": "^5.1.1",
-    "@rollup/plugin-commonjs": "^25.0.8",
-    "@rollup/plugin-node-resolve": "^15.3.1",
-    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-alias": "^6.0.0",
+    "@rollup/plugin-commonjs": "^29.0.3",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
     "autoprefixer": "^10.5.2",
     "bootstrap": "^5.3.8",
-    "cssnano": "^7.1.9",
+    "cssnano": "^8.0.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^9.1.2",
     "eslint-plugin-ft-flow": "^3.0.11",
     "eslint-plugin-prettier": "^5.5.6",
-    "glob": "^11.1.0",
+    "glob": "^13.0.6",
     "globals": "^17.7.0",
-    "graphology": "^0.25.4",
+    "graphology": "^0.26.0",
     "husky": "^9.1.7",
     "jquery-slim": "^3.0.0",
     "jszip": "^3.10.1",
@@ -38,7 +38,7 @@
     "rollup": "^4.62.2",
     "rollup-plugin-analyzer": "^4.0.0",
     "rollup-plugin-cleanup": "^3.2.1",
-    "rollup-plugin-lib-style": "^2.5.0",
+    "rollup-plugin-lib-style": "^2.6.0",
     "sigma": "^3.0.3",
     "terser": "^5.48.0"
   },
@@ -46,7 +46,7 @@
     "graphology-layout": "^0.6.1",
     "graphology-layout-forceatlas2": "^0.10.1",
     "graphology-types": "^0.24.8",
-    "js-yaml": "^4.3.0"
+    "js-yaml": "^5.2.1"
   },
   "prettier": {
     "printWidth": 80,

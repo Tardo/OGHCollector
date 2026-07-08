@@ -1,6 +1,6 @@
 // Copyright 2025 Alexandre D. Díaz
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import JSZip from 'jszip';
 import '@scss/components/doodba-dependency-resolver.scss';
 
