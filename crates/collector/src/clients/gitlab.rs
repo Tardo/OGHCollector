@@ -78,10 +78,16 @@ impl GitClient for GitlabClient {
         let mut repos: Vec<RepoInfo> = Vec::new();
 
         while page_count < GITLAB_LIMIT_PAGES {
-            let group_repos = self
+            let group_repos = match self
                 .get_org_repos(org_name, &GITLAB_LIMIT_PER_PAGE, &page_count)
                 .await
-                .unwrap();
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    log::error!("Can't fetch repos of '{org_name}' (page {page_count}): {err}");
+                    break;
+                }
+            };
 
             let group_repos_items = match group_repos.as_array() {
                 Some(arr) => arr,
@@ -164,10 +170,16 @@ impl GitClient for GitlabClient {
         let mut page_count: usize = 1;
         let mut prs: Vec<PullRequestInfo> = Vec::new();
         while page_count < GITLAB_LIMIT_PAGES {
-            let merge_requests = self
+            let merge_requests = match self
                 .get_repo_pull_requests(full_path, branch, &GITLAB_LIMIT_PER_PAGE, &page_count)
                 .await
-                .unwrap();
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    log::error!("Can't fetch merge requests of '{full_path}': {err}");
+                    break;
+                }
+            };
             let mr_items = match merge_requests.as_array() {
                 Some(arr) => arr,
                 _ => break,

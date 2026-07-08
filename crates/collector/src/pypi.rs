@@ -64,11 +64,9 @@ impl PypiClient {
             .iter()
             .map(|&x| x.parse::<i16>().unwrap_or(-1))
             .collect::<Vec<i16>>();
-        let releases_opt = values["releases"].as_object();
-        if releases_opt.is_none() {
+        let Some(releases) = values["releases"].as_object() else {
             return Ok(None);
-        }
-        let releases = releases_opt.unwrap();
+        };
         let mut res: Option<String> = None;
         for (rel_ver, _) in releases {
             let ver_str = rel_ver;

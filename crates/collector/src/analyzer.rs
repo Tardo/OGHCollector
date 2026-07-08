@@ -637,7 +637,7 @@ def analyze_module(module_path):
     )
 "#;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GitInfo {
     pub last_commit_hash: String,
     pub last_commit_author: String,
@@ -696,7 +696,10 @@ impl OGHCollectorAnalyzer {
         let re =
             Regex::new(r"([0-9a-f]+)~~([^\n]+)~~([^\n]+)~~(.+)~~(?:[\S\s]+Part-of:\s([^\n]+))?")
                 .unwrap();
-        let caps = re.captures(&output).unwrap();
+        // No commits touching this folder (or git failed): empty info, not a panic.
+        let Some(caps) = re.captures(&output) else {
+            return Ok(GitInfo::default());
+        };
         Ok(GitInfo {
             last_commit_hash: caps
                 .get(1)
@@ -859,7 +862,8 @@ impl OGHCollectorAnalyzer {
     ) -> PyResult<ManifestInfo> {
         log::info!("Reading Manifest: {manifest_path}");
         Python::with_gil(|py| {
-            let code = fs::read_to_string(manifest_path).unwrap();
+            let code = fs::read_to_string(manifest_path)
+                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
             let manifest: &PyDict = py.eval(&code, None, None)?.extract()?;
             // name
             let name_opt = manifest.get_item("name");
@@ -1120,23 +1124,41 @@ impl OGHCollectorAnalyzer {
                 let base_path =
                     PathBuf::from(format!("{}{}", repo_info.get_clone_path(), read_path));
                 log::info!("- Base Path: {}", &base_path.display());
-                for entry in fs::read_dir(&base_path).unwrap() {
-                    let path = entry.unwrap().path();
-                    let manifest_filename_opt = self.is_odoo_module_folder(&path).unwrap();
+                // Any failure below is scoped to a single module: log and keep
+                // scanning, one broken folder/manifest must not abort the run.
+                let entries = match fs::read_dir(&base_path) {
+                    Ok(entries) => entries,
+                    Err(err) => {
+                        log::warn!("Can't read '{}': {err}. Skipping...", base_path.display());
+                        continue;
+                    }
+                };
+                for entry in entries {
+                    let Ok(entry) = entry else { continue };
+                    let path = entry.path();
+                    let manifest_filename_opt = self.is_odoo_module_folder(&path).ok().flatten();
                     if let Some(manifest_filename) = manifest_filename_opt {
-                        let folder_size = get_size(&path).unwrap();
-                        let git_info = self.get_git_info(&path).unwrap();
-                        let committers = self.get_git_committers(&path).unwrap();
+                        let folder_size = get_size(&path).unwrap_or(0);
+                        let git_info = self.get_git_info(&path).unwrap_or_default();
+                        let committers = self.get_git_committers(&path).unwrap_or_default();
                         let manifest_path = format!("{}/{}", &path.display(), &manifest_filename);
-                        let module_name = path.file_name().unwrap().to_str().unwrap();
-                        let mut manifest = self
-                            .read_manifest(
-                                repo_info.get_org(),
-                                repo_info.get_name(),
-                                module_name,
-                                &manifest_path,
-                            )
-                            .unwrap();
+                        let Some(module_name) = path.file_name().and_then(|n| n.to_str()) else {
+                            continue;
+                        };
+                        let mut manifest = match self.read_manifest(
+                            repo_info.get_org(),
+                            repo_info.get_name(),
+                            module_name,
+                            &manifest_path,
+                        ) {
+                            Ok(manifest) => manifest,
+                            Err(err) => {
+                                log::warn!(
+                                    "Can't read manifest '{manifest_path}': {err}. Skipping module..."
+                                );
+                                continue;
+                            }
+                        };
                         manifest.folder_size = folder_size;
                         manifest.last_commit_hash = git_info.last_commit_hash;
                         manifest.last_commit_author = git_info.last_commit_author;

@@ -66,19 +66,38 @@ impl GitClient for GithubClient {
         let mut page_count: usize = 1;
         let mut repos: Vec<RepoInfo> = Vec::new();
         while page_count < GITHUB_LIMIT_PAGES {
-            let org_repos = self
+            let org_repos = match self
                 .get_org_repos(org_name, &GITHUB_LIMIT_PER_PAGE, &page_count)
                 .await
-                .unwrap();
-            let org_repos_items = org_repos.as_array().unwrap();
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    log::error!("Can't fetch repos of '{org_name}' (page {page_count}): {err}");
+                    break;
+                }
+            };
+            // Errors (rate limit, bad token, ...) come back as an object with
+            // a "message" field instead of the repo array.
+            let org_repos_items = match org_repos.as_array() {
+                Some(arr) => arr,
+                _ => {
+                    log::error!(
+                        "Unexpected GitHub response for '{org_name}': {}",
+                        org_repos["message"].as_str().unwrap_or("unknown error")
+                    );
+                    break;
+                }
+            };
             if org_repos_items.is_empty() {
                 break;
             }
             for repo_info in org_repos_items.iter() {
-                let repo_owner = repo_info["owner"].as_object().unwrap();
-                let repo_owner_login = repo_owner["login"].as_str().unwrap();
-                let repo_name = repo_info["name"].as_str().unwrap();
-                let repo_url = repo_info["clone_url"].as_str().unwrap();
+                let repo_owner_login = repo_info["owner"]["login"].as_str().unwrap_or("");
+                let repo_name = repo_info["name"].as_str().unwrap_or("");
+                let repo_url = repo_info["clone_url"].as_str().unwrap_or("");
+                if repo_owner_login.is_empty() || repo_name.is_empty() || repo_url.is_empty() {
+                    continue;
+                }
                 let repo_info_opt =
                     self.clone_or_update_repo(repo_owner_login, repo_name, repo_url, branch, dest);
                 match repo_info_opt {
@@ -118,10 +137,16 @@ impl GitClient for GithubClient {
         let mut page_count: usize = 1;
         let mut prs: Vec<PullRequestInfo> = Vec::new();
         while page_count < GITHUB_LIMIT_PAGES {
-            let pulls = self
+            let pulls = match self
                 .get_repo_pull_requests(full_path, branch, &GITHUB_LIMIT_PER_PAGE, &page_count)
                 .await
-                .unwrap();
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    log::error!("Can't fetch pull requests of '{full_path}': {err}");
+                    break;
+                }
+            };
             let pull_items = match pulls.as_array() {
                 Some(arr) => arr,
                 _ => break,

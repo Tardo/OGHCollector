@@ -25,11 +25,13 @@ use oghutils::version::odoo_version_u8_to_string;
 use pypi::PypiClient;
 use sqlitedb::models;
 
-fn try_lock(config: &OGHCollectorConfig) {
+// The guard must stay alive for the whole run: dropping it releases the lock,
+// which is why this returns it instead of letting it die inside the function.
+fn try_lock(config: &OGHCollectorConfig) -> named_lock::NamedLockGuard {
     let source_info = config.get_source().split('/').collect::<Vec<&str>>();
     let org = source_info[0];
     let lock_name = format!("OGHCollector::{org}");
-    let lock = NamedLock::create(lock_name.as_str()).unwrap();
+    let lock = NamedLock::create(lock_name.as_str()).expect("Can't create the collector lock");
     match lock.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
@@ -38,7 +40,7 @@ fn try_lock(config: &OGHCollectorConfig) {
             );
             std::process::exit(1);
         }
-    };
+    }
 }
 
 #[tokio::main]
@@ -47,7 +49,7 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let config = OGHCollectorConfig::new(&args);
 
-    try_lock(&config);
+    let _lock_guard = try_lock(&config);
 
     let git_client = match config.get_git_type() {
         GitType::Github => {
@@ -90,9 +92,15 @@ async fn main() {
             )
             .await;
     } else if config.get_mode() == "repo" {
-        let src_parts = config.get_source().split("/").collect::<Vec<&str>>();
-        let user_name = src_parts[0].to_string();
-        let repo_name = src_parts[1].to_string();
+        let Some((user_name, repo_name)) = config.get_source().split_once('/') else {
+            eprintln!(
+                "Invalid source '{}': repo mode expects '<user>/<repo>'",
+                config.get_source()
+            );
+            std::process::exit(1);
+        };
+        let user_name = user_name.to_string();
+        let repo_name = repo_name.to_string();
         let repo_url = format!("https://github.com/{user_name}/{repo_name}.git");
         let res_opt = git_client.clone_or_update_repo(
             &user_name,
@@ -339,7 +347,12 @@ async fn main() {
                 if module_depends_python_name.contains("==")
                     || module_depends_python_name.contains("<")
                 {
-                    let caps = re.captures(module_depends_python_name).unwrap();
+                    let Some(caps) = re.captures(module_depends_python_name) else {
+                        log::warn!(
+                            "Can't parse python dependency '{module_depends_python_name}'. Skipping OSV check..."
+                        );
+                        continue;
+                    };
                     let package_name = caps
                         .get(1)
                         .map_or(String::new(), |m| m.as_str().trim().to_string());
@@ -349,11 +362,21 @@ async fn main() {
                     if !module_depends_python_name.contains("<=")
                         && module_depends_python_name.contains("<")
                     {
-                        let package_ver_opt = pypi_client
+                        // A PyPI/network hiccup only skips this dep's OSV check,
+                        // never the whole collector run.
+                        let package_ver_opt = match pypi_client
                             .get_nearest_version(&package_name, &package_ver)
                             .await
-                            .unwrap();
-                        if package_ver_opt.is_none() {
+                        {
+                            Ok(res) => res,
+                            Err(err) => {
+                                log::warn!(
+                                    "Can't query PyPI for '{package_name}': {err}. Skipping OSV check..."
+                                );
+                                continue;
+                            }
+                        };
+                        let Some(nearest_ver) = package_ver_opt else {
                             log::info!(
                                 "No valid release version found for '{}': '{}' ({}). Skipping...",
                                 &module_depends_python_name,
@@ -361,28 +384,41 @@ async fn main() {
                                 &package_ver
                             );
                             continue;
-                        }
-                        package_ver = package_ver_opt.unwrap();
+                        };
+                        package_ver = nearest_ver;
                     }
-                    let package_info = pypi_client
+                    let package_info = match pypi_client
                         .get_package_info(&package_name, Some(&package_ver))
                         .await
-                        .unwrap();
+                    {
+                        Ok(res) => res,
+                        Err(err) => {
+                            log::warn!(
+                                "Can't query PyPI for '{package_name}': {err}. Skipping OSV check..."
+                            );
+                            continue;
+                        }
+                    };
                     let vulns_opt = package_info["vulnerabilities"].as_array();
                     if let Some(vulns) = vulns_opt {
                         for vuln in vulns {
+                            let Some(vuln_id) = vuln["id"].as_str() else {
+                                continue;
+                            };
                             let fixed_in: String = vuln["fixed_in"]
                                 .as_array()
-                                .unwrap()
-                                .iter()
-                                .map(|x| x.as_str().unwrap())
-                                .collect::<Vec<&str>>()
-                                .join(", ");
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|x| x.as_str())
+                                        .collect::<Vec<&str>>()
+                                        .join(", ")
+                                })
+                                .unwrap_or_default();
                             models::dependency_osv::add(
                                 &mut conn,
                                 &dep_mod.id,
-                                vuln["id"].as_str().unwrap(),
-                                vuln["details"].as_str().unwrap(),
+                                vuln_id,
+                                vuln["details"].as_str().unwrap_or(""),
                                 fixed_in.as_str(),
                             )
                             .unwrap();
