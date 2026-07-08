@@ -111,6 +111,9 @@
         <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
             <div class="committer-subtitle">Trivia</div>
             <div class="fs-5">{{ stats.quijote_fun_fact }}</div>
+            {% if stats.quijote_fun_fact_chars %}
+            <div class="text-body-secondary small">~{{ stats.quijote_fun_fact_chars }} characters estimated</div>
+            {% endif %}
         </div>
     </div>
 </div>

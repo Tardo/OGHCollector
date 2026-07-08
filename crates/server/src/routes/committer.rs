@@ -33,23 +33,31 @@ pub struct CommitterModuleRow {
     pub deletions: i32,
 }
 
-/// Rough "how much text is that" fun fact from total lines added. Both
-/// constants are ballpark estimates (source lines aren't prose), good enough
-/// for a trivia line, not a serious measurement.
+/// Rough "how much text is that" fun fact from net lines (added - removed).
+/// Both constants are ballpark estimates (source lines aren't prose), good
+/// enough for a trivia line, not a serious measurement.
 /// ponytail: naive heuristic, revisit if this should ever be exact.
-fn quijote_fun_fact(total_insertions: i64) -> Option<String> {
-    if total_insertions <= 0 {
-        return None;
+fn quijote_fun_fact(net_lines: i64) -> Option<(String, i64)> {
+    if net_lines <= 0 {
+        return (net_lines < 0).then(|| {
+            (
+                format!(
+                    "Net negative: {} more lines removed than added - a codebase janitor, not a writer.",
+                    -net_lines
+                ),
+                0,
+            )
+        });
     }
-    const AVG_CHARS_PER_LINE: f64 = 45.0;
+    const AVG_CHARS_PER_LINE: f64 = 34.0;
     const QUIJOTE_CHARS: f64 = 2_000_000.0;
     const PAGE_CHARS: f64 = 2_000.0;
 
-    let total_chars = total_insertions as f64 * AVG_CHARS_PER_LINE;
+    let total_chars = net_lines as f64 * AVG_CHARS_PER_LINE;
     let quijotes = total_chars / QUIJOTE_CHARS;
     let pages = total_chars / PAGE_CHARS;
 
-    Some(if pages < 1.0 {
+    let message = if pages < 1.0 {
         format!("{total_chars:.0} characters written so far - not quite a full book page yet.")
     } else if quijotes < 0.1 {
         format!("About {pages:.0} pages written - roughly a short story's worth of text.")
@@ -60,11 +68,29 @@ fn quijote_fun_fact(total_insertions: i64) -> Option<String> {
         )
     } else if quijotes < 10.0 {
         format!("Enough text to write {quijotes:.1} copies of Don Quixote.")
-    } else {
+    } else if quijotes < 30.0 {
         format!(
             "Enough text for {quijotes:.0} copies of Don Quixote - practically a library shelf."
         )
-    })
+    } else if quijotes < 60.0 {
+        format!(
+            "Enough text for {quijotes:.0} copies of Don Quixote - you'd need a small bookstore to hold them all."
+        )
+    } else if quijotes < 100.0 {
+        format!(
+            "Enough text for {quijotes:.0} copies of Don Quixote - that's a small town's public library."
+        )
+    } else if quijotes < 200.0 {
+        format!(
+            "Enough text for {quijotes:.0} copies of Don Quixote - Cervantes never wrote this much fan fiction."
+        )
+    } else {
+        format!(
+            "Enough text for {quijotes:.0} copies of Don Quixote - at this point you ARE the Real Academia Española."
+        )
+    };
+
+    Some((message, total_chars as i64))
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -113,6 +139,7 @@ pub struct CommitterStats {
     pub total_committers: Option<i64>,
     pub fun_facts: Option<CommitterFunFacts>,
     pub quijote_fun_fact: Option<String>,
+    pub quijote_fun_fact_chars: Option<i64>,
 }
 
 fn build_fun_facts(conn: &mut SqliteConnection, name: &str) -> Option<CommitterFunFacts> {
@@ -219,6 +246,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
 
     let rank_info = models::committer::get_global_rank_by_name(conn, name);
     let fun_facts = build_fun_facts(conn, name);
+    let quijote_fact = quijote_fun_fact(total_insertions - total_deletions);
 
     CommitterStats {
         total_commits,
@@ -234,7 +262,8 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
         global_rank: rank_info.as_ref().map(|r| r.rank),
         total_committers: rank_info.as_ref().map(|r| r.total_committers),
         fun_facts,
-        quijote_fun_fact: quijote_fun_fact(total_insertions),
+        quijote_fun_fact: quijote_fact.as_ref().map(|(msg, _)| msg.clone()),
+        quijote_fun_fact_chars: quijote_fact.map(|(_, chars)| chars),
     }
 }
 
