@@ -633,6 +633,69 @@ pub fn rank_committer(conn: &mut SqliteConnection) -> Vec<ModuleRankCommitterInf
     .expect("DB error in module::rank_committer")
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleFunFactInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub organization: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub value: i64,
+}
+
+/// The single module (one technical_name/version_odoo/repo row) with the
+/// most commits recorded across its committers.
+pub fn most_changed(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, gh_org.name as organization, SUM(mod_com.commits) as value \
+         FROM module_committer as mod_com \
+         INNER JOIN module as mod ON mod_com.module_id = mod.id \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         GROUP BY mod.id \
+         ORDER BY value DESC LIMIT 1",
+    )
+    .load::<ModuleFunFactInfo>(conn)
+    .expect("DB error in module::most_changed")
+    .into_iter()
+    .next()
+}
+
+/// The single module with the most distinct committers.
+pub fn most_contributors(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, gh_org.name as organization, \
+         COUNT(DISTINCT mod_com.committer_id) as value \
+         FROM module_committer as mod_com \
+         INNER JOIN module as mod ON mod_com.module_id = mod.id \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         GROUP BY mod.id \
+         ORDER BY value DESC LIMIT 1",
+    )
+    .load::<ModuleFunFactInfo>(conn)
+    .expect("DB error in module::most_contributors")
+    .into_iter()
+    .next()
+}
+
+/// The technical_name present across the most distinct Odoo versions.
+pub fn broadest_reach(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, MIN(gh_org.name) as organization, \
+         COUNT(DISTINCT mod.version_odoo) as value \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         GROUP BY mod.technical_name \
+         ORDER BY value DESC LIMIT 1",
+    )
+    .load::<ModuleFunFactInfo>(conn)
+    .expect("DB error in module::broadest_reach")
+    .into_iter()
+    .next()
+}
+
 pub fn get_latest_modules_created(conn: &mut SqliteConnection) -> Vec<ModuleLastCreatedInfo> {
     diesel::sql_query(
         "SELECT mod.id, mod.version_odoo, mod.technical_name, date(mod.create_date) as create_date, \
@@ -653,7 +716,8 @@ pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
          FROM module as mod \
          INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
-         GROUP BY gh_org.name, mod.technical_name",
+         GROUP BY gh_org.name, mod.technical_name \
+         ORDER BY mod.technical_name, gh_org.name",
     )
     .load::<ModuleListRow>(conn)
     .expect("DB error in module::list")

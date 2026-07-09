@@ -6,13 +6,6 @@ const PAGE_SIZE = 50;
 const SCROLL_THRESHOLD_PX = 100;
 const INPUT_DEBOUNCE_MS = 120;
 
-// localeCompare is far slower than a plain relational compare, and technical
-// names / org slugs are always plain lowercase ASCII, so locale collation
-// buys nothing here - see #filterResults.
-function compareStr(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 class ModuleSearch extends Component {
   #el_search_results = null;
   #last_query = null;
@@ -148,16 +141,12 @@ class ModuleSearch extends Component {
 
   async #filterResults(query) {
     const modules = this.getFetchData('modules');
-    // A module can live in more than one org (e.g. moved from OCA into Odoo
-    // core) - sorting by technical_name keeps its org rows adjacent, so they
-    // read as one entry while each still links to its own org's page.
-    const filtered = modules
-      .filter(item => item.technical_name.includes(query.toLowerCase()))
-      .sort(
-        (a, b) =>
-          compareStr(a.technical_name, b.technical_name) ||
-          compareStr(a.org_name, b.org_name),
-      );
+    // Server already returns modules ordered by technical_name, org_name
+    // (see module::list) - filter() preserves that order, so no client-side
+    // sort is needed here.
+    const filtered = modules.filter(item =>
+      item.technical_name.includes(query.toLowerCase()),
+    );
     return [query, filtered];
   }
 

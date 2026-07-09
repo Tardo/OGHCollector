@@ -24,6 +24,47 @@
     <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
 </div>
 
+{% if most_changed or most_contributors or broadest_reach or newest_module %}
+<div class="row g-3 mt-1 mb-2" id="fun_facts">
+    {% if most_changed %}
+    <div class="col-md-3 col-6">
+        <div class="border rounded-3 p-3 h-100">
+            <div class="text-body-secondary small">Most changed module</div>
+            <div><a href="/module/{{ most_changed.organization }}/{{ most_changed.technical_name }}">{{ most_changed.technical_name }}</a></div>
+            <div class="fw-bold">{{ most_changed.value }} commit{{ most_changed.value != 1 and 's' or '' }}</div>
+        </div>
+    </div>
+    {% endif %}
+    {% if most_contributors %}
+    <div class="col-md-3 col-6">
+        <div class="border rounded-3 p-3 h-100">
+            <div class="text-body-secondary small">Most contributors</div>
+            <div><a href="/module/{{ most_contributors.organization }}/{{ most_contributors.technical_name }}">{{ most_contributors.technical_name }}</a></div>
+            <div class="fw-bold">{{ most_contributors.value }} committer{{ most_contributors.value != 1 and 's' or '' }}</div>
+        </div>
+    </div>
+    {% endif %}
+    {% if broadest_reach %}
+    <div class="col-md-3 col-6">
+        <div class="border rounded-3 p-3 h-100">
+            <div class="text-body-secondary small">Widest Odoo reach</div>
+            <div><a href="/module/{{ broadest_reach.organization }}/{{ broadest_reach.technical_name }}">{{ broadest_reach.technical_name }}</a></div>
+            <div class="fw-bold">{{ broadest_reach.value }} version{{ broadest_reach.value != 1 and 's' or '' }}</div>
+        </div>
+    </div>
+    {% endif %}
+    {% if newest_module %}
+    <div class="col-md-3 col-6">
+        <div class="border rounded-3 p-3 h-100">
+            <div class="text-body-secondary small">Newest module tracked</div>
+            <div><a href="/module/{{ newest_module.org_name }}/{{ newest_module.technical_name }}">{{ newest_module.technical_name }}</a></div>
+            <div class="fw-bold">{{ newest_module.create_date }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 {% if not version_groups %}
 <p class="text-body-secondary">No open PRs or security findings tracked.</p>
 {% else %}

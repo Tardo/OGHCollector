@@ -58,7 +58,14 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (modules_total, version_groups) = web::block(move || {
+    let (
+        modules_total,
+        version_groups,
+        most_changed,
+        most_contributors,
+        broadest_reach,
+        newest_module,
+    ) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let modules_total = models::module::count_distinct(&mut conn);
         let mut by_version: BTreeMap<i32, ModulesVersionGroup> = BTreeMap::new();
@@ -101,7 +108,22 @@ pub async fn route(
 
         // Newest Odoo version first.
         let version_groups = by_version.into_values().rev().collect::<Vec<_>>();
-        (modules_total, version_groups)
+
+        let most_changed = models::module::most_changed(&mut conn);
+        let most_contributors = models::module::most_contributors(&mut conn);
+        let broadest_reach = models::module::broadest_reach(&mut conn);
+        let newest_module = models::module::get_latest_modules_created(&mut conn)
+            .into_iter()
+            .next();
+
+        (
+            modules_total,
+            version_groups,
+            most_changed,
+            most_contributors,
+            broadest_reach,
+            newest_module,
+        )
     })
     .await?;
 
@@ -113,6 +135,10 @@ pub async fn route(
                 page_name => "modules",
                 modules_total => modules_total,
                 version_groups => version_groups,
+                most_changed => most_changed,
+                most_contributors => most_contributors,
+                broadest_reach => broadest_reach,
+                newest_module => newest_module,
             )
         ),
     )
