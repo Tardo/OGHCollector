@@ -1,10 +1,5 @@
 // Copyright 2025 Alexandre D. Díaz
-mirlo-module-search {
-    background-color: rgb(200, 200, 200);
-}
-
 #module_search {
-    background-color: rgb(200, 200, 200);
     z-index: 3;
     top: 25%;
 }
@@ -13,6 +8,15 @@ mirlo-module-search {
     max-height: 20rem;
     overflow: auto;
     margin-bottom: 0;
+}
+
+.module-dependencies-yaml {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.85rem;
+
+    &-item {
+        padding-left: 1.25rem;
+    }
 }
 
 .module-model-accordion {

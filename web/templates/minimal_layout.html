@@ -23,25 +23,24 @@
 {{ super() }}
 
 <div class="d-flex flex-column h-100">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark px-3 sticky-top bg-opac-dark bf-blur-1 mb-5">
+    <nav class="navbar navbar-expand-xl px-3 sticky-top bf-blur-1 mb-5">
         <div class="container-fluid">
             <a class="navbar-brand" href="/">
-                <div class="title d-none d-sm-inline-block">Odoo Module Meta<span class="title-letter-d">d</span>ata</div>
-                <div class="title d-sm-none d-inline-block">OMM<span class="title-letter-d">D</span></div>
+                <div class="title d-none d-xl-inline-block">Odoo Module Meta<span class="title-letter-d">d</span>ata</div>
+                <div class="title d-xl-none d-inline-block">OMM<span class="title-letter-d">D</span></div>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
         
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
-                <ul class="navbar-nav ms-auto text-light">
+                <ul class="navbar-nav ms-auto align-items-xl-center">
                     <li class="nav-item"><a class="nav-link {% if page_name == 'dashboard' %}active{% endif %}" href="/">Home</a></li>
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'modules' %}active{% endif %}" href="/modules">Modules</a></li>
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'osv' %}active{% endif %}" href="/osv">OSV</a></li>
+                    <li class="nav-item"><a class="nav-link {% if page_name in ['modules', 'module'] %}active{% endif %}" href="/modules">Modules</a></li>
+                    <li class="nav-item"><a class="nav-link {% if page_name == 'osv' %}active{% endif %}" href="/osv">Vulnerabilities</a></li>
                     <li class="nav-item"><a class="nav-link {% if page_name == 'atlas' %}active{% endif %}" href="/atlas">Atlas</a></li>
                     <li class="nav-item"><a class="nav-link {% if page_name in ['committers', 'committer'] %}active{% endif %}" href="/committers">Committers</a></li>
-                    <!--li class="{% if page_name == 'stats' %}active{% endif %}"><a>Stats</a></li-->
-                    <li class="nav-item dropdown">
+                    <li class="nav-item dropdown dev-only">
                         <a class="nav-link {% if page_name in ['doodba_converter', 'doodba_dep_resolver', 'doodba_migration_plan'] %}active{% endif %} dropdown-toggle" id="navbarDropdown" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             Doodba Tools
                         </a>
@@ -51,11 +50,22 @@
                             <li><a class="dropdown-item {% if page_name in ['doodba_migration_plan'] %}active{% endif %}" href="/doodba/migration">Migration Plan</a></li>
                         </ul>
                     </li>
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'api' %}active{% endif %}" href="/api">API</a></li>
+                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'api' %}active{% endif %}" href="/api">API</a></li>
                     {% if MCP_INFO_ENABLED %}
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'mcp_info' %}active{% endif %}" href="/mcp">MCP</a></li>
+                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'mcp_info' %}active{% endif %}" href="/mcp">MCP</a></li>
                     {% endif %}
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'logs' %}active{% endif %}" href="/logs">Logs</a></li>
+                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'logs' %}active{% endif %}" href="/logs">Logs</a></li>
+                    <li class="nav-item ms-xl-3 theme-switch">
+                        <button type="button" class="btn nav-link p-0" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">
+                            <span class="theme-icon">🌙</span>
+                        </button>
+                    </li>
+                    <li class="nav-item ms-xl-3 mode-switch" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
+                        <div class="form-check form-switch my-2 my-xl-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
+                            <label class="form-check-label" for="dev-mode-switch">Dev mode</label>
+                        </div>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -63,7 +73,7 @@
     <main class="container flex-grow-1">
         {% block content %}{% endblock %}
     </main>
-    <footer class="sticky-bottom text-center mt-5 fs-6 bf-blur-1 bg-opac-dark">
+    <footer class="app-footer text-center mt-5">
         Developed with <a href="https://actix.rs/">Actix</a>, <a href="https://getbootstrap.com/">Bootstrap</a> & <a href="https://github.com/Tardo/mirlo">Mirlo</a>
     </footer>
 </div>

@@ -13,14 +13,6 @@ $utilities: map-merge(
         4: blur(40px),
         5: blur(50px)
       )
-    ),
-
-    "background-color": (
-      property: background-color,
-      class: bg,
-      values: (
-        opac-dark: rgba($opac-dark-bg, 0.4)
-      )
     )
   )
 );

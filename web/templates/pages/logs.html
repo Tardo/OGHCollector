@@ -10,7 +10,10 @@
 {% block content %}
 {{ super() }}
 
-<h2>🗓️ System Logs</h2>
+<header class="page-header">
+    <h1>System logs</h1>
+    <p class="page-header-desc">Collector activity: organization scans, migration PR/MR changes and new findings, newest first.</p>
+</header>
 
 <template id="template-mirlo-logs-viewer">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/logs-viewer.css" as="style" />

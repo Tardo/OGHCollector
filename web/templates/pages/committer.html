@@ -18,8 +18,8 @@
 </template>
 
 
-<div id="committer_search" class="position-fixed start-50 w-50 translate-middle-x shadow rounded d-none">
-    <mirlo-committer-search class="border-warning-subtle d-block rounded p-2" />
+<div id="committer_search" class="position-fixed start-50 w-50 translate-middle-x d-none">
+    <mirlo-committer-search class="d-block" />
 </div>
 
 <div class="position-fixed end-0 p-3 d-none d-lg-block ">
@@ -34,57 +34,61 @@
 </div>
 
 {% if not stats.versions %}
-<h2>{{ committer_name }}</h2>
-<p>No data found for this committer.</p>
+<header class="page-header">
+    <h1>{{ committer_name }}</h1>
+    <p class="page-header-desc">No data found for this committer.</p>
+</header>
 {% else %}
-<h2>{{ committer_name }}</h2>
-<span>{{ stats.total_commits }} tracked commit{{ stats.total_commits != 1 and 's' or '' }} across {{ stats.total_modules }} module{{ stats.total_modules != 1 and 's' or '' }}</span>
+<header class="page-header">
+    <h1>{{ committer_name }}</h1>
+    <p class="page-header-desc">{{ stats.total_commits }} tracked commit{{ stats.total_commits != 1 and 's' or '' }} across {{ stats.total_modules }} module{{ stats.total_modules != 1 and 's' or '' }}</p>
+</header>
 
 <div class="row mb-3 gx-sm-5 user-select-none mt-4" id="committer_stats">
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-success-subtle p-3 text-center">
-            <div class="fs-3">{{ stats.total_commits }}</div>
-            <div>Total Commits</div>
+        <div class="stat-card text-center">
+            <div class="stat-card-label">Total Commits</div>
+            <div class="stat-card-value">{{ stats.total_commits }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-secondary-subtle p-3 text-center">
-            <div class="fs-3">{{ stats.total_modules }}</div>
-            <div>Modules Touched</div>
+        <div class="stat-card text-center">
+            <div class="stat-card-label">Modules Touched</div>
+            <div class="stat-card-value">{{ stats.total_modules }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-primary-subtle p-3 text-center">
-            <div class="fs-3">{{ stats.total_repositories }}</div>
-            <div>Repositories</div>
+        <div class="stat-card text-center">
+            <div class="stat-card-label">Repositories</div>
+            <div class="stat-card-value">{{ stats.total_repositories }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-warning-subtle p-3 text-center">
-            <div class="fs-3">{{ stats.total_organizations }}</div>
-            <div>Organizations</div>
+        <div class="stat-card text-center">
+            <div class="stat-card-label">Organizations</div>
+            <div class="stat-card-value">{{ stats.total_organizations }}</div>
         </div>
     </div>
     <div class="col-lg-3 offset-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-success-subtle p-3 text-center">
-            <div class="fs-3">+{{ stats.total_insertions }}</div>
-            <div>Lines Added</div>
+        <div class="stat-card text-center">
+            <div class="stat-card-label">Lines Added</div>
+            <div class="stat-card-value text-success">+{{ stats.total_insertions }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-danger-subtle p-3 text-center">
-            <div class="fs-3">-{{ stats.total_deletions }}</div>
-            <div>Lines Removed</div>
+        <div class="stat-card text-center">
+            <div class="stat-card-label">Lines Removed</div>
+            <div class="stat-card-value text-danger">-{{ stats.total_deletions }}</div>
         </div>
     </div>
 </div>
 
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-lg-6 col-12 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">Most Active Odoo Version</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Most Active Odoo Version</div>
             {% if stats.best_version %}
-            <div class="fs-3">{{ stats.best_version }}</div>
+            <div class="stat-card-value">{{ stats.best_version }}</div>
             <div>{{ stats.best_version_commits }} commit{{ stats.best_version_commits != 1 and 's' or '' }}</div>
             {% else %}
             <div>No data</div>
@@ -92,10 +96,10 @@
         </div>
     </div>
     <div class="col-lg-6 col-12 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">Global Rank (by commits)</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Global Rank (by commits)</div>
             {% if stats.global_rank %}
-            <div class="fs-3">#{{ stats.global_rank }} <span class="fs-6">of {{ stats.total_committers }} committers</span></div>
+            <div class="stat-card-value">#{{ stats.global_rank }} <span class="fs-6 text-body-secondary">of {{ stats.total_committers }} committers</span></div>
             {% else %}
             <div>Not ranked (excluded bot/automation account)</div>
             {% endif %}
@@ -108,8 +112,8 @@
 {% if stats.quijote_fun_fact %}
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-12">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">Trivia</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Trivia</div>
             <div class="fs-5">{{ stats.quijote_fun_fact }}</div>
             {% if stats.quijote_fun_fact_chars %}
             <div class="text-body-secondary small">~{{ stats.quijote_fun_fact_chars }} characters estimated</div>
@@ -121,29 +125,29 @@
 
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">First Module Touched</div>
+        <div class="stat-card">
+            <div class="stat-card-label">First Module Touched</div>
             <div class="fs-5"><a href="/module/{{ stats.fun_facts.first_module_organization }}/{{ stats.fun_facts.first_module_technical_name }}">{{ stats.fun_facts.first_module_name }}</a></div>
             <div>{{ stats.fun_facts.first_seen }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">Last Seen</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Last Seen</div>
             <div class="fs-5"><a href="/module/{{ stats.fun_facts.last_module_organization }}/{{ stats.fun_facts.last_module_technical_name }}">{{ stats.fun_facts.last_module_name }}</a></div>
             <div>{{ stats.fun_facts.last_seen }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">Busiest Month</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Busiest Month</div>
             <div class="fs-5">{{ stats.fun_facts.busiest_period }}</div>
             <div>{{ stats.fun_facts.busiest_period_commits }} commit{{ stats.fun_facts.busiest_period_commits != 1 and 's' or '' }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
-        <div class="w-100 h-100 rounded-3 border border-opacity-0 bg-body-secondary p-3">
-            <div class="committer-subtitle">Active Span</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Active Span</div>
             <div class="fs-5">{{ stats.fun_facts.active_span }}</div>
         </div>
     </div>

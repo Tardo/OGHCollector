@@ -1,0 +1,61 @@
+// Copyright 2026 Alexandre D. Díaz
+// Shared look for the search-dropdown components. They render in a closed
+// shadow DOM, so page classes don't reach them — but Bootstrap's :root CSS
+// custom properties inherit through (fallbacks match the dark theme).
+#search {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.55em 0.9em;
+    font-size: 1.3rem;
+    font-family: inherit;
+    color: var(--bs-body-color, #dee2e6);
+    background-color: var(--bs-body-bg, #212529);
+    border: 1px solid var(--bs-border-color, #495057);
+    border-radius: 0.4rem;
+    outline: none;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+
+    &::placeholder {
+        color: var(--bs-secondary-color, #adb5bd);
+    }
+
+    &:focus {
+        border-color: #85a4d3;
+        box-shadow: 0 0 0 0.25rem rgba(133, 164, 211, 0.25);
+    }
+}
+
+#results {
+    list-style-type: none;
+    padding: 0;
+    margin: 0.35em 0 0;
+    max-height: 30em;
+    overflow: auto;
+    overflow-x: hidden;
+    border-radius: 0.4rem;
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.4);
+
+    li {
+        .item {
+            display: block;
+            padding: 0.7em 1em;
+            margin-top: -1px;
+            border: 1px solid var(--bs-border-color, #495057);
+            background-color: var(--bs-tertiary-bg, #2b3035);
+            color: var(--bs-body-color, #dee2e6);
+            text-decoration: none;
+
+            .info {
+                color: var(--bs-secondary-color, #adb5bd);
+                font-size: small;
+            }
+        }
+
+        // Overlay on top of the solid item background: a translucent
+        // background-color here would let the page show through the dropdown.
+        &.active .item,
+        .item:hover {
+            background-image: linear-gradient(rgba(133, 164, 211, 0.2), rgba(133, 164, 211, 0.2));
+        }
+    }
+}

@@ -19,12 +19,10 @@
 </template>
 
 
-<h2>🛠️ Doodba Converter</h2>
-<div class="mb-4">
-    This tool is used to get the addons.yaml file of a doodba project from an Odoo modules folder.<br>
-    *** Only the names of the folders will be sent to the server. <span class="text-info">The contents of the folders will never be sent.</span><br>
-    *** Chromium-based browsers may have a limit when navigating the folder tree within a directory. It is recommended to use Firefox for optimal results.
-</div>
+<header class="page-header">
+    <h1>Doodba converter</h1>
+    <p class="page-header-desc">Build the <code>addons.yaml</code> of a Doodba project from a local Odoo addons folder. Only folder names are sent to the server — <span class="text-info">folder contents never leave your machine</span>. Chromium-based browsers may cap directory traversal; Firefox gives the best results.</p>
+</header>
 
 <mirlo-doodba-converter></mirlo-doodba-converter>
 

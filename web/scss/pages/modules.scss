@@ -1,10 +1,6 @@
 // Copyright 2026 Alexandre D. Díaz
-mirlo-module-search {
-    background-color: rgb(200, 200, 200);
-}
-
 #module_search {
-    margin-bottom: 8em;
+    margin-bottom: 7em;
     z-index: 3;
 }
 
@@ -12,24 +8,99 @@ mirlo-module-search {
     max-height: 24rem;
     overflow-y: auto;
 
-    th.sortable {
-        cursor: pointer;
-        user-select: none;
+    thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background-color: var(--bs-body-bg);
+    }
 
-        &::after {
-            content: "\2195";
-            opacity: 0.4;
-            margin-left: 0.35em;
-        }
+}
 
-        &[data-sort-dir="asc"]::after {
-            content: "\2191";
-            opacity: 1;
-        }
+// Fixed layout + explicit column widths let the Title cell truncate with
+// an ellipsis instead of wrapping/stretching the row.
+.pr-list table {
+    table-layout: fixed;
 
-        &[data-sort-dir="desc"]::after {
-            content: "\2193";
-            opacity: 1;
+    .col-module {
+        width: 28%;
+    }
+
+    .col-repo {
+        width: 20%;
+    }
+
+    .col-title {
+        width: 52%;
+    }
+}
+
+// PR list: a left border per row echoes the fresh/rotting/rotten badge
+// colors above the table, so status reads at a glance down the column.
+.pr-list {
+    .pr-row-fresh {
+        box-shadow: inset 3px 0 var(--bs-success);
+    }
+
+    .pr-row-rotting {
+        box-shadow: inset 3px 0 var(--bs-warning);
+    }
+
+    .pr-row-rotten {
+        box-shadow: inset 3px 0 var(--bs-danger);
+    }
+
+    // Module and Title cells are fixed-width; without a truncation rule a
+    // long module name just overflows into the next column instead of
+    // clipping, which is what made the row look broken.
+    .pr-module > a {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .pr-title {
+        max-width: 0; // required alongside table-layout: fixed for ellipsis to kick in
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        a {
+            text-decoration: none;
+
+            &:hover {
+                text-decoration: underline;
+            }
         }
+    }
+
+    .pr-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35em;
+        margin-top: 0.25em;
+    }
+
+    .age-badge {
+        border: 1px solid transparent;
+    }
+
+    .age-badge-fresh {
+        background-color: var(--bs-success-bg-subtle);
+        color: var(--bs-success-text-emphasis);
+        border-color: var(--bs-success-border-subtle);
+    }
+
+    .age-badge-rotting {
+        background-color: var(--bs-warning-bg-subtle);
+        color: var(--bs-warning-text-emphasis);
+        border-color: var(--bs-warning-border-subtle);
+    }
+
+    .age-badge-rotten {
+        background-color: var(--bs-danger-bg-subtle);
+        color: var(--bs-danger-text-emphasis);
+        border-color: var(--bs-danger-border-subtle);
     }
 }

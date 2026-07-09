@@ -8,6 +8,14 @@
         <meta name="keywords" content="Odoo, module, addon, metadata, information, restapi">
         <meta name="author" content="Alexandre D. Díaz">
         <link rel="icon" type="image/png" href="/static/favicon.png"/>
+        {# Applied before first paint so dev-only UI / theme never flash wrong #}
+        <script>
+            document.documentElement.dataset.mode = localStorage.getItem('ommd_mode') || 'user';
+            const ommd_theme = localStorage.getItem('ommd_theme');
+            if (ommd_theme) {
+                document.documentElement.dataset.bsTheme = ommd_theme;
+            }
+        </script>
         {% block base_head_content %}{% endblock %}
         <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css" as="style">
         <title>{% block title %}{% endblock %} - Odoo Module Metadata</title>

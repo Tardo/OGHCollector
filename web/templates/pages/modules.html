@@ -16,49 +16,50 @@
     <ul id="results"></ul>
 </template>
 
-<h2 class="z-3">Modules</h2>
+<header class="page-header">
+    <h1>Modules</h1>
+    <p class="page-header-desc">{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations.</p>
+</header>
 
-<span>{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations</span>
-
-<div class="row position-relative mx-1 mt-3" id="module_search">
-    <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
+<div class="position-relative" id="module_search">
+    <mirlo-module-search class="d-block position-absolute w-100" />
 </div>
 
 {% if most_changed or most_contributors or broadest_reach or most_relied_upon %}
-<div class="row g-3 mt-1 mb-2" id="fun_facts">
+<div class="row g-3 mb-2" id="fun_facts">
     {% if most_changed %}
     <div class="col-md-3 col-6">
-        <div class="border rounded-3 p-3 h-100">
-            <div class="text-body-secondary small">Most changed module</div>
-            <div><a href="/module/{{ most_changed.organization }}/{{ most_changed.technical_name }}">{{ most_changed.technical_name }}</a></div>
-            <div class="fw-bold">{{ most_changed.value }} commit{{ most_changed.value != 1 and 's' or '' }}</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Most changed module</div>
+            <div class="stat-card-value"><a href="/module/{{ most_changed.organization }}/{{ most_changed.technical_name }}">{{ most_changed.technical_name }}</a></div>
+            <div class="stat-card-note">{{ most_changed.value }} commit{{ most_changed.value != 1 and 's' or '' }}</div>
         </div>
     </div>
     {% endif %}
     {% if most_contributors %}
     <div class="col-md-3 col-6">
-        <div class="border rounded-3 p-3 h-100">
-            <div class="text-body-secondary small">Most contributors</div>
-            <div><a href="/module/{{ most_contributors.organization }}/{{ most_contributors.technical_name }}">{{ most_contributors.technical_name }}</a></div>
-            <div class="fw-bold">{{ most_contributors.value }} committer{{ most_contributors.value != 1 and 's' or '' }}</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Most contributors</div>
+            <div class="stat-card-value"><a href="/module/{{ most_contributors.organization }}/{{ most_contributors.technical_name }}">{{ most_contributors.technical_name }}</a></div>
+            <div class="stat-card-note">{{ most_contributors.value }} committer{{ most_contributors.value != 1 and 's' or '' }}</div>
         </div>
     </div>
     {% endif %}
     {% if broadest_reach %}
     <div class="col-md-3 col-6">
-        <div class="border rounded-3 p-3 h-100">
-            <div class="text-body-secondary small">Widest Odoo reach</div>
-            <div><a href="/module/{{ broadest_reach.organization }}/{{ broadest_reach.technical_name }}">{{ broadest_reach.technical_name }}</a></div>
-            <div class="fw-bold">{{ broadest_reach.value }} version{{ broadest_reach.value != 1 and 's' or '' }}</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Widest Odoo reach</div>
+            <div class="stat-card-value"><a href="/module/{{ broadest_reach.organization }}/{{ broadest_reach.technical_name }}">{{ broadest_reach.technical_name }}</a></div>
+            <div class="stat-card-note">{{ broadest_reach.value }} version{{ broadest_reach.value != 1 and 's' or '' }}</div>
         </div>
     </div>
     {% endif %}
     {% if most_relied_upon %}
     <div class="col-md-3 col-6">
-        <div class="border rounded-3 p-3 h-100">
-            <div class="text-body-secondary small">Most relied-upon module</div>
-            <div><a href="/module/{{ most_relied_upon.organization }}/{{ most_relied_upon.technical_name }}">{{ most_relied_upon.technical_name }}</a></div>
-            <div class="fw-bold">{{ most_relied_upon.value }} dependent{{ most_relied_upon.value != 1 and 's' or '' }}</div>
+        <div class="stat-card">
+            <div class="stat-card-label">Most relied-upon module</div>
+            <div class="stat-card-value"><a href="/module/{{ most_relied_upon.organization }}/{{ most_relied_upon.technical_name }}">{{ most_relied_upon.technical_name }}</a></div>
+            <div class="stat-card-note">{{ most_relied_upon.value }} dependent{{ most_relied_upon.value != 1 and 's' or '' }}</div>
         </div>
     </div>
     {% endif %}
@@ -96,30 +97,36 @@
         {% if not g.pull_requests %}
         <p class="text-body-secondary">No open migration PRs/MRs tracked.</p>
         {% else %}
-        <div class="modules-scroll-list">
-            <table class="table table-striped-columns sortable-table">
+        <div class="modules-scroll-list pr-list">
+            <table class="table table-striped table-striped-columns table-hover">
                 <thead>
                     <tr>
-                        <th>Module</th>
-                        <th>Repository</th>
-                        <th>Title</th>
-                        <th class="sortable" data-sort-key="age">Age</th>
-                        <th class="sortable" data-sort-key="ci">CI</th>
+                        <th class="col-module">Module</th>
+                        <th class="col-repo">Repository</th>
+                        <th class="col-title">Title</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for pr in g.pull_requests %}
-                    <tr>
-                        <td><a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a></td>
-                        <td>{{ pr.organization }}/{{ pr.repository }}</td>
-                        <td><a href="{{ pr.url }}" target="_blank" rel="noopener noreferrer">{{ pr.title }} <span class="text-body-secondary">#{{ pr.prid }}</span></a></td>
-                        <td data-sort="{{ pr.age_days if pr.age_days is not none else -1 }}">{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }}{% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}</td>
-                        <td data-sort="{{ 3 if pr.ci_status == 'failure' else (2 if pr.ci_status == 'pending' else (1 if pr.ci_status == 'success' else 0)) }}">
-                            {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
-                            {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>
-                            {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">failing</span>
-                            {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+                    {% if pr.age_days is none %}{% set age_class = "" %}
+                    {% elif pr.age_days <= 7 %}{% set age_class = "fresh" %}
+                    {% elif pr.age_days <= 30 %}{% set age_class = "rotting" %}
+                    {% else %}{% set age_class = "rotten" %}{% endif %}
+                    <tr class="pr-row pr-row-{{ age_class }}">
+                        <td class="pr-module">
+                            <a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}" title="{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a>
+                            <div class="pr-meta">
+                                {% if pr.age_days is not none %}
+                                <span class="badge age-badge age-badge-{{ age_class }}">{{ pr.age_days }}d</span>
+                                {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
+                                {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
+                                {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>
+                                {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">failing</span>
+                                {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+                            </div>
                         </td>
+                        <td class="text-body-secondary">{{ pr.organization }}/{{ pr.repository }}</td>
+                        <td class="pr-title"><a href="{{ pr.url }}" target="_blank" rel="noopener noreferrer" title="{{ pr.title }}">{{ pr.title }}</a> <span class="text-body-secondary">#{{ pr.prid }}</span></td>
                     </tr>
                     {% endfor %}
                 </tbody>

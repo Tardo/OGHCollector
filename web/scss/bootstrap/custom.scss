@@ -1,28 +1,204 @@
 // Copyright 2025 Alexandre D. Díaz
-.navbar-dark,
-.navbar[data-bs-theme=dark] {
+
+:root {
+  --ommd-accent: #85a4d3;
+  --ommd-accent-dim: #5d7498;
+}
+
+// The dark-mode accent is too low-contrast to read as brand text on a
+// light background, so light theme gets its own darker pair.
+[data-bs-theme="light"] {
+  --ommd-accent: #3f5f8f;
+  --ommd-accent-dim: #2f4870;
+}
+
+// User/Developer mode: `data-mode` is set on <html> before first paint
+// (base_layout.html) and toggled by the navbar switch (main.mjs).
+html[data-mode='user'] .dev-only {
+  display: none !important;
+}
+
+// ---- Navbar / footer ----
+
+.navbar {
+  // Translucent tertiary surface (not a fixed color) so the glass tint
+  // follows the page theme instead of staying hardcoded dark.
+  background-color: rgba(var(--bs-tertiary-bg-rgb), 0.7);
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+
   .navbar-brand {
     .title {
-      color: #85a4d3;
+      flex-grow: 1;
+      font-family: monospace;
+      font-size: x-large;
+      font-weight: bolder;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--ommd-accent);
     }
-  
+
     .title-letter-d {
-      color: #5d7498;
+      display: inline-block;
+      transform: rotate(334deg);
+      color: var(--ommd-accent-dim);
+    }
+  }
+
+  .mode-switch {
+    .form-check-input,
+    .form-check-label {
+      cursor: pointer;
+    }
+
+    .form-check-label {
+      color: var(--bs-navbar-color);
+      font-size: 0.875rem;
+    }
+  }
+
+  .theme-switch .btn {
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--bs-navbar-color);
+
+    .theme-icon {
+      display: inline-block;
+    }
+
+    .theme-icon.spin {
+      animation: theme-icon-spin 0.4s ease;
     }
   }
 }
 
-.navbar .navbar-brand {
-  .title {
-    flex-grow: 1;
-    font-family: monospace;
-    font-size: x-large;
-    font-weight: bolder;
-    text-transform: uppercase;
+// Bootstrap only auto-flips the navbar-toggler icon with the page theme;
+// everything else needs `.navbar-dark`/`.navbar[data-bs-theme]` set
+// directly on the element. We keep the theme on <html> instead, so mirror
+// those color vars here, scoped through the ancestor attribute.
+html[data-bs-theme="dark"] .navbar {
+  --bs-navbar-color: #{$navbar-dark-color};
+  --bs-navbar-hover-color: #{$navbar-dark-hover-color};
+  --bs-navbar-disabled-color: #{$navbar-dark-disabled-color};
+  --bs-navbar-active-color: #{$navbar-dark-active-color};
+  --bs-navbar-brand-color: #{$navbar-dark-brand-color};
+  --bs-navbar-brand-hover-color: #{$navbar-dark-brand-hover-color};
+  --bs-navbar-toggler-border-color: #{$navbar-dark-toggler-border-color};
+}
+
+@keyframes theme-icon-spin {
+  from {
+    transform: rotate(-180deg) scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.app-footer {
+  border-top: 1px solid var(--bs-border-color-translucent);
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+  padding: 1rem 0;
+}
+
+// ---- Page scaffolding ----
+
+// Every page opens with: <header class="page-header"><h1>…</h1>
+// <p class="page-header-desc">…</p></header> — the one-liner tells a
+// first-time visitor what the page is for.
+.page-header {
+  margin-bottom: 2rem;
+
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
   }
 
-  .title-letter-d {
-    display: inline-block;
-    transform: rotate(334deg);
+  .page-header-desc {
+    color: var(--bs-secondary-color);
+    max-width: 75ch;
+    margin-bottom: 0;
+  }
+}
+
+// ---- Cards ----
+
+.stat-card {
+  height: 100%;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: var(--bs-border-radius-lg);
+  background-color: var(--bs-tertiary-bg);
+
+  .stat-card-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-card-value {
+    font-size: 1.4rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .stat-card-note {
+    color: var(--bs-secondary-color);
+    font-size: 0.875rem;
+  }
+}
+
+// Each version's counter card gets its own top border color so the three
+// read as distinct versions at a glance, not a repeated widget.
+#modules_count mirlo-module-counter.stat-card {
+  border-top: 3px solid var(--bs-border-color-translucent);
+
+  &[version="17.0"] {
+    border-top-color: #c98a4b;
+  }
+
+  &[version="18.0"] {
+    border-top-color: var(--ommd-accent);
+  }
+
+  &[version="19.0"] {
+    border-top-color: #5fb488;
+  }
+}
+
+// ---- Key/value spec sheet (module & PR details) ----
+
+.spec-sheet {
+  margin-bottom: 0;
+
+  dt {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--bs-primary);
+    margin-top: 0.85rem;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  dd {
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bs-border-color-translucent);
+    overflow-wrap: anywhere;
+
+    &:last-of-type {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
   }
 }

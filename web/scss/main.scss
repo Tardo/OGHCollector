@@ -22,15 +22,14 @@ $offcanvas-box-shadow: 0 1rem 3rem rgba(0, 0, 0, .175);
 @import "../../node_modules/bootstrap/scss/root";
 @import "../../node_modules/bootstrap/scss/reboot";
 
-// Customize some defaults
-@import "bootstrap/variables.scss";
-
 @import "../../node_modules/bootstrap/scss/type";
 // @import "bootstrap/scss/images";
 @import "../../node_modules/bootstrap/scss/containers";
 @import "../../node_modules/bootstrap/scss/grid";
 @import "../../node_modules/bootstrap/scss/tables";
-// @import "bootstrap/scss/forms";
+// forms: only the pieces actually used (mode switch + version select)
+@import "../../node_modules/bootstrap/scss/forms/form-select";
+@import "../../node_modules/bootstrap/scss/forms/form-check";
 @import "../../node_modules/bootstrap/scss/buttons";
 @import "../../node_modules/bootstrap/scss/transitions";
 @import "../../node_modules/bootstrap/scss/dropdown";

@@ -20,11 +20,10 @@
 </template>
 
 
-<h2>🛠️ Doodba Migration Plan</h2>
-<div class="mb-4">
-    This tool helps plan an Odoo version upgrade. Upload the current addons.yaml and, for every Odoo version between "From" and "To", it shows how addons.yaml should look, plus a repos.yaml with the open PR/MR merges needed for modules that aren't upstream-merged yet.<br>
-    *** Modules with neither a merge nor an open migration PR at a given version are listed as missing so you know what still blocks that jump.
-</div>
+<header class="page-header">
+    <h1>Doodba migration plan</h1>
+    <p class="page-header-desc">Plan an Odoo version upgrade. Upload your current <code>addons.yaml</code> and, for every version between "From" and "To", see how it should look plus a <code>repos.yaml</code> with the open PR/MR merges needed for modules not yet merged upstream. Modules with neither a merge nor an open migration PR are listed as missing, so you know what still blocks each jump.</p>
+</header>
 
 <mirlo-doodba-migration-plan></mirlo-doodba-migration-plan>
 

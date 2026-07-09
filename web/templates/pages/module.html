@@ -19,8 +19,8 @@
 </template>
 
 
-<div id="module_search" class="position-fixed start-50 w-50 translate-middle-x shadow rounded d-none">
-    <mirlo-module-search class="border-warning-subtle d-block rounded p-2" />
+<div id="module_search" class="position-fixed start-50 w-50 translate-middle-x d-none">
+    <mirlo-module-search class="d-block" />
 </div>
 
 <div class="position-fixed end-0 p-3 d-none d-lg-block ">
@@ -35,11 +35,15 @@
 </div>
 
 {% if not modules and not pull_requests %}
-<h2>{{ technical_name }}</h2>
-<p>No data found for this module.</p>
+<header class="page-header">
+    <h1>{{ technical_name }}</h1>
+    <p class="page-header-desc">No data found for this module.</p>
+</header>
 {% else %}
-<h2>{{ modules[0].name if modules else technical_name }}</h2>
-<span>{{ technical_name }}</span>
+<header class="page-header">
+    <h1>{{ modules[0].name if modules else technical_name }}</h1>
+    <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
+</header>
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
     {% for module in modules %}
     <li class="nav-item" role="presentation">
@@ -67,16 +71,12 @@
             <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue.</p>
         </div>
         {% endif %}
-        <table class="table table-striped-columns">
-            <tbody>
-                <tr class="col-2 d-lg-none"><th colspan="2">REPOSITORY</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">REPOSITORY</th><td>{{ module.organization }}/{{ module.repository }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">GIT</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">GIT</th><td><a href="{{ module.git }}">{{ module.git }}</a></td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">GIT FOLDER</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">GIT FOLDER</th><td><a href="{{ git_folder_url }}">{{ git_folder_url }}</a></td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">VERSION</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">VERSION</th><td>
+        <div class="row">
+            <dl class="spec-sheet col-lg-6">
+                <dt>Repository</dt>
+                <dd><a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a></dd>
+                <dt>Module version</dt>
+                <dd>
                     {% set history = module_versions[module.odoo_version] %}
                     {% if history and history | length > 1 %}
                     <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="Select module version">
@@ -87,70 +87,77 @@
                     {% else %}
                     {{ module.version }}
                     {% endif %}
-                </td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">CATEGORY</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">CATEGORY</th><td>{{ module.category }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">LICENSE</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">LICENSE</th><td>{{ module.license }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">APPLICATION</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">APPLICATION</th><td>{{ module.application and "Yes" or "No" }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">AUTO-INSTALLABLE</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">AUTO-INSTALLABLE</th><td>{{ module.auto_install and "Yes" or "No" }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">AUTHORS</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">AUTHORS</th><td>{{ module.authors | join(', ')  }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">MAINTAINERS</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">MAINTAINERS</th><td>{{ module.maintainers | join(', ') }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">COMMITTERS</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">COMMITTERS</th><td>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">WEBSITE</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">WEBSITE</th><td><a href="{{ module.website }}">{{ module.website }}</a></td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">LAST TRACKING UPDATE</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">LAST TRACKING UPDATE</th><td>{{ module.update_date }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">ODOO DEPENDENCIES</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">ODOO DEPENDENCIES</th><td>
-                    {% for key, values in module.dependencies.odoo|items %}
-                    {% set dep_org = key | split('/') | first %}
-                    {{ key }}:<br/>
-                    {% for value in values %}
-                    &nbsp;&nbsp;&nbsp;&nbsp;- <a href="/module/{{ dep_org | urlencode }}/{{ value | urlencode }}">{{ value }}</a><br/>
-                    {% endfor %}
-                    {% endfor %}
-                </td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">REQUIRED BY</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">REQUIRED BY</th><td>
+                </dd>
+                <dt>Category</dt>
+                <dd>{{ module.category }}</dd>
+                <dt>License</dt>
+                <dd>{{ module.license }}</dd>
+                <dt>Application</dt>
+                <dd>{{ module.application and "Yes" or "No" }}</dd>
+                <dt>Auto-installable</dt>
+                <dd>{{ module.auto_install and "Yes" or "No" }}</dd>
+                <dt>Website</dt>
+                <dd>{% if module.website %}<a href="{{ module.website }}">{{ module.website }}</a>{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
+                <dt>Last tracking update</dt>
+                <dd>{{ module.update_date }}</dd>
+                <dt>Authors</dt>
+                <dd>{{ module.authors | join(', ') }}</dd>
+                <dt>Maintainers</dt>
+                <dd>{% if module.maintainers %}{{ module.maintainers | join(', ') }}{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
+                <dt>Committers</dt>
+                <dd>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</dd>
+            </dl>
+            <dl class="spec-sheet col-lg-6">
+                <dt>Odoo dependencies</dt>
+                <dd>
+                    {% if module.dependencies.odoo %}
+                    <div class="module-dependencies-yaml">
+                        {% for key, values in module.dependencies.odoo|items %}
+                        {% set dep_org = key | split('/') | first %}
+                        <div>{{ key }}:</div>
+                        {% for value in values %}
+                        <div class="module-dependencies-yaml-item">- <a href="/module/{{ dep_org | urlencode }}/{{ value | urlencode }}">{{ value }}</a></div>
+                        {% endfor %}
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <span class="text-body-secondary">None</span>
+                    {% endif %}
+                </dd>
+                <dt>Required by</dt>
+                <dd>
                     {% if module.required_by %}
                     {% for req in module.required_by %}
                     <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
                     {% endfor %}
                     {% else %}
-                    <span>Not have</span>
+                    <span class="text-body-secondary">None</span>
                     {% endif %}
-                </td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">PYTHON DEPENDENCIES</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">PYTHON DEPENDENCIES</th><td>
+                </dd>
+                <dt>Python dependencies</dt>
+                <dd>
                     {% if module.dependencies.pip %}
                     {% for dep_name in module.dependencies.pip %}
-                    <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a><br/>
+                    <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a>{{ not loop.last and ', ' or '' }}
                     {% endfor %}
                     {% else %}
-                    <span>Not have</span>
+                    <span class="text-body-secondary">None</span>
                     {% endif %}
-                </td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">SYSTEM DEPENDENCIES</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">SYSTEM DEPENDENCIES</th><td>
+                </dd>
+                <dt>System dependencies</dt>
+                <dd>
                     {% if module.dependencies.bin %}
-                    {% for dep_name in module.dependencies.bin %}
-                    {{ dep_name }}<br/>
-                    {% endfor %}
+                    {{ module.dependencies.bin | join(', ') }}
                     {% else %}
-                    <span>Not have</span>
+                    <span class="text-body-secondary">None</span>
                     {% endif %}
-                </td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">DESCRIPTION</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">DESCRIPTION</th><td><pre class="module-description">{{ module.description }}</pre></td></tr>
-            </tbody>
-        </table>
+                </dd>
+                <dt>Description</dt>
+                <dd><pre class="module-description">{{ module.description }}</pre></dd>
+            </dl>
+        </div>
 
+        <div class="dev-only">
         <h4 class="mt-4">Code Analysis <span class="text-body-secondary fs-6" style="cursor: help;" title="Extracted automatically from the module's source code (best-effort static analysis, no code is executed): details may be incomplete or approximate.">&#9432;</span></h4>
         <h5>Views touched ({{ module.views | length }})</h5>
         {% if module.views %}
@@ -283,29 +290,28 @@
         {% else %}
         <p class="text-muted">No models found for this module.</p>
         {% endif %}
+        </div>
     </div>
     {% endfor %}
     {% for pr in pull_requests %}
     <div class="tab-pane fade {{ (not modules and loop.first) and 'show active' or '' }}" id="pr-{{ loop.index }}" role="tabpanel" aria-labelledby="pr-{{ loop.index }}-tab" tabindex="0">
-        <table class="table table-striped-columns">
-            <tbody>
-                <tr class="col-2 d-lg-none"><th colspan="2">STATUS</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">STATUS</th><td><span class="badge text-bg-warning">Open migration PR</span> - not merged yet for this version</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">CI STATUS</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">CI STATUS</th><td>
-                    {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green &mdash; ready to merge</span>
-                    {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">checks running</span>
-                    {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">checks failing</span>
-                    {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
-                </td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">OPEN SINCE</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">OPEN SINCE</th><td>{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">REPOSITORY</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">REPOSITORY</th><td>{{ pr.organization }}/{{ pr.repository }}</td></tr>
-                <tr class="col-2 d-lg-none"><th colspan="2">PULL REQUEST</th></tr>
-                <tr><th class="col-2 d-none d-lg-table-cell">PULL REQUEST</th><td><a href="{{ pr.url }}">{{ pr.title }} (#{{ pr.prid }})</a></td></tr>
-            </tbody>
-        </table>
+        <dl class="row spec-sheet">
+            <dt class="col-lg-3">Status</dt>
+            <dd class="col-lg-9"><span class="badge text-bg-warning">Open migration PR</span> &mdash; not merged yet for this version</dd>
+            <dt class="col-lg-3">CI status</dt>
+            <dd class="col-lg-9">
+                {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green &mdash; ready to merge</span>
+                {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">checks running</span>
+                {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">checks failing</span>
+                {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+            </dd>
+            <dt class="col-lg-3">Open since</dt>
+            <dd class="col-lg-9">{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</dd>
+            <dt class="col-lg-3">Repository</dt>
+            <dd class="col-lg-9">{{ pr.organization }}/{{ pr.repository }}</dd>
+            <dt class="col-lg-3">Pull request</dt>
+            <dd class="col-lg-9"><a href="{{ pr.url }}">{{ pr.title }} (#{{ pr.prid }})</a></dd>
+        </dl>
     </div>
     {% endfor %}
 </div>
