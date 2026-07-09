@@ -253,6 +253,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    pull_request_history (id) {
+        id -> BigInt,
+        module_technical_name -> Text,
+        version_odoo -> Integer,
+        gh_repository_id -> BigInt,
+        prid -> BigInt,
+        created_at -> Text,
+        closed_at -> Text,
+    }
+}
+
+diesel::table! {
     system_event (id) {
         id -> BigInt,
         message -> Text,
@@ -300,6 +312,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_version,
     module_view,
     pull_request,
+    pull_request_history,
     system_event,
     system_event_type,
 );

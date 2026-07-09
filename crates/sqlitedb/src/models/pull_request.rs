@@ -4,8 +4,9 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::schema::pull_request;
+use crate::utils::date::get_sqlite_utc_now;
 
-use super::{gh_repository, system_event};
+use super::{gh_repository, pull_request_history, system_event};
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
 #[diesel(table_name = pull_request, check_for_backend(diesel::sqlite::Sqlite))]
@@ -231,6 +232,7 @@ pub fn delete_outdated(
     let repo_name = gh_repository::get_by_id(conn, gh_repo_id)
         .map(|r| r.name)
         .unwrap_or_default();
+    let closed_at = get_sqlite_utc_now();
     for pr in &removed {
         let _ = system_event::register_closed_migration_pr(
             conn,
@@ -240,6 +242,19 @@ pub fn delete_outdated(
             &repo_name,
             version_odoo,
         );
+        // Only rows with a known open date are useful for the acceptance-time
+        // stat; PRs collected before the `created_at` migration don't have one.
+        if let Some(created_at) = &pr.created_at {
+            let _ = pull_request_history::add(
+                conn,
+                &pr.module_technical_name,
+                pr.version_odoo,
+                *gh_repo_id,
+                pr.prid,
+                created_at,
+                &closed_at,
+            );
+        }
     }
 
     if prids.is_empty() {

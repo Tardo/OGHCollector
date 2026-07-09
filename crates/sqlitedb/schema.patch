@@ -179,7 +179,7 @@
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -169,106 +169,106 @@
+@@ -169,118 +169,118 @@
          module_version_id -> BigInt,
      }
  }
@@ -271,6 +271,20 @@
          gh_repository_id -> BigInt,
          created_at -> Nullable<Text>,
          ci_status -> Nullable<Text>,
+     }
+ }
+ 
+ diesel::table! {
+     pull_request_history (id) {
+-        id -> Nullable<BigInt>,
++        id -> BigInt,
+         module_technical_name -> Text,
+         version_odoo -> Integer,
+         gh_repository_id -> BigInt,
+-        prid -> Integer,
++        prid -> BigInt,
+         created_at -> Text,
+         closed_at -> Text,
      }
  }
  

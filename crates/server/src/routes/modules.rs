@@ -43,6 +43,8 @@ pub struct ModulesVersionGroup {
     pub pr_rotten: usize,
     pub security_errors: Vec<ModuleSecurityFindingInfo>,
     pub security_warnings: Vec<ModuleSecurityFindingInfo>,
+    pub avg_days_open: Option<f64>,
+    pub closed_count: i64,
 }
 
 // PRs are "fresh" for their first week, start "rotting" until a month old,
@@ -121,6 +123,12 @@ pub async fn route(
             } else {
                 group.security_warnings.push(entry);
             }
+        }
+
+        for stat in models::pull_request_history::average_days_open_by_version(&mut conn) {
+            let group = get_group(&mut by_version, stat.version_odoo);
+            group.avg_days_open = Some(stat.avg_days);
+            group.closed_count = stat.closed_count;
         }
 
         // Newest Odoo version first.
