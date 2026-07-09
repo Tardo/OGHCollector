@@ -1,6 +1,8 @@
 // Copyright Alexandre D. Díaz
 // Adapted for GitLab
-use crate::gitclient::{extract_migration_module_name, GitClient, PullRequestInfo, RepoInfo};
+use crate::gitclient::{
+    extract_migration_module_name, parse_created_at, GitClient, PullRequestInfo, RepoInfo,
+};
 
 const GITLAB_BASE_URL: &str = "https://gitlab.com/api/v4/";
 const GITLAB_LIMIT_PER_PAGE: usize = 100; // GitLab permite hasta 100
@@ -149,9 +151,12 @@ impl GitClient for GitlabClient {
         per_page: &usize,
         page: &usize,
     ) -> Result<serde_json::Value, reqwest::Error> {
+        // `with_merge_status_recheck=true` forces GitLab to refresh a stale
+        // `detailed_merge_status` synchronously instead of returning a cached
+        // "unchecked" - without it, MRs can sit reporting no real status.
         self.request_json(
             format!(
-                "projects/{}/merge_requests?state=opened&target_branch={}&per_page={}&page={}",
+                "projects/{}/merge_requests?state=opened&target_branch={}&per_page={}&page={}&with_merge_status_recheck=true",
                 urlencoding::encode(full_path),
                 urlencoding::encode(branch),
                 per_page,
@@ -190,10 +195,15 @@ impl GitClient for GitlabClient {
             for mr in mr_items {
                 let source_branch = mr["source_branch"].as_str().unwrap_or("");
                 if let Some(module_technical_name) = extract_migration_module_name(source_branch) {
+                    let created_at = mr["created_at"].as_str().and_then(parse_created_at);
+                    let ci_status =
+                        detailed_merge_status_to_ci_status(mr["detailed_merge_status"].as_str());
                     prs.push(PullRequestInfo {
                         number: mr["iid"].as_i64().unwrap_or(0),
                         title: mr["title"].as_str().unwrap_or("").to_string(),
                         module_technical_name,
+                        created_at,
+                        ci_status,
                     });
                 }
             }
@@ -203,5 +213,20 @@ impl GitClient for GitlabClient {
             page_count += 1;
         }
         prs
+    }
+}
+
+/// GitLab's `detailed_merge_status` already folds CI + approvals + conflicts
+/// into one value (see https://docs.gitlab.com/ee/api/merge_requests.html),
+/// stronger than GitHub's CI-only signal but free (already in the list
+/// response) - "mergeable" is the only value meaning fully green.
+fn detailed_merge_status_to_ci_status(detailed_status: Option<&str>) -> Option<String> {
+    match detailed_status {
+        Some("mergeable") => Some("success".to_string()),
+        Some("ci_still_running") | Some("checking") | Some("unchecked") => {
+            Some("pending".to_string())
+        }
+        Some(other) if !other.is_empty() => Some("failure".to_string()),
+        _ => None,
     }
 }

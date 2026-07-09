@@ -247,6 +247,8 @@ diesel::table! {
         module_technical_name -> Text,
         prid -> BigInt,
         gh_repository_id -> BigInt,
+        created_at -> Nullable<Text>,
+        ci_status -> Nullable<Text>,
     }
 }
 

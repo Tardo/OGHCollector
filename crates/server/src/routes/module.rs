@@ -39,6 +39,8 @@ pub struct ModulePullRequestInfo {
     pub repository: String,
     pub organization: String,
     pub url: String,
+    pub age_days: Option<i64>,
+    pub ci_status: Option<String>,
 }
 
 fn get_module_pull_requests(
@@ -59,6 +61,8 @@ fn get_module_pull_requests(
                     "https://github.com/{}/{}/pull/{}",
                     &org_model.name, &repo.name, pr.prid
                 ),
+                age_days: models::pull_request::age_days(pr.created_at.as_deref()),
+                ci_status: pr.ci_status,
                 title: pr.name,
                 prid: pr.prid,
                 odoo_version: odoo_version_u8_to_string(&(pr.version_odoo as u8)),

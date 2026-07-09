@@ -159,6 +159,8 @@ pub struct MigrationPendingModuleInfo {
     pub prid: i64,
     pub title: String,
     pub url: String,
+    pub age_days: Option<i64>,
+    pub ci_status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -206,6 +208,8 @@ fn get_pending_modules(
                     "https://github.com/{}/{}/pull/{}",
                     &org.name, &repo.name, pr.prid
                 ),
+                age_days: models::pull_request::age_days(pr.created_at.as_deref()),
+                ci_status: pr.ci_status,
                 technical_name: pr.module_technical_name,
                 repository_name: repo.name,
                 organization: org.name,

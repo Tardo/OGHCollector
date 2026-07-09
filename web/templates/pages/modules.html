@@ -24,7 +24,7 @@
     <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
 </div>
 
-{% if most_changed or most_contributors or broadest_reach or newest_module %}
+{% if most_changed or most_contributors or broadest_reach or most_relied_upon %}
 <div class="row g-3 mt-1 mb-2" id="fun_facts">
     {% if most_changed %}
     <div class="col-md-3 col-6">
@@ -53,12 +53,12 @@
         </div>
     </div>
     {% endif %}
-    {% if newest_module %}
+    {% if most_relied_upon %}
     <div class="col-md-3 col-6">
         <div class="border rounded-3 p-3 h-100">
-            <div class="text-body-secondary small">Newest module tracked</div>
-            <div><a href="/module/{{ newest_module.org_name }}/{{ newest_module.technical_name }}">{{ newest_module.technical_name }}</a></div>
-            <div class="fw-bold">{{ newest_module.create_date }}</div>
+            <div class="text-body-secondary small">Most relied-upon module</div>
+            <div><a href="/module/{{ most_relied_upon.organization }}/{{ most_relied_upon.technical_name }}">{{ most_relied_upon.technical_name }}</a></div>
+            <div class="fw-bold">{{ most_relied_upon.value }} dependent{{ most_relied_upon.value != 1 and 's' or '' }}</div>
         </div>
     </div>
     {% endif %}
@@ -90,6 +90,8 @@
                         <th>Module</th>
                         <th>Repository</th>
                         <th>Title</th>
+                        <th>Age</th>
+                        <th>CI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -98,6 +100,13 @@
                         <td><a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a></td>
                         <td>{{ pr.organization }}/{{ pr.repository }}</td>
                         <td><a href="{{ pr.url }}" target="_blank" rel="noopener noreferrer">{{ pr.title }} <span class="text-body-secondary">#{{ pr.prid }}</span></a></td>
+                        <td>{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }}{% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}</td>
+                        <td>
+                            {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
+                            {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>
+                            {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">failing</span>
+                            {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

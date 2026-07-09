@@ -280,6 +280,15 @@
             <tbody>
                 <tr class="col-2 d-lg-none"><th colspan="2">STATUS</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">STATUS</th><td><span class="badge text-bg-warning">Open migration PR</span> - not merged yet for this version</td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">CI STATUS</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">CI STATUS</th><td>
+                    {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green &mdash; ready to merge</span>
+                    {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">checks running</span>
+                    {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">checks failing</span>
+                    {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+                </td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">OPEN SINCE</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">OPEN SINCE</th><td>{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">REPOSITORY</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">REPOSITORY</th><td>{{ pr.organization }}/{{ pr.repository }}</td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">PULL REQUEST</th></tr>

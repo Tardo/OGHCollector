@@ -1,4 +1,5 @@
 // Copyright Alexandre D. Díaz
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,8 @@ pub struct Model {
     pub module_technical_name: String,
     pub prid: i64,
     pub gh_repository_id: i64,
+    pub created_at: Option<String>,
+    pub ci_status: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -25,6 +28,8 @@ struct NewPullRequest<'a> {
     module_technical_name: &'a str,
     prid: i64,
     gh_repository_id: i64,
+    created_at: Option<&'a str>,
+    ci_status: Option<&'a str>,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -41,6 +46,10 @@ pub struct PullRequestFullInfo {
     pub repository_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub created_at: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub ci_status: Option<String>,
 }
 
 /// Every open migration PR/MR tracked, across all orgs/repos - for the
@@ -49,7 +58,8 @@ pub struct PullRequestFullInfo {
 pub fn get_all(conn: &mut SqliteConnection) -> Vec<PullRequestFullInfo> {
     diesel::sql_query(
         "SELECT pr.name, pr.version_odoo, pr.module_technical_name, pr.prid, \
-         gh_repo.name as repository_name, gh_org.name as org_name \
+         gh_repo.name as repository_name, gh_org.name as org_name, \
+         pr.created_at, pr.ci_status \
          FROM pull_request as pr \
          INNER JOIN gh_repository as gh_repo ON pr.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
@@ -57,6 +67,15 @@ pub fn get_all(conn: &mut SqliteConnection) -> Vec<PullRequestFullInfo> {
     )
     .load::<PullRequestFullInfo>(conn)
     .expect("DB error in pull_request::get_all")
+}
+
+/// Days since the PR/MR was opened, for staleness display in the PR lists.
+/// `created_at` is stored as `%Y-%m-%d %H:%M:%S` (see `utils::date`); rows
+/// inserted before that column existed have it as `None` until the next
+/// collector run refreshes them.
+pub fn age_days(created_at: Option<&str>) -> Option<i64> {
+    let dt = NaiveDateTime::parse_from_str(created_at?, "%Y-%m-%d %H:%M:%S").ok()?;
+    Some((chrono::Utc::now().naive_utc() - dt).num_days())
 }
 
 pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
@@ -110,7 +129,9 @@ pub fn get_by_technical_name_organization_name(
 }
 
 /// Inserts an open migration PR/MR, or refreshes it if already tracked (title/module
-/// name can change if the PR is retargeted or renamed while still open).
+/// name can change if the PR is retargeted or renamed while still open, and
+/// `ci_status` is expected to change across collector runs as checks complete).
+#[allow(clippy::too_many_arguments)]
 pub fn add(
     conn: &mut SqliteConnection,
     name: &str,
@@ -118,6 +139,8 @@ pub fn add(
     prid: &i64,
     version_odoo: &u8,
     gh_repo_id: &i64,
+    created_at: Option<&str>,
+    ci_status: Option<&str>,
 ) -> QueryResult<Model> {
     let is_new = pull_request::table
         .filter(
@@ -136,6 +159,8 @@ pub fn add(
             module_technical_name,
             prid: *prid,
             gh_repository_id: *gh_repo_id,
+            created_at,
+            ci_status,
         })
         .on_conflict((pull_request::gh_repository_id, pull_request::prid))
         .do_update()
@@ -143,6 +168,8 @@ pub fn add(
             pull_request::name.eq(name),
             pull_request::version_odoo.eq(*version_odoo as i32),
             pull_request::module_technical_name.eq(module_technical_name),
+            pull_request::created_at.eq(created_at),
+            pull_request::ci_status.eq(ci_status),
         ))
         .execute(conn)?;
 
@@ -222,5 +249,24 @@ pub fn delete_outdated(
             pull_request::table.filter(base_filter.and(pull_request::prid.ne_all(prids))),
         )
         .execute(conn)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::age_days;
+
+    #[test]
+    fn test_age_days_computes_days_since_creation() {
+        let ten_days_ago = (chrono::Utc::now() - chrono::Duration::days(10))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        assert_eq!(age_days(Some(&ten_days_ago)), Some(10));
+    }
+
+    #[test]
+    fn test_age_days_none_for_missing_or_bad_input() {
+        assert_eq!(age_days(None), None);
+        assert_eq!(age_days(Some("not a date")), None);
     }
 }

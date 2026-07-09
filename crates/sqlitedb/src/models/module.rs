@@ -696,6 +696,27 @@ pub fn broadest_reach(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> 
     .next()
 }
 
+/// The Odoo module depended on by the most other modules (any version).
+pub fn most_relied_upon(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+    diesel::sql_query(
+        "SELECT dep.name as technical_name, MIN(gh_org.name) as organization, \
+         COUNT(DISTINCT dep_mod.module_id) as value \
+         FROM dependency as dep \
+         INNER JOIN dependency_type as dep_type ON dep_type.id = dep.dependency_type_id \
+         INNER JOIN dependency_module as dep_mod ON dep_mod.dependency_id = dep.id \
+         INNER JOIN module as mod ON mod.technical_name = dep.name \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         WHERE dep_type.name = 'module' \
+         GROUP BY dep.name \
+         ORDER BY value DESC LIMIT 1",
+    )
+    .load::<ModuleFunFactInfo>(conn)
+    .expect("DB error in module::most_relied_upon")
+    .into_iter()
+    .next()
+}
+
 pub fn get_latest_modules_created(conn: &mut SqliteConnection) -> Vec<ModuleLastCreatedInfo> {
     diesel::sql_query(
         "SELECT mod.id, mod.version_odoo, mod.technical_name, date(mod.create_date) as create_date, \

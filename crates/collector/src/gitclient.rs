@@ -31,6 +31,21 @@ pub struct PullRequestInfo {
     pub number: i64,
     pub title: String,
     pub module_technical_name: String,
+    /// PR/MR creation date, in sqlite text format (`%Y-%m-%d %H:%M:%S`),
+    /// `None` if the provider's `created_at` was missing/unparseable.
+    pub created_at: Option<String>,
+    /// Normalized CI signal: `Some("success")`, `Some("pending")`,
+    /// `Some("failure")`, or `None` when no CI is configured for the head
+    /// commit / the provider reported nothing usable.
+    pub ci_status: Option<String>,
+}
+
+/// Parses a provider's RFC3339 `created_at` into the sqlite text format
+/// used to store dates in this project (see `sqlitedb::utils::date`).
+pub fn parse_created_at(raw: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(raw)
+        .ok()
+        .map(|dt| sqlitedb::utils::date::to_sqlite_datetime(dt.with_timezone(&chrono::Utc)))
 }
 
 /// OCA migration convention: head branch `{version}-mig-{module_technical_name}`

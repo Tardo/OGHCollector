@@ -134,6 +134,8 @@ async fn main() {
                 &pr.number,
                 odoo_ver,
                 &gh_repo.id,
+                pr.created_at.as_deref(),
+                pr.ci_status.as_deref(),
             )
             .unwrap();
         }

@@ -147,6 +147,13 @@ class DoodbaMigrationPlan extends Component {
     return yaml.dump(result, {indent: 2});
   }
 
+  #ciStatusMarker(ci_status) {
+    if (ci_status === 'success') return '✅';
+    if (ci_status === 'pending') return '⏳';
+    if (ci_status === 'failure') return '❌';
+    return '';
+  }
+
   #buildStepCard(step) {
     const card = document.createElement('div');
     card.classList.add('migration-step');
@@ -186,7 +193,10 @@ class DoodbaMigrationPlan extends Component {
       const pending_info = document.createElement('div');
       pending_info.classList.add('migration-step-pending');
       pending_info.textContent = `⏳ Pending PR/MR: ${step.pending
-        .map(p => `${p.technical_name} (#${p.prid})`)
+        .map(
+          p =>
+            `${p.technical_name} (#${p.prid} ${this.#ciStatusMarker(p.ci_status)})`,
+        )
         .join(', ')}`;
       card.appendChild(pending_info);
     }

@@ -610,12 +610,16 @@ mod tests {
             &42,
             &16u8,
             &repo.id,
+            Some("2024-01-01 00:00:00"),
+            Some("pending"),
         )
         .unwrap();
         assert_eq!(pr1.prid, 42);
         assert_eq!(pr1.module_technical_name, "sale_commission");
+        assert_eq!(pr1.ci_status.as_deref(), Some("pending"));
 
-        // Same (repo, prid) must update in place, not duplicate.
+        // Same (repo, prid) must update in place, not duplicate - and refresh
+        // ci_status, which changes across collector runs as checks complete.
         let pr1_updated = super::pull_request::add(
             &mut conn,
             "[16.0][MIG] sale_commission (renamed)",
@@ -623,10 +627,13 @@ mod tests {
             &42,
             &16u8,
             &repo.id,
+            Some("2024-01-01 00:00:00"),
+            Some("success"),
         )
         .unwrap();
         assert_eq!(pr1_updated.id, pr1.id);
         assert_eq!(pr1_updated.name, "[16.0][MIG] sale_commission (renamed)");
+        assert_eq!(pr1_updated.ci_status.as_deref(), Some("success"));
 
         // A PR number in a different repo must not collide with repo A's #42.
         let other_repo = super::gh_repository::add(&mut conn, &org.id, "other-repo").unwrap();
@@ -637,6 +644,8 @@ mod tests {
             &42,
             &16u8,
             &other_repo.id,
+            None,
+            None,
         )
         .unwrap();
         assert_ne!(pr_other_repo.id, pr1.id);
@@ -657,9 +666,11 @@ mod tests {
         let repo = super::gh_repository::add(&mut conn, &org.id, "pr-repo-2").unwrap();
 
         let pr1 =
-            super::pull_request::add(&mut conn, "mig 1", "mod_1", &1, &16u8, &repo.id).unwrap();
+            super::pull_request::add(&mut conn, "mig 1", "mod_1", &1, &16u8, &repo.id, None, None)
+                .unwrap();
         let _pr2 =
-            super::pull_request::add(&mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id).unwrap();
+            super::pull_request::add(&mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id, None, None)
+                .unwrap();
 
         // Keep only #1, #2 must be removed since it's not in the "still open" list.
         super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[1]).unwrap();

@@ -19,6 +19,8 @@ pub struct ActivePullRequestInfo {
     pub repository: String,
     pub module_technical_name: String,
     pub url: String,
+    pub age_days: Option<i64>,
+    pub ci_status: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -64,7 +66,7 @@ pub async fn route(
         most_changed,
         most_contributors,
         broadest_reach,
-        newest_module,
+        most_relied_upon,
     ) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let modules_total = models::module::count_distinct(&mut conn);
@@ -76,6 +78,8 @@ pub async fn route(
                     "https://github.com/{}/{}/pull/{}",
                     &pr.org_name, &pr.repository_name, pr.prid
                 ),
+                age_days: models::pull_request::age_days(pr.created_at.as_deref()),
+                ci_status: pr.ci_status,
                 title: pr.name,
                 prid: pr.prid,
                 organization: pr.org_name,
@@ -112,9 +116,7 @@ pub async fn route(
         let most_changed = models::module::most_changed(&mut conn);
         let most_contributors = models::module::most_contributors(&mut conn);
         let broadest_reach = models::module::broadest_reach(&mut conn);
-        let newest_module = models::module::get_latest_modules_created(&mut conn)
-            .into_iter()
-            .next();
+        let most_relied_upon = models::module::most_relied_upon(&mut conn);
 
         (
             modules_total,
@@ -122,7 +124,7 @@ pub async fn route(
             most_changed,
             most_contributors,
             broadest_reach,
-            newest_module,
+            most_relied_upon,
         )
     })
     .await?;
@@ -138,7 +140,7 @@ pub async fn route(
                 most_changed => most_changed,
                 most_contributors => most_contributors,
                 broadest_reach => broadest_reach,
-                newest_module => newest_module,
+                most_relied_upon => most_relied_upon,
             )
         ),
     )

@@ -1,5 +1,7 @@
 // Copyright Alexandre D. Díaz
-use crate::gitclient::{extract_migration_module_name, GitClient, PullRequestInfo, RepoInfo};
+use crate::gitclient::{
+    extract_migration_module_name, parse_created_at, GitClient, PullRequestInfo, RepoInfo,
+};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
@@ -157,10 +159,15 @@ impl GitClient for GithubClient {
             for pull in pull_items {
                 let head_ref = pull["head"]["ref"].as_str().unwrap_or("");
                 if let Some(module_technical_name) = extract_migration_module_name(head_ref) {
+                    let created_at = pull["created_at"].as_str().and_then(parse_created_at);
+                    let head_sha = pull["head"]["sha"].as_str().unwrap_or("");
+                    let ci_status = self.get_commit_ci_status(full_path, head_sha).await;
                     prs.push(PullRequestInfo {
                         number: pull["number"].as_i64().unwrap_or(0),
                         title: pull["title"].as_str().unwrap_or("").to_string(),
                         module_technical_name,
+                        created_at,
+                        ci_status,
                     });
                 }
             }
@@ -170,5 +177,66 @@ impl GitClient for GithubClient {
             page_count += 1;
         }
         prs
+    }
+}
+
+impl GithubClient {
+    /// Combines the classic combined-status API (used by e.g. OCA's
+    /// runboat build) with the checks API (GitHub Actions runs, e.g. tests
+    /// and pre-commit): on real OCA repos neither one alone reliably
+    /// reflects the PR's actual CI state - some PRs only report through
+    /// one of the two, so a check missing from one is looked up in the
+    /// other before treating the PR as having no CI at all.
+    async fn get_commit_ci_status(&self, full_path: &str, sha: &str) -> Option<String> {
+        if sha.is_empty() {
+            return None;
+        }
+
+        let status = self
+            .request_json(&format!("repos/{full_path}/commits/{sha}/status"))
+            .await
+            .ok();
+        let status_state = status.as_ref().and_then(|s| {
+            if s["total_count"].as_i64().unwrap_or(0) == 0 {
+                None
+            } else {
+                s["state"].as_str().map(str::to_string)
+            }
+        });
+
+        let check_runs = self
+            .request_json(&format!("repos/{full_path}/commits/{sha}/check-runs"))
+            .await
+            .ok();
+        let check_runs_state = check_runs.as_ref().and_then(|c| {
+            let runs = c["check_runs"].as_array()?;
+            if runs.is_empty() {
+                return None;
+            }
+            if runs
+                .iter()
+                .any(|r| r["status"].as_str() != Some("completed"))
+            {
+                return Some("pending".to_string());
+            }
+            if runs.iter().any(|r| {
+                !matches!(
+                    r["conclusion"].as_str(),
+                    Some("success") | Some("neutral") | Some("skipped")
+                )
+            }) {
+                return Some("failure".to_string());
+            }
+            Some("success".to_string())
+        });
+
+        match (status_state.as_deref(), check_runs_state.as_deref()) {
+            (Some("failure") | Some("error"), _) | (_, Some("failure")) => {
+                Some("failure".to_string())
+            }
+            (Some("pending"), _) | (_, Some("pending")) => Some("pending".to_string()),
+            (Some("success"), _) | (_, Some("success")) => Some("success".to_string()),
+            _ => None,
+        }
     }
 }
