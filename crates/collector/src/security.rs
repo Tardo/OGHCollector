@@ -6,20 +6,19 @@
 //!
 //! Odoo-version handling: what actually varies across versions is the xml_id
 //! of the portal group (`portal.group_portal` on Odoo <= 11,
-//! `base.group_portal` since 12). Matching every historical variant instead
-//! of branching on the collected version keeps the checks version-proof: an
-//! old id can't collide with a legit internal group on a newer version.
-
+//! `base.group_portal` since 12). All hardcoded id lists below are matched
+//! by `local_id` (the part after the last '.') rather than the fully
+//! qualified id: besides making the historical portal variant a non-issue,
+//! it also handles Odoo's own convention of referencing an xml_id without
+//! its module prefix from within that same module (e.g. `base`'s own
+//! `ir.model.access.csv` refers to its own `group_erp_manager`, not
+//! `base.group_erp_manager`).
 use sqlitedb::models::module_code_analysis::{ControllerAnalysisInfo, RecordAnalysisInfo};
 use sqlitedb::models::module_security_warning::{
     SecurityWarningInfo, SEVERITY_ERROR, SEVERITY_WARNING,
 };
 
-const PUBLIC_GROUP_XML_IDS: [&str; 3] = [
-    "base.group_public",
-    "base.group_portal",
-    "portal.group_portal",
-];
+const PUBLIC_GROUP_XML_IDS: [&str; 2] = ["group_public", "group_portal"];
 
 // Write access to any of these models lets a user grant themselves (or
 // anyone) further permissions - privilege escalation unless it is reserved
@@ -32,7 +31,12 @@ const PRIVILEGED_MODEL_XML_IDS: [&str; 6] = [
     "model_ir_model",
     "model_ir_model_fields",
 ];
-const ADMIN_GROUP_XML_IDS: [&str; 2] = ["base.group_system", "base.group_erp_manager"];
+const ADMIN_GROUP_XML_IDS: [&str; 2] = ["group_system", "group_erp_manager"];
+
+/// Part of a (possibly module-unqualified) external id after the last '.'.
+fn local_id(xml_id: &str) -> &str {
+    xml_id.rsplit('.').next().unwrap_or(xml_id)
+}
 
 /// Field lookup tolerant to both sources: XML records store the plain field
 /// name ("group_id"), CSV rows keep the raw header, which carries a suffix
@@ -119,6 +123,22 @@ fn is_intentional_global(rec: &RecordAnalysisInfo) -> bool {
     has_token(&rec.xml_id) || field_str(rec, "name").is_some_and(has_token)
 }
 
+/// True when the ACL's xml_id/name explicitly names the group it grants
+/// access to (e.g. `access_auth_passkey_key_portal` for `base.group_portal`),
+/// following the standard Odoo/OCA `access_<model>_<group_suffix>`
+/// convention. A portal/public write grant named after its own group is a
+/// deliberate self-service design (typically paired with an ir.rule scoping
+/// it to the user's own records), not an oversight, so it gets the same
+/// demotion as `is_intentional_global`.
+fn names_its_group(rec: &RecordAnalysisInfo, group: &str) -> bool {
+    let suffix = group.rsplit('.').next().unwrap_or(group);
+    let suffix = suffix.strip_prefix("group_").unwrap_or(suffix);
+    fn has_token(s: &str, token: &str) -> bool {
+        s.split(['_', '.']).any(|t| t == token)
+    }
+    has_token(&rec.xml_id, suffix) || field_str(rec, "name").is_some_and(|n| has_token(n, suffix))
+}
+
 fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     let group = field_str(rec, "group_id").map(strip_ref);
     let model_ref = field_str(rec, "model_id").map(strip_ref);
@@ -157,13 +177,23 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                 ));
             }
         }
-        Some(g) if PUBLIC_GROUP_XML_IDS.contains(&g) && !write_perms.is_empty() => {
+        Some(g) if PUBLIC_GROUP_XML_IDS.contains(&local_id(g)) && !write_perms.is_empty() => {
+            let intentional = is_intentional_global(rec) || names_its_group(rec, g);
             out.push(warning(
                 rec,
-                SEVERITY_ERROR,
+                if intentional {
+                    SEVERITY_WARNING
+                } else {
+                    SEVERITY_ERROR
+                },
                 "acl-public-write",
                 format!(
-                    "Access rule grants {write_perms} on '{model_label}' to the portal/public group '{g}'"
+                    "Access rule grants {write_perms} on '{model_label}' to the portal/public group '{g}'{}",
+                    if intentional {
+                        " (naming names its own group, likely a deliberate self-service grant - verify a companion ir.rule scopes it to the user's own records)"
+                    } else {
+                        ""
+                    }
                 ),
             ));
         }
@@ -174,9 +204,9 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     // an escalation vector for any group that isn't already admin.
     if !write_perms.is_empty() {
         if let Some(model_ref) = model_ref {
-            let local_id = model_ref.rsplit('.').next().unwrap_or(model_ref);
-            let group_is_admin = matches!(group, Some(g) if ADMIN_GROUP_XML_IDS.contains(&g));
-            if PRIVILEGED_MODEL_XML_IDS.contains(&local_id) && !group_is_admin {
+            let group_is_admin =
+                matches!(group, Some(g) if ADMIN_GROUP_XML_IDS.contains(&local_id(g)));
+            if PRIVILEGED_MODEL_XML_IDS.contains(&local_id(model_ref)) && !group_is_admin {
                 out.push(warning(
                     rec,
                     SEVERITY_ERROR,
@@ -448,6 +478,25 @@ mod tests {
     }
 
     #[test]
+    fn test_portal_write_named_after_its_group_is_demoted() {
+        // e.g. Odoo core's auth_passkey.access_auth_passkey_key_portal:
+        // xml_id ends in "_portal" and grants write to base.group_portal -
+        // a deliberate self-service ACL, not an oversight.
+        let mut rec = access_csv("base.group_portal", ["1", "1", "0", "0"]);
+        rec.xml_id = "access_auth_passkey_key_portal".to_string();
+        let found = analyze_records(&[rec]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "acl-public-write");
+        assert_eq!(found[0].severity, SEVERITY_WARNING);
+
+        // Same naming convention via the "name" field instead of xml_id.
+        let mut rec = access_csv("base.group_portal", ["1", "1", "0", "0"]);
+        rec.fields.as_mut().unwrap()["name"] = serde_json::json!("access_auth_passkey_key_portal");
+        let found = analyze_records(&[rec]);
+        assert_eq!(found[0].severity, SEVERITY_WARNING);
+    }
+
+    #[test]
     fn test_privilege_escalation_from_xml_record() {
         // XML-shaped record: plain field names, ref(...) reprs, "True" evals.
         let rec = RecordAnalysisInfo {
@@ -478,6 +527,31 @@ mod tests {
             })),
         };
         assert!(analyze_records(&[rec_admin]).is_empty());
+    }
+
+    #[test]
+    fn test_admin_group_without_module_prefix_is_not_escalation() {
+        // e.g. Odoo core's own base/security/ir.model.access.csv:
+        // access_ir_model_group_erp_manager grants write on model_ir_model
+        // to "group_erp_manager", not "base.group_erp_manager" - same-module
+        // xml_id refs drop the module prefix. Must still be recognized as
+        // the admin group, not flagged as escalation.
+        for group in ["group_erp_manager", "group_system"] {
+            let rec = RecordAnalysisInfo {
+                xml_id: "access_ir_model_group_erp_manager".to_string(),
+                model: "ir.model.access".to_string(),
+                noupdate: false,
+                fields: Some(serde_json::json!({
+                    "model_id:id": "model_ir_model",
+                    "group_id:id": group,
+                    "perm_read": "1",
+                    "perm_write": "1",
+                    "perm_create": "1",
+                    "perm_unlink": "1",
+                })),
+            };
+            assert!(analyze_records(&[rec]).is_empty(), "group {group}");
+        }
     }
 
     fn rule(domain: &str, groups: Option<&str>) -> RecordAnalysisInfo {
