@@ -82,10 +82,10 @@
 
         <h3 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h3>
         {% if g.pull_requests %}
-        <p class="text-body-secondary">
-            <span class="badge text-bg-success">{{ g.pr_fresh }} fresh</span>
-            <span class="badge text-bg-warning">{{ g.pr_rotting }} rotting</span>
-            <span class="badge text-bg-danger">{{ g.pr_rotten }} rotten</span>
+        <p class="text-body-secondary pr-filter-group">
+            <span class="badge text-bg-success pr-filter" data-filter="fresh">{{ g.pr_fresh }} fresh</span>
+            <span class="badge text-bg-warning pr-filter" data-filter="rotting">{{ g.pr_rotting }} rotting</span>
+            <span class="badge text-bg-danger pr-filter" data-filter="rotten">{{ g.pr_rotten }} rotten</span>
         </p>
         {% endif %}
         {% if g.avg_days_open is not none %}

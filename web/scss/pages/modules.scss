@@ -35,9 +35,26 @@
     }
 }
 
+.pr-filter-group .pr-filter {
+    cursor: pointer;
+
+    &.active {
+        // currentColor breaks for the warning badge: Bootstrap forces black
+        // text on text-bg-warning, invisible against this app's dark theme.
+        outline: 2px solid var(--bs-primary);
+        outline-offset: 1px;
+    }
+}
+
 // PR list: a left border per row echoes the fresh/rotting/rotten badge
 // colors above the table, so status reads at a glance down the column.
 .pr-list {
+    &.filter-fresh .pr-row:not(.pr-row-fresh),
+    &.filter-rotting .pr-row:not(.pr-row-rotting),
+    &.filter-rotten .pr-row:not(.pr-row-rotten) {
+        display: none;
+    }
+
     .pr-row-fresh {
         box-shadow: inset 3px 0 var(--bs-success);
     }
