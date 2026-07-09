@@ -86,7 +86,7 @@ pub async fn route(
             let entry = ActivePullRequestInfo {
                 url: format!(
                     "https://github.com/{}/{}/pull/{}",
-                    &pr.org_name, &pr.repository_name, pr.prid
+                    pr.org_name, pr.repository_name, pr.prid
                 ),
                 age_days: models::pull_request::age_days(pr.created_at.as_deref()),
                 ci_status: pr.ci_status,

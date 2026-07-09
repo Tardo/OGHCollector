@@ -466,7 +466,7 @@ fn build_module_info(conn: &mut SqliteConnection, module: &models::module::Model
         application: module.application,
         installable: module.installable,
         auto_install: module.auto_install,
-        git: format!("https://github.com/{}/{}.git", &org.name, &repo.name),
+        git: format!("https://github.com/{}/{}.git", org.name, repo.name),
         organization: org.name,
         repository: repo.name,
         last_commit_date: module.last_commit_date.clone(),

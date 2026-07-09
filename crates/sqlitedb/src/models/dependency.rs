@@ -120,7 +120,7 @@ fn collect_full_dependency_info(
     for dep in get_module_dependency_info(conn, &mod_.id) {
         let repo_deps = info
             .odoo
-            .entry(format!("{}/{}", &dep.org, &dep.repo))
+            .entry(format!("{}/{}", dep.org, dep.repo))
             .or_default();
         if !repo_deps.contains(&dep.module_name) {
             repo_deps.push(dep.module_name.clone());

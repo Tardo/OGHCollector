@@ -73,8 +73,8 @@ async fn main() -> std::io::Result<()> {
 
     log::info!(
         "starting HTTP server at http://{}:{}",
-        &SERVER_CONFIG.get_bind_address(),
-        &SERVER_CONFIG.get_port()
+        SERVER_CONFIG.get_bind_address(),
+        SERVER_CONFIG.get_port()
     );
 
     if SERVER_CONFIG.get_trusted_proxies().is_empty() {

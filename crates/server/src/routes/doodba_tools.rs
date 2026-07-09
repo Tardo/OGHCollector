@@ -206,7 +206,7 @@ fn get_pending_modules(
             MigrationPendingModuleInfo {
                 url: format!(
                     "https://github.com/{}/{}/pull/{}",
-                    &org.name, &repo.name, pr.prid
+                    org.name, repo.name, pr.prid
                 ),
                 age_days: models::pull_request::age_days(pr.created_at.as_deref()),
                 ci_status: pr.ci_status,

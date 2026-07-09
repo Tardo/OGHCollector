@@ -1130,7 +1130,7 @@ impl OGHCollectorAnalyzer {
             for read_path in read_paths {
                 let base_path =
                     PathBuf::from(format!("{}{}", repo_info.get_clone_path(), read_path));
-                log::info!("- Base Path: {}", &base_path.display());
+                log::info!("- Base Path: {}", base_path.display());
                 // Any failure below is scoped to a single module: log and keep
                 // scanning, one broken folder/manifest must not abort the run.
                 let entries = match fs::read_dir(&base_path) {
@@ -1148,7 +1148,7 @@ impl OGHCollectorAnalyzer {
                         let folder_size = get_size(&path).unwrap_or(0);
                         let git_info = self.get_git_info(&path).unwrap_or_default();
                         let committers = self.get_git_committers(&path).unwrap_or_default();
-                        let manifest_path = format!("{}/{}", &path.display(), &manifest_filename);
+                        let manifest_path = format!("{}/{}", path.display(), manifest_filename);
                         let Some(module_name) = path.file_name().and_then(|n| n.to_str()) else {
                             continue;
                         };

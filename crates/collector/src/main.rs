@@ -81,7 +81,7 @@ async fn main() {
         config.get_source(),
         &odoo_ver_str,
     );
-    log::info!("Cloning/Updating ({})...", &odoo_ver_str);
+    log::info!("Cloning/Updating ({})...", odoo_ver_str);
     let mut repo_infos: Vec<RepoInfo> = Vec::new();
     if config.get_mode() == "org" {
         repo_infos = git_client
@@ -381,9 +381,9 @@ async fn main() {
                         let Some(nearest_ver) = package_ver_opt else {
                             log::info!(
                                 "No valid release version found for '{}': '{}' ({}). Skipping...",
-                                &module_depends_python_name,
-                                &package_name,
-                                &package_ver
+                                module_depends_python_name,
+                                package_name,
+                                package_ver
                             );
                             continue;
                         };

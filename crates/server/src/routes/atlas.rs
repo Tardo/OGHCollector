@@ -120,7 +120,7 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
             if mod_dep_name == "base" {
                 continue;
             }
-            let node_key: String = format!("o_{}", &mod_dep_name);
+            let node_key: String = format!("o_{}", mod_dep_name);
             if !main_modules_names.contains(&mod_dep_name)
                 && !graph_info.nodes.iter().any(|x| x.key.eq(&node_key))
             {
@@ -137,11 +137,11 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
                     .insert("label".into(), mod_dep_name.clone());
                 graph_info.nodes.push(node_info);
             }
-            let edge_key = format!("o_{}__{}", &module.technical_name, &mod_dep_name);
+            let edge_key = format!("o_{}__{}", module.technical_name, mod_dep_name);
             if !graph_info.edges.iter().any(|x| x.key.eq(&edge_key)) {
                 let mut edge_info = GraphEdgeInfo {
                     key: edge_key,
-                    source: format!("o_{}", &module.technical_name),
+                    source: format!("o_{}", module.technical_name),
                     target: node_key.clone(),
                     undirected: false,
                     attributes: HashMap::new(),
@@ -153,7 +153,7 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
         let pip_depends_list =
             models::dependency::get_module_external_dependency_names(conn, &module.id, "python");
         for pip_dep_name in pip_depends_list {
-            let node_key: String = format!("p_{}", &pip_dep_name);
+            let node_key: String = format!("p_{}", pip_dep_name);
             if !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
                 let mut node_info = GraphNodeInfo {
                     key: node_key.clone(),
@@ -169,8 +169,8 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
                 graph_info.nodes.push(node_info);
             }
             let mut edge_info = GraphEdgeInfo {
-                key: format!("p_{}__{}", &module.technical_name, &pip_dep_name),
-                source: format!("o_{}", &module.technical_name),
+                key: format!("p_{}__{}", module.technical_name, pip_dep_name),
+                source: format!("o_{}", module.technical_name),
                 target: node_key.clone(),
                 undirected: false,
                 attributes: HashMap::new(),
@@ -181,7 +181,7 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
         let bin_depends_list =
             models::dependency::get_module_external_dependency_names(conn, &module.id, "bin");
         for bin_dep_name in bin_depends_list {
-            let node_key: String = format!("b_{}", &bin_dep_name);
+            let node_key: String = format!("b_{}", bin_dep_name);
             if !graph_info.nodes.iter().any(|x| x.key.eq(&node_key)) {
                 let mut node_info = GraphNodeInfo {
                     key: node_key.clone(),
@@ -197,8 +197,8 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
                 graph_info.nodes.push(node_info);
             }
             let mut edge_info = GraphEdgeInfo {
-                key: format!("b_{}__{}", &module.technical_name, &bin_dep_name),
-                source: format!("o_{}", &module.technical_name),
+                key: format!("b_{}__{}", module.technical_name, bin_dep_name),
+                source: format!("o_{}", module.technical_name),
                 target: node_key.clone(),
                 undirected: false,
                 attributes: HashMap::new(),
@@ -207,7 +207,7 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
             graph_info.edges.push(edge_info);
         }
 
-        let node_key = format!("o_{}", &module.technical_name);
+        let node_key = format!("o_{}", module.technical_name);
         let cur_node_info_opt = graph_info.nodes.iter().position(|x| x.key.eq(&node_key));
         let repo_name = models::gh_repository::get_by_id(conn, &module.gh_repository_id)
             .map(|r| r.name)

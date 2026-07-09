@@ -85,7 +85,7 @@ impl PypiClient {
                     continue;
                 }
 
-                log::info!("Check if '{}' < '{}'...", &ver_part, &ver_orig_parts[index]);
+                log::info!("Check if '{}' < '{}'...", ver_part, ver_orig_parts[index]);
                 if ver_part < &ver_orig_parts[index] {
                     res = Some(ver_str.to_string());
                 }
