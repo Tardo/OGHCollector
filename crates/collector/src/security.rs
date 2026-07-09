@@ -106,12 +106,17 @@ fn warning(
     }
 }
 
-/// ACLs named with an "_all" suffix (e.g. `access_res_partner_all`) follow
-/// the common Odoo convention for a deliberately global grant - the author
-/// meant "everyone", so the finding is demoted one level to cut false
-/// positives (grave -> log-only, minor -> silent).
+/// ACLs carrying an "all" or "public" token in the xml_id or name (e.g.
+/// `access_res_partner_all`, `access_thing_public_user`) follow the common
+/// Odoo convention for a deliberately global grant - the author meant
+/// "everyone", so the finding is demoted one level to cut false positives
+/// (grave -> log-only, minor -> silent). Token match, not substring:
+/// "install"/"wallet" must not count.
 fn is_intentional_global(rec: &RecordAnalysisInfo) -> bool {
-    rec.xml_id.ends_with("_all") || field_str(rec, "name").is_some_and(|n| n.ends_with("_all"))
+    fn has_token(s: &str) -> bool {
+        s.split(['_', '.']).any(|t| t == "all" || t == "public")
+    }
+    has_token(&rec.xml_id) || field_str(rec, "name").is_some_and(has_token)
 }
 
 fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
@@ -135,7 +140,7 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                     format!(
                         "Access rule grants {write_perms} on '{model_label}' to EVERY user (portal/public included): no group is set{}",
                         if intentional {
-                            " ('_all' naming suggests it is intentional)"
+                            " ('all'/'public' naming suggests it is intentional)"
                         } else {
                             ""
                         }
@@ -368,8 +373,8 @@ mod tests {
     }
 
     #[test]
-    fn test_all_suffix_marks_global_acl_intentional() {
-        // xml_id suffix: write demoted to log-only, read silenced.
+    fn test_all_or_public_token_marks_global_acl_intentional() {
+        // xml_id token: write demoted to log-only, read silenced.
         let mut rec = access_csv("", ["1", "1", "0", "0"]);
         rec.xml_id = "access_res_partner_all".to_string();
         let found = analyze_records(&[rec]);
@@ -377,11 +382,19 @@ mod tests {
         assert_eq!(found[0].code, "acl-global-write");
         assert_eq!(found[0].severity, SEVERITY_WARNING);
 
-        let mut rec = access_csv("", ["1", "0", "0", "0"]);
-        rec.xml_id = "access_res_partner_all".to_string();
-        assert!(analyze_records(&[rec]).is_empty());
+        // Token anywhere, not just as suffix; "public" counts too.
+        for xml_id in ["access_res_partner_all_x", "access_public_partner"] {
+            let mut rec = access_csv("", ["1", "0", "0", "0"]);
+            rec.xml_id = xml_id.to_string();
+            assert!(analyze_records(&[rec]).is_empty(), "{xml_id}");
+        }
 
-        // "name" field suffix works too (CSV rows where the xml_id differs).
+        // Token match only: "install" contains "all" but must still warn.
+        let mut rec = access_csv("", ["1", "0", "0", "0"]);
+        rec.xml_id = "access_module_install".to_string();
+        assert_eq!(analyze_records(&[rec]).len(), 1);
+
+        // "name" field works too (CSV rows where the xml_id differs).
         let mut rec = access_csv("", ["1", "0", "0", "0"]);
         rec.fields.as_mut().unwrap()["name"] = serde_json::json!("res.partner all");
         assert_eq!(analyze_records(&[rec.clone()]).len(), 1); // " all" ≠ "_all"

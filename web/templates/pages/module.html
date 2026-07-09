@@ -109,9 +109,10 @@
                 <tr class="col-2 d-lg-none"><th colspan="2">ODOO DEPENDENCIES</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">ODOO DEPENDENCIES</th><td>
                     {% for key, values in module.dependencies.odoo|items %}
+                    {% set dep_org = key | split('/') | first %}
                     {{ key }}:<br/>
                     {% for value in values %}
-                    &nbsp;&nbsp;&nbsp;&nbsp;- {{ value }}<br/>
+                    &nbsp;&nbsp;&nbsp;&nbsp;- <a href="/module/{{ dep_org | urlencode }}/{{ value | urlencode }}">{{ value }}</a><br/>
                     {% endfor %}
                     {% endfor %}
                 </td></tr>
@@ -119,7 +120,7 @@
                 <tr><th class="col-2 d-none d-lg-table-cell">PYTHON DEPENDENCIES</th><td>
                     {% if module.dependencies.pip %}
                     {% for dep_name in module.dependencies.pip %}
-                    {{ dep_name }}<br/>
+                    <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a><br/>
                     {% endfor %}
                     {% else %}
                     <span>Not have</span>

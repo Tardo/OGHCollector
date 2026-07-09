@@ -53,6 +53,10 @@ async fn main() -> std::io::Result<()> {
             notifier.watch_path(&tmpl_path, true);
         }
         env.set_loader(path_loader(tmpl_path));
+        // minijinja 1.x has no built-in `split` filter (arrives in 2.x)
+        env.add_filter("split", |value: String, sep: String| -> Vec<String> {
+            value.split(&sep).map(str::to_string).collect()
+        });
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);
