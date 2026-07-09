@@ -43,6 +43,44 @@ struct NewModuleSecurityWarning<'a> {
     module_version_id: i64,
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleSecurityWarningFullInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub severity: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub code: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub message: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub xml_id: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub org_name: String,
+}
+
+/// Every warning for every module's *current* snapshot (mirrors
+/// module_version::resolve_current, joined in SQL to avoid an N+1 query per
+/// module) - for the site-wide modules overview page. Unlike the module
+/// detail page, this includes "warning" (minor) severity too, not just
+/// "error", since the whole point of this list is "by severity".
+pub fn get_all_current(conn: &mut SqliteConnection) -> Vec<ModuleSecurityWarningFullInfo> {
+    diesel::sql_query(
+        "SELECT msw.severity, msw.code, msw.message, msw.xml_id, \
+         mod.version_odoo, mod.technical_name, gh_org.name as org_name \
+         FROM module_security_warning as msw \
+         INNER JOIN module_version as mv ON mv.id = msw.module_version_id \
+         INNER JOIN module as mod ON mod.id = msw.module_id AND mod.version_module = mv.version_module \
+         INNER JOIN gh_repository as gh_repo ON gh_repo.id = mod.gh_repository_id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         ORDER BY msw.severity ASC, mod.technical_name ASC",
+    )
+    .load::<ModuleSecurityWarningFullInfo>(conn)
+    .expect("DB error in module_security_warning::get_all_current")
+}
+
 /// Warnings for one specific version snapshot - what the module detail page
 /// and API resolve to.
 pub fn get_by_module_version_id(

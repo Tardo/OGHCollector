@@ -30,7 +30,7 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (modules_count, modules_total, modules_latest) = web::block(move || {
+    let (modules_count, modules_latest) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let count = models::module::count(&mut conn)
             .into_iter()
@@ -39,7 +39,6 @@ pub async fn route(
                 version_odoo: odoo_version_u8_to_string(&(x.version_odoo as u8)),
             })
             .collect::<Vec<ModuleCountInfoResponse>>();
-        let total = models::module::count_distinct(&mut conn);
         let latest = models::module::get_latest_modules_created(&mut conn)
             .into_iter()
             .map(|x| LastestCreatedInfo {
@@ -50,7 +49,7 @@ pub async fn route(
                 create_date: x.create_date,
             })
             .collect::<Vec<LastestCreatedInfo>>();
-        (count, total, latest)
+        (count, latest)
     })
     .await?;
 
@@ -61,7 +60,6 @@ pub async fn route(
             ..context!(
                 page_name => "dashboard",
                 modules_count => modules_count,
-                modules_total => modules_total,
                 modules_latest => modules_latest,
             )
         ),

@@ -127,6 +127,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::common::route_odoo_committer_rank)
             .service(routes::common::route_odoo_committer_list)
             .service(routes::dashboard::route)
+            .service(routes::modules::route)
             .service(routes::module::route)
             .service(routes::committer::route)
             .service(routes::committers::route)

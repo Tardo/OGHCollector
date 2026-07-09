@@ -1,0 +1,128 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% block title %}Modules{% endblock %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/modules.css" as="style">
+    <script type="module" src="/static/auto/modules.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<template id="template-mirlo-module-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
+    <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
+    <ul id="results"></ul>
+</template>
+
+<h2 class="z-3">Modules</h2>
+
+<span>{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations</span>
+
+<div class="row position-relative mx-1 mt-3" id="module_search">
+    <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
+</div>
+
+{% if not version_groups %}
+<p class="text-body-secondary">No open PRs or security findings tracked.</p>
+{% else %}
+<ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
+    {% for g in version_groups %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {{ loop.first and 'active' or '' }}" id="modver-{{ g.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#modver-{{ g.odoo_version }}" type="button" role="tab" aria-controls="modver-{{ g.odoo_version }}">{{ g.odoo_version }}</button>
+    </li>
+    {% endfor %}
+</ul>
+<div class="tab-content" id="versions-tabContent">
+    {% for g in version_groups %}
+    <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="modver-{{ g.odoo_version }}" role="tabpanel" aria-labelledby="modver-{{ g.odoo_version }}-tab" tabindex="0">
+
+        <h3 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h3>
+        {% if not g.pull_requests %}
+        <p class="text-body-secondary">No open migration PRs/MRs tracked.</p>
+        {% else %}
+        <div class="modules-scroll-list">
+            <table class="table table-striped-columns">
+                <thead>
+                    <tr>
+                        <th>Module</th>
+                        <th>Repository</th>
+                        <th>Title</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pr in g.pull_requests %}
+                    <tr>
+                        <td><a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a></td>
+                        <td>{{ pr.organization }}/{{ pr.repository }}</td>
+                        <td><a href="{{ pr.url }}" target="_blank" rel="noopener noreferrer">{{ pr.title }} <span class="text-body-secondary">#{{ pr.prid }}</span></a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <h3 class="mt-5">Security Findings</h3>
+        <div class="alert alert-info" role="alert">
+            Results are approximate: found by automated static analysis, not a full security audit. Treat them as a starting point for manual review, not confirmed issues.
+        </div>
+
+        <h4 class="mt-3">Errors <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h4>
+        {% if not g.security_errors %}
+        <p class="text-body-secondary">No grave findings.</p>
+        {% else %}
+        <div class="modules-scroll-list">
+            <table class="table table-striped-columns">
+                <thead>
+                    <tr>
+                        <th>Module</th>
+                        <th>Code</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for w in g.security_errors %}
+                    <tr>
+                        <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
+                        <td><span class="badge text-bg-danger">{{ w.code }}</span></td>
+                        <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <h4 class="mt-4">Warnings <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h4>
+        {% if not g.security_warnings %}
+        <p class="text-body-secondary">No minor findings.</p>
+        {% else %}
+        <div class="modules-scroll-list">
+            <table class="table table-striped-columns">
+                <thead>
+                    <tr>
+                        <th>Module</th>
+                        <th>Code</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for w in g.security_warnings %}
+                    <tr>
+                        <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
+                        <td><span class="badge text-bg-warning">{{ w.code }}</span></td>
+                        <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

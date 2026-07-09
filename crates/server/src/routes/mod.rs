@@ -10,4 +10,5 @@ pub mod doodba_tools;
 pub mod logs;
 pub mod mcp_info;
 pub mod module;
+pub mod modules;
 pub mod osv;

@@ -4,6 +4,14 @@ import '@scss/components/module-search.scss';
 
 const PAGE_SIZE = 50;
 const SCROLL_THRESHOLD_PX = 100;
+const INPUT_DEBOUNCE_MS = 120;
+
+// localeCompare is far slower than a plain relational compare, and technical
+// names / org slugs are always plain lowercase ASCII, so locale collation
+// buys nothing here - see #filterResults.
+function compareStr(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 class ModuleSearch extends Component {
   #el_search_results = null;
@@ -11,6 +19,7 @@ class ModuleSearch extends Component {
   #active_index = -1;
   #filtered_results = [];
   #rendered_count = 0;
+  #debounce_id = null;
 
   onSetup() {
     Component.useEvents({
@@ -51,15 +60,21 @@ class ModuleSearch extends Component {
     this.#active_index = -1;
     this.#updateActiveItem(cur_active_item);
     this.#last_query = ev.target.value.replaceAll(' ', '_');
+    clearTimeout(this.#debounce_id);
     if (this.#last_query === '') {
       this.#fillResults();
-    } else {
+      return;
+    }
+    // Filtering/sorting thousands of modules on every keystroke is what
+    // makes fast typing/deleting feel laggy - wait for a short pause instead
+    // of redoing that work once per character.
+    this.#debounce_id = setTimeout(() => {
       this.#filterResults(this.#last_query).then(filter_info => {
         if (filter_info[0] === this.#last_query) {
           this.#fillResults(filter_info[1]);
         }
       });
-    }
+    }, INPUT_DEBOUNCE_MS);
   }
 
   onKeyDownModuleSearch(ev) {
@@ -140,8 +155,8 @@ class ModuleSearch extends Component {
       .filter(item => item.technical_name.includes(query.toLowerCase()))
       .sort(
         (a, b) =>
-          a.technical_name.localeCompare(b.technical_name) ||
-          a.org_name.localeCompare(b.org_name),
+          compareStr(a.technical_name, b.technical_name) ||
+          compareStr(a.org_name, b.org_name),
       );
     return [query, filtered];
   }

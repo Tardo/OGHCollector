@@ -27,6 +27,38 @@ struct NewPullRequest<'a> {
     gh_repository_id: i64,
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct PullRequestFullInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub module_technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub prid: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub org_name: String,
+}
+
+/// Every open migration PR/MR tracked, across all orgs/repos - for the
+/// site-wide modules overview page (unlike the other getters here, which
+/// scope to one module or one org).
+pub fn get_all(conn: &mut SqliteConnection) -> Vec<PullRequestFullInfo> {
+    diesel::sql_query(
+        "SELECT pr.name, pr.version_odoo, pr.module_technical_name, pr.prid, \
+         gh_repo.name as repository_name, gh_org.name as org_name \
+         FROM pull_request as pr \
+         INNER JOIN gh_repository as gh_repo ON pr.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         ORDER BY gh_org.name ASC, pr.module_technical_name ASC, pr.version_odoo DESC",
+    )
+    .load::<PullRequestFullInfo>(conn)
+    .expect("DB error in pull_request::get_all")
+}
+
 pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
     pull_request::table
         .filter(pull_request::id.eq(id))

@@ -4,6 +4,7 @@
 {{ super() }}
 
     <link rel="prefetch" href="/api" />
+    <link rel="prefetch" href="/modules" />
     <link rel="prefetch" href="/atlas" />
     <link rel="prefetch" href="/committers" />
     <link rel="prefetch" href="/logs" />
@@ -35,6 +36,7 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav ms-auto text-light">
                     <li class="nav-item"><a class="nav-link {% if page_name == 'dashboard' %}active{% endif %}" href="/">Home</a></li>
+                    <li class="nav-item"><a class="nav-link {% if page_name == 'modules' %}active{% endif %}" href="/modules">Modules</a></li>
                     <li class="nav-item"><a class="nav-link {% if page_name == 'osv' %}active{% endif %}" href="/osv">OSV</a></li>
                     <li class="nav-item"><a class="nav-link {% if page_name == 'atlas' %}active{% endif %}" href="/atlas">Atlas</a></li>
                     <li class="nav-item"><a class="nav-link {% if page_name in ['committers', 'committer'] %}active{% endif %}" href="/committers">Committers</a></li>

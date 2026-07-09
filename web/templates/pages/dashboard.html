@@ -6,18 +6,10 @@
 
     <link rel="preload" href="/static/auto/web/scss/components/module-counter.css" as="style" />
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css" as="style">
-    <link rel="modulepreload" href="/static/auto/module-search.mjs" />
     <script type="module" src="/static/auto/dashboard.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}
-
-
-<template id="template-mirlo-module-search">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
-    <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
-    <ul id="results"></ul>
-</template>
 
 
 <template id="template-mirlo-module-counter">
@@ -48,12 +40,6 @@
 </template>
 
 
-<span>{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations</span>
-
-<div class="row position-relative mx-1 mt-3" id="module_search">
-    <mirlo-module-search class="border-warning-subtle rounded p-2 shadow position-absolute" />
-</div>
-
 <div class="row mb-3 gx-sm-5 user-select-none" id="modules_count">
     <div class="col-lg-4 col-12 pb-3 pb-lg-0">
         <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 border border-opacity-0 bg-success-subtle" version="17.0"></mirlo-module-counter>
@@ -66,7 +52,7 @@
     </div>
 </div>
 
-<div class="row user-select-none" id="modules_count">
+<div class="row user-select-none" id="modules_latest">
     <div class="col-12">
         <h3>Latest Modules Tracked:</h3>
         <table class="table table-striped table-striped-columns table-hover">

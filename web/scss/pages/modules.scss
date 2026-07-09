@@ -1,0 +1,14 @@
+// Copyright 2026 Alexandre D. Díaz
+mirlo-module-search {
+    background-color: rgb(200, 200, 200);
+}
+
+#module_search {
+    margin-bottom: 8em;
+    z-index: 3;
+}
+
+.modules-scroll-list {
+    max-height: 24rem;
+    overflow-y: auto;
+}

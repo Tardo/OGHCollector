@@ -25,6 +25,7 @@ export default [
       'web/js/pages/atlas.mjs',
       'web/js/pages/logs.mjs',
       'web/js/pages/module.mjs',
+      'web/js/pages/modules.mjs',
       'web/js/pages/committer.mjs',
       'web/js/pages/committers.mjs',
     ],
@@ -33,10 +34,13 @@ export default [
       format: 'esm',
       dir: 'static/auto/',
       entryFileNames: '[name].mjs',
-      // Stable (unhashed) names for chunks we modulepreload from templates
-      // (see minimal_layout.html / dashboard.html), so the browser can fetch
-      // them in parallel with the entry script instead of discovering them
-      // only after it's parsed.
+      // Stable (unhashed) name for the chunk minimal_layout.html
+      // modulepreloads, so the browser can fetch it in parallel with the
+      // entry script instead of discovering it only after it's parsed.
+      // module-search is listed too for whenever Rollup's automatic
+      // chunking happens to split it out on its own (it currently doesn't -
+      // both module.mjs and modules.mjs pull it in via modules.mjs, since
+      // that entry alone already needs all of it).
       chunkFileNames: chunk =>
         ['mirlo', 'module-search'].includes(chunk.name)
           ? '[name].mjs'
