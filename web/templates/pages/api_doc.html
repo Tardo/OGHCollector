@@ -79,6 +79,7 @@
         <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
         <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
         <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
+        <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
     </div>
     <ul class="nav nav-pills mb-3 d-flex d-md-none mb-5" id="pills-tab" role="tablist">
         <li class="nav-item dropdown bg-primary-subtle">
@@ -95,6 +96,9 @@
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
                 </li>
             </ul>
         </li>
@@ -429,6 +433,85 @@
     \"technical_name\": string,
     \"versions\": Object
 }"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-criteria" role="tabpanel" aria-labelledby="api-pills-criteria-tab" tabindex="0">
+            {{ api_doc_tab_pane(
+                "criteria",
+                "<span class='text-secondary-emphasis'>None</span>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>odoo_version</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The odoo version
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>term</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Free-text term matched against technical name, display name and description
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>category</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Exact manifest category
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>depends_on</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Only modules that declare this module as an Odoo dependency (reverse dependency search)
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>limit</span>
+                            <span class='text-danger-emphasis'>integer</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Max results (default 50, max 200)
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/v1/search",
+                "'/v1/search?odoo_version=18.0&depends_on=web'",
+                "[
+    {
+        \"technical_name\": \"web_responsive\",
+        \"name\": \"Web Responsive\",
+        \"category\": \"Website\",
+        \"installable\": true,
+        \"application\": false,
+        \"organization\": \"OCA\",
+        \"repository\": \"web\"
+    }
+]",
+                "[
+    {
+        \"technical_name\": string,
+        \"name\": string,
+        \"category\": string|null,
+        \"installable\": bool,
+        \"application\": bool,
+        \"organization\": string,
+        \"repository\": string
+    }
+]"
             ) }}
         </div>
     </div>

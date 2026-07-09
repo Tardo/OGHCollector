@@ -109,6 +109,9 @@ pub struct ModuleFullInfoResponse {
     pub models: Vec<ModuleModelResponse>,
     pub controllers: Vec<ModuleControllerResponse>,
     pub security_warnings: Vec<ModuleSecurityWarningResponse>,
+    /// Modules (same Odoo version, any repository) that declare this module
+    /// as an Odoo dependency.
+    pub required_by: Vec<models::module::ModuleCriteriaInfo>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -265,6 +268,16 @@ pub fn process_modules_db(
                 .unique(),
             bin: full_deps.bin.unique(),
         };
+        // ponytail: hard cap of 500; core modules (e.g. `web`) have huge
+        // fan-in — paginate if a page ever truly needs the full list.
+        let required_by = models::module::search_by_criteria(
+            conn,
+            &(module.version_odoo as u8),
+            None,
+            None,
+            Some(&module.technical_name),
+            500,
+        );
         let authors = models::module_author::get_names_by_module_id(conn, &module.id);
         let maintainers = models::module_maintainer::get_names_by_module_id(conn, &module.id);
         let committers = models::module_committer::get_names_by_module_id(conn, &module.id);
@@ -322,6 +335,7 @@ pub fn process_modules_db(
             models: module_models,
             controllers,
             security_warnings,
+            required_by,
         });
     }
     res

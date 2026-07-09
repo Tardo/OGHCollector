@@ -158,6 +158,7 @@ async fn main() -> std::io::Result<()> {
                     .service(routes::api::v1::module::route_odoo_version)
                     .service(routes::api::v1::module::route_versions)
                     .service(routes::api::v1::repository::route)
+                    .service(routes::api::v1::search::route_criteria)
                     .service(routes::api::v1::search::route),
             )
             .wrap(DefaultHeaders::new().add((

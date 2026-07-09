@@ -20,6 +20,15 @@ pub struct RouteSearchRequest {
     installable: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RouteSearchCriteriaRequest {
+    odoo_version: String,
+    term: Option<String>,
+    category: Option<String>,
+    depends_on: Option<String>,
+    limit: Option<u32>,
+}
+
 fn build_response(
     modules: Vec<sqlitedb::models::module::ModuleGenericInfo>,
 ) -> Vec<SearchGenericInfoResponse> {
@@ -84,6 +93,32 @@ fn get_modules_by_installable(
         module_name,
         installable,
     ))
+}
+
+/// Cross-repository discovery by free-text term, category and/or reverse
+/// Odoo dependency ("which modules depend on X"); same query (and limit cap)
+/// as the MCP `list_modules_by_criteria` tool.
+#[get("/search")]
+pub async fn route_criteria(
+    pool: web::Data<Pool>,
+    info: web::Query<RouteSearchCriteriaRequest>,
+) -> Result<HttpResponse, AWError> {
+    let params = info.into_inner();
+    let version_odoo = odoo_version_string_to_u8(&params.odoo_version);
+    let limit = params.limit.unwrap_or(50).min(200) as i64;
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        models::module::search_by_criteria(
+            &mut conn,
+            &version_odoo,
+            params.term.as_deref(),
+            params.category.as_deref(),
+            params.depends_on.as_deref(),
+            limit,
+        )
+    })
+    .await?;
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/search/{module_name}")]

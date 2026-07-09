@@ -116,6 +116,16 @@
                     {% endfor %}
                     {% endfor %}
                 </td></tr>
+                <tr class="col-2 d-lg-none"><th colspan="2">REQUIRED BY</th></tr>
+                <tr><th class="col-2 d-none d-lg-table-cell">REQUIRED BY</th><td>
+                    {% if module.required_by %}
+                    {% for req in module.required_by %}
+                    <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
+                    {% endfor %}
+                    {% else %}
+                    <span>Not have</span>
+                    {% endif %}
+                </td></tr>
                 <tr class="col-2 d-lg-none"><th colspan="2">PYTHON DEPENDENCIES</th></tr>
                 <tr><th class="col-2 d-none d-lg-table-cell">PYTHON DEPENDENCIES</th><td>
                     {% if module.dependencies.pip %}
