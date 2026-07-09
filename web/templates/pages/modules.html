@@ -80,18 +80,25 @@
     <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="modver-{{ g.odoo_version }}" role="tabpanel" aria-labelledby="modver-{{ g.odoo_version }}-tab" tabindex="0">
 
         <h3 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h3>
+        {% if g.pull_requests %}
+        <p class="text-body-secondary">
+            <span class="badge text-bg-success">{{ g.pr_fresh }} fresh</span>
+            <span class="badge text-bg-warning">{{ g.pr_rotting }} rotting</span>
+            <span class="badge text-bg-danger">{{ g.pr_rotten }} rotten</span>
+        </p>
+        {% endif %}
         {% if not g.pull_requests %}
         <p class="text-body-secondary">No open migration PRs/MRs tracked.</p>
         {% else %}
         <div class="modules-scroll-list">
-            <table class="table table-striped-columns">
+            <table class="table table-striped-columns sortable-table">
                 <thead>
                     <tr>
                         <th>Module</th>
                         <th>Repository</th>
                         <th>Title</th>
-                        <th>Age</th>
-                        <th>CI</th>
+                        <th class="sortable" data-sort-key="age">Age</th>
+                        <th class="sortable" data-sort-key="ci">CI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -100,8 +107,8 @@
                         <td><a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a></td>
                         <td>{{ pr.organization }}/{{ pr.repository }}</td>
                         <td><a href="{{ pr.url }}" target="_blank" rel="noopener noreferrer">{{ pr.title }} <span class="text-body-secondary">#{{ pr.prid }}</span></a></td>
-                        <td>{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }}{% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}</td>
-                        <td>
+                        <td data-sort="{{ pr.age_days if pr.age_days is not none else -1 }}">{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }}{% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}</td>
+                        <td data-sort="{{ 3 if pr.ci_status == 'failure' else (2 if pr.ci_status == 'pending' else (1 if pr.ci_status == 'success' else 0)) }}">
                             {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
                             {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>
                             {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">failing</span>

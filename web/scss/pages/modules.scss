@@ -11,4 +11,25 @@ mirlo-module-search {
 .modules-scroll-list {
     max-height: 24rem;
     overflow-y: auto;
+
+    th.sortable {
+        cursor: pointer;
+        user-select: none;
+
+        &::after {
+            content: "\2195";
+            opacity: 0.4;
+            margin-left: 0.35em;
+        }
+
+        &[data-sort-dir="asc"]::after {
+            content: "\2191";
+            opacity: 1;
+        }
+
+        &[data-sort-dir="desc"]::after {
+            content: "\2193";
+            opacity: 1;
+        }
+    }
 }

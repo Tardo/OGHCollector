@@ -38,9 +38,17 @@ pub struct ModuleSecurityFindingInfo {
 pub struct ModulesVersionGroup {
     pub odoo_version: String,
     pub pull_requests: Vec<ActivePullRequestInfo>,
+    pub pr_fresh: usize,
+    pub pr_rotting: usize,
+    pub pr_rotten: usize,
     pub security_errors: Vec<ModuleSecurityFindingInfo>,
     pub security_warnings: Vec<ModuleSecurityFindingInfo>,
 }
+
+// PRs are "fresh" for their first week, start "rotting" until a month old,
+// and are "rotten" past that; PRs with unknown age don't count toward any bucket.
+const PR_FRESH_MAX_DAYS: i64 = 7;
+const PR_ROTTING_MAX_DAYS: i64 = 30;
 
 fn get_group(
     by_version: &mut BTreeMap<i32, ModulesVersionGroup>,
@@ -86,9 +94,14 @@ pub async fn route(
                 repository: pr.repository_name,
                 module_technical_name: pr.module_technical_name,
             };
-            get_group(&mut by_version, pr.version_odoo)
-                .pull_requests
-                .push(entry);
+            let group = get_group(&mut by_version, pr.version_odoo);
+            match entry.age_days {
+                Some(days) if days <= PR_FRESH_MAX_DAYS => group.pr_fresh += 1,
+                Some(days) if days <= PR_ROTTING_MAX_DAYS => group.pr_rotting += 1,
+                Some(_) => group.pr_rotten += 1,
+                None => {}
+            }
+            group.pull_requests.push(entry);
         }
 
         // "error" is grave, "warning" is minor (see module_security_warning
