@@ -35,6 +35,13 @@ pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
         .expect("DB error in gh_organization::get_by_name")
 }
 
+pub fn count(conn: &mut SqliteConnection) -> i64 {
+    gh_organization::table
+        .count()
+        .get_result(conn)
+        .expect("DB error in gh_organization::count")
+}
+
 pub fn add(conn: &mut SqliteConnection, name: &str) -> QueryResult<Model> {
     let inserted = diesel::insert_into(gh_organization::table)
         .values(NewGhOrganization { name })

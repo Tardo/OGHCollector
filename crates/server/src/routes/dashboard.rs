@@ -30,7 +30,7 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (modules_count, modules_latest) = web::block(move || {
+    let (modules_count, modules_latest, modules_total, org_total) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let count = models::module::count(&mut conn)
             .into_iter()
@@ -49,9 +49,13 @@ pub async fn route(
                 create_date: x.create_date,
             })
             .collect::<Vec<LastestCreatedInfo>>();
-        (count, latest)
+        let modules_total = models::module::count_distinct(&mut conn);
+        let org_total = models::gh_organization::count(&mut conn);
+        (count, latest, modules_total, org_total)
     })
     .await?;
+
+    let version_total = modules_count.len();
 
     tmpl_env.render(
         "pages/dashboard.html",
@@ -61,6 +65,9 @@ pub async fn route(
                 page_name => "dashboard",
                 modules_count => modules_count,
                 modules_latest => modules_latest,
+                modules_total => modules_total,
+                org_total => org_total,
+                version_total => version_total,
             )
         ),
     )

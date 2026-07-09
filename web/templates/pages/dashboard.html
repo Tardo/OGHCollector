@@ -40,6 +40,10 @@
 </template>
 
 
+<div class="mb-4">
+    <p class="lead fs-4">Tracking <span class="fw-bold text-primary">{{ modules_total }}</span> module{{ modules_total != 1 and 's' or '' }} across <span class="fw-bold text-primary">{{ org_total }}</span> organization{{ org_total != 1 and 's' or '' }} and <span class="fw-bold text-primary">{{ version_total }}</span> Odoo version{{ version_total != 1 and 's' or '' }} — browse manifests, dependencies, security findings and code analysis for every module in one place.</p>
+</div>
+
 <div class="row mb-3 gx-sm-5 user-select-none" id="modules_count">
     <div class="col-lg-4 col-12 pb-3 pb-lg-0">
         <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 border border-opacity-0 bg-success-subtle" version="17.0"></mirlo-module-counter>
