@@ -139,7 +139,7 @@ docker compose run --rm -u appuser -T app oghcollector <origin> <version> [git_t
 
 - `<origin>`:
   - The name of an organization — all its repositories are scanned.
-  - The name of a repository, optionally followed by `:` and a comma-separated list of folders to scan.
+  - The name of a repository, optionally followed by `:` and a comma-separated list of folders to scan. Each folder must start with `/` (it's appended directly to the clone path). To scan the repo root *as well as* subfolders, add a trailing comma (an empty entry means the root): `:/addons,` scans `/addons` plus the root.
 - `<version>`: Odoo version to collect (e.g. `18.0`).
 - `[git_type]`: Optional git client to use, `GH` (GitHub, default) or `GL:<api_url>` (GitLab).
 
