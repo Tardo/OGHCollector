@@ -643,76 +643,85 @@ pub struct ModuleFunFactInfo {
     pub value: i64,
 }
 
-/// The single module (one technical_name/version_odoo/repo row) with the
-/// most commits recorded across its committers.
-pub fn most_changed(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+/// The single module (one technical_name/repo row, at the given Odoo
+/// version) with the most commits recorded across its committers.
+pub fn most_changed(conn: &mut SqliteConnection, version_odoo: &u8) -> Option<ModuleFunFactInfo> {
     diesel::sql_query(
         "SELECT mod.technical_name, gh_org.name as organization, SUM(mod_com.commits) as value \
          FROM module_committer as mod_com \
          INNER JOIN module as mod ON mod_com.module_id = mod.id \
          INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         WHERE mod.version_odoo = ? \
          GROUP BY mod.id \
          ORDER BY value DESC LIMIT 1",
     )
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
     .load::<ModuleFunFactInfo>(conn)
     .expect("DB error in module::most_changed")
     .into_iter()
     .next()
 }
 
-/// The single module with the most distinct committers.
-pub fn most_contributors(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+/// The single module with the largest folder size, at the given Odoo version.
+pub fn largest_module(conn: &mut SqliteConnection, version_odoo: &u8) -> Option<ModuleFunFactInfo> {
     diesel::sql_query(
-        "SELECT mod.technical_name, gh_org.name as organization, \
-         COUNT(DISTINCT mod_com.committer_id) as value \
-         FROM module_committer as mod_com \
-         INNER JOIN module as mod ON mod_com.module_id = mod.id \
-         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
-         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
-         GROUP BY mod.id \
-         ORDER BY value DESC LIMIT 1",
-    )
-    .load::<ModuleFunFactInfo>(conn)
-    .expect("DB error in module::most_contributors")
-    .into_iter()
-    .next()
-}
-
-/// The technical_name present across the most distinct Odoo versions.
-pub fn broadest_reach(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
-    diesel::sql_query(
-        "SELECT mod.technical_name, MIN(gh_org.name) as organization, \
-         COUNT(DISTINCT mod.version_odoo) as value \
+        "SELECT mod.technical_name, gh_org.name as organization, mod.folder_size as value \
          FROM module as mod \
          INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
-         GROUP BY mod.technical_name \
-         ORDER BY value DESC LIMIT 1",
+         WHERE mod.version_odoo = ? \
+         ORDER BY mod.folder_size DESC LIMIT 1",
     )
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
     .load::<ModuleFunFactInfo>(conn)
-    .expect("DB error in module::broadest_reach")
+    .expect("DB error in module::largest_module")
     .into_iter()
     .next()
 }
 
-/// The Odoo module depended on by the most other modules (any version).
-pub fn most_relied_upon(conn: &mut SqliteConnection) -> Option<ModuleFunFactInfo> {
+/// The most recently added module, at the given Odoo version.
+pub fn newest_module(
+    conn: &mut SqliteConnection,
+    version_odoo: &u8,
+) -> Option<ModuleLastCreatedInfo> {
     diesel::sql_query(
-        "SELECT dep.name as technical_name, MIN(gh_org.name) as organization, \
-         COUNT(DISTINCT dep_mod.module_id) as value \
-         FROM dependency as dep \
-         INNER JOIN dependency_type as dep_type ON dep_type.id = dep.dependency_type_id \
-         INNER JOIN dependency_module as dep_mod ON dep_mod.dependency_id = dep.id \
-         INNER JOIN module as mod ON mod.technical_name = dep.name \
+        "SELECT mod.id, mod.version_odoo, mod.technical_name, mod.create_date, \
+         gh_org.name as org_name \
+         FROM module as mod \
          INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
-         WHERE dep_type.name = 'module' \
-         GROUP BY dep.name \
+         WHERE mod.version_odoo = ? \
+         ORDER BY mod.create_date DESC LIMIT 1",
+    )
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
+    .load::<ModuleLastCreatedInfo>(conn)
+    .expect("DB error in module::newest_module")
+    .into_iter()
+    .next()
+}
+
+/// The module that depends on the most other Odoo modules, at the given Odoo version.
+pub fn most_dependencies(
+    conn: &mut SqliteConnection,
+    version_odoo: &u8,
+) -> Option<ModuleFunFactInfo> {
+    diesel::sql_query(
+        "SELECT mod.technical_name, gh_org.name as organization, \
+         COUNT(DISTINCT dep.id) as value \
+         FROM module as mod \
+         INNER JOIN dependency_module as dep_mod ON dep_mod.module_id = mod.id \
+         INNER JOIN dependency as dep ON dep.id = dep_mod.dependency_id \
+         INNER JOIN dependency_type as dep_type ON dep_type.id = dep.dependency_type_id \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
+         WHERE mod.version_odoo = ? AND dep_type.name = 'module' \
+         GROUP BY mod.id \
          ORDER BY value DESC LIMIT 1",
     )
+    .bind::<diesel::sql_types::Integer, _>(*version_odoo as i32)
     .load::<ModuleFunFactInfo>(conn)
-    .expect("DB error in module::most_relied_upon")
+    .expect("DB error in module::most_dependencies")
     .into_iter()
     .next()
 }

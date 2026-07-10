@@ -25,47 +25,6 @@
     <mirlo-module-search class="d-block position-absolute w-100" />
 </div>
 
-{% if most_changed or most_contributors or broadest_reach or most_relied_upon %}
-<div class="row g-3 mb-2" id="fun_facts">
-    {% if most_changed %}
-    <div class="col-md-3 col-6">
-        <div class="stat-card">
-            <div class="stat-card-label">Most changed module</div>
-            <div class="stat-card-value"><a href="/module/{{ most_changed.organization }}/{{ most_changed.technical_name }}">{{ most_changed.technical_name }}</a></div>
-            <div class="stat-card-note">{{ most_changed.value }} commit{{ most_changed.value != 1 and 's' or '' }}</div>
-        </div>
-    </div>
-    {% endif %}
-    {% if most_contributors %}
-    <div class="col-md-3 col-6">
-        <div class="stat-card">
-            <div class="stat-card-label">Most contributors</div>
-            <div class="stat-card-value"><a href="/module/{{ most_contributors.organization }}/{{ most_contributors.technical_name }}">{{ most_contributors.technical_name }}</a></div>
-            <div class="stat-card-note">{{ most_contributors.value }} committer{{ most_contributors.value != 1 and 's' or '' }}</div>
-        </div>
-    </div>
-    {% endif %}
-    {% if broadest_reach %}
-    <div class="col-md-3 col-6">
-        <div class="stat-card">
-            <div class="stat-card-label">Widest Odoo reach</div>
-            <div class="stat-card-value"><a href="/module/{{ broadest_reach.organization }}/{{ broadest_reach.technical_name }}">{{ broadest_reach.technical_name }}</a></div>
-            <div class="stat-card-note">{{ broadest_reach.value }} version{{ broadest_reach.value != 1 and 's' or '' }}</div>
-        </div>
-    </div>
-    {% endif %}
-    {% if most_relied_upon %}
-    <div class="col-md-3 col-6">
-        <div class="stat-card">
-            <div class="stat-card-label">Most relied-upon module</div>
-            <div class="stat-card-value"><a href="/module/{{ most_relied_upon.organization }}/{{ most_relied_upon.technical_name }}">{{ most_relied_upon.technical_name }}</a></div>
-            <div class="stat-card-note">{{ most_relied_upon.value }} dependent{{ most_relied_upon.value != 1 and 's' or '' }}</div>
-        </div>
-    </div>
-    {% endif %}
-</div>
-{% endif %}
-
 {% if not version_groups %}
 <p class="text-body-secondary">No open PRs or security findings tracked.</p>
 {% else %}
@@ -80,7 +39,48 @@
     {% for g in version_groups %}
     <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="modver-{{ g.odoo_version }}" role="tabpanel" aria-labelledby="modver-{{ g.odoo_version }}-tab" tabindex="0">
 
-        <h3 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h3>
+        {% if g.most_changed or g.largest_module or g.newest_module or g.most_dependencies %}
+        <div class="row g-3 mb-2">
+            {% if g.most_changed %}
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-card-label">Most changed module</div>
+                    <div class="stat-card-value"><a href="/module/{{ g.most_changed.organization }}/{{ g.most_changed.technical_name }}">{{ g.most_changed.technical_name }}</a></div>
+                    <div class="stat-card-note">{{ g.most_changed.value }} commit{{ g.most_changed.value != 1 and 's' or '' }}</div>
+                </div>
+            </div>
+            {% endif %}
+            {% if g.largest_module %}
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-card-label">Largest module</div>
+                    <div class="stat-card-value"><a href="/module/{{ g.largest_module.organization }}/{{ g.largest_module.technical_name }}">{{ g.largest_module.technical_name }}</a></div>
+                    <div class="stat-card-note">{{ (g.largest_module.value / 1048576) | round(1) }} MB</div>
+                </div>
+            </div>
+            {% endif %}
+            {% if g.newest_module %}
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-card-label">Newest module</div>
+                    <div class="stat-card-value"><a href="/module/{{ g.newest_module.org_name }}/{{ g.newest_module.technical_name }}">{{ g.newest_module.technical_name }}</a></div>
+                    <div class="stat-card-note">added {{ g.newest_module.create_date }}</div>
+                </div>
+            </div>
+            {% endif %}
+            {% if g.most_dependencies %}
+            <div class="col-md-3 col-6">
+                <div class="stat-card">
+                    <div class="stat-card-label">Most dependencies</div>
+                    <div class="stat-card-value"><a href="/module/{{ g.most_dependencies.organization }}/{{ g.most_dependencies.technical_name }}">{{ g.most_dependencies.technical_name }}</a></div>
+                    <div class="stat-card-note">{{ g.most_dependencies.value }} dependenc{{ g.most_dependencies.value != 1 and 'ies' or 'y' }}</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <h4 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h4>
         {% if g.pull_requests %}
         <p class="text-body-secondary pr-filter-group">
             <span class="badge text-bg-success pr-filter" data-filter="fresh">{{ g.pr_fresh }} fresh</span>
@@ -91,7 +91,7 @@
         {% if g.avg_days_open is not none %}
         <p class="text-body-secondary">
             Avg. time open before merge: <strong>{{ g.avg_days_open | round(1) }} day{{ g.avg_days_open != 1 and 's' or '' }}</strong>
-            <span title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact merge time; PRs closed without merging are excluded.">(based on {{ g.closed_count }} merged PR{{ g.closed_count != 1 and 's' or '' }} &#9432;)</span>
+            <span style="cursor: help;" title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact merge time; PRs closed without merging are excluded.">(based on {{ g.closed_count }} merged PR{{ g.closed_count != 1 and 's' or '' }} &#9432;)</span>
         </p>
         {% endif %}
         {% if not g.pull_requests %}
@@ -135,12 +135,12 @@
         {% endif %}
 
         <div class="dev-only">
-        <h3 class="mt-5">Security Findings</h3>
+        <h4 class="mt-5">Security Findings</h4>
         <div class="alert alert-info" role="alert">
             Results are approximate: found by automated static analysis, not a full security audit. Treat them as a starting point for manual review, not confirmed issues.
         </div>
 
-        <h4 class="mt-3">Errors <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h4>
+        <h5 class="mt-3">Errors <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h5>
         {% if not g.security_errors %}
         <p class="text-body-secondary">No grave findings.</p>
         {% else %}
@@ -166,7 +166,7 @@
         </div>
         {% endif %}
 
-        <h4 class="mt-4">Warnings <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h4>
+        <h5 class="mt-4">Warnings <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h5>
         {% if not g.security_warnings %}
         <p class="text-body-secondary">No minor findings.</p>
         {% else %}

@@ -108,7 +108,7 @@
 </div>
 
 {% if stats.fun_facts %}
-<h3>Fun Facts</h3>
+<h4>Fun Facts</h4>
 {% if stats.quijote_fun_fact %}
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-12">
@@ -156,7 +156,7 @@
 
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-12">
-        <h3>Top Repositories</h3>
+        <h4>Top Repositories</h4>
         <table class="table table-striped table-striped-columns table-hover">
             <tbody>
                 {% for repo in stats.top_repos %}
@@ -171,7 +171,7 @@
     </div>
 </div>
 
-<h3>Modules Touched by Odoo Version</h3>
+<h4>Modules Touched by Odoo Version</h4>
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
     {% for version in stats.versions %}
     <li class="nav-item" role="presentation">

@@ -47,6 +47,10 @@ pub struct ModulesVersionGroup {
     pub security_warnings: Vec<ModuleSecurityFindingInfo>,
     pub avg_days_open: Option<f64>,
     pub closed_count: i64,
+    pub most_changed: Option<models::module::ModuleFunFactInfo>,
+    pub largest_module: Option<models::module::ModuleFunFactInfo>,
+    pub newest_module: Option<models::module::ModuleLastCreatedInfo>,
+    pub most_dependencies: Option<models::module::ModuleFunFactInfo>,
 }
 
 // Freshness is judged by how long a PR/MR has been quiet (days since its
@@ -93,14 +97,7 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (
-        modules_total,
-        version_groups,
-        most_changed,
-        most_contributors,
-        broadest_reach,
-        most_relied_upon,
-    ) = web::block(move || {
+    let (modules_total, version_groups) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let modules_total = models::module::count_distinct(&mut conn);
         let mut by_version: BTreeMap<i32, ModulesVersionGroup> = BTreeMap::new();
@@ -165,22 +162,20 @@ pub async fn route(
             }
         }
 
+        // Fun facts are scoped per Odoo version, so only compute them for
+        // versions that already have a tab (i.e. some PR/security data).
+        for (version_key, group) in by_version.iter_mut() {
+            let version_u8 = *version_key as u8;
+            group.most_changed = models::module::most_changed(&mut conn, &version_u8);
+            group.largest_module = models::module::largest_module(&mut conn, &version_u8);
+            group.newest_module = models::module::newest_module(&mut conn, &version_u8);
+            group.most_dependencies = models::module::most_dependencies(&mut conn, &version_u8);
+        }
+
         // Newest Odoo version first.
         let version_groups = by_version.into_values().rev().collect::<Vec<_>>();
 
-        let most_changed = models::module::most_changed(&mut conn);
-        let most_contributors = models::module::most_contributors(&mut conn);
-        let broadest_reach = models::module::broadest_reach(&mut conn);
-        let most_relied_upon = models::module::most_relied_upon(&mut conn);
-
-        (
-            modules_total,
-            version_groups,
-            most_changed,
-            most_contributors,
-            broadest_reach,
-            most_relied_upon,
-        )
+        (modules_total, version_groups)
     })
     .await?;
 
@@ -192,10 +187,6 @@ pub async fn route(
                 page_name => "modules",
                 modules_total => modules_total,
                 version_groups => version_groups,
-                most_changed => most_changed,
-                most_contributors => most_contributors,
-                broadest_reach => broadest_reach,
-                most_relied_upon => most_relied_upon,
             )
         ),
     )
