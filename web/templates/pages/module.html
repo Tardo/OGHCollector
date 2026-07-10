@@ -90,6 +90,8 @@
                 </dd>
                 <dt>Category</dt>
                 <dd>{{ module.category }}</dd>
+                <dt>Folder size</dt>
+                <dd>{{ (module.folder_size / 1048576) | round(2) }} MB</dd>
                 <dt>License</dt>
                 <dd>{{ module.license }}</dd>
                 <dt>Application</dt>
