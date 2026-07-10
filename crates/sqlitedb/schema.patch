@@ -179,7 +179,7 @@
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -169,118 +169,118 @@
+@@ -169,119 +169,119 @@
          module_version_id -> BigInt,
      }
  }
@@ -271,6 +271,7 @@
          gh_repository_id -> BigInt,
          created_at -> Nullable<Text>,
          ci_status -> Nullable<Text>,
+         last_message_at -> Nullable<Text>,
      }
  }
  

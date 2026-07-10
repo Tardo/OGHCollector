@@ -160,6 +160,7 @@ impl GitClient for GithubClient {
                 let head_ref = pull["head"]["ref"].as_str().unwrap_or("");
                 if let Some(module_technical_name) = extract_migration_module_name(head_ref) {
                     let created_at = pull["created_at"].as_str().and_then(parse_created_at);
+                    let last_message_at = pull["updated_at"].as_str().and_then(parse_created_at);
                     let head_sha = pull["head"]["sha"].as_str().unwrap_or("");
                     let ci_status = self.get_commit_ci_status(full_path, head_sha).await;
                     prs.push(PullRequestInfo {
@@ -167,6 +168,7 @@ impl GitClient for GithubClient {
                         title: pull["title"].as_str().unwrap_or("").to_string(),
                         module_technical_name,
                         created_at,
+                        last_message_at,
                         ci_status,
                     });
                 }

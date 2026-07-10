@@ -40,6 +40,7 @@ pub struct ModulePullRequestInfo {
     pub organization: String,
     pub url: String,
     pub age_days: Option<i64>,
+    pub last_message_days: Option<i64>,
     pub ci_status: Option<String>,
 }
 
@@ -61,7 +62,8 @@ fn get_module_pull_requests(
                     "https://github.com/{}/{}/pull/{}",
                     org_model.name, repo.name, pr.prid
                 ),
-                age_days: models::pull_request::age_days(pr.created_at.as_deref()),
+                age_days: models::pull_request::days_since(pr.created_at.as_deref()),
+                last_message_days: models::pull_request::days_since(pr.last_message_at.as_deref()),
                 ci_status: pr.ci_status,
                 title: pr.name,
                 prid: pr.prid,

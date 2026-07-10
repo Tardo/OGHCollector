@@ -196,6 +196,7 @@ impl GitClient for GitlabClient {
                 let source_branch = mr["source_branch"].as_str().unwrap_or("");
                 if let Some(module_technical_name) = extract_migration_module_name(source_branch) {
                     let created_at = mr["created_at"].as_str().and_then(parse_created_at);
+                    let last_message_at = mr["updated_at"].as_str().and_then(parse_created_at);
                     let ci_status =
                         detailed_merge_status_to_ci_status(mr["detailed_merge_status"].as_str());
                     prs.push(PullRequestInfo {
@@ -203,6 +204,7 @@ impl GitClient for GitlabClient {
                         title: mr["title"].as_str().unwrap_or("").to_string(),
                         module_technical_name,
                         created_at,
+                        last_message_at,
                         ci_status,
                     });
                 }

@@ -307,6 +307,8 @@
             </dd>
             <dt class="col-lg-3">Open since</dt>
             <dd class="col-lg-9">{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</dd>
+            <dt class="col-lg-3">Last activity</dt>
+            <dd class="col-lg-9">{% if pr.last_message_days is not none %}{{ pr.last_message_days }} day{{ pr.last_message_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</dd>
             <dt class="col-lg-3">Repository</dt>
             <dd class="col-lg-9">{{ pr.organization }}/{{ pr.repository }}</dd>
             <dt class="col-lg-3">Pull request</dt>

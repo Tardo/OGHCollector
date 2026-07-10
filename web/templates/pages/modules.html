@@ -108,16 +108,16 @@
                 </thead>
                 <tbody>
                     {% for pr in g.pull_requests %}
-                    {% if pr.age_days is none %}{% set age_class = "" %}
-                    {% elif pr.age_days <= 7 %}{% set age_class = "fresh" %}
-                    {% elif pr.age_days <= 30 %}{% set age_class = "rotting" %}
-                    {% else %}{% set age_class = "rotten" %}{% endif %}
+                    {% set age_class = pr.freshness or "" %}
                     <tr class="pr-row pr-row-{{ age_class }}">
                         <td class="pr-module">
                             <a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}" title="{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a>
                             <div class="pr-meta">
                                 {% if pr.age_days is not none %}
-                                <span class="badge age-badge age-badge-{{ age_class }}">{{ pr.age_days }}d</span>
+                                <span class="badge text-bg-light border" title="Opened {{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago">{{ pr.age_days }}d open</span>
+                                {% endif %}
+                                {% if pr.last_message_days is not none %}
+                                <span class="badge age-badge age-badge-{{ age_class }}" title="Last activity {{ pr.last_message_days }} day{{ pr.last_message_days != 1 and 's' or '' }} ago">{{ pr.last_message_days }}d quiet</span>
                                 {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
                                 {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
                                 {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>

@@ -19,6 +19,7 @@ pub struct Model {
     pub gh_repository_id: i64,
     pub created_at: Option<String>,
     pub ci_status: Option<String>,
+    pub last_message_at: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -31,6 +32,7 @@ struct NewPullRequest<'a> {
     gh_repository_id: i64,
     created_at: Option<&'a str>,
     ci_status: Option<&'a str>,
+    last_message_at: Option<&'a str>,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -51,6 +53,8 @@ pub struct PullRequestFullInfo {
     pub created_at: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub ci_status: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub last_message_at: Option<String>,
 }
 
 /// Every open migration PR/MR tracked, across all orgs/repos - for the
@@ -60,7 +64,7 @@ pub fn get_all(conn: &mut SqliteConnection) -> Vec<PullRequestFullInfo> {
     diesel::sql_query(
         "SELECT pr.name, pr.version_odoo, pr.module_technical_name, pr.prid, \
          gh_repo.name as repository_name, gh_org.name as org_name, \
-         pr.created_at, pr.ci_status \
+         pr.created_at, pr.ci_status, pr.last_message_at \
          FROM pull_request as pr \
          INNER JOIN gh_repository as gh_repo ON pr.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \
@@ -70,12 +74,12 @@ pub fn get_all(conn: &mut SqliteConnection) -> Vec<PullRequestFullInfo> {
     .expect("DB error in pull_request::get_all")
 }
 
-/// Days since the PR/MR was opened, for staleness display in the PR lists.
-/// `created_at` is stored as `%Y-%m-%d %H:%M:%S` (see `utils::date`); rows
-/// inserted before that column existed have it as `None` until the next
+/// Days since a stored PR/MR date (`created_at` for age, `last_message_at`
+/// for staleness), both stored as `%Y-%m-%d %H:%M:%S` (see `utils::date`);
+/// rows inserted before a column existed have it as `None` until the next
 /// collector run refreshes them.
-pub fn age_days(created_at: Option<&str>) -> Option<i64> {
-    let dt = NaiveDateTime::parse_from_str(created_at?, "%Y-%m-%d %H:%M:%S").ok()?;
+pub fn days_since(date: Option<&str>) -> Option<i64> {
+    let dt = NaiveDateTime::parse_from_str(date?, "%Y-%m-%d %H:%M:%S").ok()?;
     Some((chrono::Utc::now().naive_utc() - dt).num_days())
 }
 
@@ -142,6 +146,7 @@ pub fn add(
     gh_repo_id: &i64,
     created_at: Option<&str>,
     ci_status: Option<&str>,
+    last_message_at: Option<&str>,
 ) -> QueryResult<Model> {
     let is_new = pull_request::table
         .filter(
@@ -162,6 +167,7 @@ pub fn add(
             gh_repository_id: *gh_repo_id,
             created_at,
             ci_status,
+            last_message_at,
         })
         .on_conflict((pull_request::gh_repository_id, pull_request::prid))
         .do_update()
@@ -171,6 +177,7 @@ pub fn add(
             pull_request::module_technical_name.eq(module_technical_name),
             pull_request::created_at.eq(created_at),
             pull_request::ci_status.eq(ci_status),
+            pull_request::last_message_at.eq(last_message_at),
         ))
         .execute(conn)?;
 
@@ -280,19 +287,19 @@ pub fn delete_outdated(
 
 #[cfg(test)]
 mod tests {
-    use super::age_days;
+    use super::days_since;
 
     #[test]
-    fn test_age_days_computes_days_since_creation() {
+    fn test_days_since_computes_days_since_a_date() {
         let ten_days_ago = (chrono::Utc::now() - chrono::Duration::days(10))
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
-        assert_eq!(age_days(Some(&ten_days_ago)), Some(10));
+        assert_eq!(days_since(Some(&ten_days_ago)), Some(10));
     }
 
     #[test]
-    fn test_age_days_none_for_missing_or_bad_input() {
-        assert_eq!(age_days(None), None);
-        assert_eq!(age_days(Some("not a date")), None);
+    fn test_days_since_none_for_missing_or_bad_input() {
+        assert_eq!(days_since(None), None);
+        assert_eq!(days_since(Some("not a date")), None);
     }
 }

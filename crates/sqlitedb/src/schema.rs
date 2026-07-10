@@ -249,6 +249,7 @@ diesel::table! {
         gh_repository_id -> BigInt,
         created_at -> Nullable<Text>,
         ci_status -> Nullable<Text>,
+        last_message_at -> Nullable<Text>,
     }
 }
 

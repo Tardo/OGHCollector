@@ -613,6 +613,7 @@ mod tests {
             &repo.id,
             Some("2024-01-01 00:00:00"),
             Some("pending"),
+            Some("2024-01-02 00:00:00"),
         )
         .unwrap();
         assert_eq!(pr1.prid, 42);
@@ -630,6 +631,7 @@ mod tests {
             &repo.id,
             Some("2024-01-01 00:00:00"),
             Some("success"),
+            Some("2024-01-03 00:00:00"),
         )
         .unwrap();
         assert_eq!(pr1_updated.id, pr1.id);
@@ -645,6 +647,7 @@ mod tests {
             &42,
             &16u8,
             &other_repo.id,
+            None,
             None,
             None,
         )
@@ -666,12 +669,14 @@ mod tests {
         let org = super::gh_organization::add(&mut conn, "PrOrg2").unwrap();
         let repo = super::gh_repository::add(&mut conn, &org.id, "pr-repo-2").unwrap();
 
-        let pr1 =
-            super::pull_request::add(&mut conn, "mig 1", "mod_1", &1, &16u8, &repo.id, None, None)
-                .unwrap();
-        let _pr2 =
-            super::pull_request::add(&mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id, None, None)
-                .unwrap();
+        let pr1 = super::pull_request::add(
+            &mut conn, "mig 1", "mod_1", &1, &16u8, &repo.id, None, None, None,
+        )
+        .unwrap();
+        let _pr2 = super::pull_request::add(
+            &mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id, None, None, None,
+        )
+        .unwrap();
         // Both have a known created_at, unlike pr1/pr2 - but only #3 (merged)
         // should leave a pull_request_history trace once closed; #4 (closed
         // without merge) must not, even though it has a created_at too.
@@ -684,6 +689,7 @@ mod tests {
             &repo.id,
             Some("2024-01-01 00:00:00"),
             None,
+            None,
         )
         .unwrap();
         let _pr4 = super::pull_request::add(
@@ -694,6 +700,7 @@ mod tests {
             &16u8,
             &repo.id,
             Some("2024-01-01 00:00:00"),
+            None,
             None,
         )
         .unwrap();

@@ -136,6 +136,7 @@ async fn main() {
                 &gh_repo.id,
                 pr.created_at.as_deref(),
                 pr.ci_status.as_deref(),
+                pr.last_message_at.as_deref(),
             )
             .unwrap();
         }

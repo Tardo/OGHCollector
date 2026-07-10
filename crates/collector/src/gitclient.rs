@@ -34,6 +34,12 @@ pub struct PullRequestInfo {
     /// PR/MR creation date, in sqlite text format (`%Y-%m-%d %H:%M:%S`),
     /// `None` if the provider's `created_at` was missing/unparseable.
     pub created_at: Option<String>,
+    /// Last-activity date, in the same format. Providers only expose this for
+    /// free as the PR/MR's own `updated_at` (bumped by commits, comments,
+    /// label changes, etc.) in the same list response already fetched here -
+    /// a real "last comment" date would need one extra API call per PR, so
+    /// this is used as the closest available proxy for "last message".
+    pub last_message_at: Option<String>,
     /// Normalized CI signal: `Some("success")`, `Some("pending")`,
     /// `Some("failure")`, or `None` when no CI is configured for the head
     /// commit / the provider reported nothing usable.
