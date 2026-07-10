@@ -18,9 +18,9 @@
 
 <div id="osv">
     <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
-    {% for odoo_ver in osv_info %}
+    {% for version in osv_info %}
         <li class="nav-item" role="presentation">
-            <button class="nav-link {{ 'active' if loop.index == 1 else '' }}" id="osv-pills-{{ odoo_ver }}-tab" data-bs-toggle="pill" data-bs-target="#osv-pills-{{ odoo_ver }}" type="button" role="tab" aria-controls="osv-pills-{{ odoo_ver }}" aria-selected="true">{{ odoo_ver }}</button>
+            <button class="nav-link {{ 'active' if loop.index == 1 else '' }}" id="osv-pills-{{ version.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#osv-pills-{{ version.odoo_version }}" type="button" role="tab" aria-controls="osv-pills-{{ version.odoo_version }}" aria-selected="true">{{ version.odoo_version }}</button>
         </li>
     {% endfor %}
     </ul>
@@ -28,11 +28,10 @@
         <input type="search" id="osv_search" placeholder="Filter by package, OSV ID or module..." autocomplete="off">
     </div>
     <div class="tab-content" id="pills-tabContent">
-    {% for odoo_ver in osv_info %}
-        <div class="tab-pane fade {{ 'show active' if loop.index == 1 else '' }}" id="osv-pills-{{ odoo_ver }}" role="tabpanel" aria-labelledby="osv-pills-{{ odoo_ver }}-tab" tabindex="0">
-            {% set version_summary = osv_summary[odoo_ver] %}
-            <p class="text-body-secondary">{{ version_summary.vuln_count }} vulnerabilit{{ 'y' if version_summary.vuln_count == 1 else 'ies' }} across {{ version_summary.package_count }} package{{ 's' if version_summary.package_count != 1 else '' }}, affecting {{ version_summary.module_count }} module{{ 's' if version_summary.module_count != 1 else '' }}.</p>
-        {% for package_name in osv_info[odoo_ver] %}
+    {% for version in osv_info %}
+        <div class="tab-pane fade {{ 'show active' if loop.index == 1 else '' }}" id="osv-pills-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="osv-pills-{{ version.odoo_version }}-tab" tabindex="0">
+            <p class="text-body-secondary">{{ version.vuln_count }} vulnerabilit{{ 'y' if version.vuln_count == 1 else 'ies' }} across {{ version.package_count }} package{{ 's' if version.package_count != 1 else '' }}, affecting {{ version.module_count }} module{{ 's' if version.module_count != 1 else '' }}.</p>
+        {% for package_name in version.packages %}
                 <table class="table table-striped-columns">
                     <thead>
                         <tr class="table-active"><th colspan="4" class="fs-5">{{ package_name }}</th></tr>
@@ -44,7 +43,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for osv in osv_info[odoo_ver][package_name] %}
+                        {% for osv in version.packages[package_name] %}
                             {% set module_names = osv.modules | map(attribute="technical_name") | join(" ") %}
                             <tr data-search="{{ (package_name + ' ' + osv.osv_id + ' ' + module_names) | lower }}">
                                 <td class="text-nowrap"><a href="https://osv.dev/vulnerability/{{ osv.osv_id }}" target="_blank" rel="noopener noreferrer">{{ osv.osv_id }}</a></td>

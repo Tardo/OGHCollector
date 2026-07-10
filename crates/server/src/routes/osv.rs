@@ -2,7 +2,7 @@
 use actix_web::{get, web, HttpRequest, Responder, Result};
 use minijinja::context;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
@@ -25,8 +25,12 @@ pub struct OSVInfo {
     pub modules: Vec<OSVModuleRef>,
 }
 
+// One Odoo-version tab's worth of content, ordered newest-first like the
+// rest of the version-tabbed pages (see modules.rs).
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct OSVVersionSummary {
+pub struct OSVVersionGroup {
+    pub odoo_version: String,
+    pub packages: HashMap<String, Vec<OSVInfo>>,
     pub vuln_count: usize,
     pub package_count: usize,
     pub module_count: usize,
@@ -38,23 +42,20 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (res, summary) = web::block(move || {
+    let res = web::block(move || {
         let mut conn = pool.get().unwrap();
         let osv_infos = models::dependency_osv::get_osv_info(&mut conn);
         // Group package-first (not module-first): the same vulnerability is
         // shared by every module depending on the vulnerable package, so
         // grouping by module repeats each vuln once per affected module.
-        let mut res: HashMap<String, HashMap<String, HashMap<String, OSVInfo>>> = HashMap::new();
-        let mut affected_modules: HashMap<String, HashSet<(String, String)>> = HashMap::new();
+        let mut res: BTreeMap<i32, HashMap<String, HashMap<String, OSVInfo>>> = BTreeMap::new();
+        let mut affected_modules: HashMap<i32, HashSet<(String, String)>> = HashMap::new();
         for osv_info in osv_infos {
-            let version_odoo = odoo_version_u8_to_string(&(osv_info.version_odoo as u8));
-            affected_modules
-                .entry(version_odoo.clone())
-                .or_default()
-                .insert((
-                    osv_info.org_name.clone(),
-                    osv_info.module_technical_name.clone(),
-                ));
+            let version_odoo = osv_info.version_odoo;
+            affected_modules.entry(version_odoo).or_default().insert((
+                osv_info.org_name.clone(),
+                osv_info.module_technical_name.clone(),
+            ));
             let by_ver = res.entry(version_odoo).or_default();
             let by_pack = by_ver.entry(osv_info.name).or_default();
             let entry = by_pack.entry(osv_info.osv_id.clone()).or_insert(OSVInfo {
@@ -70,35 +71,29 @@ pub async fn route(
             });
         }
 
-        let mut summary: HashMap<String, OSVVersionSummary> = HashMap::new();
-        for (version_odoo, by_pack) in &res {
-            let vuln_count = by_pack.values().map(|by_id| by_id.len()).sum();
-            summary.insert(
-                version_odoo.clone(),
-                OSVVersionSummary {
-                    vuln_count,
-                    package_count: by_pack.len(),
-                    module_count: affected_modules
-                        .get(version_odoo)
-                        .map(|m| m.len())
-                        .unwrap_or_default(),
-                },
-            );
-        }
-
-        // Flatten the per-osv_id map into a Vec for straightforward template iteration.
-        let res: HashMap<String, HashMap<String, Vec<OSVInfo>>> = res
-            .into_iter()
+        // Newest Odoo version first.
+        res.into_iter()
+            .rev()
             .map(|(version_odoo, by_pack)| {
-                let by_pack = by_pack
+                let vuln_count = by_pack.values().map(|by_id| by_id.len()).sum();
+                let package_count = by_pack.len();
+                let module_count = affected_modules
+                    .get(&version_odoo)
+                    .map(|m| m.len())
+                    .unwrap_or_default();
+                let packages = by_pack
                     .into_iter()
                     .map(|(package_name, by_id)| (package_name, by_id.into_values().collect()))
                     .collect();
-                (version_odoo, by_pack)
+                OSVVersionGroup {
+                    odoo_version: odoo_version_u8_to_string(&(version_odoo as u8)),
+                    packages,
+                    vuln_count,
+                    package_count,
+                    module_count,
+                }
             })
-            .collect();
-
-        (res, summary)
+            .collect::<Vec<_>>()
     })
     .await?;
 
@@ -109,7 +104,6 @@ pub async fn route(
             ..context!(
                 page_name => "osv",
                 osv_info => res,
-                osv_summary => summary,
             )
         ),
     )
