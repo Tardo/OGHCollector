@@ -151,6 +151,13 @@ pub trait GitClient {
         full_path: &str,
         branch: &str,
     ) -> Vec<PullRequestInfo>;
+
+    /// Whether a PR/MR that's no longer open was actually merged - one extra
+    /// GET per newly-closed PR, called right before `delete_outdated` so the
+    /// "avg. time open before close" stat only counts merged PRs, not rejections.
+    /// `None` on a lookup failure (network/rate-limit/404): treated as "not merged"
+    /// by the caller, so a transient error undercounts rather than pollutes.
+    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool>;
 }
 
 #[cfg(test)]

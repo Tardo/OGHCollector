@@ -672,8 +672,9 @@ mod tests {
         let _pr2 =
             super::pull_request::add(&mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id, None, None)
                 .unwrap();
-        // Has a known created_at, unlike pr1/pr2 - the only one that should
-        // leave a pull_request_history trace behind once closed.
+        // Both have a known created_at, unlike pr1/pr2 - but only #3 (merged)
+        // should leave a pull_request_history trace once closed; #4 (closed
+        // without merge) must not, even though it has a created_at too.
         let _pr3 = super::pull_request::add(
             &mut conn,
             "mig 3",
@@ -685,19 +686,33 @@ mod tests {
             None,
         )
         .unwrap();
+        let _pr4 = super::pull_request::add(
+            &mut conn,
+            "mig 4",
+            "mod_4",
+            &4,
+            &16u8,
+            &repo.id,
+            Some("2024-01-01 00:00:00"),
+            None,
+        )
+        .unwrap();
 
         // Keep only #1, #2 must be removed since it's not in the "still open" list.
-        super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[1]).unwrap();
+        super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[1, 3, 4], &[]).unwrap();
         assert!(super::pull_request::get_by_id(&mut conn, &pr1.id).is_some());
         assert!(super::pull_request::get_by_id(&mut conn, &_pr2.id).is_none());
 
         // Unlike module::delete_outdated, an empty list must clear everything left
-        // (all migration PRs for this repo/version got merged or closed).
-        super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[]).unwrap();
+        // (all migration PRs for this repo/version got merged or closed). #3 is
+        // reported merged, #1/#4 are not (closed-without-merge / no created_at).
+        super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[], &[3]).unwrap();
         assert!(super::pull_request::get_by_id(&mut conn, &pr1.id).is_none());
 
-        // Closing a PR with a known created_at must record a history row -
-        // this is what powers the "avg. time open" stat on the modules page.
+        // Only the merged PR with a known created_at leaves a history row - this
+        // is what powers the "avg. time open" stat on the modules page, and the
+        // whole point of gating on merged_prids: rejections must not skew it,
+        // even when they have a created_at (#4) same as the merged one (#3).
         let stats = super::pull_request_history::average_days_open_by_version(&mut conn);
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].version_odoo, 16);

@@ -74,4 +74,11 @@ impl GitClient for AnyGitClient {
             AnyGitClient::Gitlab(c) => c.get_open_migration_pull_requests(full_path, branch).await,
         }
     }
+
+    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {
+        match self {
+            AnyGitClient::Github(c) => c.is_pull_request_merged(full_path, number).await,
+            AnyGitClient::Gitlab(c) => c.is_pull_request_merged(full_path, number).await,
+        }
+    }
 }

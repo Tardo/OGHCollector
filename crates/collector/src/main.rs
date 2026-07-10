@@ -139,7 +139,25 @@ async fn main() {
             )
             .unwrap();
         }
-        let _ = models::pull_request::delete_outdated(&mut conn, &gh_repo.id, odoo_ver, &prids);
+        let outdated =
+            models::pull_request::find_outdated(&mut conn, &gh_repo.id, odoo_ver, &prids)
+                .unwrap_or_default();
+        let mut merged_prids: Vec<i64> = Vec::with_capacity(outdated.len());
+        for pr in &outdated {
+            if let Some(true) = git_client
+                .is_pull_request_merged(repo_info.get_full_path(), &pr.prid)
+                .await
+            {
+                merged_prids.push(pr.prid);
+            }
+        }
+        let _ = models::pull_request::delete_outdated(
+            &mut conn,
+            &gh_repo.id,
+            odoo_ver,
+            &prids,
+            &merged_prids,
+        );
     }
 
     log::info!("Analazyng '{}' repos...", repo_infos.len());

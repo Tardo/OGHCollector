@@ -27,10 +27,12 @@ struct NewPullRequestHistory<'a> {
     closed_at: &'a str,
 }
 
-/// Records a migration PR/MR that just stopped being open, called from
-/// `pull_request::delete_outdated` right before the live row is removed.
+/// Records a migration PR/MR that was merged, called from
+/// `pull_request::delete_outdated` right before the live row is removed - only
+/// for PRs the caller has confirmed were merged (closed-without-merge PRs are
+/// dropped there, never reaching this table).
 /// `closed_at` is the collector's detection time, not the provider's real
-/// close/merge timestamp - see the migration's comment for why.
+/// merge timestamp - see the migration's comment for why.
 #[allow(clippy::too_many_arguments)]
 pub fn add(
     conn: &mut SqliteConnection,
@@ -73,10 +75,11 @@ pub struct AcceptanceStatsInfo {
     pub closed_count: i64,
 }
 
-/// Average days a migration PR/MR stayed open before closing, per Odoo
+/// Average days a migration PR/MR stayed open before being merged, per Odoo
 /// version - the closest proxy for "acceptance time" this table can give
-/// (see module doc: `closed_at` is a detection time, and merges aren't
-/// distinguished from close-without-merge).
+/// (see module doc: `closed_at` is a detection time, not the provider's exact
+/// merge timestamp). Rows are merged-only, so `closed_count` here means
+/// merged PRs, not every closure.
 pub fn average_days_open_by_version(conn: &mut SqliteConnection) -> Vec<AcceptanceStatsInfo> {
     diesel::sql_query(
         "SELECT version_odoo, \

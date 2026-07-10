@@ -178,6 +178,14 @@ impl GitClient for GithubClient {
         }
         prs
     }
+
+    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {
+        let pull = self
+            .request_json(&format!("repos/{full_path}/pulls/{number}"))
+            .await
+            .ok()?;
+        pull["merged"].as_bool()
+    }
 }
 
 impl GithubClient {

@@ -199,8 +199,32 @@ pub fn add(
     Ok(result)
 }
 
+/// PRs that would be removed by `delete_outdated` for a given repo/version -
+/// a read-only lookup so the caller (which has provider API access, unlike
+/// this crate) can check each one's merged status first.
+pub fn find_outdated(
+    conn: &mut SqliteConnection,
+    gh_repo_id: &i64,
+    version_odoo: &u8,
+    prids: &[i64],
+) -> QueryResult<Vec<Model>> {
+    let base_filter = pull_request::gh_repository_id
+        .eq(gh_repo_id)
+        .and(pull_request::version_odoo.eq(*version_odoo as i32));
+    if prids.is_empty() {
+        pull_request::table.filter(base_filter).load::<Model>(conn)
+    } else {
+        pull_request::table
+            .filter(base_filter.and(pull_request::prid.ne_all(prids)))
+            .load::<Model>(conn)
+    }
+}
+
 /// Removes PRs that are no longer open (merged/closed/renamed away from the
-/// migration convention) for a given repo/version.
+/// migration convention) for a given repo/version. `merged_prids` (a subset of
+/// the outdated set, resolved by the caller via the provider API) gates which
+/// closures get a `pull_request_history` row - only merged PRs should count
+/// toward the "avg. time open before close" stat, not rejections.
 ///
 /// Unlike `module::delete_outdated`, an empty `prids` list is a valid terminal
 /// state here (every previously open migration PR got merged or closed) and
@@ -210,20 +234,9 @@ pub fn delete_outdated(
     gh_repo_id: &i64,
     version_odoo: &u8,
     prids: &[i64],
+    merged_prids: &[i64],
 ) -> QueryResult<usize> {
-    let base_filter = pull_request::gh_repository_id
-        .eq(gh_repo_id)
-        .and(pull_request::version_odoo.eq(*version_odoo as i32));
-
-    let removed: Vec<Model> = if prids.is_empty() {
-        pull_request::table
-            .filter(base_filter)
-            .load::<Model>(conn)?
-    } else {
-        pull_request::table
-            .filter(base_filter.and(pull_request::prid.ne_all(prids)))
-            .load::<Model>(conn)?
-    };
+    let removed = find_outdated(conn, gh_repo_id, version_odoo, prids)?;
 
     if removed.is_empty() {
         return Ok(0);
@@ -242,29 +255,27 @@ pub fn delete_outdated(
             &repo_name,
             version_odoo,
         );
-        // Only rows with a known open date are useful for the acceptance-time
-        // stat; PRs collected before the `created_at` migration don't have one.
+        // Only merged rows with a known open date are useful for the
+        // acceptance-time stat; PRs collected before the `created_at`
+        // migration don't have one, and closed-without-merge PRs would
+        // skew it toward rejections instead of real acceptance time.
         if let Some(created_at) = &pr.created_at {
-            let _ = pull_request_history::add(
-                conn,
-                &pr.module_technical_name,
-                pr.version_odoo,
-                *gh_repo_id,
-                pr.prid,
-                created_at,
-                &closed_at,
-            );
+            if merged_prids.contains(&pr.prid) {
+                let _ = pull_request_history::add(
+                    conn,
+                    &pr.module_technical_name,
+                    pr.version_odoo,
+                    *gh_repo_id,
+                    pr.prid,
+                    created_at,
+                    &closed_at,
+                );
+            }
         }
     }
 
-    if prids.is_empty() {
-        diesel::delete(pull_request::table.filter(base_filter)).execute(conn)
-    } else {
-        diesel::delete(
-            pull_request::table.filter(base_filter.and(pull_request::prid.ne_all(prids))),
-        )
-        .execute(conn)
-    }
+    let removed_ids: Vec<i64> = removed.iter().map(|pr| pr.id).collect();
+    diesel::delete(pull_request::table.filter(pull_request::id.eq_any(removed_ids))).execute(conn)
 }
 
 #[cfg(test)]

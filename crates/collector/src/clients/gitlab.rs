@@ -214,6 +214,17 @@ impl GitClient for GitlabClient {
         }
         prs
     }
+
+    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {
+        let mr = self
+            .request_json(&format!(
+                "projects/{}/merge_requests/{number}",
+                urlencoding::encode(full_path)
+            ))
+            .await
+            .ok()?;
+        Some(mr["state"].as_str() == Some("merged"))
+    }
 }
 
 /// GitLab's `detailed_merge_status` already folds CI + approvals + conflicts

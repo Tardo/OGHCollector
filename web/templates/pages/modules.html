@@ -90,8 +90,8 @@
         {% endif %}
         {% if g.avg_days_open is not none %}
         <p class="text-body-secondary">
-            Avg. time open before close: <strong>{{ g.avg_days_open | round(1) }} day{{ g.avg_days_open != 1 and 's' or '' }}</strong>
-            <span title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact close/merge time; includes PRs closed without merging.">(based on {{ g.closed_count }} closed PR{{ g.closed_count != 1 and 's' or '' }} &#9432;)</span>
+            Avg. time open before merge: <strong>{{ g.avg_days_open | round(1) }} day{{ g.avg_days_open != 1 and 's' or '' }}</strong>
+            <span title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact merge time; PRs closed without merging are excluded.">(based on {{ g.closed_count }} merged PR{{ g.closed_count != 1 and 's' or '' }} &#9432;)</span>
         </p>
         {% endif %}
         {% if not g.pull_requests %}
