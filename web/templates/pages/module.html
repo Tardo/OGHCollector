@@ -61,7 +61,7 @@
     {% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.technical_name) %}
     <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ module.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ module.odoo_version }}-tab" tabindex="0">
         {% if module.security_warnings %}
-        <div class="alert alert-danger" role="alert">
+        <div class="dev-only alert alert-danger" role="alert">
             <h5 class="alert-heading">&#9888; Security warnings</h5>
             <ul>
                 {% for w in module.security_warnings %}
