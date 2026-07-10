@@ -54,13 +54,30 @@ pub fn parse_created_at(raw: &str) -> Option<String> {
         .map(|dt| sqlitedb::utils::date::to_sqlite_datetime(dt.with_timezone(&chrono::Utc)))
 }
 
-/// OCA migration convention: head branch `{version}-mig-{module_technical_name}`
-/// (e.g. `16.0-mig-sale_commission`). Returns the module technical name if it matches.
+/// OCA migration convention: head branch `{version}-mig-{module_technical_name}`,
+/// optionally followed by a `-{discard}` suffix (e.g. `16.0-mig-sale_commission-wip`).
+/// Returns the module technical name if it matches.
+///
+/// Odoo technical names never contain `-`, only `_`. So if the captured tail
+/// already has an `_` in it, it's a real name with one discard segment tacked
+/// on the end - drop everything after the last `-`. If it has no `_` at all,
+/// the whole thing was typed with `-` instead of `_` and there's no way to
+/// tell a discard suffix apart from the name - just normalize every `-` to `_`.
+/// ponytail: ambiguous when both a hyphenated name AND a discard suffix are
+/// present (e.g. `sale-order-line-wip`) - the discard ends up folded into the
+/// name. Add a real module-name lookup if this proves common in practice.
 pub fn extract_migration_module_name(head_ref: &str) -> Option<String> {
     let re = Regex::new(r"^[0-9]+\.[0-9]+-mig-(.+)$").unwrap();
-    re.captures(head_ref)
-        .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().to_string())
+    re.captures(head_ref).and_then(|caps| caps.get(1)).map(|m| {
+        let raw = m.as_str();
+        if raw.contains('_') {
+            raw.rsplit_once('-')
+                .map_or(raw, |(name, _discard)| name)
+                .to_string()
+        } else {
+            raw.replace('-', "_")
+        }
+    })
 }
 
 pub trait GitClient {
@@ -188,5 +205,29 @@ mod tests {
         assert_eq!(extract_migration_module_name("master"), None);
         assert_eq!(extract_migration_module_name("16.0-mig-"), None);
         assert_eq!(extract_migration_module_name("mig-sale_commission"), None);
+    }
+
+    #[test]
+    fn test_extract_migration_module_name_drops_discard_suffix() {
+        assert_eq!(
+            extract_migration_module_name("16.0-mig-nombre_modulo_algo-BAD"),
+            Some("nombre_modulo_algo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_migration_module_name_normalizes_hyphenated_name() {
+        assert_eq!(
+            extract_migration_module_name("16.0-mig-nombre-modulo-algo"),
+            Some("nombre_modulo_algo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_migration_module_name_ambiguous_hyphenated_with_discard() {
+        assert_eq!(
+            extract_migration_module_name("16.0-mig-nombre-modulo-algo-BAD"),
+            Some("nombre_modulo_algo_BAD".to_string())
+        );
     }
 }
