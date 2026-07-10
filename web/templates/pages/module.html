@@ -124,16 +124,6 @@
                     <span class="text-body-secondary">None</span>
                     {% endif %}
                 </dd>
-                <dt>Required by</dt>
-                <dd>
-                    {% if module.required_by %}
-                    {% for req in module.required_by %}
-                    <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
-                    {% endfor %}
-                    {% else %}
-                    <span class="text-body-secondary">None</span>
-                    {% endif %}
-                </dd>
                 <dt>Python dependencies</dt>
                 <dd>
                     {% if module.dependencies.pip %}
@@ -148,6 +138,16 @@
                 <dd>
                     {% if module.dependencies.bin %}
                     {{ module.dependencies.bin | join(', ') }}
+                    {% else %}
+                    <span class="text-body-secondary">None</span>
+                    {% endif %}
+                </dd>
+                <dt>Required by</dt>
+                <dd>
+                    {% if module.required_by %}
+                    {% for req in module.required_by %}
+                    <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
+                    {% endfor %}
                     {% else %}
                     <span class="text-body-secondary">None</span>
                     {% endif %}
