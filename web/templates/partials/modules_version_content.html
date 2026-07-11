@@ -1,0 +1,149 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{# Content of one Odoo-version tab-pane on pages/modules.html. Rendered
+   eagerly for the active tab and via routes::modules::route_tab for the
+   rest, fetched lazily on first tab activation so a page with many Odoo
+   versions doesn't ship every version's PRs/security findings up front. #}
+{% if g.most_changed or g.largest_module or g.newest_module %}
+<div class="row g-3 mb-2">
+    {% if g.most_changed %}
+    <div class="col-md-4 col-6">
+        <div class="stat-card">
+            <div class="stat-card-label">Most changed module</div>
+            <div class="stat-card-value"><a href="/module/{{ g.most_changed.organization }}/{{ g.most_changed.technical_name }}">{{ g.most_changed.technical_name }}</a></div>
+            <div class="stat-card-note">{{ g.most_changed.value }} commit{{ g.most_changed.value != 1 and 's' or '' }}</div>
+        </div>
+    </div>
+    {% endif %}
+    {% if g.largest_module %}
+    <div class="col-md-4 col-6">
+        <div class="stat-card">
+            <div class="stat-card-label">Largest module</div>
+            <div class="stat-card-value"><a href="/module/{{ g.largest_module.organization }}/{{ g.largest_module.technical_name }}">{{ g.largest_module.technical_name }}</a></div>
+            <div class="stat-card-note">{{ (g.largest_module.value / 1048576) | round(1) }} MB</div>
+        </div>
+    </div>
+    {% endif %}
+    {% if g.newest_module %}
+    <div class="col-md-4 col-6">
+        <div class="stat-card">
+            <div class="stat-card-label">Newest module</div>
+            <div class="stat-card-value"><a href="/module/{{ g.newest_module.org_name }}/{{ g.newest_module.technical_name }}">{{ g.newest_module.technical_name }}</a></div>
+            <div class="stat-card-note">added {{ g.newest_module.create_date }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<h4 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h4>
+{% if g.pull_requests %}
+<p class="text-body-secondary pr-filter-group">
+    <span class="badge text-bg-success pr-filter" data-filter="fresh">{{ g.pr_fresh }} fresh</span>
+    <span class="badge text-bg-warning pr-filter" data-filter="rotting">{{ g.pr_rotting }} rotting</span>
+    <span class="badge text-bg-danger pr-filter" data-filter="rotten">{{ g.pr_rotten }} rotten</span>
+</p>
+{% endif %}
+{% if g.avg_days_open is not none %}
+<p class="text-body-secondary">
+    Avg. time open before merge: <strong>{{ g.avg_days_open | round(1) }} day{{ g.avg_days_open != 1 and 's' or '' }}</strong>
+    <span style="cursor: help;" title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact merge time; PRs closed without merging are excluded.">(based on {{ g.closed_count }} merged PR{{ g.closed_count != 1 and 's' or '' }} &#9432;)</span>
+</p>
+{% endif %}
+{% if not g.pull_requests %}
+<p class="text-body-secondary">No open migration PRs/MRs tracked.</p>
+{% else %}
+<div class="modules-scroll-list pr-list">
+    <table class="table table-striped table-striped-columns table-hover">
+        <thead>
+            <tr>
+                <th class="col-module">Module</th>
+                <th class="col-repo">Repository</th>
+                <th class="col-title">Title</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pr in g.pull_requests %}
+            {% set age_class = pr.freshness or "" %}
+            <tr class="pr-row pr-row-{{ age_class }}">
+                <td class="pr-module">
+                    <a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}" title="{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a>
+                    <div class="pr-meta">
+                        {% if pr.age_days is not none %}
+                        <span class="badge text-bg-light border" title="Opened {{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago">{{ pr.age_days }}d open</span>
+                        {% endif %}
+                        {% if pr.last_message_days is not none %}
+                        <span class="badge age-badge age-badge-{{ age_class }}" title="Last activity {{ pr.last_message_days }} day{{ pr.last_message_days != 1 and 's' or '' }} ago">{{ pr.last_message_days }}d quiet</span>
+                        {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
+                        {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
+                        {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>
+                        {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">failing</span>
+                        {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+                    </div>
+                </td>
+                <td class="text-body-secondary">{{ pr.organization }}/{{ pr.repository }}</td>
+                <td class="pr-title"><a href="{{ pr.url }}" target="_blank" rel="noopener noreferrer" title="{{ pr.title }}">{{ pr.title }}</a> <span class="text-body-secondary">#{{ pr.prid }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="dev-only">
+<h4 class="mt-5">Security Findings</h4>
+<div class="alert alert-info" role="alert">
+    Results are approximate: found by automated static analysis, not a full security audit. Treat them as a starting point for manual review, not confirmed issues.
+</div>
+
+<h5 class="mt-3">Errors <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h5>
+{% if not g.security_errors %}
+<p class="text-body-secondary">No grave findings.</p>
+{% else %}
+<div class="modules-scroll-list">
+    <table class="table table-striped-columns">
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th>Code</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for w in g.security_errors %}
+            <tr>
+                <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
+                <td><span class="badge text-bg-danger">{{ w.code }}</span></td>
+                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<h5 class="mt-4">Warnings <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h5>
+{% if not g.security_warnings %}
+<p class="text-body-secondary">No minor findings.</p>
+{% else %}
+<div class="modules-scroll-list">
+    <table class="table table-striped-columns">
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th>Code</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for w in g.security_warnings %}
+            <tr>
+                <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
+                <td><span class="badge text-bg-warning">{{ w.code }}</span></td>
+                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+</div>

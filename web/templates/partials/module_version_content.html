@@ -1,0 +1,238 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{# Content of one Odoo-version tab-pane on pages/module.html. Rendered eagerly
+   for the active tab and via routes::module::route_tab for the rest, fetched
+   lazily on first tab activation to avoid computing dependency trees /
+   models / required_by (up to 500 rows) for versions nobody looks at. #}
+{% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.technical_name) %}
+{% if module.security_warnings %}
+<div class="dev-only alert alert-danger" role="alert">
+    <h5 class="alert-heading">&#9888; Security warnings</h5>
+    <ul>
+        {% for w in module.security_warnings %}
+        <li>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }} <span class="badge text-bg-danger">{{ w.code }}</span></li>
+        {% endfor %}
+    </ul>
+    <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue.</p>
+</div>
+{% endif %}
+<div class="row">
+    <dl class="spec-sheet col-lg-6">
+        <dt>Repository</dt>
+        <dd><a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a></dd>
+        <dt>Module version</dt>
+        <dd>
+            {% if history and history | length > 1 %}
+            <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="Select module version">
+                {% for v in history %}
+                <option value="{{ v.version_module }}" {{ (v.version_module == module.version) and 'selected' or '' }}>{{ v.version_module }}{{ v.is_latest and ' (latest)' or '' }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            {{ module.version }}
+            {% endif %}
+        </dd>
+        <dt>Category</dt>
+        <dd>{{ module.category }}</dd>
+        <dt>Folder size</dt>
+        <dd>{{ (module.folder_size / 1048576) | round(2) }} MB</dd>
+        <dt>License</dt>
+        <dd>{{ module.license }}</dd>
+        <dt>Application</dt>
+        <dd>{{ module.application and "Yes" or "No" }}</dd>
+        <dt>Auto-installable</dt>
+        <dd>{{ module.auto_install and "Yes" or "No" }}</dd>
+        <dt>Website</dt>
+        <dd>{% if module.website %}<a href="{{ module.website }}">{{ module.website }}</a>{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
+        <dt>Last tracking update</dt>
+        <dd>{{ module.update_date }}</dd>
+        <dt>Authors</dt>
+        <dd>{{ module.authors | join(', ') }}</dd>
+        <dt>Maintainers</dt>
+        <dd>{% if module.maintainers %}{{ module.maintainers | join(', ') }}{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
+        <dt>Committers</dt>
+        <dd>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</dd>
+    </dl>
+    <dl class="spec-sheet col-lg-6">
+        <dt>Odoo dependencies</dt>
+        <dd>
+            {% if module.dependencies.odoo %}
+            <div class="module-dependencies-yaml">
+                {% for key, values in module.dependencies.odoo|items %}
+                {% set dep_org = key | split('/') | first %}
+                <div>{{ key }}:</div>
+                {% for value in values %}
+                <div class="module-dependencies-yaml-item">- <a href="/module/{{ dep_org | urlencode }}/{{ value | urlencode }}">{{ value }}</a></div>
+                {% endfor %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <span class="text-body-secondary">None</span>
+            {% endif %}
+        </dd>
+        <dt>Python dependencies</dt>
+        <dd>
+            {% if module.dependencies.pip %}
+            {% for dep_name in module.dependencies.pip %}
+            <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a>{{ not loop.last and ', ' or '' }}
+            {% endfor %}
+            {% else %}
+            <span class="text-body-secondary">None</span>
+            {% endif %}
+        </dd>
+        <dt>System dependencies</dt>
+        <dd>
+            {% if module.dependencies.bin %}
+            {{ module.dependencies.bin | join(', ') }}
+            {% else %}
+            <span class="text-body-secondary">None</span>
+            {% endif %}
+        </dd>
+        <dt>Required by</dt>
+        <dd>
+            {% if module.required_by %}
+            {% for req in module.required_by %}
+            <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
+            {% endfor %}
+            {% else %}
+            <span class="text-body-secondary">None</span>
+            {% endif %}
+        </dd>
+        <dt>Description</dt>
+        <dd><pre class="module-description">{{ module.description }}</pre></dd>
+    </dl>
+</div>
+
+<div class="dev-only">
+<h4 class="mt-4">Code Analysis <span class="text-body-secondary fs-6" style="cursor: help;" title="Extracted automatically from the module's source code (best-effort static analysis, no code is executed): details may be incomplete or approximate.">&#9432;</span></h4>
+<h5>Views touched ({{ module.views | length }})</h5>
+{% if module.views %}
+<div class="table-responsive">
+<table class="table table-sm table-striped-columns">
+    <thead><tr><th>XML ID</th><th>Name</th><th>Model</th><th>Type</th><th>Status</th></tr></thead>
+    <tbody>
+        {% for view in module.views %}
+        <tr>
+            <td><code>{{ view.xml_id }}</code></td>
+            <td>{{ view.name }}</td>
+            <td>{{ view.model }}</td>
+            <td>{% if view.view_type %}<span class="badge text-bg-secondary">{{ view.view_type }}</span>{% endif %}</td>
+            <td>
+                {% if view.is_new %}
+                <span class="badge text-bg-success">New</span>
+                {% else %}
+                <span class="badge text-bg-info">Inherits {{ view.inherit_xml_id }}</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="text-muted">No views found for this module.</p>
+{% endif %}
+
+<h5>HTTP endpoints ({{ module.controllers | length }})</h5>
+{% if module.controllers %}
+<div class="table-responsive">
+<table class="table table-sm table-striped-columns">
+    <thead><tr><th>Route(s)</th><th>Handler</th><th>Auth</th><th>Type</th><th>Methods</th><th>Flags</th></tr></thead>
+    <tbody>
+        {% for c in module.controllers %}
+        <tr>
+            <td>{% if c.routes %}{% for r in c.routes %}<code>{{ r }}</code>{{ not loop.last and ', ' or '' }}{% endfor %}{% else %}<span class="text-muted">(inherited route override)</span>{% endif %}</td>
+            <td><code>{{ c.class_name }}.{{ c.name }}</code></td>
+            <td>
+                {% if c.auth == "user" %}<span class="badge text-bg-secondary">user</span>
+                {% elif c.auth %}<span class="badge text-bg-warning">{{ c.auth }}</span>
+                {% else %}<span class="badge text-bg-light border">inherited</span>{% endif %}
+            </td>
+            <td><span class="badge text-bg-light border">{{ c.http_type }}</span></td>
+            <td>{{ c.methods and c.methods | join(', ') or 'ALL' }}</td>
+            <td>
+                {% if c.csrf == false %}<span class="badge text-bg-danger">csrf off</span>{% endif %}
+                {% if c.uses_sudo %}<span class="badge text-bg-warning">sudo</span>{% endif %}
+                {% if c.website %}<span class="badge text-bg-info">website</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="text-muted">No HTTP endpoints found for this module.</p>
+{% endif %}
+
+<h5>Models touched ({{ module.models | length }})</h5>
+{% if module.models %}
+<div class="accordion module-model-accordion mb-3" id="models-accordion-{{ module.odoo_version }}">
+    {% for mdl in module.models %}
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="heading-model-{{ module.odoo_version }}-{{ loop.index }}">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-model-{{ module.odoo_version }}-{{ loop.index }}" aria-expanded="false" aria-controls="collapse-model-{{ module.odoo_version }}-{{ loop.index }}">
+                <span class="module-model-header">
+                    <span class="module-model-header-title">
+                        <code>{{ mdl.model_name }}</code>
+                        {% if mdl.is_new_model %}
+                        <span class="badge text-bg-success">New model</span>
+                        {% else %}
+                        <span class="badge text-bg-secondary">Extends</span>
+                        {% endif %}
+                        {% if mdl.attrs.kind %}<span class="badge text-bg-light border">{{ mdl.attrs.kind }}</span>{% endif %}
+                        <span class="badge rounded-pill text-bg-light border">{{ mdl.fields | length }} field{{ mdl.fields | length != 1 and 's' or '' }}</span>
+                        <span class="badge rounded-pill text-bg-light border">{{ mdl.methods | length }} method{{ mdl.methods | length != 1 and 's' or '' }}</span>
+                    </span>
+                    <span class="module-model-header-meta">
+                        <span class="fw-semibold">{{ mdl.class_name }}</span>{% if mdl.inherit_from %} &middot; inherits {{ mdl.inherit_from | join(', ') }}{% endif %}
+                        {% if mdl.attrs.description %} &middot; {{ mdl.attrs.description }}{% endif %}
+                    </span>
+                    {% if mdl.docstring %}<span class="module-model-header-doc">{{ mdl.docstring }}</span>{% endif %}
+                </span>
+            </button>
+        </h2>
+        <div id="collapse-model-{{ module.odoo_version }}-{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading-model-{{ module.odoo_version }}-{{ loop.index }}" data-bs-parent="#models-accordion-{{ module.odoo_version }}">
+            <div class="accordion-body">
+                <strong>New fields ({{ mdl.fields | length }})</strong>
+                {% if mdl.fields %}
+                <ul class="list-unstyled module-field-list">
+                    {% for f in mdl.fields %}
+                    <li>
+                        <code>{{ f.name }}</code>
+                        <span class="text-muted">{{ f.field_type }}{% if f.relation %} &rarr; {{ f.relation }}{% endif %}</span>
+                        {% if f.attrs %}
+                        <div class="module-field-attrs text-muted small">
+                            {% for key, value in f.attrs|items %}
+                            {% if key != "args" %}<span><code>{{ key }}</code>={{ value }}</span>{% endif %}
+                            {% endfor %}
+                            {% if f.attrs.args %}<span>args: {{ f.attrs.args|join(', ') }}</span>{% endif %}
+                        </div>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted">No new fields.</p>
+                {% endif %}
+                <strong>Public methods ({{ mdl.methods | length }})</strong>
+                {% if mdl.methods %}
+                <ul class="list-unstyled module-method-list">
+                    {% for m in mdl.methods %}
+                    <li>
+                        <code>{{ m.name }}{{ m.signature }}</code>
+                        {% if m.decorators %}<div class="text-muted small">{% for dec in m.decorators %}<span>@{{ dec }}</span>{% endfor %}</div>{% endif %}
+                        {% if m.docstring %}<div class="module-method-doc text-muted small">{{ m.docstring }}</div>{% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted">No public methods.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="text-muted">No models found for this module.</p>
+{% endif %}
+</div>

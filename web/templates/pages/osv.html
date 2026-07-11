@@ -29,42 +29,18 @@
     </div>
     <div class="tab-content" id="pills-tabContent">
     {% for version in osv_info %}
-        <div class="tab-pane fade {{ 'show active' if loop.index == 1 else '' }}" id="osv-pills-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="osv-pills-{{ version.odoo_version }}-tab" tabindex="0">
-            <p class="text-body-secondary">{{ version.vuln_count }} vulnerabilit{{ 'y' if version.vuln_count == 1 else 'ies' }} across {{ version.package_count }} package{{ 's' if version.package_count != 1 else '' }}, affecting {{ version.module_count }} module{{ 's' if version.module_count != 1 else '' }}.</p>
-        {% for package_name in version.packages %}
-                <table class="table table-striped-columns">
-                    <thead>
-                        <tr class="table-active"><th colspan="4" class="fs-5">{{ package_name }}</th></tr>
-                        <tr>
-                            <th>ID</th>
-                            <th class="text-nowrap">Fixed In</th>
-                            <th>Affected modules <span class="text-body-secondary" style="cursor: help;" title="Modules whose dependency tree includes the vulnerable package. That doesn't necessarily mean the module uses the affected code: treat it as a starting point for review, not a confirmed impact.">&#9432;</span></th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for osv in version.packages[package_name] %}
-                            {% set module_names = osv.modules | map(attribute="technical_name") | join(" ") %}
-                            <tr data-search="{{ (package_name + ' ' + osv.osv_id + ' ' + module_names) | lower }}">
-                                <td class="text-nowrap"><a href="https://osv.dev/vulnerability/{{ osv.osv_id }}" target="_blank" rel="noopener noreferrer">{{ osv.osv_id }}</a></td>
-                                <td class="text-nowrap text-center">{{ osv.fixed_in }}</td>
-                                <td>
-                                {% for mod in osv.modules %}
-                                    <a class="badge text-bg-secondary text-decoration-none me-1" href="/module/{{ mod.org_name }}/{{ mod.technical_name }}" title="{{ mod.name }}">{{ mod.technical_name }}</a>
-                                {% endfor %}
-                                </td>
-                                <td>
-                                    <details>
-                                        <summary>Show details</summary>
-                                        <div class="osv-details">{{ osv.details }}</div>
-                                    </details>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-        {% endfor %}
+        {% if loop.first %}
+        <div class="tab-pane fade show active" id="osv-pills-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="osv-pills-{{ version.odoo_version }}-tab" tabindex="0">
+            {% include "partials/osv_version_content.html" %}
         </div>
+        {% else %}
+        {# Fetched on demand (see osv.mjs) when this tab is first shown, to
+           avoid shipping every Odoo version's packages/vulnerabilities up
+           front. #}
+        <div class="tab-pane fade" id="osv-pills-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="osv-pills-{{ version.odoo_version }}-tab" tabindex="0" data-lazy-tab-url="/osv/tab/{{ version.odoo_version | urlencode }}">
+            <p class="text-body-secondary">Loading&hellip;</p>
+        </div>
+        {% endif %}
     {% endfor %}
     </div>
 </div>

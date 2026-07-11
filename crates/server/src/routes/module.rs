@@ -1,7 +1,7 @@
 // Copyright Alexandre D. Díaz
 use std::collections::{HashMap, HashSet};
 
-use actix_web::{get, web, HttpRequest, Responder, Result};
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder, Result};
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
 use sqlitedb::{models, Pool};
 
 use super::api::v1::module::{process_modules_db, ModuleFullInfoResponse};
@@ -22,7 +22,7 @@ pub struct RouteModulePageRequest {
 // A version_module ever seen for a module, for the version-history dropdown
 // on the module detail page. Fetched eagerly (not via a client-side request)
 // since the page is server-rendered and the history is small per module.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ModuleVersionHistoryInfo {
     pub version_module: String,
     pub create_date: String,
@@ -75,6 +75,38 @@ fn get_module_pull_requests(
         .collect()
 }
 
+// Keyed by Odoo version (e.g. "17.0") for the template's per-tab
+// version-history dropdown; shared by `route` (active tab, eager) and
+// `route_tab` (one lazily-loaded tab).
+fn build_module_context(
+    conn: &mut SqliteConnection,
+    modules: &[models::module::Model],
+    version_module: Option<&str>,
+) -> (
+    Vec<ModuleFullInfoResponse>,
+    HashMap<String, Vec<ModuleVersionHistoryInfo>>,
+) {
+    let module_versions: HashMap<String, Vec<ModuleVersionHistoryInfo>> = modules
+        .iter()
+        .map(|m| {
+            let odoo_ver = odoo_version_u8_to_string(&(m.version_odoo as u8));
+            let mut history: Vec<ModuleVersionHistoryInfo> =
+                models::module_version::get_by_module_id(conn, &m.id)
+                    .into_iter()
+                    .map(|v| ModuleVersionHistoryInfo {
+                        is_latest: v.version_module == m.version_module,
+                        version_module: v.version_module,
+                        create_date: v.create_date,
+                    })
+                    .collect();
+            history.reverse(); // newest first
+            (odoo_ver, history)
+        })
+        .collect();
+    let module_infos = process_modules_db(conn, modules, version_module);
+    (module_infos, module_versions)
+}
+
 #[get("/module/{org}/{technical_name}")]
 pub async fn route(
     tmpl_env: MiniJinjaRenderer,
@@ -87,7 +119,7 @@ pub async fn route(
     let org_ctx = org.clone();
     let technical_name_ctx = technical_name.clone();
     let version_module = info.version.clone();
-    let (module_infos, module_versions, pull_requests) = web::block(move || {
+    let (module_infos, module_versions, pull_requests, odoo_versions) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let modules = models::module::get_by_technical_name_organization_name(
             &mut conn,
@@ -95,31 +127,33 @@ pub async fn route(
             &org,
         );
         let merged_versions: HashSet<i32> = modules.iter().map(|m| m.version_odoo).collect();
-        // Keyed by Odoo version (e.g. "17.0") for the template's per-tab
-        // version-history dropdown; fetched eagerly since the page is
-        // server-rendered and the history is small per module.
-        let module_versions: HashMap<String, Vec<ModuleVersionHistoryInfo>> = modules
+
+        let mut distinct_versions: Vec<i32> = merged_versions.iter().copied().collect();
+        distinct_versions.sort_unstable();
+        let odoo_versions: Vec<String> = distinct_versions
             .iter()
-            .map(|m| {
-                let odoo_ver = odoo_version_u8_to_string(&(m.version_odoo as u8));
-                let mut history: Vec<ModuleVersionHistoryInfo> =
-                    models::module_version::get_by_module_id(&mut conn, &m.id)
-                        .into_iter()
-                        .map(|v| ModuleVersionHistoryInfo {
-                            is_latest: v.version_module == m.version_module,
-                            version_module: v.version_module,
-                            create_date: v.create_date,
-                        })
-                        .collect();
-                history.reverse(); // newest first
-                (odoo_ver, history)
-            })
+            .rev() // newest first, matches the tab order
+            .map(|v| odoo_version_u8_to_string(&(*v as u8)))
             .collect();
-        let module_infos: Vec<ModuleFullInfoResponse> =
-            process_modules_db(&mut conn, &modules, version_module.as_deref());
+
+        // Only the newest Odoo version is rendered eagerly here - the rest
+        // are fetched lazily by the client on first tab activation (see
+        // route_tab below), to avoid computing dependency trees, code
+        // analysis and required_by (up to 500 rows) for versions nobody
+        // may ever look at.
+        let active_modules: Vec<models::module::Model> = match distinct_versions.last() {
+            Some(&newest) => modules
+                .iter()
+                .filter(|m| m.version_odoo == newest)
+                .cloned()
+                .collect(),
+            None => Vec::new(),
+        };
+        let (module_infos, module_versions) =
+            build_module_context(&mut conn, &active_modules, version_module.as_deref());
         let pull_requests =
             get_module_pull_requests(&mut conn, &org, &technical_name, &merged_versions);
-        (module_infos, module_versions, pull_requests)
+        (module_infos, module_versions, pull_requests, odoo_versions)
     })
     .await?;
 
@@ -134,7 +168,50 @@ pub async fn route(
                 module_infos => module_infos,
                 module_versions => module_versions,
                 pull_requests => pull_requests,
+                odoo_versions => odoo_versions,
             )
         ),
     )
+}
+
+// Renders the content of a single Odoo-version tab (`partials/module_version_content.html`)
+// for `module.mjs` to inject on demand when that tab is first shown - see
+// the comment on `route` above for why this isn't computed eagerly for
+// every version.
+#[get("/module/{org}/{technical_name}/tab/{odoo_version}")]
+pub async fn route_tab(
+    tmpl_env: MiniJinjaRenderer,
+    pool: web::Data<Pool>,
+    path: web::Path<(String, String, String)>,
+    info: web::Query<RouteModulePageRequest>,
+) -> Result<HttpResponse> {
+    let (org, technical_name, odoo_version) = path.into_inner();
+    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let version_module = info.version.clone();
+    let (module_infos, module_versions) = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let modules = models::module::get_by_technical_name_odoo_version_organization_name(
+            &mut conn,
+            &technical_name,
+            &version_odoo,
+            &org,
+        );
+        build_module_context(&mut conn, &modules, version_module.as_deref())
+    })
+    .await?;
+
+    let Some(module) = module_infos.into_iter().next() else {
+        return Ok(HttpResponse::NotFound().finish());
+    };
+    let history = module_versions
+        .get(&module.odoo_version)
+        .cloned()
+        .unwrap_or_default();
+    let html = tmpl_env.render(
+        "partials/module_version_content.html",
+        context!(module => module, history => history),
+    )?;
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html.0))
 }
