@@ -42,6 +42,7 @@ pub struct Model {
     pub last_commit_partof: Option<String>,
     pub installation: Option<String>,
     pub usage: Option<String>,
+    pub icon: Option<String>,
 }
 
 impl Model {
@@ -66,6 +67,9 @@ impl Model {
     pub fn usage_str(&self) -> &str {
         self.usage.as_deref().unwrap_or("")
     }
+    pub fn icon_str(&self) -> &str {
+        self.icon.as_deref().unwrap_or("")
+    }
 }
 
 /// A committer's activity within a module: total commit count plus a
@@ -88,6 +92,7 @@ pub struct ManifestInfo {
     pub description: String,
     pub installation: String,
     pub usage: String,
+    pub icon: String,
     pub author: String,
     pub website: String,
     pub license: String,
@@ -248,6 +253,7 @@ struct NewModule<'a> {
     description: Option<&'a str>,
     installation: Option<&'a str>,
     usage: Option<&'a str>,
+    icon: Option<&'a str>,
     website: Option<&'a str>,
     license: Option<&'a str>,
     category: Option<&'a str>,
@@ -957,6 +963,11 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     } else {
         Some(module_info.usage.as_str())
     };
+    let icon = if module_info.icon.is_empty() {
+        None
+    } else {
+        Some(module_info.icon.as_str())
+    };
     let website = if module_info.website.is_empty() {
         None
     } else {
@@ -996,6 +1007,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
                 description,
                 installation,
                 usage,
+                icon,
                 website,
                 license,
                 category,
@@ -1023,6 +1035,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             description: description.map(|s| s.to_string()),
             installation: installation.map(|s| s.to_string()),
             usage: usage.map(|s| s.to_string()),
+            icon: icon.map(|s| s.to_string()),
             website: website.map(|s| s.to_string()),
             license: license.map(|s| s.to_string()),
             category: category.map(|s| s.to_string()),
@@ -1192,6 +1205,11 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     if existing_usage != module_info.usage {
         changes.push(("Usage", &existing_usage, &module_info.usage));
     }
+    // Not the raw base64 - it'd bloat the human-readable log message for no
+    // benefit (see system_event::register_update_module).
+    if existing_module.icon_str() != module_info.icon {
+        changes.push(("Icon", "(previous)", "(updated)"));
+    }
     let existing_website = existing_module.website_str().to_string();
     if existing_website != module_info.website {
         changes.push(("Website", &existing_website, &module_info.website));
@@ -1229,6 +1247,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             module::description.eq(description),
             module::installation.eq(installation),
             module::usage.eq(usage),
+            module::icon.eq(icon),
             module::website.eq(website),
             module::license.eq(license),
             module::category.eq(category),
@@ -1291,6 +1310,7 @@ mod tests {
                 description: String::new(),
                 installation: String::new(),
                 usage: String::new(),
+                icon: String::new(),
                 author: String::new(),
                 website: String::new(),
                 license: String::new(),

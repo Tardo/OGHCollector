@@ -23,4 +23,5 @@ regex.workspace = true
 duct.workspace = true
 named-lock.workspace = true
 urlencoding.workspace = true
+base64.workspace = true
 chrono.workspace = true

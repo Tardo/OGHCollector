@@ -46,6 +46,7 @@ regex = "1.10"
 duct = "1.1"
 named-lock = "0.4"
 urlencoding = "2.1"
+base64 = "0.22"
 diesel = { version = "2.3", features = ["sqlite", "r2d2"] }
 diesel_migrations = "2"
 dotenvy = "0.15"

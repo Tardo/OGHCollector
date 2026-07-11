@@ -40,9 +40,16 @@
     <p class="page-header-desc">No data found for this module.</p>
 </header>
 {% else %}
-<header class="page-header">
-    <h1>{{ modules[0].name if modules else technical_name }}</h1>
-    <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
+<header class="page-header module-page-header">
+    {% if modules and modules[0].icon %}
+    <img class="module-icon" src="data:image/png;base64,{{ modules[0].icon }}" alt="" />
+    {% else %}
+    <span class="module-icon module-icon-generic" aria-hidden="true">&#128230;</span>
+    {% endif %}
+    <div>
+        <h1>{{ modules[0].name if modules else technical_name }}</h1>
+        <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
+    </div>
 </header>
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
     {% for module in modules %}

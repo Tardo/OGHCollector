@@ -211,6 +211,7 @@ mod tests {
                 description: String::new(),
                 installation: String::new(),
                 usage: String::new(),
+                icon: String::new(),
                 author: String::new(),
                 website: String::new(),
                 license: String::new(),

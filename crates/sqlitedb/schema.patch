@@ -93,7 +93,7 @@
          version_module -> Text,
          description -> Nullable<Text>,
          website -> Nullable<Text>,
-@@ -85,56 +85,56 @@
+@@ -85,13 +85,13 @@
          auto_install -> Bool,
          application -> Bool,
          installable -> Bool,
@@ -108,7 +108,8 @@
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-         usage -> Nullable<Text>,
+@@ -99,43 +99,43 @@
+         icon -> Nullable<Text>,
      }
  }
  
@@ -155,7 +156,7 @@
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -147,21 +147,21 @@
+@@ -148,21 +148,21 @@
          module_version_id -> BigInt,
      }
  }
@@ -179,7 +180,7 @@
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -169,119 +169,119 @@
+@@ -170,119 +170,119 @@
          module_version_id -> BigInt,
      }
  }

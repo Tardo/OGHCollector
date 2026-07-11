@@ -1,4 +1,5 @@
 // Copyright Alexandre D. Díaz
+use base64::Engine;
 use duct::cmd;
 use fs_extra::dir::get_size;
 use pyo3::prelude::*;
@@ -860,6 +861,12 @@ impl OGHCollectorAnalyzer {
         (!text.is_empty()).then(|| text.to_string())
     }
 
+    /// Best-effort read of `<module>/static/description/icon.png`, base64-encoded.
+    fn read_icon(module_path: &std::path::Path) -> Option<String> {
+        let bytes = fs::read(module_path.join("static/description/icon.png")).ok()?;
+        Some(base64::engine::general_purpose::STANDARD.encode(bytes))
+    }
+
     fn read_manifest(
         &self,
         org_name: &str,
@@ -904,6 +911,10 @@ impl OGHCollectorAnalyzer {
             let usage = module_dir
                 .and_then(|p| Self::read_readme_fragment(p, "USAGE.md"))
                 .unwrap_or_default();
+            // static/description/icon.png, base64-encoded so it can travel through
+            // the same text column/JSON path as description/installation/usage; the
+            // module page falls back to a generic icon when this is empty.
+            let icon = module_dir.and_then(Self::read_icon).unwrap_or_default();
             // author
             let author_opt = manifest.get_item("author");
             let author: String = if let Some(author_value) = author_opt {
@@ -1064,6 +1075,7 @@ impl OGHCollectorAnalyzer {
                 description,
                 installation,
                 usage,
+                icon,
                 author,
                 website,
                 license,
@@ -1222,6 +1234,30 @@ mod tests {
         assert_eq!(
             OGHCollectorAnalyzer::read_readme_fragment(&dir, "INSTALL.md"),
             Some("pip install foo".to_string())
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_read_icon() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "read_icon"
+        ));
+        fs::create_dir_all(dir.join("static/description")).unwrap();
+
+        assert_eq!(OGHCollectorAnalyzer::read_icon(&dir), None);
+
+        fs::write(
+            dir.join("static/description/icon.png"),
+            [0xde, 0xad, 0xbe, 0xef],
+        )
+        .unwrap();
+        assert_eq!(
+            OGHCollectorAnalyzer::read_icon(&dir),
+            Some("3q2+7w==".to_string())
         );
 
         fs::remove_dir_all(&dir).unwrap();

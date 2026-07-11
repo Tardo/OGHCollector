@@ -1,4 +1,27 @@
 // Copyright 2025 Alexandre D. Díaz
+.module-page-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.module-icon {
+    width: 3rem;
+    height: 3rem;
+    flex-shrink: 0;
+    object-fit: contain;
+    border-radius: var(--bs-border-radius);
+}
+
+.module-icon-generic {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    background-color: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color-translucent);
+}
+
 #module_search {
     z-index: 3;
     top: 25%;

@@ -89,6 +89,8 @@ pub struct ModuleFullInfoResponse {
     pub name: String,
     pub version: String,
     pub description: String,
+    /// base64-encoded `static/description/icon.png`; empty when the module has none.
+    pub icon: String,
     pub authors: Vec<String>,
     pub website: String,
     pub license: String,
@@ -314,6 +316,7 @@ pub fn process_modules_db(
             name: module.name.clone(),
             version,
             description: module.description.clone().unwrap_or_default(),
+            icon: module.icon.clone().unwrap_or_default(),
             authors,
             website: module.website.clone().unwrap_or_default(),
             license: module.license.clone().unwrap_or_default(),

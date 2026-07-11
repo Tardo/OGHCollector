@@ -757,6 +757,7 @@ name = "collector"
 version = "0.1.0"
 dependencies = [
  "argparse",
+ "base64 0.22.1",
  "chrono",
  "duct",
  "env_logger",
