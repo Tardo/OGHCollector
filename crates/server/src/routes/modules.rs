@@ -26,6 +26,7 @@ pub struct ActivePullRequestInfo {
     pub last_message_days: Option<i64>,
     pub freshness: Option<String>,
     pub ci_status: Option<String>,
+    pub is_duplicate: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -46,6 +47,7 @@ pub struct ModulesVersionGroup {
     pub pr_fresh: usize,
     pub pr_rotting: usize,
     pub pr_rotten: usize,
+    pub pr_duplicate: usize,
     pub security_errors: Vec<ModuleSecurityFindingInfo>,
     pub security_warnings: Vec<ModuleSecurityFindingInfo>,
     pub avg_days_open: Option<f64>,
@@ -142,6 +144,7 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             organization: pr.org_name,
             repository: pr.repository_name,
             module_technical_name: pr.module_technical_name,
+            is_duplicate: false,
         };
         let group = get_group(&mut by_version, pr.version_odoo);
         match pr_freshness {
@@ -151,6 +154,22 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             _ => {}
         }
         group.pull_requests.push(entry);
+    }
+
+    // Flag PRs/MRs racing each other to migrate the same module at the same
+    // Odoo version (e.g. two contributors, or an OCA + fork PR) - wasted
+    // effort worth surfacing on the page rather than tracking per-module.
+    for group in by_version.values_mut() {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for pr in &group.pull_requests {
+            *counts.entry(pr.module_technical_name.clone()).or_insert(0) += 1;
+        }
+        for pr in &mut group.pull_requests {
+            if counts[&pr.module_technical_name] > 1 {
+                pr.is_duplicate = true;
+                group.pr_duplicate += 1;
+            }
+        }
     }
 
     // "error" is grave, "warning" is minor (see module_security_warning

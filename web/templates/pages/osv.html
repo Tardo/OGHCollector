@@ -1,6 +1,7 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 {% extends "minimal_layout.html" %}
-{% block title %}OSV{% endblock %}
+{% set meta_title = "Vulnerabilities" %}
+{% set meta_description = "Known OSV vulnerabilities affecting Odoo modules' Python dependencies." %}
 {% block base_head_content %}
 {{ super() }}
 

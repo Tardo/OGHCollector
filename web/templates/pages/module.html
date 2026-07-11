@@ -1,7 +1,9 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 {% set modules = module_infos | reverse %}
+{% set meta_title = (modules[0].name ~ " (" ~ technical_name ~ ")") if modules else ("Module: " ~ technical_name) %}
+{% set meta_description = (modules[0].description | replace("\n", " ") | replace("#", "") | replace("`", "") | trim | truncate(160)) if modules and modules[0].description else ("Metadata, dependencies and code analysis for the Odoo module " ~ technical_name ~ ".") %}
+{% set meta_keywords = "Odoo, module, addon, metadata, information, restapi, " ~ technical_name ~ (", " ~ modules[0].name if modules and modules[0].name else "") %}
 {% extends "minimal_layout.html" %}
-{% block title %}Module: {{ technical_name }} {% endblock %}
 {% block base_head_content %}
 {{ super() }}
 

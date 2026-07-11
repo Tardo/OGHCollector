@@ -51,20 +51,40 @@
 .pr-list {
     &.filter-fresh .pr-row:not(.pr-row-fresh),
     &.filter-rotting .pr-row:not(.pr-row-rotting),
-    &.filter-rotten .pr-row:not(.pr-row-rotten) {
+    &.filter-rotten .pr-row:not(.pr-row-rotten),
+    &.filter-duplicate .pr-row:not(.pr-row-duplicate) {
         display: none;
     }
 
+    // Freshness gets the left edge, duplicate (an independent, simultaneous
+    // state) the right edge, so a row can show both without one clobbering
+    // the other's box-shadow declaration.
     .pr-row-fresh {
         box-shadow: inset 3px 0 var(--bs-success);
+
+        &.pr-row-duplicate {
+            box-shadow: inset 3px 0 var(--bs-success), inset -3px 0 var(--bs-info);
+        }
     }
 
     .pr-row-rotting {
         box-shadow: inset 3px 0 var(--bs-warning);
+
+        &.pr-row-duplicate {
+            box-shadow: inset 3px 0 var(--bs-warning), inset -3px 0 var(--bs-info);
+        }
     }
 
     .pr-row-rotten {
         box-shadow: inset 3px 0 var(--bs-danger);
+
+        &.pr-row-duplicate {
+            box-shadow: inset 3px 0 var(--bs-danger), inset -3px 0 var(--bs-info);
+        }
+    }
+
+    .pr-row-duplicate {
+        box-shadow: inset -3px 0 var(--bs-info);
     }
 
     // Module and Title cells are fixed-width; without a truncation rule a

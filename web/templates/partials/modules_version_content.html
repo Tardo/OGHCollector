@@ -41,6 +41,7 @@
     <span class="badge text-bg-success pr-filter" data-filter="fresh">{{ g.pr_fresh }} fresh</span>
     <span class="badge text-bg-warning pr-filter" data-filter="rotting">{{ g.pr_rotting }} rotting</span>
     <span class="badge text-bg-danger pr-filter" data-filter="rotten">{{ g.pr_rotten }} rotten</span>
+    {% if g.pr_duplicate %}<span class="badge text-bg-info pr-filter" data-filter="duplicate">{{ g.pr_duplicate }} duplicate</span>{% endif %}
 </p>
 {% endif %}
 {% if g.avg_days_open is not none %}
@@ -64,7 +65,7 @@
         <tbody>
             {% for pr in g.pull_requests %}
             {% set age_class = pr.freshness or "" %}
-            <tr class="pr-row pr-row-{{ age_class }}">
+            <tr class="pr-row pr-row-{{ age_class }}{{ pr.is_duplicate and ' pr-row-duplicate' or '' }}"{% if pr.is_duplicate %} title="Another open PR/MR is also migrating this module at this Odoo version"{% endif %}>
                 <td class="pr-module">
                     <a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}" title="{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a>
                     <div class="pr-meta">

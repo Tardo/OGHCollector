@@ -60,6 +60,16 @@ html[data-mode='user'] .dev-only {
     font-size: 1.1rem;
     line-height: 1;
     color: var(--bs-navbar-color);
+    // Bootstrap's base .btn ships a permanent glossy inset shadow
+    // (inset 0 1px 0 rgba(white,.15), 0 1px 1px rgba(black,.075)); on an
+    // icon-only button that reads as a stray rounded outline/line, focus
+    // or not. This button has no color variant to override it otherwise.
+    box-shadow: none;
+
+    &:focus-visible {
+      outline: 2px solid var(--ommd-accent);
+      outline-offset: 2px;
+    }
 
     .theme-icon {
       display: inline-block;

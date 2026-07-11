@@ -1,6 +1,8 @@
 {# Copyright 2026 Alexandre D. Díaz #}
+{% set meta_title = committer_name %}
+{% set meta_description = (stats.total_commits ~ " tracked commits across " ~ stats.total_modules ~ " Odoo modules by " ~ committer_name ~ ".") if stats.versions else ("No commit data found for " ~ committer_name ~ ".") %}
+{% set meta_keywords = "Odoo, committer, contributor, commits, statistics, " ~ committer_name %}
 {% extends "minimal_layout.html" %}
-{% block title %}Committer: {{ committer_name }} {% endblock %}
 {% block base_head_content %}
 {{ super() }}
 

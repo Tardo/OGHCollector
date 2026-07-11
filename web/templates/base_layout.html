@@ -4,21 +4,27 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="description" content="Odoo module metadata.">
-        <meta name="keywords" content="Odoo, module, addon, metadata, information, restapi">
+        {# minijinja 1.x: `x | default(...)` on a variable set via `~` concat two
+           levels up an extends chain trips a VM stack bug ("too many arguments");
+           the `is defined` ternary form below sidesteps it. #}
+        {% set meta_title = meta_title if meta_title is defined else "Home" %}
+        {% set meta_description = meta_description if meta_description is defined else "Metadata, dependencies, security warnings and code analysis for Odoo modules collected from GitHub and GitLab." %}
+        <meta name="description" content="{{ meta_description }}">
+        {% set meta_keywords = meta_keywords if meta_keywords is defined else "Odoo, module, addon, metadata, information, restapi" %}
+        <meta name="keywords" content="{{ meta_keywords }}">
         <meta name="author" content="Alexandre D. Díaz">
         {% if SEO_ENABLED %}
         <meta name="robots" content="index, follow">
         <link rel="canonical" href="{{ REQ_URL }}">
         <meta property="og:type" content="website">
         <meta property="og:site_name" content="Odoo Module Metadata">
-        <meta property="og:title" content="Odoo Module Metadata">
-        <meta property="og:description" content="Odoo module metadata.">
+        <meta property="og:title" content="{{ meta_title }} - Odoo Module Metadata">
+        <meta property="og:description" content="{{ meta_description }}">
         <meta property="og:url" content="{{ REQ_URL }}">
         <meta property="og:image" content="{{ REQ_BASE_URL }}/static/favicon.png">
         <meta name="twitter:card" content="summary">
-        <meta name="twitter:title" content="Odoo Module Metadata">
-        <meta name="twitter:description" content="Odoo module metadata.">
+        <meta name="twitter:title" content="{{ meta_title }} - Odoo Module Metadata">
+        <meta name="twitter:description" content="{{ meta_description }}">
         <meta name="twitter:image" content="{{ REQ_BASE_URL }}/static/favicon.png">
         {% else %}
         <meta name="robots" content="noindex, nofollow">
@@ -34,7 +40,7 @@
         </script>
         {% block base_head_content %}{% endblock %}
         <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css" as="style">
-        <title>{% block title %}{% endblock %} - Odoo Module Metadata</title>
+        <title>{{ meta_title }} - Odoo Module Metadata</title>
     </head>
     <body class="vh-100">
         {% block base_body_content %}{% endblock %}

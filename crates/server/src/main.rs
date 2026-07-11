@@ -57,6 +57,17 @@ async fn main() -> std::io::Result<()> {
         env.add_filter("split", |value: String, sep: String| -> Vec<String> {
             value.split(&sep).map(str::to_string).collect()
         });
+        // minijinja 1.x has no built-in `truncate` filter; used to keep meta
+        // description tags (README-length module descriptions) SEO-sized.
+        env.add_filter("truncate", |value: String, len: usize| -> String {
+            if value.chars().count() <= len {
+                return value;
+            }
+            format!(
+                "{}…",
+                value.chars().take(len).collect::<String>().trim_end()
+            )
+        });
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);

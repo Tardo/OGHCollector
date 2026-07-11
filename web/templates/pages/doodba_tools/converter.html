@@ -1,6 +1,7 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 {% extends "minimal_layout.html" %}
-{% block title %}Doodba Converter{% endblock %}
+{% set meta_title = "Doodba Converter" %}
+{% set meta_description = "Convert repos.yaml and addons.yaml files for Doodba-based Odoo deployments." %}
 {% block base_head_content %}
 {{ super() }}
 

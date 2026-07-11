@@ -19,7 +19,12 @@ document
     group
       .querySelectorAll('.pr-filter')
       .forEach(b => b.classList.remove('active'));
-    list.classList.remove('filter-fresh', 'filter-rotting', 'filter-rotten');
+    list.classList.remove(
+      'filter-fresh',
+      'filter-rotting',
+      'filter-rotten',
+      'filter-duplicate',
+    );
     if (!was_active) {
       badge.classList.add('active');
       list.classList.add(`filter-${badge.dataset.filter}`);
