@@ -1,4 +1,7 @@
-<h1 align="center">Odoo GitHub Collector</h1>
+<h1 align="center">
+  <img src="static/android-chrome-192x192.png" />
+  <div>Odoo GitHub Collector<div>
+</h1>
 
 <p align="center">
   Collects Odoo module metadata from GitHub/GitLab organizations, visualizes it on a web dashboard,
