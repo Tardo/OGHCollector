@@ -21,7 +21,20 @@ export default class SearchDropdown extends Component {
   #prev_matches = null;
 
   onSetup() {
-    Component.useEvents({
+    Component.useEvents(this.getEventDefs());
+    Component.useFetchData({
+      records: {
+        endpoint: this.searchEndpoint,
+        method: HTTP_METHOD.GET,
+      },
+    });
+  }
+
+  // Subclasses that add their own controls (e.g. field/version filters)
+  // override this and spread `...super.getEventDefs()` in, instead of
+  // clobbering the base search/results bindings with their own useEvents call.
+  getEventDefs() {
+    return {
       search: {
         mode: 'id',
         events: {
@@ -35,13 +48,28 @@ export default class SearchDropdown extends Component {
           scroll: this.onScrollResults,
         },
       },
-    });
-    Component.useFetchData({
-      records: {
-        endpoint: this.searchEndpoint,
-        method: HTTP_METHOD.GET,
-      },
-    });
+    };
+  }
+
+  // Subclasses with extra filter controls (dropdowns, checkboxes...) override
+  // this instead of searchKey/normalizeQuery to exclude records outright.
+  recordMatchesFilters() {
+    return true;
+  }
+
+  // Re-runs the current search text against the current filters/field. Call
+  // after changing a filter control so results reflect it immediately.
+  refreshResults() {
+    this.#search_index = null;
+    this.#prev_query = null;
+    this.#prev_matches = null;
+    this.#active_index = -1;
+    const query = this.normalizeQuery(this.queryId('search').value);
+    if (query === '') {
+      this.#fillResults();
+    } else {
+      this.#fillResults(this.#filterResults(query));
+    }
   }
 
   async onWillStart() {
@@ -150,10 +178,12 @@ export default class SearchDropdown extends Component {
   #filterResults(query) {
     if (this.#search_index === null) {
       // Lowercase every key once instead of on every keystroke.
-      this.#search_index = this.getFetchData('records').map(record => ({
-        key: this.searchKey(record).toLowerCase(),
-        record,
-      }));
+      this.#search_index = this.getFetchData('records')
+        .filter(record => this.recordMatchesFilters(record))
+        .map(record => ({
+          key: this.searchKey(record).toLowerCase(),
+          record,
+        }));
     }
     // Typing usually extends the previous query: narrowing the previous
     // matches instead of rescanning the full index keeps each keystroke

@@ -3189,6 +3189,7 @@ dependencies = [
  "actix-web",
  "actix-web-lab",
  "array_tool",
+ "base64 0.22.1",
  "cached",
  "chrono",
  "chrono-tz",

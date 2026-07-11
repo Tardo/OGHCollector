@@ -1,5 +1,6 @@
 // Copyright Alexandre D. Díaz
 use actix_web::{get, web, Error as AWError, HttpResponse, Result};
+use base64::Engine;
 use diesel::sqlite::SqliteConnection;
 use oghutils::version::odoo_version_u8_to_string;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,9 @@ pub struct ModuleCountInfo {
 pub struct ModuleListInfo {
     pub versions: Vec<String>,
     pub technical_name: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
     pub org_name: String,
 }
 
@@ -80,6 +84,9 @@ fn get_odoo_module_list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
                 .map(|v| odoo_version_u8_to_string(&(*v as u8)))
                 .collect(),
             technical_name: x.technical_name,
+            name: x.name,
+            description: x.description,
+            category: x.category,
             org_name: x.org_name,
         })
         .collect()
@@ -138,6 +145,28 @@ pub async fn route_odoo_module_list(pool: web::Data<Pool>) -> Result<HttpRespons
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))
+}
+
+// Served as an actual image, not embedded as base64 in the bulk module list
+// above - that list can hold thousands of entries, and only the handful of
+// results rendered in the search dropdown ever need their icon loaded.
+#[get("/common/odoo/module/{org_name}/{technical_name}/icon")]
+pub async fn route_odoo_module_icon(
+    path: web::Path<(String, String)>,
+    pool: web::Data<Pool>,
+) -> Result<HttpResponse, AWError> {
+    let (org_name, technical_name) = path.into_inner();
+    let icon_b64 = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        models::module::get_icon(&mut conn, &org_name, &technical_name)
+    })
+    .await?;
+    let icon_bytes =
+        icon_b64.and_then(|b64| base64::engine::general_purpose::STANDARD.decode(b64).ok());
+    match icon_bytes {
+        Some(bytes) => Ok(HttpResponse::Ok().content_type("image/png").body(bytes)),
+        None => Ok(HttpResponse::NotFound().finish()),
+    }
 }
 
 #[get("/common/odoo/module/count")]

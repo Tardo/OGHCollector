@@ -1,2 +1,80 @@
 // Copyright Alexandre D. Díaz
 @import "./search-dropdown";
+
+// One joined control - search input in the middle, field/version selects
+// as the two ends - instead of a separate row of selects above the input.
+.search-filters {
+    display: flex;
+
+    select,
+    #search {
+        position: relative;
+        margin-left: -1px;
+        padding: 0.5em 0.7em;
+        font-size: 1rem;
+        font-family: inherit;
+        color: var(--bs-body-color, #dee2e6);
+        background-color: var(--bs-body-bg, #212529);
+        border: 1px solid var(--bs-border-color, #495057);
+        border-radius: 0;
+        outline: none;
+
+        &:first-child {
+            margin-left: 0;
+            border-radius: 0.4rem 0 0 0.4rem;
+        }
+
+        &:last-child {
+            border-radius: 0 0.4rem 0.4rem 0;
+        }
+
+        &:focus {
+            z-index: 1;
+            border-color: #85a4d3;
+            box-shadow: 0 0 0 0.25rem rgba(133, 164, 211, 0.25);
+        }
+    }
+
+    select {
+        flex: 0 0 auto;
+    }
+
+    #search {
+        flex: 1 1 auto;
+        width: auto;
+        box-sizing: border-box;
+    }
+}
+
+// Base .item is a plain block (shared with committer-search, which has no
+// icon) - only module-search needs the text/icon side by side. Matches the
+// `#results li .item` specificity of that base rule (a bare `.item` here
+// would lose to it and stay display:block, wrapping the icon below the text).
+#results li .item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75em;
+}
+
+#results .item-text {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+#results .item-icon {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    object-fit: contain;
+    border-radius: var(--bs-border-radius, 0.375rem);
+}
+
+#results .snippet {
+    color: var(--bs-secondary-color, #adb5bd);
+    font-size: small;
+    margin-top: 0.15em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

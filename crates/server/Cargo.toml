@@ -37,3 +37,4 @@ tokio_schedule.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 cached.workspace = true
+base64.workspace = true

@@ -128,6 +128,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::common::route_odoo_versions)
             .service(routes::common::route_odoo_module_count)
             .service(routes::common::route_odoo_module_list)
+            .service(routes::common::route_odoo_module_icon)
             .service(routes::common::route_odoo_contributor_rank)
             .service(routes::common::route_odoo_committer_rank)
             .service(routes::common::route_odoo_committer_list)

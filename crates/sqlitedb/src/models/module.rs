@@ -229,6 +229,9 @@ pub struct ModuleLastCreatedInfo {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleListInfo {
     pub technical_name: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
     pub org_name: String,
     pub versions_odoo: Vec<i32>,
 }
@@ -237,6 +240,12 @@ pub struct ModuleListInfo {
 struct ModuleListRow {
     #[diesel(sql_type = diesel::sql_types::Text)]
     technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    name: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    description: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    category: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Text)]
     org_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
@@ -847,7 +856,8 @@ pub fn get_latest_modules_created(conn: &mut SqliteConnection) -> Vec<ModuleLast
 
 pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
     diesel::sql_query(
-        "SELECT DISTINCT mod.technical_name, gh_org.name as org_name, \
+        "SELECT mod.technical_name, MAX(mod.name) as name, MAX(mod.description) as description, \
+         MAX(mod.category) as category, gh_org.name as org_name, \
          GROUP_CONCAT(mod.version_odoo) as versions_str \
          FROM module as mod \
          INNER JOIN gh_repository AS gh_repo ON mod.gh_repository_id = gh_repo.id \
@@ -860,6 +870,9 @@ pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
     .into_iter()
     .map(|row| ModuleListInfo {
         technical_name: row.technical_name,
+        name: row.name,
+        description: row.description,
+        category: row.category,
         org_name: row.org_name,
         versions_odoo: row
             .versions_str
@@ -868,6 +881,35 @@ pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
             .collect(),
     })
     .collect()
+}
+
+// Base64 `static/description/icon.png` for a module (any version, newest
+// first - icons are practically never version-specific, same as name/
+// description in `list` above). Empty string means "no icon file", stored
+// that way rather than NULL, so it's filtered out like NULL.
+pub fn get_icon(
+    conn: &mut SqliteConnection,
+    org_name: &str,
+    technical_name: &str,
+) -> Option<String> {
+    use crate::schema::{gh_organization, gh_repository};
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(
+            gh_organization::name
+                .eq(org_name)
+                .and(module::technical_name.eq(technical_name))
+                .and(module::icon.is_not_null())
+                .and(module::icon.ne("")),
+        )
+        .order(module::version_odoo.desc())
+        .select(module::icon)
+        .first::<Option<String>>(conn)
+        .ok()
+        .flatten()
 }
 
 pub fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<i32> {
