@@ -124,6 +124,7 @@ async fn main() -> std::io::Result<()> {
                     .wrap(DefaultHeaders::new().add(("Cache-Control", "no-cache")))
                     .service(afs::Files::new("/", "./static").show_files_listing()),
             )
+            .service(routes::robots::route)
             .service(routes::common::route_odoo_versions)
             .service(routes::common::route_odoo_module_count)
             .service(routes::common::route_odoo_module_list)

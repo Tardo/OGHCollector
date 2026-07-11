@@ -56,11 +56,14 @@ pub fn normalize_python_dep(name: String) -> String {
 pub fn get_minijinja_context(req: &HttpRequest) -> Value {
     let scheme = req.connection_info().scheme().to_string();
     let host = req.connection_info().host().to_string();
+    let base_url = format!("{scheme}://{host}");
     context!(
         REQ_SCHEME => scheme.clone(),
         REQ_HOST => host.clone(),
-        REQ_BASE_URL => format!("{}://{}", &scheme, &host),
+        REQ_BASE_URL => base_url.clone(),
+        REQ_URL => format!("{}{}", &base_url, req.path()),
         MCP_INFO_ENABLED => SERVER_CONFIG.get_mcp_info_enabled(),
         MCP_URL => SERVER_CONFIG.get_mcp_url().clone(),
+        SEO_ENABLED => SERVER_CONFIG.get_seo_enabled(),
     )
 }

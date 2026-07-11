@@ -7,6 +7,22 @@
         <meta name="description" content="Odoo module metadata.">
         <meta name="keywords" content="Odoo, module, addon, metadata, information, restapi">
         <meta name="author" content="Alexandre D. Díaz">
+        {% if SEO_ENABLED %}
+        <meta name="robots" content="index, follow">
+        <link rel="canonical" href="{{ REQ_URL }}">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="Odoo Module Metadata">
+        <meta property="og:title" content="Odoo Module Metadata">
+        <meta property="og:description" content="Odoo module metadata.">
+        <meta property="og:url" content="{{ REQ_URL }}">
+        <meta property="og:image" content="{{ REQ_BASE_URL }}/static/favicon.png">
+        <meta name="twitter:card" content="summary">
+        <meta name="twitter:title" content="Odoo Module Metadata">
+        <meta name="twitter:description" content="Odoo module metadata.">
+        <meta name="twitter:image" content="{{ REQ_BASE_URL }}/static/favicon.png">
+        {% else %}
+        <meta name="robots" content="noindex, nofollow">
+        {% endif %}
         <link rel="icon" type="image/png" href="/static/favicon.png"/>
         {# Applied before first paint so dev-only UI / theme never flash wrong #}
         <script>

@@ -19,6 +19,7 @@ pub struct OGHServerConfig {
     mcp_info_enabled: bool,
     mcp_url: String,
     trusted_proxies: Vec<IpNet>,
+    seo_enabled: bool,
 }
 
 impl OGHServerConfig {
@@ -62,6 +63,7 @@ impl OGHServerConfig {
                     .ok()
             })
             .collect::<Vec<IpNet>>();
+        let seo_enabled = settings.get_bool("seo_enabled").unwrap_or(false);
         OGHServerConfig {
             bind_address,
             port,
@@ -75,6 +77,7 @@ impl OGHServerConfig {
             mcp_info_enabled,
             mcp_url,
             trusted_proxies,
+            seo_enabled,
         }
     }
 
@@ -145,6 +148,10 @@ impl OGHServerConfig {
 
     pub fn is_trusted_proxy(&self, addr: IpAddr) -> bool {
         self.trusted_proxies.iter().any(|net| net.contains(&addr))
+    }
+
+    pub fn get_seo_enabled(&self) -> bool {
+        self.seo_enabled
     }
 }
 

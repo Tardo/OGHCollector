@@ -12,3 +12,4 @@ pub mod mcp_info;
 pub mod module;
 pub mod modules;
 pub mod osv;
+pub mod robots;
