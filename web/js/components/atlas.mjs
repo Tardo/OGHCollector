@@ -67,6 +67,7 @@ class SigmaAtlas extends Component {
   onStart() {
     super.onStart();
     this.#fillOdooVersionsSearchOptions();
+    this.queryId('sigma_atlas_mod_dep_search_input').focus();
   }
 
   onRemove() {

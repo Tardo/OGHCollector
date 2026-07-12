@@ -80,6 +80,9 @@ export default class SearchDropdown extends Component {
   onStart() {
     super.onStart();
     this.#el_search_results.style.display = 'none';
+    // No-op when the search lives in a d-none modal (dashboard/module/
+    // committer quick-search) - those focus explicitly once unhidden.
+    this.queryId('search').focus();
   }
 
   normalizeQuery(query) {
