@@ -18,7 +18,12 @@
 <div class="row">
     <dl class="spec-sheet col-lg-6">
         <dt>Repository</dt>
-        <dd><a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a></dd>
+        <dd>
+            <a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a>
+            {% if module.organization == "OCA" %}
+            &middot; <a href="https://runboat.odoo-community.org/builds?repo=OCA/{{ module.repository | urlencode }}&target_branch={{ module.odoo_version | urlencode }}" target="_blank" rel="noopener">Try on Runboat</a>
+            {% endif %}
+        </dd>
         <dt>Module version</dt>
         <dd>
             {% if history and history | length > 1 %}
