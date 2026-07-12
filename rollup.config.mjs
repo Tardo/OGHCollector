@@ -26,6 +26,8 @@ export default [
       'web/js/pages/logs.mjs',
       'web/js/pages/module.mjs',
       'web/js/pages/modules.mjs',
+      'web/js/pages/favorites.mjs',
+      'web/js/pages/pack.mjs',
       'web/js/pages/committer.mjs',
       'web/js/pages/committers.mjs',
     ],

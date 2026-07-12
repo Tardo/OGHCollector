@@ -5,6 +5,7 @@
 
     <link rel="prefetch" href="/api" />
     <link rel="prefetch" href="/modules" />
+    <link rel="prefetch" href="/favorites" />
     <link rel="prefetch" href="/atlas" />
     <link rel="prefetch" href="/committers" />
     <link rel="prefetch" href="/logs" />
@@ -55,16 +56,35 @@
                     <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'mcp_info' %}active{% endif %}" href="/mcp">MCP</a></li>
                     {% endif %}
                     <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'logs' %}active{% endif %}" href="/logs">Logs</a></li>
-                    <li class="nav-item ms-xl-3 theme-switch">
-                        <button type="button" class="btn nav-link p-0" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">
-                            <span class="theme-icon">🌙</span>
-                        </button>
-                    </li>
-                    <li class="nav-item ms-xl-3 mode-switch" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
-                        <div class="form-check form-switch my-2 my-xl-0">
-                            <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
-                            <label class="form-check-label" for="dev-mode-switch">Dev mode</label>
-                        </div>
+                    <li class="nav-item dropdown ms-xl-3 avatar-menu">
+                        <a class="nav-link p-0 avatar-menu-toggle {% if page_name == 'favorites' %}active{% endif %}" id="avatarMenuToggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="User menu">
+                            <span class="avatar-badge" aria-hidden="true">
+                                <span class="avatar-badge-face">
+                                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                                        <circle cx="8" cy="5" r="3"></circle>
+                                        <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6z"></path>
+                                    </svg>
+                                </span>
+                            </span>
+                            <span class="visually-hidden">Open user menu</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end avatar-dropdown-menu" aria-labelledby="avatarMenuToggle">
+                            <li><a class="dropdown-item {% if page_name == 'favorites' %}active{% endif %}" href="/favorites">&#9733; Favorites &amp; Packs</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <button type="button" class="dropdown-item theme-switch d-flex align-items-center gap-2" id="theme-toggle" title="Toggle light / dark theme">
+                                    <span class="theme-icon">🌙</span> Toggle theme
+                                </button>
+                            </li>
+                            <li>
+                                <div class="dropdown-item-text">
+                                    <div class="form-check form-switch mode-switch mb-0" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
+                                        <label class="form-check-label" for="dev-mode-switch">Dev mode</label>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
                     </li>
                 </ul>
             </div>

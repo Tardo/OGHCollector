@@ -1,0 +1,67 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Favorites & Packs" %}
+{% set meta_description = "Your favorite Odoo modules and custom packs, saved locally in this browser." %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/favorites.css" as="style">
+    <script type="module" src="/static/auto/favorites.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<header class="page-header">
+    <h1>Favorites &amp; Packs</h1>
+    <p class="page-header-desc">Modules you starred and the packs you built from them.</p>
+</header>
+
+<div class="alert alert-warning" role="alert">
+    <strong>Stored only in this browser.</strong> Favorites and packs are saved in this browser's local storage on this computer &mdash; they are never sent to the server, are not synced across devices or browsers, and are visible to anyone else who uses this browser profile. Clearing the browser's site data deletes them for good.
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label">Favorites</div>
+            <div class="stat-card-value" id="stat_favorites">0</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label">Packs</div>
+            <div class="stat-card-value" id="stat_packs">0</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label">Modules in packs</div>
+            <div class="stat-card-value" id="stat_pack_modules">0</div>
+        </div>
+    </div>
+</div>
+
+<section id="favorites_section" class="mb-5">
+    <h2 class="fs-4 mb-3">Favorites</h2>
+    <div id="favorites_list" class="module-tile-grid"></div>
+    <div id="favorites_empty" class="empty-state d-none">
+        <span class="empty-state-icon" aria-hidden="true">&#9734;</span>
+        <p class="mb-0">No favorites yet &mdash; open a module page and click &ldquo;Favorite&rdquo;.</p>
+    </div>
+</section>
+
+<section id="packs_section">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="fs-4 mb-0">Packs</h2>
+        <div class="d-flex gap-2">
+            <select class="form-select form-select-sm w-auto" id="new_pack_version" aria-label="Odoo version for the new pack"></select>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="new_pack_btn">+ New pack</button>
+        </div>
+    </div>
+    <div id="packs_list" class="d-flex flex-column gap-4"></div>
+    <div id="packs_empty" class="empty-state d-none">
+        <span class="empty-state-icon" aria-hidden="true">&#128230;</span>
+        <p class="mb-0">No packs yet &mdash; create one to group modules together.</p>
+    </div>
+</section>
+{% endblock %}

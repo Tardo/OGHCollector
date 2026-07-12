@@ -1,0 +1,84 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Shared pack" %}
+{% set meta_description = "A shared Odoo module pack: modules, disk size, export to Doodba or import into your own Packs." %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/pack.css" as="style">
+    <script type="module" src="/static/auto/pack.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<header class="page-header">
+    <h1 id="pack_title">Shared pack</h1>
+    <p class="page-header-desc" id="pack_subtitle">Decoding link&hellip;</p>
+</header>
+
+<div id="pack_invalid" class="alert alert-danger d-none" role="alert">
+    This link doesn&rsquo;t contain a valid pack &mdash; check the URL wasn&rsquo;t truncated when it was shared.
+</div>
+
+<div id="pack_content" class="d-none">
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Modules</div>
+                <div class="stat-card-value" id="pack_stat_modules">&ndash;</div>
+                <div class="stat-card-note" id="pack_stat_modules_note"></div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Disk size</div>
+                <div class="stat-card-value" id="pack_stat_size">&ndash;</div>
+                <div class="stat-card-note" id="pack_stat_size_note">Latest tracked version per module</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Organizations</div>
+                <div class="stat-card-value" id="pack_stat_orgs">&ndash;</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Repositories</div>
+                <div class="stat-card-value" id="pack_stat_repos">&ndash;</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <h2 class="fs-6 text-uppercase text-body-secondary mb-3">Modules</h2>
+            <div id="pack_module_list" class="module-tile-grid"></div>
+        </div>
+        <div class="col-lg-4 d-flex flex-column gap-3">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="fs-6 card-title">Share this pack</h2>
+                    <div class="input-group input-group-sm mb-3">
+                        <input type="text" class="form-control" id="pack_share_url" readonly aria-label="Shareable link">
+                        <button class="btn btn-outline-secondary" type="button" id="pack_copy_link_btn">Copy</button>
+                    </div>
+                    <canvas id="pack_qr" class="pack-qr"></canvas>
+                    <p class="text-body-secondary small mb-0 d-none" id="pack_qr_unavailable">Pack too large for a QR code &mdash; share the link above instead.</p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body d-flex flex-column gap-2">
+                    <h2 class="fs-6 card-title">Actions</h2>
+                    <button type="button" class="btn btn-outline-success btn-sm" id="pack_import_btn">+ Add to my Packs</button>
+                    <label for="pack_export_version" class="form-label small text-body-secondary mb-0">Convert to Odoo version</label>
+                    <div class="d-flex gap-2">
+                        <select class="form-select form-select-sm" id="pack_export_version" aria-label="Convert this pack to another Odoo version"></select>
+                        <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" id="pack_export_btn">Export</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

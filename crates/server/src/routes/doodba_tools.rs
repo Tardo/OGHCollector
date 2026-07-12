@@ -1,5 +1,5 @@
 // Copyright Alexandre D. Díaz
-use crate::routes::api::v1::module::{process_modules_db, ModuleDependencyInfoResponse};
+use crate::routes::api::v1::module::process_modules_db;
 use actix_multipart::form::{text::Text, MultipartForm};
 use actix_web::{get, post, web, Error as AWError, HttpRequest, HttpResponse, Responder, Result};
 use diesel::sqlite::SqliteConnection;
@@ -80,22 +80,39 @@ pub async fn route_doodba_dependency_resolver(
     )
 }
 
+// Same shape as ModuleDependencyInfoResponse plus `repos` (repo name ->
+// organization), needed to emit a doodba repos.yaml (git remotes) - kept as
+// an additive JSON field so the existing dependency-resolver frontend (which
+// only reads odoo/pip/bin) doesn't need to change.
+#[derive(Debug, Serialize)]
+pub struct DoodbaAddonsResponse {
+    pub odoo: HashMap<String, Vec<String>>,
+    pub pip: Vec<String>,
+    pub bin: Vec<String>,
+    pub repos: HashMap<String, String>,
+}
+
 fn get_doodba_addons_full(
     conn: &mut SqliteConnection,
     mods: &[Text<String>],
     odoo_version: &str,
-) -> ModuleDependencyInfoResponse {
+) -> DoodbaAddonsResponse {
     let odoo_ver = odoo_version_string_to_u8(odoo_version);
     let modules: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
     let modules = models::module::get_by_technical_name_odoo_version(conn, &modules, &odoo_ver);
     let modules_infos = process_modules_db(conn, &modules, None);
 
-    let mut dependencies_info = ModuleDependencyInfoResponse {
+    let mut dependencies_info = DoodbaAddonsResponse {
         odoo: HashMap::new(),
         pip: Vec::new(),
         bin: Vec::new(),
+        repos: HashMap::new(),
     };
     for module_info in modules_infos {
+        dependencies_info
+            .repos
+            .entry(module_info.repository.clone())
+            .or_insert(module_info.organization);
         let main_odoo_deps = dependencies_info
             .odoo
             .entry(module_info.repository)
@@ -104,11 +121,15 @@ fn get_doodba_addons_full(
             main_odoo_deps.push(module_info.technical_name);
         }
         for (key, values) in module_info.dependencies.odoo {
-            let new_key = match key.split_once('/') {
-                Some((_, repo_name)) => repo_name.to_string(),
-                None => key,
+            let (org_name, repo_name) = match key.split_once('/') {
+                Some((org, repo)) => (org.to_string(), repo.to_string()),
+                None => (String::new(), key),
             };
-            let vec_ref = dependencies_info.odoo.entry(new_key).or_default();
+            dependencies_info
+                .repos
+                .entry(repo_name.clone())
+                .or_insert(org_name);
+            let vec_ref = dependencies_info.odoo.entry(repo_name).or_default();
             let new_values: Vec<String> = values
                 .into_iter()
                 .filter(|v| !vec_ref.contains(v))

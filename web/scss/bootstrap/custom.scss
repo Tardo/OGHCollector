@@ -44,39 +44,78 @@ html[data-mode='user'] .dev-only {
     }
   }
 
-  .mode-switch {
-    .form-check-input,
-    .form-check-label {
-      cursor: pointer;
-    }
-
-    .form-check-label {
-      color: var(--bs-navbar-color);
-      font-size: 0.875rem;
-    }
-  }
-
-  .theme-switch .btn {
-    font-size: 1.1rem;
-    line-height: 1;
-    color: var(--bs-navbar-color);
-    // Bootstrap's base .btn ships a permanent glossy inset shadow
-    // (inset 0 1px 0 rgba(white,.15), 0 1px 1px rgba(black,.075)); on an
-    // icon-only button that reads as a stray rounded outline/line, focus
-    // or not. This button has no color variant to override it otherwise.
+  .avatar-menu-toggle {
+    display: inline-flex;
     box-shadow: none;
 
     &:focus-visible {
       outline: 2px solid var(--ommd-accent);
       outline-offset: 2px;
     }
+  }
 
+  // Flat, bordered circle - same visual language as .stat-card /
+  // .spec-sheet (solid surface + translucent border, no gradients). State
+  // is shown by color, not motion: hover/open darken it, .active (current
+  // page is Favorites, the only page this menu links to) gets a steady ring.
+  .avatar-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.15rem;
+    height: 2.15rem;
+    border-radius: 50%;
+    background-color: var(--ommd-accent);
+    border: 1px solid var(--bs-border-color-translucent);
+    transition:
+      background-color 0.15s ease,
+      transform 0.1s ease;
+  }
+
+  .avatar-menu-toggle:hover .avatar-badge,
+  .avatar-menu-toggle[aria-expanded="true"] .avatar-badge {
+    background-color: var(--ommd-accent-dim);
+  }
+
+  .avatar-menu-toggle:active .avatar-badge {
+    transform: scale(0.93);
+  }
+
+  .avatar-menu-toggle.active .avatar-badge {
+    box-shadow: 0 0 0 2px var(--ommd-accent);
+  }
+
+  .avatar-badge-face {
+    display: inline-flex;
+    color: var(--bs-body-bg);
+
+    svg {
+      width: 1rem;
+      height: 1rem;
+      display: block;
+    }
+  }
+}
+
+// The avatar's dropdown now also hosts the theme toggle and dev-mode switch
+// (moved out of their own standalone nav items).
+.avatar-dropdown-menu {
+  min-width: 14rem;
+
+  .theme-switch {
     .theme-icon {
       display: inline-block;
     }
 
     .theme-icon.spin {
       animation: theme-icon-spin 0.4s ease;
+    }
+  }
+
+  .mode-switch {
+    .form-check-input,
+    .form-check-label {
+      cursor: pointer;
     }
   }
 }

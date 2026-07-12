@@ -36,7 +36,7 @@
     <mirlo-module-search class="d-block" />
 </div>
 
-<div class="position-fixed end-0 p-3 d-none d-lg-block ">
+<div class="position-fixed start-0 p-3 d-none d-lg-block ">
     <div class="toast align-items-center show" role="alert" aria-live="assertive" aria-atomic="true">
         <div class="d-flex">
             <div class="toast-body">
@@ -62,6 +62,15 @@
     <div>
         <h1>{{ modules[0].name if modules else technical_name }}</h1>
         <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
+    </div>
+    <div class="dropdown module-favorite-actions" data-org="{{ org }}" data-technical-name="{{ technical_name }}" data-name="{{ modules[0].name if modules else technical_name }}">
+        <button type="button" class="btn btn-outline-secondary favorite-toggle-btn" title="Add to favorites (saved in this browser only)">
+            <span class="favorite-icon">&#9734;</span> Favorite
+        </button>
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Add to a pack (saved in this browser only)">
+            <span class="visually-hidden">Add to pack</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end pack-dropdown-menu"></ul>
     </div>
 </header>
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">

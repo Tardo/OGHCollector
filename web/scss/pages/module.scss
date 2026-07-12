@@ -5,6 +5,16 @@
     gap: 1rem;
 }
 
+.module-favorite-actions {
+    margin-left: auto;
+    flex-shrink: 0;
+
+    .favorite-toggle-btn.active {
+        color: var(--bs-warning);
+        border-color: var(--bs-warning);
+    }
+}
+
 .module-icon {
     width: 3rem;
     height: 3rem;

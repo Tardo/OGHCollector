@@ -4,6 +4,17 @@ import '@scss/main.scss';
 
 window.bootstrap = bootstrap;
 
+// Restarts a CSS animation bound to `className` on `el`. remove() then
+// add() back-to-back isn't enough on repeat triggers - without a style
+// flush in between, the browser can coalesce both mutations into one
+// recalc and never see the class as "removed", so the animation doesn't
+// restart. Reading offsetWidth forces that flush.
+function restartAnimation(el, className) {
+  el.classList.remove(className);
+  const _ = el.offsetWidth; // read forces the reflow; value itself unused
+  el.classList.add(className);
+}
+
 // User/Developer mode switch (data-mode is set pre-paint in base_layout.html)
 function initModeSwitch() {
   const dev_switch = document.getElementById('dev-mode-switch');
@@ -36,8 +47,7 @@ function initThemeSwitch() {
     document.documentElement.dataset.bsTheme = theme;
     localStorage.setItem('ommd_theme', theme);
     syncIcon();
-    icon.classList.remove('spin');
-    requestAnimationFrame(() => icon.classList.add('spin'));
+    restartAnimation(icon, 'spin');
   });
 }
 

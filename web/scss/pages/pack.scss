@@ -1,0 +1,18 @@
+// Copyright 2026 Alexandre D. Díaz
+@import "../components/module-tile";
+
+.pack-qr {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+}
+
+#pack_content .card {
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: var(--bs-border-radius-lg);
+
+    .card-body {
+        padding: 1.25rem;
+    }
+}
