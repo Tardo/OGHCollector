@@ -163,7 +163,7 @@ async fn main() {
 
     log::info!("Analazyng '{}' repos...", repo_infos.len());
     let analyzer = OGHCollectorAnalyzer::new(odoo_ver);
-    let manifest_infos = analyzer.get_module_info(config.get_read_paths(), &repo_infos);
+    let manifest_infos = analyzer.get_module_info(&mut conn, config.get_read_paths(), &repo_infos);
     let manifest_count = &manifest_infos.len();
     if manifest_count.gt(&0) {
         log::info!("Saving '{}' repos info...", manifest_infos.len());
@@ -184,77 +184,83 @@ async fn main() {
                 .or_default();
             module_ids.push(new_module.id);
 
-            // Resolve (or start) the history entry for this manifest version,
-            // then replace the module's code analysis (views touched, models
-            // defined/extended with their fields and public methods, and
-            // every other record it touches - access groups, record rules,
-            // access rights, ...) scoped to that version, on every run,
-            // independent of whether any manifest field changed. A prior
-            // version's snapshot is left untouched - only its own
-            // module_version_id gets wiped/rebuilt.
-            let module_version = models::module_version::get_or_create(
-                &mut conn,
-                &new_module.id,
-                &new_module_info.version_module,
-            )
-            .unwrap();
-            models::module_view::replace_for_module(
-                &mut conn,
-                &new_module.id,
-                &module_version.id,
-                &new_module_info.analysis.views,
-            )
-            .unwrap();
-            models::module_model::replace_for_module(
-                &mut conn,
-                &new_module.id,
-                &module_version.id,
-                &new_module_info.analysis.models,
-            )
-            .unwrap();
-            models::module_record::replace_for_module(
-                &mut conn,
-                &new_module.id,
-                &module_version.id,
-                &new_module_info.analysis.records,
-            )
-            .unwrap();
-            models::module_controller::replace_for_module(
-                &mut conn,
-                &new_module.id,
-                &module_version.id,
-                &new_module_info.analysis.controllers,
-            )
-            .unwrap();
-
-            // Static security checks over the records and HTTP controllers
-            // just analyzed: grave findings land in module_security_warning
-            // (shown on the module detail page), minor ones only leave a
-            // system_event log line.
-            let mut sec_warnings = security::analyze_records(&new_module_info.analysis.records);
-            sec_warnings.extend(security::analyze_controllers(
-                &new_module_info.analysis.controllers,
-            ));
-            for w in sec_warnings
-                .iter()
-                .filter(|w| w.severity != models::module_security_warning::SEVERITY_ERROR)
-            {
-                let _ = models::system_event::register_security_warning(
+            // The analyzer already skipped re-parsing this module's source
+            // (see OGHCollectorAnalyzer::get_module_info) when its last
+            // commit hash matched what's already stored, so `analysis` here
+            // is empty - replacing stored data with it would wipe it.
+            if !new_module_info.source_unchanged {
+                // Resolve (or start) the history entry for this manifest version,
+                // then replace the module's code analysis (views touched, models
+                // defined/extended with their fields and public methods, and
+                // every other record it touches - access groups, record rules,
+                // access rights, ...) scoped to that version, on every run,
+                // independent of whether any manifest field changed. A prior
+                // version's snapshot is left untouched - only its own
+                // module_version_id gets wiped/rebuilt.
+                let module_version = models::module_version::get_or_create(
                     &mut conn,
-                    &new_module.technical_name,
-                    &new_module.name,
-                    &odoo_ver_str,
-                    w.xml_id.as_deref(),
-                    &w.message,
-                );
+                    &new_module.id,
+                    &new_module_info.version_module,
+                )
+                .unwrap();
+                models::module_view::replace_for_module(
+                    &mut conn,
+                    &new_module.id,
+                    &module_version.id,
+                    &new_module_info.analysis.views,
+                )
+                .unwrap();
+                models::module_model::replace_for_module(
+                    &mut conn,
+                    &new_module.id,
+                    &module_version.id,
+                    &new_module_info.analysis.models,
+                )
+                .unwrap();
+                models::module_record::replace_for_module(
+                    &mut conn,
+                    &new_module.id,
+                    &module_version.id,
+                    &new_module_info.analysis.records,
+                )
+                .unwrap();
+                models::module_controller::replace_for_module(
+                    &mut conn,
+                    &new_module.id,
+                    &module_version.id,
+                    &new_module_info.analysis.controllers,
+                )
+                .unwrap();
+
+                // Static security checks over the records and HTTP controllers
+                // just analyzed: grave findings land in module_security_warning
+                // (shown on the module detail page), minor ones only leave a
+                // system_event log line.
+                let mut sec_warnings = security::analyze_records(&new_module_info.analysis.records);
+                sec_warnings.extend(security::analyze_controllers(
+                    &new_module_info.analysis.controllers,
+                ));
+                for w in sec_warnings
+                    .iter()
+                    .filter(|w| w.severity != models::module_security_warning::SEVERITY_ERROR)
+                {
+                    let _ = models::system_event::register_security_warning(
+                        &mut conn,
+                        &new_module.technical_name,
+                        &new_module.name,
+                        &odoo_ver_str,
+                        w.xml_id.as_deref(),
+                        &w.message,
+                    );
+                }
+                models::module_security_warning::replace_for_module(
+                    &mut conn,
+                    &new_module.id,
+                    &module_version.id,
+                    &sec_warnings,
+                )
+                .unwrap();
             }
-            models::module_security_warning::replace_for_module(
-                &mut conn,
-                &new_module.id,
-                &module_version.id,
-                &sec_warnings,
-            )
-            .unwrap();
 
             // Check Odoo Version
             if manifest.version_odoo.ne(odoo_ver) && manifest.installable {

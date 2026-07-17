@@ -83,7 +83,7 @@ pub struct CommitterActivity {
     pub periods: HashMap<(i32, i32), u32>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ManifestInfo {
     pub technical_name: String,
     pub version_odoo: u8,
@@ -114,6 +114,12 @@ pub struct ManifestInfo {
     pub last_commit_partof: String,
     pub committers: HashMap<String, CommitterActivity>,
     pub analysis: ModuleAnalysisInfo,
+    /// Set by the analyzer when `last_commit_hash` matches what's already
+    /// stored for this module: `analysis`/`committers` above were left empty
+    /// instead of being recomputed (no new commits means nothing to add), so
+    /// callers must skip any step that would replace stored analysis data
+    /// with these empty defaults.
+    pub source_unchanged: bool,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -1204,9 +1210,46 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
         changes.push(("Folder Size", &module_folder_size_str, &folder_size_str));
     }
 
-    if changes.is_empty() {
+    // A hash-only change (source touched, but no manifest field moved) must
+    // still persist - otherwise last_commit_* freezes at the first insert
+    // forever (the `changes` list above only tracks manifest fields), and
+    // OGHCollectorAnalyzer::get_module_info's unchanged-module skip - which
+    // compares against this stored hash - would never see a hash it can
+    // trust. But a truly unchanged module must stay untouched: update_date
+    // is shown on the module page and served over the API/MCP, and bumping
+    // it here for every module on every run would be a visible regression.
+    let hash_changed = !module_info.last_commit_hash.is_empty()
+        && existing_module.last_commit_hash != module_info.last_commit_hash;
+    if changes.is_empty() && !hash_changed {
         return Ok(existing_module);
     }
+
+    // A git failure yields empty last_commit_* on `module_info` (see
+    // OGHCollectorAnalyzer::get_git_info) - fall back to what's already
+    // stored rather than clobbering good commit metadata with blanks.
+    let (commit_hash, commit_author, commit_name, commit_date, commit_partof): (
+        &str,
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+    ) = if module_info.last_commit_hash.is_empty() {
+        (
+            existing_module.last_commit_hash.as_str(),
+            existing_module.last_commit_author.as_str(),
+            existing_module.last_commit_name.as_str(),
+            existing_module.last_commit_date.as_str(),
+            existing_module.last_commit_partof.as_deref(),
+        )
+    } else {
+        (
+            module_info.last_commit_hash.as_str(),
+            module_info.last_commit_author.as_str(),
+            module_info.last_commit_name.as_str(),
+            module_info.last_commit_date.as_str(),
+            last_commit_partof,
+        )
+    };
 
     let update_date = get_sqlite_utc_now();
     diesel::update(module::table.filter(module::id.eq(existing_module.id)))
@@ -1225,25 +1268,32 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             module::installable.eq(module_info.installable),
             module::update_date.eq(&update_date),
             module::folder_size.eq(module_info.folder_size as i64),
+            module::last_commit_hash.eq(commit_hash),
+            module::last_commit_author.eq(commit_author),
+            module::last_commit_name.eq(commit_name),
+            module::last_commit_date.eq(commit_date),
+            module::last_commit_partof.eq(commit_partof),
         ))
         .execute(conn)?;
 
-    let odoo_ver = odoo_version_u8_to_string(&module_info.version_odoo);
-    let log_info = LogUpdateModuleInfo {
-        module_technical_name: module_info.technical_name.as_str(),
-        module_name: module_info.name.as_str(),
-        module_version: module_info.version_module.as_str(),
-        org_name: module_info.git_org.as_str(),
-        repo_name: module_info.git_repo.as_str(),
-        module_version_odoo: odoo_ver.as_str(),
-        module_changes: &changes,
-        last_commit_hash: &existing_module.last_commit_hash,
-        last_commit_author: &existing_module.last_commit_author,
-        last_commit_date: &existing_module.last_commit_date,
-        last_commit_name: &existing_module.last_commit_name,
-        last_commit_partof: existing_module.last_commit_partof_str(),
-    };
-    let _ = system_event::register_update_module(conn, &log_info);
+    if !changes.is_empty() {
+        let odoo_ver = odoo_version_u8_to_string(&module_info.version_odoo);
+        let log_info = LogUpdateModuleInfo {
+            module_technical_name: module_info.technical_name.as_str(),
+            module_name: module_info.name.as_str(),
+            module_version: module_info.version_module.as_str(),
+            org_name: module_info.git_org.as_str(),
+            repo_name: module_info.git_repo.as_str(),
+            module_version_odoo: odoo_ver.as_str(),
+            module_changes: &changes,
+            last_commit_hash: commit_hash,
+            last_commit_author: commit_author,
+            last_commit_date: commit_date,
+            last_commit_name: commit_name,
+            last_commit_partof: commit_partof.unwrap_or(""),
+        };
+        let _ = system_event::register_update_module(conn, &log_info);
+    }
 
     get_by_technical_name(
         conn,

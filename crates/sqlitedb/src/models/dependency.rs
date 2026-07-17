@@ -321,6 +321,7 @@ mod tests {
                 last_commit_partof: String::new(),
                 committers: HashMap::new(),
                 analysis: Default::default(),
+                source_unchanged: false,
             },
         )
         .unwrap()

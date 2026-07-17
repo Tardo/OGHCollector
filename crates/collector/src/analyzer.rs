@@ -12,8 +12,10 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 
 use oghutils::version::OdooVersion;
+use sqlitedb::models::module;
 use sqlitedb::models::module::{CommitterActivity, ManifestInfo};
 use sqlitedb::models::module_code_analysis::ModuleAnalysisInfo;
+use sqlitedb::DbSqliteConnection;
 
 use crate::gitclient::RepoInfo;
 
@@ -1097,6 +1099,7 @@ impl OGHCollectorAnalyzer {
                 last_commit_partof: String::new(),
                 committers: HashMap::new(),
                 analysis: ModuleAnalysisInfo::default(),
+                source_unchanged: false,
             })
         })
     }
@@ -1132,11 +1135,23 @@ impl OGHCollectorAnalyzer {
         }
     }
 
+    /// Skips re-parsing a module's source (the expensive part: full AST walk
+    /// of every .py/.xml/.csv file, plus the git committer/folder-size scans)
+    /// when its last commit hash hasn't moved since the previous run - the
+    /// same signal already stored on the `module` row. Set
+    /// `OGHCOLLECTOR_FORCE_REANALYZE` to bypass this and re-analyze
+    /// everything regardless (e.g. after changing `ANALYZER_PY_SRC` itself:
+    /// a code-only change never shows up as a module commit, so nothing
+    /// would otherwise invalidate the stale analysis).
+    // ponytail: analyzer-version marker stored per module would auto-detect
+    // that case and make the env var unnecessary; add if this bites someone.
     pub fn get_module_info(
         &self,
+        conn: &mut DbSqliteConnection,
         read_paths: &Vec<String>,
         repo_infos: &Vec<RepoInfo>,
     ) -> Vec<ManifestInfo> {
+        let force_reanalyze = std::env::var("OGHCOLLECTOR_FORCE_REANALYZE").is_ok();
         let mut manifest_infos: Vec<ManifestInfo> = Vec::new();
         for repo_info in repo_infos {
             for read_path in read_paths {
@@ -1156,38 +1171,72 @@ impl OGHCollectorAnalyzer {
                     let Ok(entry) = entry else { continue };
                     let path = entry.path();
                     let manifest_filename_opt = self.is_odoo_module_folder(&path).ok().flatten();
-                    if let Some(manifest_filename) = manifest_filename_opt {
-                        let folder_size = get_size(&path).unwrap_or(0);
-                        let git_info = self.get_git_info(&path).unwrap_or_default();
-                        let committers = self.get_git_committers(&path).unwrap_or_default();
-                        let manifest_path = format!("{}/{}", path.display(), manifest_filename);
-                        let Some(module_name) = path.file_name().and_then(|n| n.to_str()) else {
+                    let Some(manifest_filename) = manifest_filename_opt else {
+                        continue;
+                    };
+                    let Some(module_name) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+                    let git_info = self.get_git_info(&path).unwrap_or_default();
+
+                    let existing = module::get_by_technical_name_odoo_version_organization_name_repository_name(
+                        conn,
+                        module_name,
+                        &self.version_odoo,
+                        repo_info.get_org(),
+                        repo_info.get_name(),
+                    )
+                    .into_iter()
+                    .next();
+                    let source_unchanged = !force_reanalyze
+                        && !git_info.last_commit_hash.is_empty()
+                        && existing
+                            .as_ref()
+                            .is_some_and(|m| m.last_commit_hash == git_info.last_commit_hash);
+
+                    let (folder_size, committers, analysis) = if source_unchanged {
+                        log::info!(
+                            "'{module_name}' unchanged since commit {} - skipping re-analysis",
+                            git_info.last_commit_hash
+                        );
+                        (
+                            existing.as_ref().map_or(0, |m| m.folder_size as u64),
+                            HashMap::new(),
+                            ModuleAnalysisInfo::default(),
+                        )
+                    } else {
+                        (
+                            get_size(&path).unwrap_or(0),
+                            self.get_git_committers(&path).unwrap_or_default(),
+                            self.analyze_module_source(&path),
+                        )
+                    };
+
+                    let manifest_path = format!("{}/{}", path.display(), manifest_filename);
+                    let mut manifest = match self.read_manifest(
+                        repo_info.get_org(),
+                        repo_info.get_name(),
+                        module_name,
+                        &manifest_path,
+                    ) {
+                        Ok(manifest) => manifest,
+                        Err(err) => {
+                            log::warn!(
+                                "Can't read manifest '{manifest_path}': {err}. Skipping module..."
+                            );
                             continue;
-                        };
-                        let mut manifest = match self.read_manifest(
-                            repo_info.get_org(),
-                            repo_info.get_name(),
-                            module_name,
-                            &manifest_path,
-                        ) {
-                            Ok(manifest) => manifest,
-                            Err(err) => {
-                                log::warn!(
-                                    "Can't read manifest '{manifest_path}': {err}. Skipping module..."
-                                );
-                                continue;
-                            }
-                        };
-                        manifest.folder_size = folder_size;
-                        manifest.last_commit_hash = git_info.last_commit_hash;
-                        manifest.last_commit_author = git_info.last_commit_author;
-                        manifest.last_commit_name = git_info.last_commit_name;
-                        manifest.last_commit_date = git_info.last_commit_date;
-                        manifest.last_commit_partof = git_info.last_commit_partof;
-                        manifest.committers = committers;
-                        manifest.analysis = self.analyze_module_source(&path);
-                        manifest_infos.push(manifest);
-                    }
+                        }
+                    };
+                    manifest.folder_size = folder_size;
+                    manifest.last_commit_hash = git_info.last_commit_hash;
+                    manifest.last_commit_author = git_info.last_commit_author;
+                    manifest.last_commit_name = git_info.last_commit_name;
+                    manifest.last_commit_date = git_info.last_commit_date;
+                    manifest.last_commit_partof = git_info.last_commit_partof;
+                    manifest.committers = committers;
+                    manifest.analysis = analysis;
+                    manifest.source_unchanged = source_unchanged;
+                    manifest_infos.push(manifest);
                 }
             }
         }
@@ -1800,6 +1849,112 @@ class PartnerKindController(http.Controller):
         assert_eq!(alice.total, 1, "base commit is outside origin/15.0..HEAD");
         assert_eq!(alice.insertions, 10);
         assert_eq!(alice.deletions, 0);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // Proves the incremental-analysis short-circuit end to end: a module
+    // analyzed once and persisted (like main.rs does after every run) must
+    // be skipped on a re-run with no new commits, and picked back up as soon
+    // as a commit actually touches it.
+    #[test]
+    fn test_get_module_info_skips_unchanged_module_source_analysis() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "get_module_info_skip"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let repos_dir = dir.join("repos");
+        let module_dir = repos_dir.join("my_module");
+        fs::create_dir_all(&module_dir).unwrap();
+        fs::write(
+            module_dir.join("__manifest__.py"),
+            "{'name': 'My Module', 'version': '16.0.1.0.0', 'depends': []}\n",
+        )
+        .unwrap();
+
+        let git = |args: &[&str]| {
+            cmd(
+                "git",
+                args.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
+            )
+            .dir(&repos_dir)
+            .stdin_null()
+            .stdout_null()
+            .stderr_null()
+            .run()
+            .unwrap();
+        };
+        git(&["init", "-q", "-b", "16.0"]);
+        git(&["add", "-A"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@test.com",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ]);
+
+        let db_path = dir.join("data.db");
+        let pool = sqlitedb::new_write_pool(db_path.to_str().unwrap());
+        let mut conn = pool.get().unwrap();
+        sqlitedb::run_migrations(&mut conn).unwrap();
+
+        let repo_infos = vec![RepoInfo {
+            name: "test_repo".to_string(),
+            org: "test_org".to_string(),
+            clone_path: format!("{}/", repos_dir.display()),
+            full_path: repos_dir.to_string_lossy().to_string(),
+        }];
+        let read_paths = vec!["".to_string()];
+        let analyzer = OGHCollectorAnalyzer::new(&160u8);
+
+        // First run: nothing stored yet, so it must analyze and report changed.
+        let first = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
+        assert_eq!(first.len(), 1);
+        assert!(!first[0].source_unchanged);
+        assert!(!first[0].last_commit_hash.is_empty());
+
+        // Persist it, exactly like main.rs does after every run.
+        module::add(&mut conn, &first[0]).unwrap();
+
+        // Second run, no new commits: must skip re-analysis.
+        let second = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
+        assert_eq!(second.len(), 1);
+        assert!(second[0].source_unchanged);
+        assert_eq!(second[0].last_commit_hash, first[0].last_commit_hash);
+
+        // A commit that actually touches the module must invalidate the skip.
+        fs::write(module_dir.join("README.md"), "hello\n").unwrap();
+        git(&["add", "-A"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@test.com",
+            "commit",
+            "-q",
+            "-m",
+            "touch module",
+        ]);
+        let third = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
+        assert_eq!(third.len(), 1);
+        assert!(!third[0].source_unchanged);
+        assert_ne!(third[0].last_commit_hash, first[0].last_commit_hash);
+
+        // Persisting the changed manifest must advance the stored hash (this
+        // is the module::add UPDATE path, not the INSERT path exercised
+        // above) - otherwise the skip could never re-arm after a module's
+        // first real change.
+        module::add(&mut conn, &third[0]).unwrap();
+        let fourth = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
+        assert_eq!(fourth.len(), 1);
+        assert!(fourth[0].source_unchanged);
+        assert_eq!(fourth[0].last_commit_hash, third[0].last_commit_hash);
 
         fs::remove_dir_all(&dir).unwrap();
     }

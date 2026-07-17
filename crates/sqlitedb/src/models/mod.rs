@@ -256,6 +256,7 @@ mod tests {
             last_commit_partof: "".to_string(),
             committers: HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         };
 
         let module = super::module::add(&mut conn, &info).unwrap();
@@ -314,6 +315,7 @@ mod tests {
             last_commit_partof: String::new(),
             committers: HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         };
 
         let m1 = super::module::add(&mut conn, &info).unwrap();
@@ -356,6 +358,7 @@ mod tests {
             last_commit_partof: String::new(),
             committers: HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         };
 
         let module = super::module::add(&mut conn, &module_info).unwrap();
@@ -487,6 +490,7 @@ mod tests {
             last_commit_partof: String::new(),
             committers: HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         };
 
         super::module::add(&mut conn, &make_info("mod_v15", 15)).unwrap();
@@ -532,6 +536,7 @@ mod tests {
             last_commit_partof: String::new(),
             committers: HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         };
 
         super::module::add(&mut conn, &make_info("mod_x")).unwrap();
@@ -590,6 +595,7 @@ mod tests {
             last_commit_partof: String::new(),
             committers: HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         };
 
         let m1 = super::module::add(&mut conn, &make_info("mod_a")).unwrap();
@@ -779,6 +785,7 @@ mod tests {
                 last_commit_partof: String::new(),
                 committers,
                 analysis: Default::default(),
+                source_unchanged: false,
             }
         };
 
@@ -844,6 +851,7 @@ mod tests {
             last_commit_partof: String::new(),
             committers: std::collections::HashMap::new(),
             analysis: Default::default(),
+            source_unchanged: false,
         }
     }
 
