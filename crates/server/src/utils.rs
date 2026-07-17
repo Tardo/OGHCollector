@@ -53,13 +53,16 @@ pub fn normalize_python_dep(name: String) -> String {
     PIP_NAMES_MAP.get(&lower).cloned().unwrap_or(name)
 }
 
+pub fn get_base_url(req: &HttpRequest) -> String {
+    let conn_info = req.connection_info();
+    format!("{}://{}", conn_info.scheme(), conn_info.host())
+}
+
 pub fn get_minijinja_context(req: &HttpRequest) -> Value {
-    let scheme = req.connection_info().scheme().to_string();
-    let host = req.connection_info().host().to_string();
-    let base_url = format!("{scheme}://{host}");
+    let base_url = get_base_url(req);
     context!(
-        REQ_SCHEME => scheme.clone(),
-        REQ_HOST => host.clone(),
+        REQ_SCHEME => req.connection_info().scheme().to_string(),
+        REQ_HOST => req.connection_info().host().to_string(),
         REQ_BASE_URL => base_url.clone(),
         REQ_URL => format!("{}{}", &base_url, req.path()),
         MCP_INFO_ENABLED => SERVER_CONFIG.get_mcp_info_enabled(),
