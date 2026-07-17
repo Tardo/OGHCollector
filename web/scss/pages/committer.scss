@@ -2,4 +2,10 @@
 #committer_search {
     z-index: 3;
     top: 25%;
+
+    // See module.scss/#module_search for why this needs to clear the navbar.
+    @media (max-width: 767.98px) {
+        top: 4.5rem;
+        width: 94vw !important;
+    }
 }

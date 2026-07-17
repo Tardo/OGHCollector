@@ -2,6 +2,7 @@
 import '@app/components/module-search';
 import '@scss/pages/module.scss';
 import {fetchIntoPane, initLazyTabPanes} from '@app/utils/lazy-tab';
+import {bindSearchModal} from '@app/utils/search-modal';
 import {
   addToPack,
   createPack,
@@ -12,26 +13,7 @@ import {
   toggleFavorite,
 } from '@app/utils/favorites-store';
 
-document.body.addEventListener('keydown', ev => {
-  if (ev.ctrlKey || ev.altKey || ev.metaKey) {
-    return;
-  }
-  const search_modal = document.getElementById('module_search');
-  if (search_modal.classList.contains('d-none')) {
-    if (ev.key.length !== 1) {
-      return;
-    }
-    search_modal.classList.remove('d-none');
-    const search_comp = search_modal.querySelector('mirlo-module-search');
-    const input = search_comp.query('input');
-    input.focus();
-  } else if (ev.code === 'Escape') {
-    search_modal.classList.add('d-none');
-    const search_comp = search_modal.querySelector('mirlo-module-search');
-    const input = search_comp.query('input');
-    input.value = '';
-  }
-});
+bindSearchModal('module_search', 'mirlo-module-search');
 
 // Delegated (not queried once at load) since lazy-loaded tabs inject their
 // own `.module-version-select` after this script has already run. Re-fetches

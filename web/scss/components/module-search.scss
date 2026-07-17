@@ -6,6 +6,13 @@
 .search-filters {
     display: flex;
 
+    // The two selects' natural width doesn't leave room for a usable input
+    // below ~768px (see module.scss/#module_search's 94vw mobile override) -
+    // stack field/search/version full-width instead of squeezing the input.
+    @media (max-width: 767.98px) {
+        flex-direction: column;
+    }
+
     select,
     #search {
         position: relative;
@@ -26,6 +33,22 @@
 
         &:last-child {
             border-radius: 0 0.4rem 0.4rem 0;
+        }
+
+        // Column layout collapses borders vertically, not horizontally.
+        @media (max-width: 767.98px) {
+            margin-left: 0;
+            margin-top: -1px;
+            border-radius: 0;
+
+            &:first-child {
+                margin-top: 0;
+                border-radius: 0.4rem 0.4rem 0 0;
+            }
+
+            &:last-child {
+                border-radius: 0 0 0.4rem 0.4rem;
+            }
         }
 
         &:focus {

@@ -35,6 +35,15 @@
 #module_search {
     z-index: 3;
     top: 25%;
+
+    // 4.5rem clears the collapsed sticky-top navbar (~56-64px) - #module_search
+    // sits at a fixed viewport position, so it renders *under* the navbar
+    // (z-index 1020 vs. this element's 3) rather than pushed below it like
+    // normal document flow would.
+    @media (max-width: 767.98px) {
+        top: 4.5rem;
+        width: 94vw !important;
+    }
 }
 
 .module-description {
