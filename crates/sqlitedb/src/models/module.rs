@@ -210,6 +210,7 @@ pub struct ModuleRankCommitterInfo {
 pub struct ModuleRepositoryInfo {
     pub technical_name: String,
     pub repository_name: String,
+    pub organization: String,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -801,29 +802,80 @@ pub fn get_module_repository(
     version_odoo: &u8,
     modules: &[String],
 ) -> Vec<ModuleRepositoryInfo> {
-    use crate::schema::gh_repository;
+    use crate::schema::{gh_organization, gh_repository};
     if modules.is_empty() {
         return vec![];
     }
     let rows = module::table
         .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
         .filter(
             module::technical_name
                 .eq_any(modules)
                 .and(module::version_odoo.eq(*version_odoo as i32)),
         )
-        .select((module::technical_name, gh_repository::name))
-        .load::<(String, String)>(conn)
+        .select((
+            module::technical_name,
+            gh_repository::name,
+            gh_organization::name,
+        ))
+        .load::<(String, String, String)>(conn)
         .expect("DB error in module::get_module_repository");
 
     // One row per technical_name (same as the previous GROUP BY behavior).
     let mut seen = std::collections::HashSet::new();
     rows.into_iter()
-        .filter(|(technical_name, _)| seen.insert(technical_name.clone()))
-        .map(|(technical_name, repository_name)| ModuleRepositoryInfo {
-            technical_name,
-            repository_name,
-        })
+        .filter(|(technical_name, _, _)| seen.insert(technical_name.clone()))
+        .map(
+            |(technical_name, repository_name, organization)| ModuleRepositoryInfo {
+                technical_name,
+                repository_name,
+                organization,
+            },
+        )
+        .collect()
+}
+
+/// Version-agnostic: tells the doodba migration plan tool which requested
+/// modules the system has EVER seen merged, in any version, so it can tell
+/// "registered but not ported to this version yet" apart from modules it has
+/// simply never tracked. Prefers the most recent version's repo/org when a
+/// technical_name moved between repos across versions.
+pub fn get_repository_org_by_technical_names(
+    conn: &mut SqliteConnection,
+    modules: &[String],
+) -> Vec<ModuleRepositoryInfo> {
+    use crate::schema::{gh_organization, gh_repository};
+    if modules.is_empty() {
+        return vec![];
+    }
+    let rows = module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(module::technical_name.eq_any(modules))
+        .order(module::version_odoo.desc())
+        .select((
+            module::technical_name,
+            gh_repository::name,
+            gh_organization::name,
+        ))
+        .load::<(String, String, String)>(conn)
+        .expect("DB error in module::get_repository_org_by_technical_names");
+
+    let mut seen = std::collections::HashSet::new();
+    rows.into_iter()
+        .filter(|(technical_name, _, _)| seen.insert(technical_name.clone()))
+        .map(
+            |(technical_name, repository_name, organization)| ModuleRepositoryInfo {
+                technical_name,
+                repository_name,
+                organization,
+            },
+        )
         .collect()
 }
 

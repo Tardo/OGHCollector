@@ -1,6 +1,10 @@
 // Copyright 2025 Alexandre D. Díaz
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
 import * as yaml from 'js-yaml';
+import {
+  setDragPanelProcessing,
+  showDragPanelError,
+} from '@app/utils/drag-panel-processing';
 import '@scss/components/doodba-converter.scss';
 
 const MANIFEST_NAMES = ['__manifest__.py', '__openerp__.py'];
@@ -180,16 +184,33 @@ class DoodbaConverter extends Component {
       const formData = new FormData();
       formData.append('odoo_version', odoo_ver);
       mods.forEach(mod_name => formData.append('modules', mod_name));
-      const data = await getService('requests').post(
-        '/doodba/converter/addons',
-        {
-          body: formData,
-        },
+      setDragPanelProcessing(this.#el_drag_panel, true);
+      try {
+        const data = await getService('requests').post(
+          '/doodba/converter/addons',
+          {
+            body: formData,
+          },
+        );
+        if (!data.ok) {
+          throw new Error(`Server responded with ${data.status}`);
+        }
+        const json_data = await data.json();
+        const yaml_txt = this.#makeYaml(json_data, mods);
+        this.#showYaml(yaml_txt);
+        this.#el_search_select_ver.disabled = true;
+        setDragPanelProcessing(this.#el_drag_panel, false);
+      } catch (_err) {
+        showDragPanelError(
+          this.#el_drag_panel,
+          'Something went wrong processing the request.',
+        );
+      }
+    } else {
+      showDragPanelError(
+        this.#el_drag_panel,
+        'No modules found (no __manifest__.py/__openerp__.py in the selection).',
       );
-      const json_data = await data.json();
-      const yaml_txt = this.#makeYaml(json_data, mods);
-      this.#showYaml(yaml_txt);
-      this.#el_search_select_ver.disabled = true;
     }
   }
 

@@ -21,17 +21,19 @@
         <meta property="og:title" content="{{ meta_title }} - Odoo Module Metadata">
         <meta property="og:description" content="{{ meta_description }}">
         <meta property="og:url" content="{{ REQ_URL }}">
-        <meta property="og:image" content="{{ REQ_BASE_URL }}/static/favicon.png">
+        <meta property="og:image" content="{{ REQ_BASE_URL }}/static/android-chrome-512x512.png">
         <meta name="twitter:card" content="summary">
         <meta name="twitter:title" content="{{ meta_title }} - Odoo Module Metadata">
         <meta name="twitter:description" content="{{ meta_description }}">
-        <meta name="twitter:image" content="{{ REQ_BASE_URL }}/static/favicon.png">
+        <meta name="twitter:image" content="{{ REQ_BASE_URL }}/static/android-chrome-512x512.png">
         {% else %}
         <meta name="robots" content="noindex, nofollow">
         {% endif %}
         <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
         <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
         <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+        {# Google's favicon-in-search requires a square icon that's a multiple of 48px; the 16/32px ones above are browser-tab only #}
+        <link rel="icon" type="image/png" sizes="192x192" href="/static/android-chrome-192x192.png">
         <link rel="manifest" href="/static/site.webmanifest">
         {# Applied before first paint so dev-only UI / theme never flash wrong #}
         <script>

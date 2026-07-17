@@ -23,7 +23,7 @@
 
 <header class="page-header">
     <h1>Doodba migration plan</h1>
-    <p class="page-header-desc">Plan an Odoo version upgrade. Upload your current <code>addons.yaml</code> and, for every version between "From" and "To", see how it should look plus a <code>repos.yaml</code> with the open PR/MR merges needed for modules not yet merged upstream. Modules with neither a merge nor an open migration PR are listed as missing, so you know what still blocks each jump.</p>
+    <p class="page-header-desc">Plan an Odoo version upgrade. Upload your current <code>addons.yaml</code> and, for every version between "From" and "To", see how it should look plus a <code>repos.yaml</code> needed for modules not yet merged upstream. Odoo dependencies are re-resolved from scratch at each version, so a module your addons.yaml never listed can still show up merged there if one of your modules actually requires it at that version. A module known to this system that isn't merged and has no open PR is listed as missing, so you know what still blocks each jump; a module this system has never tracked at all is listed separately as unknown, since it can't say whether that one exists for the target version or not. <code>repos.yaml</code> is only ever generated with what doodba's base config doesn't already know about: an open PR/MR merge, or any repo outside OCA/odoo. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
 </header>
 
 <mirlo-doodba-migration-plan></mirlo-doodba-migration-plan>

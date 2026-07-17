@@ -38,3 +38,6 @@ chrono.workspace = true
 chrono-tz.workspace = true
 cached.workspace = true
 base64.workspace = true
+
+[dev-dependencies]
+diesel_migrations.workspace = true

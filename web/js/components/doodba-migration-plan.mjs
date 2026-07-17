@@ -2,6 +2,11 @@
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
 import * as yaml from 'js-yaml';
 import JSZip from 'jszip';
+import {
+  setDragPanelProcessing,
+  showDragPanelError,
+  isYamlFile,
+} from '@app/utils/drag-panel-processing';
 import '@scss/components/doodba-migration-plan.scss';
 
 class DoodbaMigrationPlan extends Component {
@@ -76,7 +81,7 @@ class DoodbaMigrationPlan extends Component {
     for (const step of this.#steps) {
       const folder = zip.folder(step.version);
       folder.file('addons.yaml', this.#makeAddonsYaml(step));
-      if (step.pending.length > 0) {
+      if (this.#hasReposYamlEntries(step)) {
         folder.file('repos.yaml', this.#makeReposYaml(step));
       }
     }
@@ -89,6 +94,21 @@ class DoodbaMigrationPlan extends Component {
     elem.click();
     document.body?.removeChild(elem);
     URL.revokeObjectURL(objURL);
+  }
+
+  // OCA/odoo repos are assumed already known to doodba's base repos.yaml, so
+  // they only need an entry here when there's a PR to merge; anything from
+  // another org is unknown to that base config and always needs one.
+  #isStandardOrg(organization) {
+    return organization === 'OCA' || organization === 'odoo';
+  }
+
+  #hasReposYamlEntries(step) {
+    return (
+      step.pending.length > 0 ||
+      step.missing.some(m => !this.#isStandardOrg(m.organization)) ||
+      step.merged.some(m => !this.#isStandardOrg(m.organization))
+    );
   }
 
   #makeAddonsYaml(step) {
@@ -106,7 +126,10 @@ class DoodbaMigrationPlan extends Component {
       grouped[repository_name].push(technical_name);
     }
     if (step.missing.length > 0) {
-      grouped._MISSING_ = [...step.missing];
+      grouped._MISSING_ = step.missing.map(m => m.technical_name);
+    }
+    if (step.unknown.length > 0) {
+      grouped._UNKNOWN_ = [...step.unknown];
     }
     const sorted = Object.keys(grouped)
       .sort()
@@ -128,6 +151,19 @@ class DoodbaMigrationPlan extends Component {
       }
       repos[pr.repository_name].prids.add(pr.prid);
     }
+    // Non-OCA/odoo repos need an explicit entry even with nothing to merge
+    // yet (missing) or already merged (present in this step's addons.yaml) -
+    // doodba's base repos.yaml has no remote for them otherwise.
+    const stageIfNonStandard = ({repository_name, organization}) => {
+      if (this.#isStandardOrg(organization)) {
+        return;
+      }
+      if (!repos[repository_name]) {
+        repos[repository_name] = {organization, prids: new Set()};
+      }
+    };
+    step.missing.forEach(stageIfNonStandard);
+    step.merged.forEach(stageIfNonStandard);
     const result = {};
     for (const repo_name of Object.keys(repos).sort()) {
       const {organization, prids} = repos[repo_name];
@@ -180,10 +216,9 @@ class DoodbaMigrationPlan extends Component {
     repos_label.textContent = 'repos.yaml';
     const repos_textarea = document.createElement('textarea');
     repos_textarea.readOnly = true;
-    repos_textarea.value =
-      step.pending.length > 0
-        ? this.#makeReposYaml(step)
-        : '# No pending migration PRs/MRs for this version.\n';
+    repos_textarea.value = this.#hasReposYamlEntries(step)
+      ? this.#makeReposYaml(step)
+      : '# No pending migration PRs/MRs, and no other missing repos, for this version.\n';
     repos_col.append(repos_label, repos_textarea);
 
     columns.append(addons_col, repos_col);
@@ -204,8 +239,17 @@ class DoodbaMigrationPlan extends Component {
     if (step.missing.length > 0) {
       const missing_info = document.createElement('div');
       missing_info.classList.add('migration-step-missing');
-      missing_info.textContent = `❌ Missing (no merge, no open PR): ${step.missing.join(', ')}`;
+      missing_info.textContent = `❌ Missing (registered, no merge, no open PR): ${step.missing
+        .map(m => m.technical_name)
+        .join(', ')}`;
       card.appendChild(missing_info);
+    }
+
+    if (step.unknown.length > 0) {
+      const unknown_info = document.createElement('div');
+      unknown_info.classList.add('migration-step-unknown');
+      unknown_info.textContent = `❓ Unknown to this system, not reported as missing: ${step.unknown.join(', ')}`;
+      card.appendChild(unknown_info);
     }
 
     return card;
@@ -257,37 +301,54 @@ class DoodbaMigrationPlan extends Component {
     });
   }
 
-  async #processYAML(yaml_data) {
-    const modules = Object.values(yaml_data).flat();
-    if (modules.length === 0) {
-      return;
+  // Reads, parses and posts `file` in one guarded path so a malformed
+  // addons.yaml or a request failure both surface the same way instead of
+  // one of them silently doing nothing.
+  async #processFile(file) {
+    setDragPanelProcessing(this.#el_drag_panel, true);
+    try {
+      const file_text = await this.#readFileAsText(file);
+      const yaml_data = yaml.load(file_text);
+      const modules = Object.values(yaml_data).flat();
+      if (modules.length === 0) {
+        throw new Error('No modules found in the file.');
+      }
+      const from_ver =
+        this.#el_search_select_from.value ||
+        this.getFetchData('odoo_versions')[0].value;
+      const to_ver = this.#el_search_select_to.value;
+      const formData = new FormData();
+      formData.append('from_version', from_ver);
+      if (to_ver) {
+        formData.append('to_version', to_ver);
+      }
+      modules.forEach(mod_name => formData.append('modules', mod_name));
+      const data = await getService('requests').post('/doodba/migration/plan', {
+        body: formData,
+      });
+      if (!data.ok) {
+        throw new Error(`Server responded with ${data.status}`);
+      }
+      const steps = await data.json();
+      this.#showResults(steps);
+      this.#el_search_select_from.disabled = true;
+      this.#el_search_select_to.disabled = true;
+      setDragPanelProcessing(this.#el_drag_panel, false);
+    } catch (_err) {
+      showDragPanelError(
+        this.#el_drag_panel,
+        'Could not process the file. Check its content and try again.',
+      );
     }
-    const from_ver =
-      this.#el_search_select_from.value ||
-      this.getFetchData('odoo_versions')[0].value;
-    const to_ver = this.#el_search_select_to.value;
-    const formData = new FormData();
-    formData.append('from_version', from_ver);
-    if (to_ver) {
-      formData.append('to_version', to_ver);
-    }
-    modules.forEach(mod_name => formData.append('modules', mod_name));
-    const data = await getService('requests').post('/doodba/migration/plan', {
-      body: formData,
-    });
-    const steps = await data.json();
-    this.#showResults(steps);
-    this.#el_search_select_from.disabled = true;
-    this.#el_search_select_to.disabled = true;
   }
 
   async onDrop(ev) {
     ev.preventDefault();
-    const raw_item = ev.dataTransfer.items[0];
-    const file = raw_item.getAsFile();
-    if (file.type.endsWith('/yaml')) {
-      const file_text = await this.#readFileAsText(file);
-      this.#processYAML(yaml.load(file_text));
+    const file = ev.dataTransfer.items[0]?.getAsFile();
+    if (isYamlFile(file)) {
+      this.#processFile(file);
+    } else {
+      showDragPanelError(this.#el_drag_panel, 'Please drop a .yaml/.yml file.');
     }
   }
 
@@ -297,11 +358,10 @@ class DoodbaMigrationPlan extends Component {
     elem.type = 'file';
     elem.hidden = true;
     elem.setAttribute('accept', '.yaml,.yml');
-    elem.addEventListener('change', async ev_chg => {
+    elem.addEventListener('change', ev_chg => {
       const file = ev_chg.target.files[0];
-      if (file.type.endsWith('/yaml')) {
-        const file_text = await this.#readFileAsText(file);
-        this.#processYAML(yaml.load(file_text));
+      if (isYamlFile(file)) {
+        this.#processFile(file);
       }
     });
     document.body?.appendChild(elem);

@@ -549,6 +549,7 @@ mod tests {
         assert_eq!(infos.len(), 2);
         assert_eq!(infos[0].technical_name, "mod'z");
         assert_eq!(infos[0].repository_name, "repo-a");
+        assert_eq!(infos[0].organization, "RepoOrg");
         assert_eq!(infos[1].technical_name, "mod_x");
 
         assert!(super::module::get_module_repository(&mut conn, &16u8, &[]).is_empty());

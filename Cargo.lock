@@ -3195,6 +3195,7 @@ dependencies = [
  "chrono-tz",
  "config",
  "diesel",
+ "diesel_migrations",
  "env_logger",
  "futures",
  "futures-util",

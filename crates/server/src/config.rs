@@ -16,6 +16,7 @@ pub struct OGHServerConfig {
     upload_limit: usize,
     cache_ttl: u64,
     db_pool_max_size: u32,
+    doodba_max_modules: usize,
     mcp_info_enabled: bool,
     mcp_url: String,
     trusted_proxies: Vec<IpNet>,
@@ -47,6 +48,7 @@ impl OGHServerConfig {
         let upload_limit = settings.get_int("upload_limit").unwrap_or(2 * 1024 * 1024) as usize;
         let cache_ttl = settings.get_int("cache_ttl").unwrap_or(3600) as u64;
         let db_pool_max_size = settings.get_int("db_pool_max_size").unwrap_or(15) as u32;
+        let doodba_max_modules = settings.get_int("doodba_max_modules").unwrap_or(500) as usize;
         let mcp_info_enabled = settings.get_bool("mcp_info_enabled").unwrap_or(false);
         let mcp_url = settings
             .get_string("mcp_url")
@@ -74,6 +76,7 @@ impl OGHServerConfig {
             upload_limit,
             cache_ttl,
             db_pool_max_size,
+            doodba_max_modules,
             mcp_info_enabled,
             mcp_url,
             trusted_proxies,
@@ -132,6 +135,10 @@ impl OGHServerConfig {
 
     pub fn get_db_pool_max_size(&self) -> &u32 {
         &self.db_pool_max_size
+    }
+
+    pub fn get_doodba_max_modules(&self) -> &usize {
+        &self.doodba_max_modules
     }
 
     pub fn get_mcp_info_enabled(&self) -> bool {

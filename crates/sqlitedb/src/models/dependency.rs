@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::schema::dependency;
 
-use super::module;
+use super::{dependency_module, module};
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
 #[diesel(table_name = dependency, check_for_backend(diesel::sqlite::Sqlite))]
@@ -149,6 +149,94 @@ pub fn get_full_dependency_info(
     seen.clear();
     info.bin.retain(|x| seen.insert(x.clone()));
     info
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct FullDependencyInfoWithUnresolved {
+    pub resolved: FullDependencyInfo,
+    // Declared Odoo module dependencies with no matching module row at the
+    // walked version - a real migration blocker, as opposed to a dependency
+    // simply not tracked by this system at all (that distinction is up to
+    // the caller, this only reports what's declared-but-unresolved here).
+    pub unresolved: Vec<String>,
+}
+
+fn collect_full_dependency_info_with_unresolved(
+    conn: &mut SqliteConnection,
+    mod_: &module::Model,
+    module_dep_type_id: &i64,
+    result: &mut FullDependencyInfoWithUnresolved,
+    visited: &mut HashSet<i64>,
+) {
+    result
+        .resolved
+        .pip
+        .extend(get_module_external_dependency_names(
+            conn, &mod_.id, "python",
+        ));
+    result
+        .resolved
+        .bin
+        .extend(get_module_external_dependency_names(conn, &mod_.id, "bin"));
+
+    let declared = dependency_module::get_names(conn, &mod_.id, module_dep_type_id);
+    let resolved = get_module_dependency_info(conn, &mod_.id);
+    let resolved_names: HashSet<&str> = resolved.iter().map(|d| d.module_name.as_str()).collect();
+    for name in declared {
+        if !resolved_names.contains(name.as_str()) {
+            result.unresolved.push(name);
+        }
+    }
+
+    for dep in resolved {
+        let repo_deps = result
+            .resolved
+            .odoo
+            .entry(format!("{}/{}", dep.org, dep.repo))
+            .or_default();
+        if !repo_deps.contains(&dep.module_name) {
+            repo_deps.push(dep.module_name.clone());
+        }
+        if visited.insert(dep.module_id) {
+            let dep_module = module::get_by_id(conn, &dep.module_id)
+                .expect("dependency module referenced by dependency table not found");
+            collect_full_dependency_info_with_unresolved(
+                conn,
+                &dep_module,
+                module_dep_type_id,
+                result,
+                visited,
+            );
+        }
+    }
+}
+
+/// Same traversal as `get_full_dependency_info`, but also surfaces every
+/// declared Odoo module dependency that has no matching module row at the
+/// walked version instead of silently dropping it - the doodba migration
+/// plan tool's "this jump is blocked by an unported dependency" signal,
+/// which a caller that only recurses into what resolves can never see.
+pub fn get_full_dependency_info_with_unresolved(
+    conn: &mut SqliteConnection,
+    mod_: &module::Model,
+    module_dep_type_id: &i64,
+) -> FullDependencyInfoWithUnresolved {
+    let mut result = FullDependencyInfoWithUnresolved::default();
+    let mut visited = HashSet::from([mod_.id]);
+    collect_full_dependency_info_with_unresolved(
+        conn,
+        mod_,
+        module_dep_type_id,
+        &mut result,
+        &mut visited,
+    );
+    let mut seen = HashSet::new();
+    result.resolved.pip.retain(|x| seen.insert(x.clone()));
+    seen.clear();
+    result.resolved.bin.retain(|x| seen.insert(x.clone()));
+    seen.clear();
+    result.unresolved.retain(|x| seen.insert(x.clone()));
+    result
 }
 
 pub fn add(conn: &mut SqliteConnection, dep_type_id: &i64, name: &str) -> QueryResult<Model> {

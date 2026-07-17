@@ -112,6 +112,33 @@ pub fn get_by_technical_names_odoo_version(
         .expect("DB error in pull_request::get_by_technical_names_odoo_version")
 }
 
+/// Version-agnostic: tells the doodba migration plan tool which requested
+/// modules have EVER had a migration PR/MR tracked, in any target version -
+/// a module can be "registered" this way even if it has never actually
+/// merged in any version yet (a first-time port with only an open PR so far).
+pub fn get_repository_org_by_technical_names(
+    conn: &mut SqliteConnection,
+    technical_names: &[String],
+) -> Vec<(String, String, String)> {
+    use crate::schema::{gh_organization, gh_repository};
+    if technical_names.is_empty() {
+        return vec![];
+    }
+    pull_request::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(pull_request::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(pull_request::module_technical_name.eq_any(technical_names))
+        .select((
+            pull_request::module_technical_name,
+            gh_repository::name,
+            gh_organization::name,
+        ))
+        .load::<(String, String, String)>(conn)
+        .expect("DB error in pull_request::get_repository_org_by_technical_names")
+}
+
 pub fn get_by_technical_name_organization_name(
     conn: &mut SqliteConnection,
     technical_name: &str,

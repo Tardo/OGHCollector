@@ -2,6 +2,11 @@
 import {Component, registerComponent, getService, HTTP_METHOD} from 'mirlo';
 import * as yaml from 'js-yaml';
 import JSZip from 'jszip';
+import {
+  setDragPanelProcessing,
+  showDragPanelError,
+  isYamlFile,
+} from '@app/utils/drag-panel-processing';
 import '@scss/components/doodba-dependency-resolver.scss';
 
 class DoodbaDependencyResolver extends Component {
@@ -153,38 +158,55 @@ class DoodbaDependencyResolver extends Component {
     });
   }
 
-  async #processYAML(yaml_data) {
-    const odoo_ver =
-      this.#el_search_select_ver.value ||
-      this.getFetchData('odoo_versions')[0].value;
-    const formData = new FormData();
-    formData.append('odoo_version', odoo_ver);
-    Object.values(yaml_data)
-      .flat()
-      .forEach(mod_name => formData.append('modules', mod_name));
-    const data = await getService('requests').post(
-      '/doodba/dependency-resolver/addons',
-      {
-        body: formData,
-      },
-    );
-    const json_data = await data.json();
-    const yaml_txt = this.#makeYaml(json_data.odoo, yaml_data);
-    this.#showResults(
-      yaml_txt,
-      json_data.bin.join('\n'),
-      json_data.pip.join('\n'),
-    );
-    this.#el_search_select_ver.disabled = true;
+  // Reads, parses and posts `file` in one guarded path so a malformed
+  // addons.yaml or a request failure both surface the same way instead of
+  // one of them silently doing nothing.
+  async #processFile(file) {
+    setDragPanelProcessing(this.#el_drag_panel, true);
+    try {
+      const file_text = await this.#readFileAsText(file);
+      const yaml_data = yaml.load(file_text);
+      const odoo_ver =
+        this.#el_search_select_ver.value ||
+        this.getFetchData('odoo_versions')[0].value;
+      const formData = new FormData();
+      formData.append('odoo_version', odoo_ver);
+      Object.values(yaml_data)
+        .flat()
+        .forEach(mod_name => formData.append('modules', mod_name));
+      const data = await getService('requests').post(
+        '/doodba/dependency-resolver/addons',
+        {
+          body: formData,
+        },
+      );
+      if (!data.ok) {
+        throw new Error(`Server responded with ${data.status}`);
+      }
+      const json_data = await data.json();
+      const yaml_txt = this.#makeYaml(json_data.odoo, yaml_data);
+      this.#showResults(
+        yaml_txt,
+        json_data.bin.join('\n'),
+        json_data.pip.join('\n'),
+      );
+      this.#el_search_select_ver.disabled = true;
+      setDragPanelProcessing(this.#el_drag_panel, false);
+    } catch (_err) {
+      showDragPanelError(
+        this.#el_drag_panel,
+        'Could not process the file. Check its content and try again.',
+      );
+    }
   }
 
   async onDrop(ev) {
     ev.preventDefault();
-    const raw_item = ev.dataTransfer.items[0];
-    const file = raw_item.getAsFile();
-    if (file.type.endsWith('/yaml')) {
-      const file_text = await this.#readFileAsText(file);
-      this.#processYAML(yaml.load(file_text));
+    const file = ev.dataTransfer.items[0]?.getAsFile();
+    if (isYamlFile(file)) {
+      this.#processFile(file);
+    } else {
+      showDragPanelError(this.#el_drag_panel, 'Please drop a .yaml/.yml file.');
     }
   }
 
@@ -194,11 +216,10 @@ class DoodbaDependencyResolver extends Component {
     elem.type = 'file';
     elem.hidden = true;
     elem.setAttribute('accept', '.yaml,.yml');
-    elem.addEventListener('change', async ev_chg => {
+    elem.addEventListener('change', ev_chg => {
       const file = ev_chg.target.files[0];
-      if (file.type.endsWith('/yaml')) {
-        const file_text = await this.#readFileAsText(file);
-        this.#processYAML(yaml.load(file_text));
+      if (isYamlFile(file)) {
+        this.#processFile(file);
       }
     });
     document.body?.appendChild(elem);
