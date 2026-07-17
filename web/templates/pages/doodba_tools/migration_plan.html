@@ -16,14 +16,14 @@
     <span class="search_container" id="doodba_migration_plan_search_from"><strong>From Version:</strong> <select class="search_input" id="doodba_migration_plan_search_select_from"></select></span>
     <span class="search_container" id="doodba_migration_plan_search_to"><strong>To Version:</strong> <select class="search_input" id="doodba_migration_plan_search_select_to"><option value="">Latest</option></select></span>
     <span class="search_container" id="doodba_migration_plan_save" style="display:none">💾 Save</span><br/>
-    <div id="doodba_migration_plan_drag_panel"><span class="no_mouse">Click or Drag addons.yaml file here to plan the version jump.</span></div>
+    <div id="doodba_migration_plan_drag_panel"><span class="no_mouse">Drop your addons.yaml here, or click to browse, to plan the version jump.</span></div>
     <div id="doodba_migration_plan_result" style="display: none"></div>
 </template>
 
 
 <header class="page-header">
     <h1>Doodba migration plan</h1>
-    <p class="page-header-desc">Plan an Odoo version upgrade. Upload your current <code>addons.yaml</code> and, for every version between "From" and "To", see how it should look plus a <code>repos.yaml</code> needed for modules not yet merged upstream. Odoo dependencies are re-resolved from scratch at each version, so a module your addons.yaml never listed can still show up merged there if one of your modules actually requires it at that version. A module known to this system that isn't merged and has no open PR is listed as missing, so you know what still blocks each jump; a module this system has never tracked at all is listed separately as unknown, since it can't say whether that one exists for the target version or not. <code>repos.yaml</code> is only ever generated with what doodba's base config doesn't already know about: an open PR/MR merge, or any repo outside OCA/odoo. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
+    <p class="page-header-desc">Plan an Odoo version upgrade. Upload your current <code>addons.yaml</code>, pick a "From" and "To" version, and for every step in between see what it should look like — plus a <code>repos.yaml</code> for anything not merged upstream yet. Dependencies get re-resolved at each version, so a module you never listed can still turn up if something you do use pulls it in there. Modules that are known but not merged anywhere, with no PR open, show up as <strong>missing</strong> — that's what's actually blocking the jump. Modules never seen before show up as <strong>unknown</strong>: not a red flag, just a blind spot. <code>repos.yaml</code> only lists what doodba's base config doesn't already cover — open PRs/MRs and anything outside OCA/odoo. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
 </header>
 
 <mirlo-doodba-migration-plan></mirlo-doodba-migration-plan>

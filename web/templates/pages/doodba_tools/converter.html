@@ -15,14 +15,14 @@
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/doodba-converter.css" as="style">
     <span class="search_container" id="doodba_converter_search_version"><strong>Odoo Version:</strong> </strong><select class="search_input" id="doodba_converter_search_select_ver"></select></span>
     <span class="search_container" id="doodba_converter_save" style="display:none">💾 Save</span><br/>
-    <div id="doodba_converter_drag_panel"><span class="no_mouse">Click or Drag addons folder here and get a list of modules in “doodba” format.</span></div>
+    <div id="doodba_converter_drag_panel"><span class="no_mouse">Drop your addons folder here, or click to browse, to convert it to doodba format.</span></div>
     <textarea id="doodba_converter_result" style="display: none" readonly="readonly"></textarea>
 </template>
 
 
 <header class="page-header">
     <h1>Doodba converter</h1>
-    <p class="page-header-desc">Build the <code>addons.yaml</code> of a Doodba project from a local Odoo addons folder. Only folder names are sent to the server — <span class="text-info">folder contents never leave your machine</span>. Chromium-based browsers may cap directory traversal; Firefox gives the best results. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
+    <p class="page-header-desc">Point this at a local Odoo addons folder and it builds the <code>addons.yaml</code> for your Doodba project. Only the folder names get sent — <span class="text-info">contents never leave your machine</span>. Works best in Firefox; Chromium browsers tend to cut off large folders. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
 </header>
 
 <mirlo-doodba-converter></mirlo-doodba-converter>

@@ -15,7 +15,7 @@
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/doodba-dependency-resolver.css" as="style">
     <span class="search_container" id="doodba_dep_resolver_search_version"><strong>Odoo Version:</strong> </strong><select class="search_input" id="doodba_dep_resolver_search_select_ver"></select></span>
     <span class="search_container" id="doodba_dep_resolver_save" style="display:none">💾 Save</span><br/>
-    <div id="doodba_dep_resolver_drag_panel"><span class="no_mouse">Click or Drag addons.yaml file here and get the complete list of modules with their dependencies.</span></div>
+    <div id="doodba_dep_resolver_drag_panel"><span class="no_mouse">Drop your addons.yaml here, or click to browse, to resolve its full dependency list.</span></div>
     <table id="doodba_dep_resolver_result" style="display: none">
         <tbody>
             <tr>
@@ -30,7 +30,7 @@
 
 <header class="page-header">
     <h1>Doodba dependency resolver</h1>
-    <p class="page-header-desc">Upload an <code>addons.yaml</code> and get the complete list of modules with their Odoo, Python and system dependencies — so nothing is missing at deploy time. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
+    <p class="page-header-desc">Upload your <code>addons.yaml</code> and get back every module it depends on, plus the Python and system packages behind them — nothing missing when you deploy. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
 </header>
 <mirlo-doodba-dependency-resolver></mirlo-doodba-dependency-resolver>
 
