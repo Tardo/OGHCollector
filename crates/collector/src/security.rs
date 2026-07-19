@@ -70,6 +70,14 @@ fn perm(rec: &RecordAnalysisInfo, name: &str) -> bool {
     matches!(field_str(rec, name), Some("1" | "true" | "True"))
 }
 
+/// True only when the field is *explicitly* disabled - Odoo's `ir.rule`
+/// perm_read/write/create/unlink all default to True, so an absent field
+/// still grants that operation. Used to tell a genuinely read-only rule
+/// (all three explicitly off) apart from one that merely omits them.
+fn perm_explicit_false(rec: &RecordAnalysisInfo, name: &str) -> bool {
+    matches!(field_str(rec, name), Some("0" | "false" | "False"))
+}
+
 fn granted_write_perms(rec: &RecordAnalysisInfo) -> String {
     let mut out = Vec::new();
     for (col, label) in [
@@ -246,6 +254,16 @@ fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
         // "_all" naming (e.g. `rule_settlement_all`) marks a deliberately
         // global grant, same convention as ACLs - not a finding.
         Some(_) if is_intentional_global(rec) => {}
+        // A rule that explicitly turns off write/create/unlink only widens
+        // reads for its group, not the other three operations - a common,
+        // deliberate "broaden visibility, keep edits scoped" pattern. Must
+        // be the explicit flag, not naming: perm_write/create/unlink default
+        // to True when the record omits them, so a rule merely *named*
+        // "readonly" without the flags set is still a full bypass.
+        Some(_)
+            if perm_explicit_false(rec, "perm_write")
+                && perm_explicit_false(rec, "perm_create")
+                && perm_explicit_false(rec, "perm_unlink") => {}
         Some(_) => {
             out.push(warning(
                 rec,
@@ -608,6 +626,42 @@ mod tests {
             Some("[(4, ref('base.group_portal'))]")
         )])
         .is_empty());
+    }
+
+    #[test]
+    fn test_readonly_rule_needs_explicit_flags_not_just_a_name() {
+        // Named "readonly" but doesn't actually turn off write/create/unlink
+        // (Odoo defaults those to True): still a full bypass, still warns.
+        let mut named_only = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
+        named_only.xml_id = "account_analytic_line_rule_readonly_user".to_string();
+        let found = analyze_records(&[named_only]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "rule-group-bypass");
+
+        // Explicit perm_write/create/unlink = False: genuinely read-only,
+        // not a finding - the name is irrelevant, only the flags matter.
+        let mut readonly = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
+        readonly.fields.as_mut().unwrap()["perm_write"] = serde_json::json!("False");
+        readonly.fields.as_mut().unwrap()["perm_create"] = serde_json::json!("False");
+        readonly.fields.as_mut().unwrap()["perm_unlink"] = serde_json::json!("False");
+        assert!(analyze_records(&[readonly]).is_empty());
+
+        // Only partially narrowed (perm_create still open): still a finding.
+        let mut partial = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
+        partial.fields.as_mut().unwrap()["perm_write"] = serde_json::json!("False");
+        partial.fields.as_mut().unwrap()["perm_unlink"] = serde_json::json!("False");
+        assert_eq!(analyze_records(&[partial]).len(), 1);
+
+        // Portal/public stays grave even when genuinely read-only: an
+        // external group reading every record of the model is still a leak.
+        let mut portal_readonly = rule("[(1,'=',1)]", Some("[(4, ref('base.group_portal'))]"));
+        portal_readonly.fields.as_mut().unwrap()["perm_write"] = serde_json::json!("False");
+        portal_readonly.fields.as_mut().unwrap()["perm_create"] = serde_json::json!("False");
+        portal_readonly.fields.as_mut().unwrap()["perm_unlink"] = serde_json::json!("False");
+        let found = analyze_records(&[portal_readonly]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "rule-public-bypass");
+        assert_eq!(found[0].severity, SEVERITY_ERROR);
     }
 
     fn route(
