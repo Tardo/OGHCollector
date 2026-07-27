@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::ffi::CString;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -877,25 +878,25 @@ impl OGHCollectorAnalyzer {
         manifest_path: &str,
     ) -> PyResult<ManifestInfo> {
         log::info!("Reading Manifest: {manifest_path}");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let code = fs::read_to_string(manifest_path)
                 .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-            let manifest: &PyDict = py.eval(&code, None, None)?.extract()?;
+            let code = CString::new(code)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            let manifest = py.eval(&code, None, None)?.cast_into::<PyDict>()?;
             // name
-            let name_opt = manifest.get_item("name");
+            let name_opt = manifest.get_item("name")?;
             let name: String = if let Some(name_value) = name_opt {
-                name_value.downcast::<PyString>()?.extract::<String>()?
+                name_value.cast::<PyString>()?.extract::<String>()?
             } else {
                 String::new()
             };
             // description - readme/DESCRIPTION.md (OCA's rendered readme fragment) wins
             // over the manifest's `description` key when present, since the manifest
             // value is often stale or just a placeholder for the generated readme.
-            let description_opt = manifest.get_item("description");
+            let description_opt = manifest.get_item("description")?;
             let description: String = if let Some(description_value) = description_opt {
-                description_value
-                    .downcast::<PyString>()?
-                    .extract::<String>()?
+                description_value.cast::<PyString>()?.extract::<String>()?
             } else {
                 String::new()
             };
@@ -918,11 +919,11 @@ impl OGHCollectorAnalyzer {
             // module page falls back to a generic icon when this is empty.
             let icon = module_dir.and_then(Self::read_icon).unwrap_or_default();
             // author
-            let author_opt = manifest.get_item("author");
+            let author_opt = manifest.get_item("author")?;
             let author: String = if let Some(author_value) = author_opt {
-                match author_value.downcast::<PyString>() {
+                match author_value.cast::<PyString>() {
                     Ok(pyval) => pyval.extract::<String>()?,
-                    Err(_) => match author_value.downcast::<PyList>() {
+                    Err(_) => match author_value.cast::<PyList>() {
                         Ok(pyval) => {
                             let author_vec = pyval.extract::<Vec<String>>()?;
                             author_vec.join(", ")
@@ -934,30 +935,30 @@ impl OGHCollectorAnalyzer {
                 String::new()
             };
             // website
-            let website_opt = manifest.get_item("website");
+            let website_opt = manifest.get_item("website")?;
             let website: String = if let Some(website_value) = website_opt {
-                website_value.downcast::<PyString>()?.extract::<String>()?
+                website_value.cast::<PyString>()?.extract::<String>()?
             } else {
                 String::new()
             };
             // license
-            let license_opt = manifest.get_item("license");
+            let license_opt = manifest.get_item("license")?;
             let license: String = if let Some(license_value) = license_opt {
-                license_value.downcast::<PyString>()?.extract::<String>()?
+                license_value.cast::<PyString>()?.extract::<String>()?
             } else {
                 "LGPL-3".to_string()
             };
             // category
-            let category_opt = manifest.get_item("category");
+            let category_opt = manifest.get_item("category")?;
             let category: String = if let Some(category_value) = category_opt {
-                category_value.downcast::<PyString>()?.extract::<String>()?
+                category_value.cast::<PyString>()?.extract::<String>()?
             } else {
                 "Uncategorized".to_string()
             };
             // auto_install
-            let auto_install_opt = manifest.get_item("auto_install");
+            let auto_install_opt = manifest.get_item("auto_install")?;
             let auto_install: bool = if let Some(auto_install_value) = auto_install_opt {
-                match auto_install_value.downcast::<PyBool>() {
+                match auto_install_value.cast::<PyBool>() {
                     Ok(pyval) => pyval.extract::<bool>()?,
                     Err(_) => true,
                 }
@@ -965,10 +966,10 @@ impl OGHCollectorAnalyzer {
                 false
             };
             // version_odoo, version_module
-            let version_opt = manifest.get_item("version");
+            let version_opt = manifest.get_item("version")?;
             let version_odoo: u8;
             let version_module: String = if let Some(version_value) = version_opt {
-                let version = version_value.downcast::<PyString>()?.extract::<String>()?;
+                let version = version_value.cast::<PyString>()?.extract::<String>()?;
                 let odoo_ver = OdooVersion::new(&version, &self.version_odoo);
                 version_odoo = *odoo_ver.get_version_odoo();
                 odoo_ver.get_version_module().clone()
@@ -977,16 +978,16 @@ impl OGHCollectorAnalyzer {
                 "0.1.0".to_string()
             };
             // application
-            let application_opt = manifest.get_item("application");
+            let application_opt = manifest.get_item("application")?;
             let application: bool = if let Some(application_value) = application_opt {
-                application_value.downcast::<PyBool>()?.extract::<bool>()?
+                application_value.cast::<PyBool>()?.extract::<bool>()?
             } else {
                 false
             };
             // installable
-            let installable_opt = manifest.get_item("installable");
+            let installable_opt = manifest.get_item("installable")?;
             let installable: bool = if let Some(installable_value) = installable_opt {
-                match installable_value.downcast::<PyBool>() {
+                match installable_value.cast::<PyBool>() {
                     Ok(pyval) => pyval.extract::<bool>()?,
                     Err(_) => true,
                 }
@@ -994,11 +995,11 @@ impl OGHCollectorAnalyzer {
                 true
             };
             // maintainer
-            let maintainer_opt = manifest.get_item("maintainer");
+            let maintainer_opt = manifest.get_item("maintainer")?;
             let maintainer: String = if let Some(maintainer_value) = maintainer_opt {
-                match maintainer_value.downcast::<PyString>() {
+                match maintainer_value.cast::<PyString>() {
                     Ok(pyval) => pyval.extract::<String>()?,
-                    Err(_) => match maintainer_value.downcast::<PyList>() {
+                    Err(_) => match maintainer_value.cast::<PyList>() {
                         Ok(pyval) => {
                             let maintainer_vec = pyval.extract::<Vec<String>>()?;
                             maintainer_vec.join(", ")
@@ -1010,57 +1011,31 @@ impl OGHCollectorAnalyzer {
                 author.clone()
             };
             // depends
-            let depends_opt = manifest.get_item("depends");
+            let depends_opt = manifest.get_item("depends")?;
             let depends: Vec<String> = if let Some(depends_value) = depends_opt {
-                depends_value
-                    .downcast::<PyList>()?
-                    .extract::<Vec<String>>()?
+                depends_value.cast::<PyList>()?.extract::<Vec<String>>()?
             } else {
                 Vec::new()
             };
-            let external_depends_opt = manifest.get_item("external_dependencies");
             let mut external_depends_python_set: HashSet<String> = HashSet::new();
             let mut external_depends_bin_set: HashSet<String> = HashSet::new();
-            if let Some(external_depends_value) = external_depends_opt {
-                let depends_dict = external_depends_value.downcast::<PyDict>()?;
-                let depends_python_opt = depends_dict.get_item("python");
-                if depends_python_opt.is_some() {
-                    let python_deps = match depends_python_opt {
-                        Some(py_any) => match py_any.downcast::<PyList>() {
-                            Ok(pyval) => pyval,
-                            Err(_) => PyList::empty(py),
-                        },
-                        None => PyList::empty(py),
+            if let Some(external_depends_value) = manifest.get_item("external_dependencies")? {
+                let depends_dict = external_depends_value.cast::<PyDict>()?;
+                // "deb" is an unofficial way to get the "debian" package name (used by OCA CI)
+                for key in ["python", "bin", "deb"] {
+                    let Some(deps_value) = depends_dict.get_item(key)? else {
+                        continue;
                     };
-                    for dep_name in python_deps {
-                        external_depends_python_set.insert(dep_name.extract()?);
-                    }
-                }
-                let depends_bin_opt = depends_dict.get_item("bin");
-                if depends_bin_opt.is_some() {
-                    let bin_deps = match depends_bin_opt {
-                        Some(py_any) => match py_any.downcast::<PyList>() {
-                            Ok(pyval) => pyval,
-                            Err(_) => PyList::empty(py),
-                        },
-                        None => PyList::empty(py),
+                    let Ok(deps_list) = deps_value.cast::<PyList>() else {
+                        continue;
                     };
-                    for dep_name in bin_deps {
-                        external_depends_bin_set.insert(dep_name.extract()?);
-                    }
-                }
-                // This is a unofficial way to get "debian" pacakage name (used by OCA CI)
-                let depends_deb_opt = depends_dict.get_item("deb");
-                if depends_deb_opt.is_some() {
-                    let bin_deps = match depends_deb_opt {
-                        Some(py_any) => match py_any.downcast::<PyList>() {
-                            Ok(pyval) => pyval,
-                            Err(_) => PyList::empty(py),
-                        },
-                        None => PyList::empty(py),
+                    let target = if key == "python" {
+                        &mut external_depends_python_set
+                    } else {
+                        &mut external_depends_bin_set
                     };
-                    for dep_name in bin_deps {
-                        external_depends_bin_set.insert(dep_name.extract()?);
+                    for dep_name in deps_list.iter() {
+                        target.insert(dep_name.extract()?);
                     }
                 }
             }
@@ -1109,12 +1084,14 @@ impl OGHCollectorAnalyzer {
     /// extends, along with their public methods and `fields.X(...)`
     /// assignments. Best-effort: any failure just yields an empty analysis.
     fn analyze_module_source(&self, module_path: &std::path::Path) -> ModuleAnalysisInfo {
-        let result = Python::with_gil(|py| -> PyResult<String> {
+        let result = Python::attach(|py| -> PyResult<String> {
+            let src = CString::new(ANALYZER_PY_SRC)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
             let module = PyModule::from_code(
                 py,
-                ANALYZER_PY_SRC,
-                "oghcollector_analyzer.py",
-                "oghcollector_analyzer",
+                &src,
+                c"oghcollector_analyzer.py",
+                c"oghcollector_analyzer",
             )?;
             let analyze_fn = module.getattr("analyze_module")?;
             let module_path_str = module_path.to_string_lossy().to_string();

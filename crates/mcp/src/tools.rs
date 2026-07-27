@@ -658,12 +658,12 @@ fn build_module_summary(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleSummary>>",
+    ty = "TimedSizedCache<String, Vec<ModuleSummary>>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ format!("{org}|{repo}|{odoo_version:?}|{installable:?}") }"#
@@ -689,12 +689,12 @@ fn list_repository_modules_cached(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleInfo>>",
+    ty = "TimedSizedCache<String, Vec<ModuleInfo>>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
@@ -718,12 +718,12 @@ fn get_module_cached(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleDocs>>",
+    ty = "TimedSizedCache<String, Vec<ModuleDocs>>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
@@ -747,12 +747,12 @@ fn get_module_docs_cached(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleDependencyInfo>>",
+    ty = "TimedSizedCache<String, Vec<ModuleDependencyInfo>>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
@@ -776,12 +776,12 @@ fn get_module_dependencies_cached(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleCodeAnalysis>>",
+    ty = "TimedSizedCache<String, Vec<ModuleCodeAnalysis>>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}|{version_module:?}") }"#
@@ -806,12 +806,12 @@ fn get_module_code_analysis_cached(
 }
 
 #[cached(
-    type = "TimedSizedCache<String, Vec<ModuleCriteriaResult>>",
+    ty = "TimedSizedCache<String, Vec<ModuleCriteriaResult>>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ format!("{odoo_version}|{search_term:?}|{category:?}|{depends_on:?}|{limit}") }"#

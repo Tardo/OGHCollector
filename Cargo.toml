@@ -17,27 +17,19 @@ actix-files = "0.6"
 actix-utils = "3"
 actix-web-lab = "0.20"
 actix-cors = "0.6"
-actix-service = "2.0"
-actix-rt = "2.7"
-actix-csrf = "0.7"
 actix-session = { version = "0.8", features = ["cookie-session"] }
 actix-multipart = "0.7"
 env_logger = "0.10"
 log = "0.4"
 array_tool = "1"
-reqwest = { version = "0.11", features = ["json"] }
-futures = "0.3"
-futures-util = "0.3"
+reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
-tokio_schedule = "0.3"
-argparse = "0.2" 
-pyo3 = { version = "0.19", features = ["auto-initialize"] }
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
 chrono = { version = "0.4" }
-chrono-tz = "0.8"
-cached = { version = "0.46" }
+cached = { version = "0.59" }
 minijinja = { version = "1", features = ["loader", "urlencode"] }
 minijinja-autoreload = "1"
-config = "0.13"
+config = "0.15"
 url = "2"
 ipnet = "2"
 lazy_static = "1"
@@ -49,6 +41,5 @@ urlencoding = "2.1"
 base64 = "0.22"
 diesel = { version = "2.3", features = ["sqlite", "r2d2"] }
 diesel_migrations = "2"
-dotenvy = "0.15"
 rmcp = { version = "2.1.0", features = ["transport-streamable-http-server"] }
 axum = "0.8"

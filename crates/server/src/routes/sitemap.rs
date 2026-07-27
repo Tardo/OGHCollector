@@ -41,12 +41,12 @@ fn xml_escape(s: &str) -> String {
 // (e.g. staging + prod behind the same binary) doesn't leak one host's URLs
 // into another's sitemap.
 #[cached(
-    type = "TimedSizedCache<String, String>",
+    ty = "TimedSizedCache<String, String>",
     key = "String",
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(8, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(8, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ base.to_string() }"#

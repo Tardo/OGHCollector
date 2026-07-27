@@ -100,12 +100,12 @@ fn get_group(
 // `convert` ignores `conn` and always returns the same key, making this a
 // single-entry cache refreshed every `cache_ttl` seconds.
 #[cached(
-    type = "TimedSizedCache<u8, (i64, Vec<ModulesVersionGroup>)>",
+    ty = "TimedSizedCache<u8, (i64, Vec<ModulesVersionGroup>)>",
     key = "u8",
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(1, ttl_secs, true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(1, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
     convert = r#"{ 0u8 }"#
