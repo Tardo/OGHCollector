@@ -62,6 +62,35 @@ pub struct ModuleCriteriaResult {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SemanticSearchModulesParams {
+    /// Natural-language description of the functionality you're looking for,
+    /// e.g. "manage employee vacation approvals" - any language, the
+    /// embedding model is multilingual.
+    pub query: String,
+    /// Restrict to a specific Odoo version, e.g. "17.0".
+    pub odoo_version: Option<String>,
+    /// Max results. Defaults to 10, capped at 50.
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticSearchResult {
+    pub technical_name: String,
+    pub name: String,
+    pub odoo_version: String,
+    pub category: String,
+    pub installable: bool,
+    pub organization: String,
+    pub repository: String,
+    /// Hybrid relevance (roughly 0..1, higher is closer): cosine similarity
+    /// between the query and the module's embedded name/category/description,
+    /// boosted when query words appear verbatim in the module's names (how
+    /// rare proper nouns like "Veri*Factu" rank despite the embedding model
+    /// not knowing them).
+    pub score: f32,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetModuleParams {
     /// Module technical name, e.g. "sale_order_type".
     pub technical_name: String,
@@ -850,6 +879,54 @@ fn list_modules_by_criteria_cached(
     .collect()
 }
 
+/// Embeds the query and brute-force ranks it against every stored module
+/// vector (built by the collector from name/category/description), blended
+/// with an IDF-weighted verbatim-keyword boost (see
+/// module_embedding::lexical_scores) so rare product names still hit.
+/// No cache: free-text queries rarely repeat, and a scan over the whole
+/// corpus is already just a few ms at this scale.
+fn semantic_search(
+    pool: Pool,
+    query: &str,
+    odoo_version: Option<&str>,
+    limit: usize,
+) -> Result<Vec<SemanticSearchResult>, String> {
+    let query_vec = oghembed::embed_texts(&[query])
+        .map_err(|e| format!("embedding model unavailable: {e}"))?
+        .pop()
+        .ok_or("embedding model returned no vector")?;
+    let mut conn = pool
+        .get()
+        .expect("failed to get a DB connection from the pool");
+    let version_filter = odoo_version.map(odoo_version_string_to_u8);
+    let rows = models::module_embedding::get_vectors(&mut conn, version_filter.as_ref());
+    let lexical =
+        models::module_embedding::lexical_scores(&mut conn, query, version_filter.as_ref());
+    let scored = oghembed::top_k(
+        &query_vec,
+        rows.iter().map(|r| (r.module_id, r.embedding.as_slice())),
+        &lexical,
+        limit,
+    );
+    Ok(scored
+        .into_iter()
+        .filter_map(|(module_id, score)| {
+            let module = models::module::get_by_id(&mut conn, &module_id)?;
+            let (org, repo) = get_org_repo(&mut conn, &module);
+            Some(SemanticSearchResult {
+                technical_name: module.technical_name,
+                name: module.name,
+                odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+                category: module.category.unwrap_or_default(),
+                installable: module.installable,
+                organization: org.name,
+                repository: repo.name,
+                score,
+            })
+        })
+        .collect())
+}
+
 fn json_result<T: Serialize>(value: &T) -> Result<CallToolResult, McpError> {
     let text = serde_json::to_string_pretty(value)
         .map_err(|e| McpError::internal_error(format!("failed to serialize result: {e}"), None))?;
@@ -944,6 +1021,34 @@ impl OghMcp {
         })
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&results)
+    }
+
+    #[tool(
+        description = "Semantic (embedding-based) module search: describe the functionality you \
+                        need in natural language - any language - and get the closest modules by \
+                        meaning (with a boost when query words appear verbatim in module names, \
+                        so exact product names like \"Veri*Factu\" also rank). Unlike search_modules (technical \
+                        name substring) and list_modules_by_criteria (SQL LIKE term), this finds \
+                        modules whose description matches the *concept* even when no keyword \
+                        overlaps (e.g. \"send invoices to the tax agency\" finds SII/e-invoicing \
+                        modules). Prefer it when keyword searches come back empty or you don't \
+                        know the domain vocabulary; follow up with get_module on interesting \
+                        matches. Scores are relative - compare within one result list, not \
+                        across queries."
+    )]
+    async fn semantic_search_modules(
+        &self,
+        Parameters(params): Parameters<SemanticSearchModulesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let pool = self.pool.clone();
+        let limit = params.limit.unwrap_or(10).min(50) as usize;
+        let results = tokio::task::spawn_blocking(move || {
+            semantic_search(pool, &params.query, params.odoo_version.as_deref(), limit)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?
+        .map_err(|e| McpError::internal_error(e, None))?;
         json_result(&results)
     }
 
@@ -1244,7 +1349,9 @@ impl ServerHandler for OghMcp {
                  module it carries with direct dependencies and maintenance signals (last \
                  commit, committers). (3) know a category or a dependency but not which \
                  repository carries the modules (e.g. \"what depends on account_move_line \
-                 anywhere\")? Use list_modules_by_criteria. Either way, get_module's response is \
+                 anywhere\")? Use list_modules_by_criteria. (4) can only describe the needed \
+                 functionality in natural language, or keyword searches came back empty? Use \
+                 semantic_search_modules. Either way, get_module's response is \
                  intentionally light - \
                  call get_module_docs (install/usage instructions), get_module_dependencies \
                  (full transitive closure) or get_module_code_analysis (views/models/fields/\

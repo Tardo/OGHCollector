@@ -3,6 +3,7 @@ mod analyzer;
 mod anygitclient;
 mod clients;
 mod config;
+mod embeddings;
 mod gitclient;
 mod pypi;
 mod security;
@@ -517,6 +518,8 @@ async fn main() {
     } else {
         log::info!("Nothing to do!");
     }
+
+    embeddings::update_embeddings(&mut conn);
 
     log::info!("All done. Bye!");
 }

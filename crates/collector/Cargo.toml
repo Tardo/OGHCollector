@@ -9,6 +9,7 @@ documentation.workspace = true
 [dependencies]
 sqlitedb = { path = "../sqlitedb" }
 oghutils = { path = "../oghutils" }
+oghembed = { path = "../oghembed" }
 reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true

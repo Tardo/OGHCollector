@@ -9,6 +9,7 @@ documentation.workspace = true
 [dependencies]
 sqlitedb = { path = "../sqlitedb" }
 oghutils = { path = "../oghutils" }
+oghembed = { path = "../oghembed" }
 diesel = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true

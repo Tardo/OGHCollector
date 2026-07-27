@@ -1,0 +1,11 @@
+[package]
+name = "oghembed"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[dependencies]
+fastembed = "5"
+log.workspace = true

@@ -21,6 +21,27 @@ pub struct RouteSearchRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RouteSemanticSearchRequest {
+    q: String,
+    odoo_version: Option<String>,
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SemanticSearchResponse {
+    pub technical_name: String,
+    pub name: String,
+    pub category: String,
+    pub odoo_version: String,
+    pub org_name: String,
+    pub repository: String,
+    /// Hybrid relevance (roughly 0..1, higher is closer): cosine similarity
+    /// query vs the module's embedded name/category/description, boosted
+    /// when query words appear verbatim in the module's names.
+    pub score: f32,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RouteSearchCriteriaRequest {
     odoo_version: String,
     term: Option<String>,
@@ -93,6 +114,63 @@ fn get_modules_by_installable(
         module_name,
         installable,
     ))
+}
+
+/// Embedding-based free-text search: embeds `q` (any language) and ranks it
+/// against every collector-built module vector, blended with an IDF-weighted
+/// verbatim-keyword boost so rare product names still hit - same approach
+/// (and shared `oghembed::top_k` ranking) as the MCP
+/// `semantic_search_modules` tool. One row per module row, so a module
+/// carried at several Odoo versions comes back once per version; best
+/// score first. Own top-level path (not /search/semantic) so it can never
+/// collide with the /search/{module_name} dynamic segment.
+#[get("/semantic-search")]
+pub async fn route_semantic(
+    pool: web::Data<Pool>,
+    info: web::Query<RouteSemanticSearchRequest>,
+) -> Result<HttpResponse, AWError> {
+    let params = info.into_inner();
+    let limit = params.limit.unwrap_or(20).min(50) as usize;
+    let result = web::block(move || -> Result<Vec<SemanticSearchResponse>, String> {
+        let query_vec = oghembed::embed_texts(&[params.q.as_str()])
+            .map_err(|e| format!("embedding model unavailable: {e}"))?
+            .pop()
+            .ok_or("embedding model returned no vector")?;
+        let mut conn = pool.get().unwrap();
+        let version_filter = params
+            .odoo_version
+            .as_deref()
+            .map(odoo_version_string_to_u8);
+        let rows = models::module_embedding::get_vectors(&mut conn, version_filter.as_ref());
+        let lexical =
+            models::module_embedding::lexical_scores(&mut conn, &params.q, version_filter.as_ref());
+        let scored = oghembed::top_k(
+            &query_vec,
+            rows.iter().map(|r| (r.module_id, r.embedding.as_slice())),
+            &lexical,
+            limit,
+        );
+        Ok(scored
+            .into_iter()
+            .filter_map(|(module_id, score)| {
+                let module = models::module::get_by_id(&mut conn, &module_id)?;
+                let repo = models::gh_repository::get_by_id(&mut conn, &module.gh_repository_id)?;
+                let org = models::gh_organization::get_by_id(&mut conn, &repo.gh_organization_id)?;
+                Some(SemanticSearchResponse {
+                    technical_name: module.technical_name,
+                    name: module.name,
+                    category: module.category.unwrap_or_default(),
+                    odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+                    org_name: org.name,
+                    repository: repo.name,
+                    score,
+                })
+            })
+            .collect())
+    })
+    .await?
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+    Ok(HttpResponse::Ok().json(result))
 }
 
 /// Cross-repository discovery by free-text term, category and/or reverse

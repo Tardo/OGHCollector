@@ -1,3 +1,4 @@
+diff --git a/schema.rs b/schema.rs
 --- a/schema.rs
 +++ b/schema.rs
 @@ -1,82 +1,82 @@
@@ -93,7 +94,7 @@
          version_module -> Text,
          description -> Nullable<Text>,
          website -> Nullable<Text>,
-@@ -85,13 +85,13 @@
+@@ -85,13 +85,13 @@ diesel::table! {
          auto_install -> Bool,
          application -> Bool,
          installable -> Bool,
@@ -108,7 +109,7 @@
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-@@ -99,43 +99,43 @@
+@@ -99,43 +99,43 @@ diesel::table! {
          icon -> Nullable<Text>,
      }
  }
@@ -156,8 +157,20 @@
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -148,21 +148,21 @@
+@@ -148,32 +148,32 @@ diesel::table! {
          module_version_id -> BigInt,
+     }
+ }
+ 
+ diesel::table! {
+     module_embedding (id) {
+-        id -> Nullable<BigInt>,
++        id -> BigInt,
+         module_id -> BigInt,
+         text_hash -> Text,
+         embedding -> Binary,
+         create_date -> Text,
+         update_date -> Text,
      }
  }
  
@@ -180,7 +193,7 @@
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -170,119 +170,119 @@
+@@ -181,119 +181,119 @@ diesel::table! {
          module_version_id -> BigInt,
      }
  }
@@ -311,4 +324,4 @@
  }
  
  diesel::joinable!(module_controller -> module_version (module_version_id));
- diesel::joinable!(module_model -> module_version (module_version_id));
+ diesel::joinable!(module_embedding -> module (module_id));

@@ -63,12 +63,11 @@ export default class SearchDropdown extends Component {
     this.#search_index = null;
     this.#prev_query = null;
     this.#prev_matches = null;
-    this.#active_index = -1;
     const query = this.normalizeQuery(this.queryId('search').value);
     if (query === '') {
-      this.#fillResults();
+      this.fillResults();
     } else {
-      this.#fillResults(this.#filterResults(query));
+      this.fillResults(this.#filterResults(query));
     }
   }
 
@@ -98,10 +97,10 @@ export default class SearchDropdown extends Component {
     if (query === '') {
       this.#prev_query = null;
       this.#prev_matches = null;
-      this.#fillResults();
+      this.fillResults();
     } else {
       this.#debounce_timer = setTimeout(() => {
-        this.#fillResults(this.#filterResults(query));
+        this.fillResults(this.#filterResults(query));
       }, DEBOUNCE_MS);
     }
   }
@@ -201,10 +200,14 @@ export default class SearchDropdown extends Component {
     return matches.map(entry => entry.record);
   }
 
-  #fillResults(results) {
+  // Public on purpose: besides the internal filter pipeline, subclasses that
+  // fetch results from the server (semantic search) call this directly with
+  // their own record list. Self-contained: resets the keyboard-active item.
+  fillResults(results) {
     this.#el_search_results.replaceChildren();
     this.#filtered_results = results ?? [];
     this.#rendered_count = 0;
+    this.#active_index = -1;
 
     if (this.#filtered_results.length === 0) {
       this.#el_search_results.style.display = 'none';
@@ -213,10 +216,8 @@ export default class SearchDropdown extends Component {
 
     this.#renderNextBatch();
     this.#el_search_results.style.display = '';
-    if (this.#active_index === -1) {
-      this.#active_index = 0;
-      this.#updateActiveItem();
-    }
+    this.#active_index = 0;
+    this.#updateActiveItem();
   }
 
   #renderNextBatch() {

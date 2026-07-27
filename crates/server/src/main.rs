@@ -29,6 +29,10 @@ use sqlitedb::Pool;
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
+    // Load/download the embedding model off the startup path so the first
+    // /v1/search/semantic call doesn't pay the cost.
+    std::thread::spawn(oghembed::warmup);
+
     // MiniJinja
     if SERVER_CONFIG.get_template_autoreload() {
         log::info!("template auto-reloading is enabled");
@@ -179,6 +183,7 @@ async fn main() -> std::io::Result<()> {
                     .service(routes::api::v1::module::route_versions)
                     .service(routes::api::v1::repository::route)
                     .service(routes::api::v1::search::route_criteria)
+                    .service(routes::api::v1::search::route_semantic)
                     .service(routes::api::v1::search::route),
             )
             .wrap(DefaultHeaders::new().add((

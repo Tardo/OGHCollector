@@ -3,9 +3,16 @@ import {registerComponent} from 'mirlo';
 import SearchDropdown from './search-dropdown.mjs';
 import '@scss/components/module-search.scss';
 
+// Semantic queries hit the server (embedding inference per request), so they
+// debounce longer than the local-index search and are best typed as full
+// phrases, not prefixes.
+const SEMANTIC_DEBOUNCE_MS = 450;
+
 class ModuleSearch extends SearchDropdown {
   #el_field = null;
   #el_version = null;
+  #semantic_timer = null;
+  #semantic_seq = 0;
 
   get searchEndpoint() {
     return '/common/odoo/module/list';
@@ -43,6 +50,79 @@ class ModuleSearch extends SearchDropdown {
     const field_label = this.#el_field.selectedOptions[0].text.toLowerCase();
     this.queryId('search').placeholder = `Search module (${field_label})...`;
     this.refreshResults();
+  }
+
+  get isSemantic() {
+    return this.#el_field.value === 'semantic';
+  }
+
+  onInputSearch(ev) {
+    if (!this.isSemantic) {
+      super.onInputSearch(ev);
+      return;
+    }
+    clearTimeout(this.#semantic_timer);
+    const query = ev.target.value.trim();
+    if (query === '') {
+      this.fillResults();
+      return;
+    }
+    this.#semantic_timer = setTimeout(
+      () => this.#semanticSearch(query),
+      SEMANTIC_DEBOUNCE_MS,
+    );
+  }
+
+  refreshResults() {
+    if (!this.isSemantic) {
+      super.refreshResults();
+      return;
+    }
+    const query = this.queryId('search').value.trim();
+    if (query === '') {
+      this.fillResults();
+    } else {
+      this.#semanticSearch(query);
+    }
+  }
+
+  async #semanticSearch(query) {
+    const seq = ++this.#semantic_seq;
+    const params = new URLSearchParams({q: query, limit: '50'});
+    if (this.#el_version.value !== '') {
+      params.set('odoo_version', this.#el_version.value);
+    }
+    let rows;
+    try {
+      const response = await fetch(`/v1/semantic-search?${params}`);
+      rows = await response.json();
+    } catch {
+      rows = [];
+    }
+    if (seq !== this.#semantic_seq) {
+      // A newer query resolved (or was typed) meanwhile - drop this response.
+      return;
+    }
+    // The endpoint returns one row per Odoo version, best score first - fold
+    // them into one entry per (org, module); later rows of the same module
+    // only contribute their version. `semantic` is the snippet
+    // createResultItem picks up via the field name.
+    const by_module = new Map();
+    for (const row of rows) {
+      const key = `${row.org_name}/${row.technical_name}`;
+      const entry = by_module.get(key);
+      if (entry) {
+        entry.versions.push(row.odoo_version);
+      } else {
+        by_module.set(key, {
+          technical_name: row.technical_name,
+          org_name: row.org_name,
+          versions: [row.odoo_version],
+          semantic: `${row.name} · ${row.category} · ${Math.round(row.score * 100)}%`,
+        });
+      }
+    }
+    this.fillResults([...by_module.values()]);
   }
 
   // Technical names use underscores, not spaces - only worth folding for

@@ -75,6 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         *config::MCP_CONFIG.get_cache_ttl()
     );
 
+    // Load/download the embedding model off the startup path so the first
+    // semantic_search_modules call doesn't pay the cost.
+    std::thread::spawn(oghembed::warmup);
+
     let allowed_hosts = resolve_allowed_hosts();
     let service = StreamableHttpService::new(
         move || Ok(OghMcp::new(pool.clone())),

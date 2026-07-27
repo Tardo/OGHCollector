@@ -150,6 +150,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_embedding (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        text_hash -> Text,
+        embedding -> Binary,
+        create_date -> Text,
+        update_date -> Text,
+    }
+}
+
+diesel::table! {
     module_maintainer (id) {
         id -> BigInt,
         module_id -> BigInt,
@@ -285,6 +296,7 @@ diesel::table! {
 }
 
 diesel::joinable!(module_controller -> module_version (module_version_id));
+diesel::joinable!(module_embedding -> module (module_id));
 diesel::joinable!(module_model -> module_version (module_version_id));
 diesel::joinable!(module_record -> module_version (module_version_id));
 diesel::joinable!(module_security_warning -> module_version (module_version_id));
@@ -305,6 +317,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_committer,
     module_committer_period,
     module_controller,
+    module_embedding,
     module_maintainer,
     module_model,
     module_model_field,

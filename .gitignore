@@ -5,6 +5,7 @@
 /data/*.db-shm
 /data/*.db-wal
 /data/*.db-journal
+/data/.fastembed_cache/
 /.vscode
 *.db
 *.db-shm
