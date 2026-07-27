@@ -1,7 +1,7 @@
 FROM rust:slim AS build
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y ca-certificates curl gnupg python3 python3-dev pkg-config libssl-dev libsqlite3-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl gnupg python3 python3-dev pkg-config libssl-dev libsqlite3-dev g++ && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/* && \
