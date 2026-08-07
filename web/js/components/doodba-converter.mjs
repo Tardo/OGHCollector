@@ -59,7 +59,7 @@ class DoodbaConverter extends Component {
 
   onDragEnter(ev) {
     ev.preventDefault();
-    this.#el_drag_panel.style.backgroundColor = '#54555b';
+    this.#el_drag_panel.classList.add('drag-over');
   }
 
   onDragOver(ev) {
@@ -68,7 +68,7 @@ class DoodbaConverter extends Component {
 
   onDragLeave(ev) {
     ev.preventDefault();
-    this.#el_drag_panel.style.backgroundColor = '';
+    this.#el_drag_panel.classList.remove('drag-over');
   }
 
   onClickSave() {

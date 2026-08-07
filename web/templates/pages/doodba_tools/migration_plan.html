@@ -14,9 +14,9 @@
 <template id="template-mirlo-doodba-migration-plan">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/doodba-migration-plan.css" as="style">
     <span class="search_container" id="doodba_migration_plan_search_from"><strong>From Version:</strong> <select class="search_input" id="doodba_migration_plan_search_select_from"></select></span>
-    <span class="search_container" id="doodba_migration_plan_search_to"><strong>To Version:</strong> <select class="search_input" id="doodba_migration_plan_search_select_to"><option value="">Latest</option></select></span>
-    <span class="search_container" id="doodba_migration_plan_save" style="display:none">💾 Save</span><br/>
-    <div id="doodba_migration_plan_drag_panel"><span class="no_mouse">Drop your addons.yaml here, or click to browse, to plan the version jump.</span></div>
+    <span class="search_container" id="doodba_migration_plan_search_to"><strong>To Version:</strong> <select class="search_input" id="doodba_migration_plan_search_select_to"></select></span>
+    <span class="search_container search_container-save" id="doodba_migration_plan_save" style="display:none">💾 Save</span><br/>
+    <div id="doodba_migration_plan_drag_panel" class="doodba-drag-panel"><span class="no_mouse">Drop your addons.yaml here, or click to browse, to plan the version jump.</span></div>
     <div id="doodba_migration_plan_result" style="display: none"></div>
 </template>
 

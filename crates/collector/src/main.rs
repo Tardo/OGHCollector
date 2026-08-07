@@ -28,11 +28,25 @@ use sqlitedb::models;
 
 // The guard must stay alive for the whole run: dropping it releases the lock,
 // which is why this returns it instead of letting it die inside the function.
+//
+// `NamedLock::create()` locks a file under `$TMPDIR`/`/tmp`, which is private
+// to each container - in Docker (`docker compose run` per invocation, as
+// `update_db.sh` does for every org/version) every run gets its own `/tmp`,
+// so this never actually serialized concurrent runs for the same org despite
+// looking like it does. Locking inside `data/` (the volume every invocation
+// shares) instead makes it a real cross-process/cross-container lock. Without
+// it, two overlapping runs for the same org (e.g. a cron re-firing
+// `update_db.sh` before the previous run finished) race on the same
+// `data/repos/<org>/<repo>` checkout: one run's `git reset --hard` to its
+// branch can land mid-scan of another run's analyzer, which still stamps
+// every module with its own run's requested Odoo version - so one version's
+// branch content ends up stored under a different version's label.
 fn try_lock(config: &OGHCollectorConfig) -> named_lock::NamedLockGuard {
     let source_info = config.get_source().split('/').collect::<Vec<&str>>();
     let org = source_info[0];
-    let lock_name = format!("OGHCollector::{org}");
-    let lock = NamedLock::create(lock_name.as_str()).expect("Can't create the collector lock");
+    fs::create_dir_all("data").expect("Can't create the data directory");
+    let lock_path = format!("data/.{org}.collector.lock");
+    let lock = NamedLock::with_path(&lock_path).expect("Can't create the collector lock");
     match lock.try_lock() {
         Ok(guard) => guard,
         Err(_) => {

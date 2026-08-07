@@ -137,6 +137,29 @@ pub trait GitClient {
             .run()
             .ok()?;
         }
+
+        // Guards against ever analyzing the wrong branch's content under the
+        // requested version's label: git already errors out above (see the
+        // `.ok()?`s) when `branch` doesn't exist upstream, but that alone
+        // doesn't prove HEAD actually landed where asked - e.g. a lock that
+        // fails to serialize concurrent runs on this same `clone_path` (see
+        // `try_lock` in main.rs) could let another run's checkout win the
+        // race after this one's `switch` succeeded. `-q` keeps a detached
+        // HEAD silent (no stderr spam) instead of noisy; `.ok()?` then treats
+        // that the same as any other checkout failure.
+        let checked_out_branch = cmd!("git", "symbolic-ref", "--short", "-q", "HEAD")
+            .dir(&clone_path)
+            .stdin_null()
+            .read()
+            .ok()?;
+        if checked_out_branch.trim() != branch {
+            log::error!(
+                "'{repo_name}': checked out branch '{}' does not match requested '{branch}' - skipping",
+                checked_out_branch.trim()
+            );
+            return None;
+        }
+
         Some(RepoInfo {
             name: repo_name.into(),
             org: org_name.into(),

@@ -64,7 +64,7 @@ class DoodbaMigrationPlan extends Component {
 
   onDragEnter(ev) {
     ev.preventDefault();
-    this.#el_drag_panel.style.backgroundColor = '#54555b';
+    this.#el_drag_panel.classList.add('drag-over');
   }
 
   onDragOver(ev) {
@@ -73,7 +73,7 @@ class DoodbaMigrationPlan extends Component {
 
   onDragLeave(ev) {
     ev.preventDefault();
-    this.#el_drag_panel.style.backgroundColor = '';
+    this.#el_drag_panel.classList.remove('drag-over');
   }
 
   async onClickSave() {
@@ -146,10 +146,12 @@ class DoodbaMigrationPlan extends Component {
       if (!repos[pr.repository_name]) {
         repos[pr.repository_name] = {
           organization: pr.organization,
-          prids: new Set(),
+          // prid -> technical_name, so each merge line can be commented with
+          // which module it brings in.
+          prs: new Map(),
         };
       }
-      repos[pr.repository_name].prids.add(pr.prid);
+      repos[pr.repository_name].prs.set(pr.prid, pr.technical_name);
     }
     // Non-OCA/odoo repos need an explicit entry even with nothing to merge
     // yet (missing) or already merged (present in this step's addons.yaml) -
@@ -159,28 +161,31 @@ class DoodbaMigrationPlan extends Component {
         return;
       }
       if (!repos[repository_name]) {
-        repos[repository_name] = {organization, prids: new Set()};
+        repos[repository_name] = {organization, prs: new Map()};
       }
     };
     step.missing.forEach(stageIfNonStandard);
     step.merged.forEach(stageIfNonStandard);
-    const result = {};
+    // js-yaml can't attach a comment to one array entry, so the merges block
+    // is emitted by hand instead of via yaml.dump.
+    const lines = [];
     for (const repo_name of Object.keys(repos).sort()) {
-      const {organization, prids} = repos[repo_name];
-      result[repo_name] = {
-        remotes: {
-          [organization]: `https://github.com/${organization}/${repo_name}.git`,
-        },
-        target: `${organization} ${step.version}`,
-        merges: [
-          `${organization} ${step.version}`,
-          ...Array.from(prids)
-            .sort((a, b) => a - b)
-            .map(prid => `${organization} refs/pull/${prid}/head`),
-        ],
-      };
+      const {organization, prs} = repos[repo_name];
+      lines.push(`${repo_name}:`);
+      lines.push('  remotes:');
+      lines.push(
+        `    ${organization}: https://github.com/${organization}/${repo_name}.git`,
+      );
+      lines.push(`  target: ${organization} ${step.version}`);
+      lines.push('  merges:');
+      lines.push(`    - ${organization} ${step.version}`);
+      for (const prid of Array.from(prs.keys()).sort((a, b) => a - b)) {
+        lines.push(
+          `    - ${organization} refs/pull/${prid}/head  # ${prs.get(prid)}`,
+        );
+      }
     }
-    return yaml.dump(result, {indent: 2});
+    return `${lines.join('\n')}\n`;
   }
 
   #ciStatusMarker(ci_status) {
@@ -275,17 +280,17 @@ class DoodbaMigrationPlan extends Component {
 
   #fillOdooVersionsSearchOptions() {
     this.#el_search_select_from.replaceChildren();
-    while (this.#el_search_select_to.options.length > 1) {
-      this.#el_search_select_to.remove(1);
-    }
+    this.#el_search_select_to.replaceChildren();
     this.getFetchData('odoo_versions').forEach(({value}) => {
       this.#el_search_select_from.add(new Option(value));
       this.#el_search_select_to.add(new Option(value));
     });
     // odoo_versions is newest-first; default "From" to the oldest version,
-    // since planning a jump from the newest version to itself is a no-op.
+    // since planning a jump from the newest version to itself is a no-op,
+    // and "To" to the newest version.
     this.#el_search_select_from.selectedIndex =
       this.#el_search_select_from.options.length - 1;
+    this.#el_search_select_to.selectedIndex = 0;
   }
 
   #readFileAsText(file) {
@@ -316,12 +321,9 @@ class DoodbaMigrationPlan extends Component {
       const from_ver =
         this.#el_search_select_from.value ||
         this.getFetchData('odoo_versions')[0].value;
-      const to_ver = this.#el_search_select_to.value;
       const formData = new FormData();
       formData.append('from_version', from_ver);
-      if (to_ver) {
-        formData.append('to_version', to_ver);
-      }
+      formData.append('to_version', this.#el_search_select_to.value);
       modules.forEach(mod_name => formData.append('modules', mod_name));
       const data = await getService('requests').post('/doodba/migration/plan', {
         body: formData,

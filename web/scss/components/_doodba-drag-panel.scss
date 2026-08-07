@@ -1,0 +1,111 @@
+// Copyright 2026 Alexandre D. Díaz
+
+// Shared "drag a file here" panel + toolbar chrome for the three Doodba
+// tools pages (converter, dependency resolver, migration plan). Same
+// bordered-surface language as .stat-card/.module-tile instead of each
+// page's own gradient, plus drag-over/processing/error states driven by
+// classes toggled from drag-panel-processing.mjs.
+
+.doodba-drag-panel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 50vh;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    background-color: var(--bs-tertiary-bg);
+    border: 2px dashed var(--bs-border-color-translucent);
+    border-radius: var(--bs-border-radius-lg);
+    transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease,
+        opacity 0.15s ease;
+
+    &:hover {
+        border-color: var(--ommd-accent);
+    }
+
+    .no_mouse {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6em;
+        max-width: 40ch;
+        color: var(--bs-secondary-color);
+        user-select: none;
+    }
+
+    // Toggled on dragenter/dragleave - solid border + accent tint so the
+    // drop target reads as live while a file is over it.
+    &.drag-over {
+        border-style: solid;
+        border-color: var(--ommd-accent);
+        background-color: color-mix(in srgb, var(--ommd-accent) 12%, var(--bs-tertiary-bg));
+    }
+
+    // Toggled while the request is in flight - dimmed, non-interactive,
+    // spinner prepended to the instructional text.
+    &.processing {
+        cursor: progress;
+        pointer-events: none;
+        opacity: 0.6;
+
+        .no_mouse::before {
+            content: "";
+            width: 1.1em;
+            height: 1.1em;
+            flex-shrink: 0;
+            border: 2px solid var(--bs-border-color-translucent);
+            border-top-color: var(--ommd-accent);
+            border-radius: 50%;
+            animation: doodba-drag-panel-spin 0.7s linear infinite;
+        }
+    }
+
+    &.has-error {
+        border-style: solid;
+        border-color: #e05252;
+    }
+}
+
+@keyframes doodba-drag-panel-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.search_container {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    margin-bottom: 0.75rem;
+    padding: 0.4em 0.75em;
+    user-select: none;
+    background-color: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: var(--bs-border-radius);
+
+    .search_input {
+        padding: 0.2em 0.4em;
+        outline: none;
+        background-color: transparent;
+        border: 0;
+        color: inherit;
+        font-weight: bold;
+
+        &:hover:not(:disabled) {
+            background-color: var(--bs-secondary-bg);
+            border-radius: var(--bs-border-radius-sm);
+            cursor: pointer;
+        }
+    }
+}
+
+// The "Save" toolbar spans reuse .search_container but are themselves the
+// clickable control (no <select> child), so they get their own hover.
+.search_container-save:hover {
+    background-color: var(--bs-secondary-bg);
+    cursor: pointer;
+}

@@ -17,13 +17,32 @@ use actix_web::{
 };
 use minijinja::path_loader;
 use minijinja_autoreload::AutoReloader;
-use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use config::SERVER_CONFIG;
 use middlewares::not_found;
 use middlewares::trusted_proxy::strip_untrusted_forwarded_headers;
 use sqlitedb::Pool;
+
+/// IDE run configs (e.g. rust-analyzer's codelens) commonly launch this binary
+/// with cwd set to `crates/server` rather than the workspace root - a bare
+/// relative default then silently opened (and, before this check, created) an
+/// empty DB in the wrong place, which only surfaced later as a confusing "no
+/// such table" panic on the first query. Fail loudly instead, same pattern as
+/// `mcp::resolve_db_path`.
+fn resolve_db_path() -> PathBuf {
+    let raw = std::env::var("OGHCOLLECTOR_DB_PATH").unwrap_or_else(|_| "data/data.db".to_string());
+    std::fs::canonicalize(&raw).unwrap_or_else(|e| {
+        let cwd = std::env::current_dir()
+            .map(|d| d.display().to_string())
+            .unwrap_or_default();
+        panic!(
+            "cannot find SQLite DB at '{raw}' (resolved relative to cwd '{cwd}'): {e}. Run from \
+             the repo root, or set OGHCOLLECTOR_DB_PATH to an absolute path. Run `cargo run -p \
+             sqlitedb --bin migrate` first if the DB doesn't exist yet."
+        );
+    })
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -77,14 +96,12 @@ async fn main() -> std::io::Result<()> {
     let tmpl_reloader = web::Data::new(tmpl_reloader);
 
     // connect to SQLite DB (read-only)
-    let db_path = "data/data.db";
-    if let Some(parent) = Path::new(db_path).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if !Path::new(db_path).exists() {
-        File::create(db_path)?;
-    }
-    let pool: Pool = sqlitedb::new_read_pool(db_path, *SERVER_CONFIG.get_db_pool_max_size());
+    let db_path = resolve_db_path();
+    log::info!("using SQLite DB at {}", db_path.display());
+    let pool: Pool = sqlitedb::new_read_pool(
+        &db_path.to_string_lossy(),
+        *SERVER_CONFIG.get_db_pool_max_size(),
+    );
 
     log::info!(
         "starting HTTP server at http://{}:{}",
