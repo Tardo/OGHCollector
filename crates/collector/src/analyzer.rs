@@ -29,8 +29,12 @@ use crate::gitclient::RepoInfo;
 // any `<model>.csv` data file - ir.model.access.csv, res.groups.csv, ... -
 // where the filename is the model) with its resolved noupdate flag -
 // so a caller can tell "does this add a new access group" or "does this
-// write demo data that only loads once" without re-parsing XML itself. Uses
-// only the stdlib (ast, csv, xml.etree, os, json) so it runs with any Python
+// write demo data that only loads once" without re-parsing XML itself. Also
+// extracts raw `migration_facts` (old-API base classes, hand-rolled SQL,
+// deprecated view/QWeb syntax, ...) - this script only reports the facts, the
+// judging into severity+message happens in collector::migration, mirroring
+// how collector::security judges the records/controllers here. Uses only the
+// stdlib (ast, csv, re, xml.etree, os, json) so it runs with any Python
 // available at build time - no odoo import required, and no ast.unparse
 // (keeps it working on Python 3.8, which lacks it). Returns a single JSON
 // string.
@@ -44,6 +48,7 @@ import ast
 import csv
 import json
 import os
+import re
 import xml.etree.ElementTree as ET
 
 SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations"}
@@ -99,6 +104,36 @@ def _expr_repr(node):
         ]
         return f"{func}({', '.join(args + kwargs)})"
     return "<expr>"
+
+
+def _sql_literal(node):
+    # Only a plain string constant - adjacent literals are already merged
+    # into one Constant by the parser, an f-string/`%`-built query isn't
+    # something we can read statically, so it's silently skipped.
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _cr_execute_sql(node):
+    # Yields the literal SQL text of every `cr.execute(...)`-shaped call
+    # inside `node` (cr.execute / self._cr.execute / self.env.cr.execute -
+    # matched by receiver name, not exact attribute chain).
+    for n in ast.walk(node):
+        if not (
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "execute"
+        ):
+            continue
+        receiver = _expr_repr(n.func.value) or ""
+        if receiver != "cr" and not receiver.endswith(".cr") and not receiver.endswith("_cr"):
+            continue
+        if not n.args:
+            continue
+        sql = _sql_literal(n.args[0])
+        if sql:
+            yield sql.strip()
 
 
 def _is_model_class(node):
@@ -231,6 +266,14 @@ def _analyze_python_source(tree):
                     values = _const_str_list(stmt.value)
                     if values:
                         model_attrs[target_name.lstrip("_")] = values[0]
+                elif target_name == "_auto" and isinstance(stmt.value, ast.Constant) and isinstance(
+                    stmt.value.value, bool
+                ):
+                    # False is the SQL-view/hand-rolled-table pattern - paired
+                    # with init_sql below to tell a view (fine, ORM-agnostic
+                    # by design) from a real table (the ORM never migrates
+                    # its schema - see collector::migration).
+                    model_attrs["auto"] = stmt.value.value
                 elif target_name == "_inherits" and isinstance(stmt.value, ast.Dict):
                     delegation = {}
                     for k, v in zip(stmt.value.keys, stmt.value.values):
@@ -251,6 +294,10 @@ def _analyze_python_source(tree):
                             }
                         )
             elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if stmt.name == "init":
+                    init_sql = [_truncate(sql) for sql in _cr_execute_sql(stmt)]
+                    if init_sql:
+                        model_attrs["init_sql"] = init_sql
                 if stmt.name.startswith("_"):
                     continue
                 decorators = [
@@ -281,6 +328,73 @@ def _analyze_python_source(tree):
             }
         )
     return out
+
+
+def _base_is_old_osv(base):
+    # `class X(osv.osv)` / `osv.Model` / `osv.TransientModel` /
+    # `osv.osv_memory` / `orm.Model` - the pre-v8 API, removed entirely in
+    # modern Odoo. Matched on the base expression alone since these classes
+    # don't extend models.Model and so never reach _is_model_class above.
+    if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
+        return base.value.id in ("osv", "orm") and base.attr in (
+            "osv",
+            "Model",
+            "TransientModel",
+            "AbstractModel",
+            "osv_memory",
+        )
+    return isinstance(base, ast.Name) and base.id in ("osv", "orm")
+
+
+def _analyze_migration_facts(tree):
+    # One flat list of raw facts (not yet judged/worded) for collector's Rust
+    # side to turn into severity+message findings - keeps this script a pure
+    # extractor, matching the split already used for security warnings
+    # (see collector::security / collector::migration).
+    facts = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                if _base_is_old_osv(base):
+                    facts.append(
+                        {
+                            "kind": "old_api_base",
+                            "context": node.name,
+                            "detail": _expr_repr(base),
+                        }
+                    )
+                    break
+            for stmt in node.body:
+                if not isinstance(stmt, ast.Assign):
+                    continue
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and target.id in ("_columns", "_defaults"):
+                        facts.append(
+                            {
+                                "kind": "old_style_field_dict",
+                                "context": node.name,
+                                "detail": target.id,
+                            }
+                        )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "openerp" or alias.name.startswith("openerp."):
+                    facts.append({"kind": "openerp_import", "context": None, "detail": alias.name})
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and (node.module == "openerp" or node.module.startswith("openerp.")):
+                facts.append({"kind": "openerp_import", "context": None, "detail": node.module})
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "trg_validate"
+        ):
+            facts.append(
+                {"kind": "workflow_call", "context": None, "detail": _expr_repr(node.func)}
+            )
+    for sql in _cr_execute_sql(tree):
+        if re.search(r"\b(insert|update|delete)\b", sql, re.IGNORECASE):
+            facts.append({"kind": "raw_sql_write", "context": None, "detail": _truncate(sql)})
+    return facts
 
 
 def _route_decorator(func_node):
@@ -400,6 +514,14 @@ def _arch_root_tag(field_el):
     return None
 
 
+def _elem_uses_attr(el, attr_names):
+    # True if `el` or any descendant carries one of `attr_names` - used for
+    # attrs=/states= (deprecated view syntax) and t-raw (deprecated QWeb
+    # directive), both of which can appear anywhere inside an arch/template,
+    # not just at the root.
+    return any(any(a in child.attrib for a in attr_names) for child in el.iter())
+
+
 def _view_type_from_name(name):
     # Last-resort guess for views a same-module inherit chain can't resolve:
     # by convention the type appears as a "."/"_"-separated token, usually
@@ -445,10 +567,11 @@ def _resolve_inherited_view_types(views, module_name):
 
 def _analyze_xml_source(data):
     out = []
+    facts = []
     try:
         root = ET.fromstring(data)
     except ET.ParseError:
-        return out
+        return out, facts
     for record in root.iter("record"):
         if record.attrib.get("model") != "ir.ui.view":
             continue
@@ -460,6 +583,7 @@ def _analyze_xml_source(data):
         inherit_xml_id = None
         explicit_type = None
         arch_tag = None
+        arch_field_el = None
         for field in record.findall("field"):
             fname = field.attrib.get("name")
             if fname == "name":
@@ -471,6 +595,7 @@ def _analyze_xml_source(data):
             elif fname == "type":
                 explicit_type = (field.text or "").strip() or None
             elif fname == "arch":
+                arch_field_el = field
                 arch_tag = _arch_root_tag(field)
         # Explicit <field name="type"> wins; only a real base-view tag counts
         # as a type, anything else (xpath/data, or a bare locator tag from
@@ -481,6 +606,16 @@ def _analyze_xml_source(data):
             view_type = arch_tag
         else:
             view_type = None
+        # arch_tag (the un-resolved root tag) rather than view_type: only a
+        # view actually *defining* a tree root counts, not an inheriting
+        # patch (xpath/data) that merely happens to resolve to type "tree".
+        if arch_tag == "tree":
+            facts.append({"kind": "view_tree_tag", "context": xml_id, "detail": None})
+        if arch_field_el is not None:
+            if _elem_uses_attr(arch_field_el, ("attrs", "states")):
+                facts.append({"kind": "view_attrs_states", "context": xml_id, "detail": None})
+            if _elem_uses_attr(arch_field_el, ("t-raw",)):
+                facts.append({"kind": "view_t_raw", "context": xml_id, "detail": None})
         out.append(
             {
                 "xml_id": xml_id,
@@ -494,6 +629,8 @@ def _analyze_xml_source(data):
         xml_id = template.attrib.get("id")
         if not xml_id:
             continue
+        if _elem_uses_attr(template, ("t-raw",)):
+            facts.append({"kind": "view_t_raw", "context": xml_id, "detail": None})
         out.append(
             {
                 "xml_id": xml_id,
@@ -503,7 +640,7 @@ def _analyze_xml_source(data):
                 "view_type": "qweb",
             }
         )
-    return out
+    return out, facts
 
 
 def _field_value_repr(field_el):
@@ -603,6 +740,7 @@ def analyze_module(module_path):
     models = []
     records = []
     controllers = []
+    migration_facts = []
     for dirpath, dirnames, filenames in os.walk(module_path):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for filename in filenames:
@@ -619,13 +757,16 @@ def analyze_module(module_path):
                     continue
                 models.extend(_analyze_python_source(tree))
                 controllers.extend(_analyze_controllers(tree))
+                migration_facts.extend(_analyze_migration_facts(tree))
             elif filename.endswith(".xml"):
                 try:
                     with open(full_path, "rb") as fh:
                         data = fh.read()
                 except OSError:
                     continue
-                views.extend(_analyze_xml_source(data))
+                xml_views, xml_facts = _analyze_xml_source(data)
+                views.extend(xml_views)
+                migration_facts.extend(xml_facts)
                 records.extend(_analyze_xml_records(data))
             elif filename.endswith(".csv") and "." in filename[: -len(".csv")]:
                 # Odoo data CSVs are named after their model (ir.model.access
@@ -643,8 +784,17 @@ def analyze_module(module_path):
     # The module folder name is its technical name, so refs like
     # "my_module.view_x" from inside my_module resolve locally too.
     _resolve_inherited_view_types(views, os.path.basename(os.path.normpath(module_path)))
+    # Pre-Odoo-10 manifest naming - cheap to check once per module, no walk needed.
+    if os.path.isfile(os.path.join(module_path, "__openerp__.py")):
+        migration_facts.append({"kind": "openerp_manifest", "context": None, "detail": None})
     return json.dumps(
-        {"views": views, "models": models, "records": records, "controllers": controllers}
+        {
+            "views": views,
+            "models": models,
+            "records": records,
+            "controllers": controllers,
+            "migration_facts": migration_facts,
+        }
     )
 "#;
 
@@ -1337,6 +1487,41 @@ class ResPartner(models.Model):
         )
         .unwrap();
 
+        // Migration-consideration fixtures: an `_auto = False` reporting
+        // model whose init() hand-rolls a real TABLE (not a VIEW) via raw
+        // SQL, plus a handful of old-API patterns in the same file - all
+        // cheap to extract from one AST walk.
+        fs::write(
+            models_dir.join("x_report.py"),
+            r#"
+import openerp
+from odoo import fields, models
+from openerp import workflow
+
+
+class XReport(models.Model):
+    _name = "x.report"
+    _auto = False
+
+    partner_id = fields.Many2one("res.partner")
+
+    def init(self):
+        self._cr.execute(
+            "CREATE TABLE IF NOT EXISTS x_report (id serial, partner_id integer)"
+        )
+
+    def do_sync(self):
+        self.cr.execute("UPDATE x_report SET partner_id = 1")
+        workflow.trg_validate(1, "x.report", 1, "confirm", self.cr)
+
+
+class OldStyleThing(osv.osv):
+    _name = "x.old_thing"
+    _columns = {"name": fields.char("Name")}
+"#,
+        )
+        .unwrap();
+
         fs::write(
             views_dir.join("res_partner_views.xml"),
             r#"<?xml version="1.0" encoding="utf-8"?>
@@ -1355,7 +1540,7 @@ class ResPartner(models.Model):
         <field name="inherit_id" ref="base.view_partner_form"/>
         <field name="arch" type="xml">
             <group name="some_group" position="after">
-                <field name="x_kind"/>
+                <field name="x_kind" attrs="{'invisible': [('x_kind', '=', 'a')]}"/>
             </group>
         </field>
     </record>
@@ -1409,6 +1594,7 @@ class ResPartner(models.Model):
         </field>
     </record>
     <template id="portal_my_partner_kind" name="My Partner Kind">
+        <div t-raw="raw_html"/>
         <div>Hello</div>
     </template>
 </odoo>
@@ -1566,8 +1752,15 @@ class PartnerKindController(http.Controller):
             .unwrap();
         assert_eq!(template_view.view_type.as_deref(), Some("qweb"));
 
-        assert_eq!(result.models.len(), 1);
-        let model = &result.models[0];
+        // res.partner (new-API) + x.report (new-API, `_auto = False`);
+        // OldStyleThing (osv.osv base) is deliberately excluded - it only
+        // surfaces via migration_facts below, not here.
+        assert_eq!(result.models.len(), 2);
+        let model = result
+            .models
+            .iter()
+            .find(|m| m.model_name == "res.partner")
+            .unwrap();
         assert_eq!(model.model_name, "res.partner");
         assert_eq!(model.class_name, "ResPartner");
         assert!(!model.is_new_model);
@@ -1614,6 +1807,70 @@ class PartnerKindController(http.Controller):
                 "api.model".to_string(),
                 "api.constrains('x_foo', 'x_label')".to_string(),
             ]
+        );
+
+        // `_auto = False` + init()'s raw SQL round-trips into model_attrs
+        // ("auto"/"init_sql") - the fact collector::migration keys off of to
+        // tell a hand-rolled TABLE from the common SQL-VIEW reporting pattern.
+        let x_report = result
+            .models
+            .iter()
+            .find(|m| m.model_name == "x.report")
+            .unwrap();
+        let x_report_attrs = x_report.attrs.as_ref().unwrap();
+        assert_eq!(x_report_attrs["auto"], false);
+        let init_sql = x_report_attrs["init_sql"].as_array().unwrap();
+        assert_eq!(init_sql.len(), 1);
+        assert!(init_sql[0]
+            .as_str()
+            .unwrap()
+            .contains("CREATE TABLE IF NOT EXISTS"));
+
+        // migration_facts: every kind the Python side can emit, round-tripped
+        // through JSON into MigrationFactInfo.
+        let fact_kinds: Vec<&str> = result
+            .migration_facts
+            .iter()
+            .map(|f| f.kind.as_str())
+            .collect();
+        for expected in [
+            "old_api_base",
+            "old_style_field_dict",
+            "openerp_import",
+            "workflow_call",
+            "raw_sql_write",
+            "view_attrs_states",
+            "view_t_raw",
+        ] {
+            assert!(
+                fact_kinds.contains(&expected),
+                "missing fact kind {expected:?} in {fact_kinds:?}"
+            );
+        }
+        let old_api_fact = result
+            .migration_facts
+            .iter()
+            .find(|f| f.kind == "old_api_base")
+            .unwrap();
+        assert_eq!(old_api_fact.context.as_deref(), Some("OldStyleThing"));
+        assert_eq!(old_api_fact.detail.as_deref(), Some("osv.osv"));
+        let attrs_fact = result
+            .migration_facts
+            .iter()
+            .find(|f| f.kind == "view_attrs_states")
+            .unwrap();
+        assert_eq!(
+            attrs_fact.context.as_deref(),
+            Some("view_res_partner_extra")
+        );
+        let t_raw_fact = result
+            .migration_facts
+            .iter()
+            .find(|f| f.kind == "view_t_raw")
+            .unwrap();
+        assert_eq!(
+            t_raw_fact.context.as_deref(),
+            Some("portal_my_partner_kind")
         );
 
         // ir.ui.view records must not leak into the generic records list -

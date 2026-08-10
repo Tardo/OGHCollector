@@ -157,7 +157,7 @@ diff --git a/schema.rs b/schema.rs
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -148,32 +148,32 @@ diesel::table! {
+@@ -148,44 +148,44 @@ diesel::table! {
          module_version_id -> BigInt,
      }
  }
@@ -184,6 +184,19 @@ diff --git a/schema.rs b/schema.rs
  }
  
  diesel::table! {
+     module_migration_note (id) {
+-        id -> Nullable<BigInt>,
++        id -> BigInt,
+         module_id -> BigInt,
+         severity -> Text,
+         code -> Text,
+         message -> Text,
+         context -> Nullable<Text>,
+         module_version_id -> BigInt,
+     }
+ }
+ 
+ diesel::table! {
      module_model (id) {
 -        id -> Nullable<BigInt>,
 +        id -> BigInt,
@@ -193,7 +206,7 @@ diff --git a/schema.rs b/schema.rs
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -181,119 +181,119 @@ diesel::table! {
+@@ -193,119 +193,119 @@ diesel::table! {
          module_version_id -> BigInt,
      }
  }

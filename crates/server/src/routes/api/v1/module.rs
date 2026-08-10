@@ -83,6 +83,17 @@ pub struct ModuleSecurityWarningResponse {
     pub xml_id: Option<String>,
 }
 
+// Every migration consideration, both severities - unlike security warnings
+// these aren't graded grave/minor, they're all meant to be read by whoever
+// is about to migrate the module.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleMigrationConsiderationResponse {
+    pub severity: String,
+    pub code: String,
+    pub message: String,
+    pub context: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleFullInfoResponse {
     pub technical_name: String,
@@ -111,6 +122,7 @@ pub struct ModuleFullInfoResponse {
     pub models: Vec<ModuleModelResponse>,
     pub controllers: Vec<ModuleControllerResponse>,
     pub security_warnings: Vec<ModuleSecurityWarningResponse>,
+    pub migration_considerations: Vec<ModuleMigrationConsiderationResponse>,
     /// Modules (same Odoo version, any repository) that declare this module
     /// as an Odoo dependency.
     pub required_by: Vec<models::module::ModuleCriteriaInfo>,
@@ -206,6 +218,21 @@ fn get_module_security_warnings(
         .collect()
 }
 
+fn get_module_migration_considerations(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleMigrationConsiderationResponse> {
+    models::module_migration_note::get_by_module_version_id(conn, module_version_id)
+        .into_iter()
+        .map(|n| ModuleMigrationConsiderationResponse {
+            severity: n.severity,
+            code: n.code,
+            message: n.message,
+            context: n.context,
+        })
+        .collect()
+}
+
 fn get_module_models(
     conn: &mut SqliteConnection,
     module_version_id: &i64,
@@ -293,25 +320,33 @@ pub fn process_modules_db(
             Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
             None => models::module_version::resolve_current(conn, module),
         };
-        let (views, module_models, controllers, security_warnings, version) =
-            match &resolved_version {
-                Some(mv) => (
-                    get_module_views(conn, &mv.id),
-                    get_module_models(conn, &mv.id),
-                    get_module_controllers(conn, &mv.id),
-                    get_module_security_warnings(conn, &mv.id),
-                    mv.version_module.clone(),
-                ),
-                None => (
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    version_module
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| module.version_module.clone()),
-                ),
-            };
+        let (
+            views,
+            module_models,
+            controllers,
+            security_warnings,
+            migration_considerations,
+            version,
+        ) = match &resolved_version {
+            Some(mv) => (
+                get_module_views(conn, &mv.id),
+                get_module_models(conn, &mv.id),
+                get_module_controllers(conn, &mv.id),
+                get_module_security_warnings(conn, &mv.id),
+                get_module_migration_considerations(conn, &mv.id),
+                mv.version_module.clone(),
+            ),
+            None => (
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                version_module
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| module.version_module.clone()),
+            ),
+        };
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version,
@@ -338,6 +373,7 @@ pub fn process_modules_db(
             models: module_models,
             controllers,
             security_warnings,
+            migration_considerations,
             required_by,
         });
     }

@@ -169,6 +169,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    module_migration_note (id) {
+        id -> BigInt,
+        module_id -> BigInt,
+        severity -> Text,
+        code -> Text,
+        message -> Text,
+        context -> Nullable<Text>,
+        module_version_id -> BigInt,
+    }
+}
+
+diesel::table! {
     module_model (id) {
         id -> BigInt,
         module_id -> BigInt,
@@ -297,6 +309,7 @@ diesel::table! {
 
 diesel::joinable!(module_controller -> module_version (module_version_id));
 diesel::joinable!(module_embedding -> module (module_id));
+diesel::joinable!(module_migration_note -> module_version (module_version_id));
 diesel::joinable!(module_model -> module_version (module_version_id));
 diesel::joinable!(module_record -> module_version (module_version_id));
 diesel::joinable!(module_security_warning -> module_version (module_version_id));
@@ -319,6 +332,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_controller,
     module_embedding,
     module_maintainer,
+    module_migration_note,
     module_model,
     module_model_field,
     module_model_method,

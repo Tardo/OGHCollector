@@ -15,6 +15,17 @@
     <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue.</p>
 </div>
 {% endif %}
+{% if module.migration_considerations %}
+<div class="dev-only alert alert-warning" role="alert">
+    <h5 class="alert-heading">&#128736; Migration considerations</h5>
+    <ul>
+        {% for c in module.migration_considerations %}
+        <li>{% if c.context %}<code>{{ c.context }}</code> &mdash; {% endif %}{{ c.message }} <span class="badge {{ c.severity == 'warning' and 'text-bg-warning' or 'text-bg-secondary' }}">{{ c.code }}</span></li>
+        {% endfor %}
+    </ul>
+    <p class="mb-0 small">Found by automated static analysis: patterns worth a look before/after upgrading this module to a newer Odoo version.</p>
+</div>
+{% endif %}
 <div class="row">
     <dl class="spec-sheet col-lg-6">
         <dt>Repository</dt>

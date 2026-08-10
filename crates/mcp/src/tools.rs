@@ -271,6 +271,17 @@ pub struct ModuleDependencyInfo {
     pub dependencies: ModuleDependencies,
 }
 
+// Both severities ("warning"/"info") - unlike security warnings these aren't
+// graded grave/minor, they're all meant to be read by whoever is migrating
+// the module.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleMigrationConsideration {
+    pub severity: String,
+    pub code: String,
+    pub message: String,
+    pub context: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleCodeAnalysis {
     pub technical_name: String,
@@ -282,6 +293,10 @@ pub struct ModuleCodeAnalysis {
     pub models: Vec<ModuleModel>,
     pub records: Vec<ModuleRecord>,
     pub controllers: Vec<ModuleController>,
+    /// What to check before/after upgrading this module to a newer Odoo
+    /// version (old-API classes, hand-rolled SQL, deprecated view/QWeb
+    /// syntax, ...) - found by static analysis, not a guarantee.
+    pub migration_considerations: Vec<ModuleMigrationConsideration>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -429,6 +444,21 @@ fn get_module_controllers(
         .collect()
 }
 
+fn get_module_migration_considerations(
+    conn: &mut SqliteConnection,
+    module_version_id: &i64,
+) -> Vec<ModuleMigrationConsideration> {
+    models::module_migration_note::get_by_module_version_id(conn, module_version_id)
+        .into_iter()
+        .map(|n| ModuleMigrationConsideration {
+            severity: n.severity,
+            code: n.code,
+            message: n.message,
+            context: n.context,
+        })
+        .collect()
+}
+
 fn get_module_models(conn: &mut SqliteConnection, module_version_id: &i64) -> Vec<ModuleModel> {
     models::module_model::get_by_module_version_id(conn, module_version_id)
         .into_iter()
@@ -547,25 +577,33 @@ fn build_module_code_analysis(
         Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
         None => models::module_version::resolve_current(conn, module),
     };
-    let (views, module_models, module_records, module_controllers, module_version) =
-        match &resolved_version {
-            Some(mv) => (
-                get_module_views(conn, &mv.id),
-                get_module_models(conn, &mv.id),
-                get_module_records(conn, &mv.id),
-                get_module_controllers(conn, &mv.id),
-                mv.version_module.clone(),
-            ),
-            None => (
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                version_module
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| module.version_module.clone()),
-            ),
-        };
+    let (
+        views,
+        module_models,
+        module_records,
+        module_controllers,
+        migration_considerations,
+        module_version,
+    ) = match &resolved_version {
+        Some(mv) => (
+            get_module_views(conn, &mv.id),
+            get_module_models(conn, &mv.id),
+            get_module_records(conn, &mv.id),
+            get_module_controllers(conn, &mv.id),
+            get_module_migration_considerations(conn, &mv.id),
+            mv.version_module.clone(),
+        ),
+        None => (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            version_module
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| module.version_module.clone()),
+        ),
+    };
     ModuleCodeAnalysis {
         technical_name: module.technical_name.clone(),
         odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
@@ -576,6 +614,7 @@ fn build_module_code_analysis(
         models: module_models,
         records: module_records,
         controllers: module_controllers,
+        migration_considerations,
     }
 }
 
@@ -1147,10 +1186,17 @@ impl OghMcp {
                         every HTTP endpoint the module exposes (route paths, resolved auth, \
                         http/json type, allowed methods, csrf, whether the handler calls \
                         .sudo()) - useful for both API discovery and security review (e.g. \
-                        public routes calling sudo). This is the heaviest tool \
+                        public routes calling sudo). Also lists `migration_considerations`: \
+                        static-analysis findings worth checking before/after upgrading this \
+                        module to a newer Odoo version - old-API base classes, hand-rolled SQL \
+                        (e.g. a `_auto = False` model whose init() creates a real TABLE the ORM \
+                        never migrates), deprecated view/QWeb syntax (attrs=/states=, t-raw, \
+                        <tree> root tags), etc. `severity` is \"warning\" (will likely break, or \
+                        needs an actual code change) or \"info\" (still works, but worth a \
+                        second look). This is the heaviest tool \
                         in this server - only call it when you actually need view/model/field/ \
-                        method/record detail, not just to check what a module does or what it \
-                        depends on. Defaults to the latest known module version; pass \
+                        method/record/migration detail, not just to check what a module does or \
+                        what it depends on. Defaults to the latest known module version; pass \
                         version_module (see list_module_versions) to inspect an older one."
     )]
     async fn get_module_code_analysis(

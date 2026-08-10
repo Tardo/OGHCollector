@@ -16,6 +16,7 @@ pub mod module_committer_period;
 pub mod module_controller;
 pub mod module_embedding;
 pub mod module_maintainer;
+pub mod module_migration_note;
 pub mod module_model;
 pub mod module_model_field;
 pub mod module_model_method;

@@ -103,6 +103,22 @@ pub struct ControllerAnalysisInfo {
     pub docstring: Option<String>,
 }
 
+// A raw, not-yet-judged fact spotted by the analyzer (an old-API base class,
+// hand-rolled SQL, deprecated view/QWeb syntax, ...) - collector::migration
+// turns these into severity+message findings, the same split analyzer.rs
+// uses for records/controllers vs. collector::security. `context` is
+// whatever locates the fact for a human (a class name, a view/template
+// xml_id); `detail` is kind-specific extra text (e.g. the literal base
+// class, the SQL snippet, the import module).
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct MigrationFactInfo {
+    pub kind: String,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ModuleAnalysisInfo {
     pub views: Vec<ViewAnalysisInfo>,
@@ -111,4 +127,6 @@ pub struct ModuleAnalysisInfo {
     pub records: Vec<RecordAnalysisInfo>,
     #[serde(default)]
     pub controllers: Vec<ControllerAnalysisInfo>,
+    #[serde(default)]
+    pub migration_facts: Vec<MigrationFactInfo>,
 }

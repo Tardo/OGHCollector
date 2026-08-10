@@ -2,7 +2,7 @@
 {# Content of one Odoo-version tab-pane on pages/modules.html. Rendered
    eagerly for the active tab and via routes::modules::route_tab for the
    rest, fetched lazily on first tab activation so a page with many Odoo
-   versions doesn't ship every version's PRs/security findings up front. #}
+   versions doesn't ship every version's PRs/security/migration findings up front. #}
 {% if g.most_changed or g.largest_module or g.newest_module %}
 <div class="row g-3 mb-2">
     {% if g.most_changed %}
@@ -141,6 +141,63 @@
                 <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
                 <td><span class="badge text-bg-warning">{{ w.code }}</span></td>
                 <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<h4 class="mt-5">Migration Considerations</h4>
+<div class="alert alert-info" role="alert">
+    Found by automated static analysis: patterns worth a look before/after upgrading a module to a newer Odoo version, not a guarantee.
+</div>
+
+<h5 class="mt-3">Warnings <span class="badge text-bg-warning">{{ g.migration_warnings | length }}</span></h5>
+{% if not g.migration_warnings %}
+<p class="text-body-secondary">No findings that likely need a code change.</p>
+{% else %}
+<div class="modules-scroll-list">
+    <table class="table table-striped-columns">
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th>Code</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for n in g.migration_warnings %}
+            <tr>
+                <td><a href="/module/{{ n.organization }}/{{ n.technical_name }}">{{ n.technical_name }}</a></td>
+                <td><span class="badge text-bg-warning">{{ n.code }}</span></td>
+                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<h5 class="mt-4">Info <span class="badge text-bg-secondary">{{ g.migration_infos | length }}</span></h5>
+{% if not g.migration_infos %}
+<p class="text-body-secondary">No informational findings.</p>
+{% else %}
+<div class="modules-scroll-list">
+    <table class="table table-striped-columns">
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th>Code</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for n in g.migration_infos %}
+            <tr>
+                <td><a href="/module/{{ n.organization }}/{{ n.technical_name }}">{{ n.technical_name }}</a></td>
+                <td><span class="badge text-bg-secondary">{{ n.code }}</span></td>
+                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}</td>
             </tr>
             {% endfor %}
         </tbody>

@@ -38,6 +38,15 @@ pub struct ModuleSecurityFindingInfo {
     pub technical_name: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ModuleMigrationFindingInfo {
+    pub code: String,
+    pub message: String,
+    pub context: Option<String>,
+    pub organization: String,
+    pub technical_name: String,
+}
+
 // One Odoo-version tab's worth of content, so the template only has to loop
 // once over versions instead of filtering three flat lists per tab.
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -50,6 +59,8 @@ pub struct ModulesVersionGroup {
     pub pr_duplicate: usize,
     pub security_errors: Vec<ModuleSecurityFindingInfo>,
     pub security_warnings: Vec<ModuleSecurityFindingInfo>,
+    pub migration_warnings: Vec<ModuleMigrationFindingInfo>,
+    pub migration_infos: Vec<ModuleMigrationFindingInfo>,
     pub avg_days_open: Option<f64>,
     pub closed_count: i64,
     pub most_changed: Option<models::module::ModuleFunFactInfo>,
@@ -188,6 +199,27 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             group.security_errors.push(entry);
         } else {
             group.security_warnings.push(entry);
+        }
+    }
+
+    // "warning" = will likely break, or needs an actual code change before
+    // migrating; "info" = still works, worth a second look (see
+    // module_migration_note model doc). Both shown here, split by severity
+    // per version - same shape as the security findings above.
+    for n in models::module_migration_note::get_all_current(conn) {
+        let is_warning = n.severity == models::module_migration_note::SEVERITY_WARNING;
+        let entry = ModuleMigrationFindingInfo {
+            code: n.code,
+            message: n.message,
+            context: n.context,
+            organization: n.org_name,
+            technical_name: n.technical_name,
+        };
+        let group = get_group(&mut by_version, n.version_odoo);
+        if is_warning {
+            group.migration_warnings.push(entry);
+        } else {
+            group.migration_infos.push(entry);
         }
     }
 

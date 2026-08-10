@@ -5,6 +5,7 @@ mod clients;
 mod config;
 mod embeddings;
 mod gitclient;
+mod migration;
 mod pypi;
 mod security;
 
@@ -273,6 +274,23 @@ async fn main() {
                     &new_module.id,
                     &module_version.id,
                     &sec_warnings,
+                )
+                .unwrap();
+
+                // "What to check before/after upgrading this module" findings
+                // over the same analysis pass: old-API classes, hand-rolled
+                // SQL, deprecated view/QWeb syntax, ... (see
+                // collector::migration). Shown on the module detail page,
+                // same as security warnings.
+                let mut mig_notes = migration::analyze_models(&new_module_info.analysis.models);
+                mig_notes.extend(migration::analyze_facts(
+                    &new_module_info.analysis.migration_facts,
+                ));
+                models::module_migration_note::replace_for_module(
+                    &mut conn,
+                    &new_module.id,
+                    &module_version.id,
+                    &mig_notes,
                 )
                 .unwrap();
             }
