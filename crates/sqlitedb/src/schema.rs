@@ -177,6 +177,8 @@ diesel::table! {
         message -> Text,
         context -> Nullable<Text>,
         module_version_id -> BigInt,
+        file -> Nullable<Text>,
+        line -> Nullable<Integer>,
     }
 }
 
@@ -237,6 +239,8 @@ diesel::table! {
         message -> Text,
         xml_id -> Nullable<Text>,
         module_version_id -> BigInt,
+        file -> Nullable<Text>,
+        line -> Nullable<Integer>,
     }
 }
 

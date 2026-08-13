@@ -914,12 +914,14 @@ mod tests {
                 model: "res.groups".to_string(),
                 noupdate: true,
                 fields: Some(serde_json::json!({"name": "Group A"})),
+                ..Default::default()
             },
             RecordAnalysisInfo {
                 xml_id: "access_a".to_string(),
                 model: "ir.model.access".to_string(),
                 noupdate: false,
                 fields: Some(serde_json::json!({"perm_read": "1"})),
+                ..Default::default()
             },
         ];
         super::module_record::replace_for_module(

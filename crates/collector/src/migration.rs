@@ -18,12 +18,16 @@ fn note(
     code: &str,
     context: Option<String>,
     message: String,
+    file: Option<String>,
+    line: Option<i32>,
 ) -> MigrationConsiderationInfo {
     MigrationConsiderationInfo {
         severity: severity.to_string(),
         code: code.to_string(),
         message,
         context,
+        file,
+        line,
     }
 }
 
@@ -70,6 +74,8 @@ pub fn analyze_models(models: &[ModelAnalysisInfo]) -> Vec<MigrationConsideratio
                             m.model_name,
                             if upper.contains("IF NOT EXISTS") { " (`CREATE TABLE IF NOT EXISTS`)" } else { "" }
                         ),
+                        None,
+                        None,
                     ));
                 } else if upper.contains("VIEW") {
                     out.push(note(
@@ -80,6 +86,8 @@ pub fn analyze_models(models: &[ModelAnalysisInfo]) -> Vec<MigrationConsideratio
                             "Model '{}' has `_auto = False` and its init() (re)creates a SQL VIEW: the standard reporting-model pattern, but its raw SQL isn't checked by the ORM - verify it against renamed/removed tables and columns in the target version.",
                             m.model_name
                         ),
+                        None,
+                        None,
                     ));
                 }
             }
@@ -94,6 +102,8 @@ pub fn analyze_models(models: &[ModelAnalysisInfo]) -> Vec<MigrationConsideratio
                         "Field '{}' on '{}' uses the deprecated `track_visibility` kwarg: renamed to `tracking` in Odoo 13.0.",
                         f.name, m.model_name
                     ),
+                    None,
+                    None,
                 ));
             }
         }
@@ -118,6 +128,8 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     ctx_str(),
                     f.detail.as_deref().unwrap_or("osv.*")
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "old_style_field_dict" => out.push(note(
                 SEVERITY_WARNING,
@@ -128,6 +140,8 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     ctx_str(),
                     f.detail.as_deref().unwrap_or("_columns")
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "openerp_import" => out.push(note(
                 SEVERITY_WARNING,
@@ -137,12 +151,16 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     "Imports from the old `{}` namespace: renamed to `odoo` since Odoo 10.0.",
                     f.detail.as_deref().unwrap_or("openerp")
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "workflow_call" => out.push(note(
                 SEVERITY_WARNING,
                 "migration-workflow",
                 None,
                 "Uses the old workflow engine (base.workflow / `trg_validate`): removed in Odoo 11.0, must be rewritten as state-field transitions.".to_string(),
+                f.file.clone(),
+                f.line,
             )),
             "raw_sql_write" => out.push(note(
                 SEVERITY_INFO,
@@ -152,6 +170,8 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     "Raw `cr.execute()` INSERT/UPDATE/DELETE bypasses the ORM (no compute/constrains/tracking/mail): `{}` - re-check the table/column names still match after upgrading.",
                     f.detail.as_deref().unwrap_or("")
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "view_tree_tag" => out.push(note(
                 SEVERITY_INFO,
@@ -161,6 +181,8 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     "View '{}' is defined with a `<tree>` root tag: renamed to `<list>` in Odoo 18.0.",
                     ctx_str()
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "view_attrs_states" => out.push(note(
                 SEVERITY_WARNING,
@@ -170,6 +192,8 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     "View '{}' uses the deprecated `attrs=`/`states=` syntax: removed in Odoo 17.0+, replace with direct `invisible`/`readonly`/`required` domain expressions.",
                     ctx_str()
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "view_t_raw" => out.push(note(
                 SEVERITY_WARNING,
@@ -179,12 +203,16 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                     "Template '{}' uses `t-raw`: removed in Odoo 17.0, replace with `t-out` (auto-escaped) or `Markup`.",
                     ctx_str()
                 ),
+                f.file.clone(),
+                f.line,
             )),
             "openerp_manifest" => out.push(note(
                 SEVERITY_WARNING,
                 "migration-openerp-manifest",
                 None,
                 "Manifest file is `__openerp__.py`: renamed to `__manifest__.py` since Odoo 10.0 - a strong signal this module hasn't been touched since.".to_string(),
+                f.file.clone(),
+                f.line,
             )),
             _ => {}
         }
@@ -270,6 +298,8 @@ mod tests {
             kind: kind.to_string(),
             context: context.map(str::to_string),
             detail: detail.map(str::to_string),
+            file: Some("models/x.py".to_string()),
+            line: Some(12),
         }
     }
 
@@ -305,5 +335,8 @@ mod tests {
         );
         // Unrecognized kinds are silently skipped, not passed through.
         assert_eq!(found.len(), facts.len() - 1);
+        // file/line ride along from the fact into the finding untouched.
+        assert_eq!(found[0].file.as_deref(), Some("models/x.py"));
+        assert_eq!(found[0].line, Some(12));
     }
 }

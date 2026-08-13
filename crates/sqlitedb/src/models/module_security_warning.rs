@@ -20,16 +20,22 @@ pub struct Model {
     pub message: String,
     pub xml_id: Option<String>,
     pub module_version_id: i64,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 /// One security finding computed by the collector (see
 /// collector::security::analyze_records) from a module's analyzed records.
+/// `file`/`line` locate it in the module's source tree (module-relative
+/// path, 1-based line) when the analyzer could resolve one.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SecurityWarningInfo {
     pub severity: String,
     pub code: String,
     pub message: String,
     pub xml_id: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 #[derive(Insertable)]
@@ -41,6 +47,8 @@ struct NewModuleSecurityWarning<'a> {
     message: &'a str,
     xml_id: Option<&'a str>,
     module_version_id: i64,
+    file: Option<&'a str>,
+    line: Option<i32>,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -123,6 +131,8 @@ pub fn replace_for_module(
             message: w.message.as_str(),
             xml_id: w.xml_id.as_deref(),
             module_version_id: *module_version_id,
+            file: w.file.as_deref(),
+            line: w.line,
         })
         .collect();
 

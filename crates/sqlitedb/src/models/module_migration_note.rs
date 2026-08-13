@@ -22,17 +22,24 @@ pub struct Model {
     pub message: String,
     pub context: Option<String>,
     pub module_version_id: i64,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 /// One migration consideration computed by the collector (see
 /// collector::migration) from a module's analyzed models/fields and raw
-/// migration_facts.
+/// migration_facts. `file`/`line` locate it in the module's source tree
+/// (module-relative path, 1-based line) when the analyzer could resolve
+/// one - always None for the model/field-derived findings (analyze_models),
+/// usually set for the raw-fact-derived ones (analyze_facts).
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct MigrationConsiderationInfo {
     pub severity: String,
     pub code: String,
     pub message: String,
     pub context: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 #[derive(Insertable)]
@@ -44,6 +51,8 @@ struct NewModuleMigrationNote<'a> {
     message: &'a str,
     context: Option<&'a str>,
     module_version_id: i64,
+    file: Option<&'a str>,
+    line: Option<i32>,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -124,6 +133,8 @@ pub fn replace_for_module(
             message: n.message.as_str(),
             context: n.context.as_deref(),
             module_version_id: *module_version_id,
+            file: n.file.as_deref(),
+            line: n.line,
         })
         .collect();
 

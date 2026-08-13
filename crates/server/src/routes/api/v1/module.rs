@@ -81,6 +81,8 @@ pub struct ModuleSecurityWarningResponse {
     pub code: String,
     pub message: String,
     pub xml_id: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 // Every migration consideration, both severities - unlike security warnings
@@ -92,6 +94,8 @@ pub struct ModuleMigrationConsiderationResponse {
     pub code: String,
     pub message: String,
     pub context: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -214,6 +218,8 @@ fn get_module_security_warnings(
             code: w.code,
             message: w.message,
             xml_id: w.xml_id,
+            file: w.file,
+            line: w.line,
         })
         .collect()
 }
@@ -229,6 +235,8 @@ fn get_module_migration_considerations(
             code: n.code,
             message: n.message,
             context: n.context,
+            file: n.file,
+            line: n.line,
         })
         .collect()
 }

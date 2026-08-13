@@ -68,6 +68,13 @@ pub struct RecordAnalysisInfo {
     pub noupdate: bool,
     #[serde(default)]
     pub fields: Option<serde_json::Value>,
+    // Module-folder-relative source path and 1-based line the record was
+    // found at (CSV: the row; XML: the element carrying this xml_id) - None
+    // when the analyzer's line index couldn't resolve it.
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<i32>,
 }
 
 // One HTTP endpoint the module exposes (a method decorated with http.route).
@@ -101,6 +108,12 @@ pub struct ControllerAnalysisInfo {
     pub signature: String,
     #[serde(default)]
     pub docstring: Option<String>,
+    // Module-folder-relative source path and 1-based line of the decorated
+    // method (free from the `ast` node - no line index needed).
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<i32>,
 }
 
 // A raw, not-yet-judged fact spotted by the analyzer (an old-API base class,
@@ -117,6 +130,13 @@ pub struct MigrationFactInfo {
     pub context: Option<String>,
     #[serde(default)]
     pub detail: Option<String>,
+    // Module-folder-relative source path and 1-based line the fact was
+    // spotted at - None when there's no single line to point to (e.g. the
+    // `openerp_manifest` fact, which is about a file's existence).
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<i32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

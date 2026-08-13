@@ -115,6 +115,8 @@ fn warning(
         code: code.to_string(),
         message,
         xml_id: Some(rec.xml_id.clone()),
+        file: rec.file.clone(),
+        line: rec.line,
     }
 }
 
@@ -305,6 +307,8 @@ fn controller_warning(
         code: code.to_string(),
         message,
         xml_id: Some(source),
+        file: ctrl.file.clone(),
+        line: ctrl.line,
     }
 }
 
@@ -399,6 +403,7 @@ mod tests {
             model: "ir.model.access".to_string(),
             noupdate: false,
             fields: Some(fields),
+            ..Default::default()
         }
     }
 
@@ -474,6 +479,7 @@ mod tests {
                 "perm_create": "0",
                 "perm_unlink": "0",
             })),
+            ..Default::default()
         };
         assert!(analyze_records(&[rec]).is_empty());
     }
@@ -527,6 +533,7 @@ mod tests {
                 "perm_read": "True",
                 "perm_write": "True",
             })),
+            ..Default::default()
         };
         let found = analyze_records(&[rec]);
         assert_eq!(found.len(), 1);
@@ -543,6 +550,7 @@ mod tests {
                 "group_id": "ref('base.group_system')",
                 "perm_write": "True",
             })),
+            ..Default::default()
         };
         assert!(analyze_records(&[rec_admin]).is_empty());
     }
@@ -567,6 +575,7 @@ mod tests {
                     "perm_create": "1",
                     "perm_unlink": "1",
                 })),
+                ..Default::default()
             };
             assert!(analyze_records(&[rec]).is_empty(), "group {group}");
         }
@@ -582,6 +591,7 @@ mod tests {
             model: "ir.rule".to_string(),
             noupdate: false,
             fields: Some(fields),
+            ..Default::default()
         }
     }
 

@@ -34,7 +34,7 @@ use crate::gitclient::RepoInfo;
 // deprecated view/QWeb syntax, ...) - this script only reports the facts, the
 // judging into severity+message happens in collector::migration, mirroring
 // how collector::security judges the records/controllers here. Uses only the
-// stdlib (ast, csv, re, xml.etree, os, json) so it runs with any Python
+// stdlib (ast, csv, re, xml.etree, xml.sax, os, json) so it runs with any Python
 // available at build time - no odoo import required, and no ast.unparse
 // (keeps it working on Python 3.8, which lacks it). Returns a single JSON
 // string.
@@ -50,6 +50,7 @@ import json
 import os
 import re
 import xml.etree.ElementTree as ET
+import xml.sax
 
 SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations"}
 MODEL_BASE_ATTRS = {"Model", "TransientModel", "AbstractModel"}
@@ -116,7 +117,7 @@ def _sql_literal(node):
 
 
 def _cr_execute_sql(node):
-    # Yields the literal SQL text of every `cr.execute(...)`-shaped call
+    # Yields (sql, lineno) for every literal `cr.execute(...)`-shaped call
     # inside `node` (cr.execute / self._cr.execute / self.env.cr.execute -
     # matched by receiver name, not exact attribute chain).
     for n in ast.walk(node):
@@ -133,7 +134,7 @@ def _cr_execute_sql(node):
             continue
         sql = _sql_literal(n.args[0])
         if sql:
-            yield sql.strip()
+            yield sql.strip(), n.lineno
 
 
 def _is_model_class(node):
@@ -295,7 +296,7 @@ def _analyze_python_source(tree):
                         )
             elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if stmt.name == "init":
-                    init_sql = [_truncate(sql) for sql in _cr_execute_sql(stmt)]
+                    init_sql = [_truncate(sql) for sql, _lineno in _cr_execute_sql(stmt)]
                     if init_sql:
                         model_attrs["init_sql"] = init_sql
                 if stmt.name.startswith("_"):
@@ -346,11 +347,12 @@ def _base_is_old_osv(base):
     return isinstance(base, ast.Name) and base.id in ("osv", "orm")
 
 
-def _analyze_migration_facts(tree):
+def _analyze_migration_facts(tree, rel_path):
     # One flat list of raw facts (not yet judged/worded) for collector's Rust
     # side to turn into severity+message findings - keeps this script a pure
     # extractor, matching the split already used for security warnings
-    # (see collector::security / collector::migration).
+    # (see collector::security / collector::migration). `file`/`line` come
+    # free from the AST node that triggered each fact.
     facts = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
@@ -361,6 +363,8 @@ def _analyze_migration_facts(tree):
                             "kind": "old_api_base",
                             "context": node.name,
                             "detail": _expr_repr(base),
+                            "file": rel_path,
+                            "line": node.lineno,
                         }
                     )
                     break
@@ -374,26 +378,58 @@ def _analyze_migration_facts(tree):
                                 "kind": "old_style_field_dict",
                                 "context": node.name,
                                 "detail": target.id,
+                                "file": rel_path,
+                                "line": stmt.lineno,
                             }
                         )
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "openerp" or alias.name.startswith("openerp."):
-                    facts.append({"kind": "openerp_import", "context": None, "detail": alias.name})
+                    facts.append(
+                        {
+                            "kind": "openerp_import",
+                            "context": None,
+                            "detail": alias.name,
+                            "file": rel_path,
+                            "line": node.lineno,
+                        }
+                    )
         elif isinstance(node, ast.ImportFrom):
             if node.module and (node.module == "openerp" or node.module.startswith("openerp.")):
-                facts.append({"kind": "openerp_import", "context": None, "detail": node.module})
+                facts.append(
+                    {
+                        "kind": "openerp_import",
+                        "context": None,
+                        "detail": node.module,
+                        "file": rel_path,
+                        "line": node.lineno,
+                    }
+                )
         elif (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "trg_validate"
         ):
             facts.append(
-                {"kind": "workflow_call", "context": None, "detail": _expr_repr(node.func)}
+                {
+                    "kind": "workflow_call",
+                    "context": None,
+                    "detail": _expr_repr(node.func),
+                    "file": rel_path,
+                    "line": node.lineno,
+                }
             )
-    for sql in _cr_execute_sql(tree):
+    for sql, lineno in _cr_execute_sql(tree):
         if re.search(r"\b(insert|update|delete)\b", sql, re.IGNORECASE):
-            facts.append({"kind": "raw_sql_write", "context": None, "detail": _truncate(sql)})
+            facts.append(
+                {
+                    "kind": "raw_sql_write",
+                    "context": None,
+                    "detail": _truncate(sql),
+                    "file": rel_path,
+                    "line": lineno,
+                }
+            )
     return facts
 
 
@@ -419,7 +455,7 @@ def _calls_method(func_node, method_name):
     return False
 
 
-def _analyze_controllers(tree):
+def _analyze_controllers(tree, rel_path):
     # Every HTTP endpoint a module exposes: any method decorated with
     # http.route, whatever the class inherits from (matching on the decorator
     # instead of the Controller base also catches classes extending existing
@@ -478,6 +514,8 @@ def _analyze_controllers(tree):
                     "checks_token_access": _calls_method(stmt, "_document_check_access"),
                     "signature": _signature(stmt),
                     "docstring": _truncate(ast.get_docstring(stmt, clean=True)),
+                    "file": rel_path,
+                    "line": stmt.lineno,
                 }
             )
     return out
@@ -565,13 +603,45 @@ def _resolve_inherited_view_types(views, module_name):
             )
 
 
-def _analyze_xml_source(data):
+class _IdLineHandler(xml.sax.ContentHandler):
+    # Maps every element's `id` attribute to its 1-based source line via the
+    # public Locator API - ElementTree (used for the actual DOM walk below)
+    # doesn't track source positions at all. First occurrence wins; id
+    # collisions within one file shouldn't happen in valid Odoo XML.
+    def __init__(self):
+        super().__init__()
+        self._locator = None
+        self.lines = {}
+
+    def setDocumentLocator(self, locator):
+        self._locator = locator
+
+    def startElement(self, name, attrs):
+        el_id = attrs.get("id")
+        if el_id and el_id not in self.lines and self._locator:
+            self.lines[el_id] = self._locator.getLineNumber()
+
+
+def _xml_line_index(data):
+    handler = _IdLineHandler()
+    try:
+        xml.sax.parseString(data, handler)
+    except Exception:
+        # SAX is stricter than ET.fromstring about encoding/entities - a
+        # failed index just means no line links for this file, not a dead
+        # module analysis.
+        return {}
+    return handler.lines
+
+
+def _analyze_xml_source(data, rel_path):
     out = []
     facts = []
     try:
         root = ET.fromstring(data)
     except ET.ParseError:
         return out, facts
+    line_index = _xml_line_index(data)
     for record in root.iter("record"):
         if record.attrib.get("model") != "ir.ui.view":
             continue
@@ -609,13 +679,20 @@ def _analyze_xml_source(data):
         # arch_tag (the un-resolved root tag) rather than view_type: only a
         # view actually *defining* a tree root counts, not an inheriting
         # patch (xpath/data) that merely happens to resolve to type "tree".
+        line = line_index.get(xml_id)
         if arch_tag == "tree":
-            facts.append({"kind": "view_tree_tag", "context": xml_id, "detail": None})
+            facts.append(
+                {"kind": "view_tree_tag", "context": xml_id, "detail": None, "file": rel_path, "line": line}
+            )
         if arch_field_el is not None:
             if _elem_uses_attr(arch_field_el, ("attrs", "states")):
-                facts.append({"kind": "view_attrs_states", "context": xml_id, "detail": None})
+                facts.append(
+                    {"kind": "view_attrs_states", "context": xml_id, "detail": None, "file": rel_path, "line": line}
+                )
             if _elem_uses_attr(arch_field_el, ("t-raw",)):
-                facts.append({"kind": "view_t_raw", "context": xml_id, "detail": None})
+                facts.append(
+                    {"kind": "view_t_raw", "context": xml_id, "detail": None, "file": rel_path, "line": line}
+                )
         out.append(
             {
                 "xml_id": xml_id,
@@ -630,7 +707,15 @@ def _analyze_xml_source(data):
         if not xml_id:
             continue
         if _elem_uses_attr(template, ("t-raw",)):
-            facts.append({"kind": "view_t_raw", "context": xml_id, "detail": None})
+            facts.append(
+                {
+                    "kind": "view_t_raw",
+                    "context": xml_id,
+                    "detail": None,
+                    "file": rel_path,
+                    "line": line_index.get(xml_id),
+                }
+            )
         out.append(
             {
                 "xml_id": xml_id,
@@ -660,7 +745,7 @@ def _field_value_repr(field_el):
     return _truncate(text) if text else None
 
 
-def _analyze_xml_records(data):
+def _analyze_xml_records(data, rel_path):
     # Every non-view `<record>` a module defines: security groups
     # (res.groups), record rules (ir.rule), cron jobs (ir.cron), server
     # actions, demo/reference data, etc. - one generic mechanism instead of a
@@ -673,6 +758,7 @@ def _analyze_xml_records(data):
         root = ET.fromstring(data)
     except ET.ParseError:
         return out
+    line_index = _xml_line_index(data)
 
     def walk(elem, noupdate):
         raw = elem.attrib.get("noupdate")
@@ -695,6 +781,8 @@ def _analyze_xml_records(data):
                         "model": model,
                         "noupdate": current,
                         "fields": fields or None,
+                        "file": rel_path,
+                        "line": line_index.get(xml_id),
                     }
                 )
         for child in elem:
@@ -704,14 +792,15 @@ def _analyze_xml_records(data):
     return out
 
 
-def _analyze_data_csv(text, model):
+def _analyze_data_csv(text, model, rel_path):
     # Odoo loads any `<model>.csv` data file (ir.model.access.csv is just the
     # most common one; res.groups.csv etc. work the same way): one record per
     # row, the filename is the model. Emitted shaped just like the XML records
-    # above so a caller doesn't need to know the source was a CSV.
+    # above so a caller doesn't need to know the source was a CSV. The header
+    # is physical line 1, so the first data row starts at line 2.
     out = []
     try:
-        for row in csv.DictReader(text.splitlines()):
+        for line_no, row in enumerate(csv.DictReader(text.splitlines()), start=2):
             xml_id = (row.get("id") or "").strip()
             if not xml_id:
                 continue
@@ -728,6 +817,8 @@ def _analyze_data_csv(text, model):
                     "model": model,
                     "noupdate": False,
                     "fields": fields or None,
+                    "file": rel_path,
+                    "line": line_no,
                 }
             )
     except csv.Error:
@@ -745,6 +836,13 @@ def analyze_module(module_path):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for filename in filenames:
             full_path = os.path.join(dirpath, filename)
+            # Module-folder-relative, forward-slash - joins with the module's
+            # technical name (the repo-root folder) to build a source link.
+            # ponytail: assumes the module folder sits directly at the repo
+            # root (true for OCA-style repos, false for e.g. odoo/odoo whose
+            # addons live under addons/) - fix by resolving the module's real
+            # repo-relative path if that ever needs to be exact.
+            rel_path = os.path.relpath(full_path, module_path).replace(os.sep, "/")
             if filename.endswith(".py"):
                 try:
                     with open(full_path, "r", encoding="utf-8", errors="replace") as fh:
@@ -756,18 +854,18 @@ def analyze_module(module_path):
                 except (SyntaxError, ValueError):
                     continue
                 models.extend(_analyze_python_source(tree))
-                controllers.extend(_analyze_controllers(tree))
-                migration_facts.extend(_analyze_migration_facts(tree))
+                controllers.extend(_analyze_controllers(tree, rel_path))
+                migration_facts.extend(_analyze_migration_facts(tree, rel_path))
             elif filename.endswith(".xml"):
                 try:
                     with open(full_path, "rb") as fh:
                         data = fh.read()
                 except OSError:
                     continue
-                xml_views, xml_facts = _analyze_xml_source(data)
+                xml_views, xml_facts = _analyze_xml_source(data, rel_path)
                 views.extend(xml_views)
                 migration_facts.extend(xml_facts)
-                records.extend(_analyze_xml_records(data))
+                records.extend(_analyze_xml_records(data, rel_path))
             elif filename.endswith(".csv") and "." in filename[: -len(".csv")]:
                 # Odoo data CSVs are named after their model (ir.model.access
                 # .csv, res.groups.csv, ...); a dotless stem can't be a model,
@@ -780,13 +878,21 @@ def analyze_module(module_path):
                         text = fh.read()
                 except OSError:
                     continue
-                records.extend(_analyze_data_csv(text, filename[: -len(".csv")]))
+                records.extend(_analyze_data_csv(text, filename[: -len(".csv")], rel_path))
     # The module folder name is its technical name, so refs like
     # "my_module.view_x" from inside my_module resolve locally too.
     _resolve_inherited_view_types(views, os.path.basename(os.path.normpath(module_path)))
     # Pre-Odoo-10 manifest naming - cheap to check once per module, no walk needed.
     if os.path.isfile(os.path.join(module_path, "__openerp__.py")):
-        migration_facts.append({"kind": "openerp_manifest", "context": None, "detail": None})
+        migration_facts.append(
+            {
+                "kind": "openerp_manifest",
+                "context": None,
+                "detail": None,
+                "file": "__openerp__.py",
+                "line": None,
+            }
+        )
     return json.dumps(
         {
             "views": views,
@@ -1854,6 +1960,8 @@ class PartnerKindController(http.Controller):
             .unwrap();
         assert_eq!(old_api_fact.context.as_deref(), Some("OldStyleThing"));
         assert_eq!(old_api_fact.detail.as_deref(), Some("osv.osv"));
+        assert_eq!(old_api_fact.file.as_deref(), Some("models/x_report.py"));
+        assert_eq!(old_api_fact.line, Some(23));
         let attrs_fact = result
             .migration_facts
             .iter()
@@ -1863,6 +1971,13 @@ class PartnerKindController(http.Controller):
             attrs_fact.context.as_deref(),
             Some("view_res_partner_extra")
         );
+        // Resolved via the SAX line index (by the record's `id` attribute),
+        // not the AST - exercises the ElementTree-has-no-lineno workaround.
+        assert_eq!(
+            attrs_fact.file.as_deref(),
+            Some("views/res_partner_views.xml")
+        );
+        assert_eq!(attrs_fact.line, Some(11));
         let t_raw_fact = result
             .migration_facts
             .iter()
@@ -1885,6 +2000,8 @@ class PartnerKindController(http.Controller):
         assert_eq!(group.model, "res.groups");
         // Inherited from the wrapping <data noupdate="1">.
         assert!(group.noupdate);
+        assert_eq!(group.file.as_deref(), Some("security/security.xml"));
+        assert_eq!(group.line, Some(4));
         let group_fields = group.fields.as_ref().unwrap();
         assert_eq!(group_fields["name"], "Partner Kind Manager");
         assert_eq!(
@@ -1919,6 +2036,9 @@ class PartnerKindController(http.Controller):
         assert_eq!(access_fields["group_id:id"], "group_partner_kind_manager");
         assert_eq!(access_fields["perm_read"], "1");
         assert_eq!(access_fields["perm_unlink"], "0");
+        // CSV rows: file is module-relative, line is header(1) + row offset.
+        assert_eq!(access.file.as_deref(), Some("security/ir.model.access.csv"));
+        assert_eq!(access.line, Some(2));
 
         // Groups created via res.groups.csv must surface like the XML ones.
         let csv_group = result
@@ -1958,6 +2078,9 @@ class PartnerKindController(http.Controller):
             webhook.docstring.as_deref(),
             Some("Receives external webhook calls.")
         );
+        // ast.FunctionDef.lineno points at `def`, not the decorator above it.
+        assert_eq!(webhook.file.as_deref(), Some("controllers/main.py"));
+        assert_eq!(webhook.line, Some(8));
 
         let my_kinds = result
             .controllers
