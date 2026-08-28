@@ -64,7 +64,9 @@ pub fn vec_to_bytes(v: &[f32]) -> Vec<u8> {
 }
 
 pub fn bytes_to_vec(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4)
+    b.as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
 }
