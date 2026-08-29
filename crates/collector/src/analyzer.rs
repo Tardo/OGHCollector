@@ -52,7 +52,10 @@ import re
 import xml.etree.ElementTree as ET
 import xml.sax
 
-SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations"}
+# Migrations and needs_upgrade hold version-specific migration scripts (old
+# API, raw SQL, openerp imports - all *supposed* there to migrate old data),
+# so they're never walked: flagging them would be a false migration finding.
+SKIP_DIRS = {"static", "i18n", "tests", "test", "__pycache__", ".git", "migrations", "needs_upgrade"}
 MODEL_BASE_ATTRS = {"Model", "TransientModel", "AbstractModel"}
 RELATIONAL_FIELD_TYPES = {"Many2one", "One2many", "Many2many"}
 DOCSTRING_LIMIT = 4000
@@ -2101,6 +2104,103 @@ class PartnerKindController(http.Controller):
             .unwrap();
         assert!(portal_doc.uses_sudo);
         assert!(portal_doc.checks_token_access);
+    }
+
+    // Migration scripts (the `migrations/<version>/` data-migration scripts and
+    // the `needs_upgrade/` upgrade scripts) are *supposed* to use old API,
+    // openerp imports and raw SQL - flagging them would be a false positive in
+    // the migration considerations. Both dirs are pruned from the walk, so a
+    // module that only contains such scripts must yield zero migration facts,
+    // while the same patterns in a normal models/ file still do.
+    #[test]
+    fn test_migration_scripts_are_excluded_from_facts() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "migration_scripts_excluded"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir.join("migrations/16.0.1.0.0")).unwrap();
+        fs::create_dir_all(&dir.join("needs_upgrade")).unwrap();
+        fs::create_dir_all(&dir.join("models")).unwrap();
+
+        // A normal model with the same old-API/raw-SQL/workflow patterns -
+        // these MUST still be flagged.
+        fs::write(
+            dir.join("models/real.py"),
+            r#"
+import openerp
+from odoo import models
+from openerp import workflow
+
+
+class Real(models.Model):
+    _name = "real.model"
+
+    def do_sync(self):
+        self.cr.execute("UPDATE real.model SET x = 1")
+        workflow.trg_validate(1, "real.model", 1, "confirm", self.cr)
+"#,
+        )
+        .unwrap();
+
+        // A migrations/ script and a needs_upgrade/ script, both carrying the
+        // exact same smell - these MUST be ignored.
+        fs::write(
+            dir.join("migrations/16.0.1.0.0/migrate.py"),
+            r#"
+from openerp import workflow
+from openerp osv import osv
+
+
+class Old(osv.osv):
+    _name = "old.migrated"
+
+    def _run(self):
+        self.cr.execute("INSERT INTO old.migrated VALUES (1)")
+        workflow.trg_validate(1, "old.migrated", 1, "confirm", self.cr)
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("needs_upgrade/data.py"),
+            r#"
+import openerp
+
+
+def migrate(cr, version):
+    cr.execute("UPDATE old.migrated SET active = True")
+    openerp.workflow.trg_validate(1, "old.migrated", 1, "confirm", cr)
+"#,
+        )
+        .unwrap();
+
+        let analyzer = OGHCollectorAnalyzer::new(&160u8);
+        let result = analyzer.analyze_module_source(&dir);
+
+        // The normal file's facts survive...
+        let kinds: Vec<&str> = result
+            .migration_facts
+            .iter()
+            .map(|f| f.kind.as_str())
+            .collect();
+        assert!(
+            kinds.contains(&"openerp_import")
+                && kinds.contains(&"raw_sql_write")
+                && kinds.contains(&"workflow_call"),
+            "normal-model patterns must still be flagged, got {kinds:?}"
+        );
+        // ...and none of them live inside a migration script.
+        for f in &result.migration_facts {
+            let file = f.file.as_deref().unwrap_or("");
+            assert!(
+                !file.starts_with("migrations/") && !file.starts_with("needs_upgrade/"),
+                "migration script fact leaked: {:?} at {file:?}",
+                f.kind
+            );
+        }
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     // Exercises get_git_committers end to end against a real repo: two fake
