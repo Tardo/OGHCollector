@@ -150,6 +150,6 @@ mod tests {
         assert_eq!(ranked[0].0, 2);
         assert!(ranked[0].1 > 0.85);
         // And an id absent from the map keeps its pure cosine.
-        assert!((ranked[1].1 - 0.7071).abs() < 1e-3);
+        assert!((ranked[1].1 - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-3);
     }
 }

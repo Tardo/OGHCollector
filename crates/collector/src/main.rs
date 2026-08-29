@@ -177,7 +177,7 @@ async fn main() {
         );
     }
 
-    log::info!("Analazyng '{}' repos...", repo_infos.len());
+    log::info!("Analyzing '{}' repos...", repo_infos.len());
     let analyzer = OGHCollectorAnalyzer::new(odoo_ver);
     let manifest_infos = analyzer.get_module_info(&mut conn, config.get_read_paths(), &repo_infos);
     let manifest_count = &manifest_infos.len();
@@ -185,11 +185,11 @@ async fn main() {
         log::info!("Saving '{}' repos info...", manifest_infos.len());
         let mut module_ids_by_repo: HashMap<i64, Vec<i64>> = HashMap::new();
         let dep_type_module = models::dependency_type::get_by_name(&mut conn, "module")
-            .expect("Can't found the module dependecy type");
+            .expect("Can't find the module dependency type");
         let dep_type_python = models::dependency_type::get_by_name(&mut conn, "python")
-            .expect("Can't found the python dependecy type");
+            .expect("Can't find the python dependency type");
         let dep_type_bin = models::dependency_type::get_by_name(&mut conn, "bin")
-            .expect("Can't found the bin dependecy type");
+            .expect("Can't find the bin dependency type");
         let re = Regex::new(r"^([^><=]+).+?([^><=]+)$").unwrap();
         for manifest in manifest_infos {
             let mut new_module_info = manifest.clone();
@@ -333,7 +333,7 @@ async fn main() {
                     module_depend_name,
                 );
                 if let Some(module_depend_id) = module_depend_id_opt {
-                    let _ = models::dependency_module::delete_by_module_id_dependecy_id(
+                    let _ = models::dependency_module::delete_by_module_id_dependency_id(
                         &mut conn,
                         &new_module.id,
                         &module_depend_id.id,
@@ -380,7 +380,7 @@ async fn main() {
                     module_depends_python_name,
                 );
                 if let Some(module_depend_id) = module_depend_python_id_opt {
-                    let _ = models::dependency_module::delete_by_module_id_dependecy_id(
+                    let _ = models::dependency_module::delete_by_module_id_dependency_id(
                         &mut conn,
                         &new_module.id,
                         &module_depend_id.id,
@@ -507,7 +507,7 @@ async fn main() {
                     module_depends_bin_name,
                 );
                 if let Some(module_depend_id) = module_depend_bin_id_opt {
-                    let _ = models::dependency_module::delete_by_module_id_dependecy_id(
+                    let _ = models::dependency_module::delete_by_module_id_dependency_id(
                         &mut conn,
                         &new_module.id,
                         &module_depend_id.id,

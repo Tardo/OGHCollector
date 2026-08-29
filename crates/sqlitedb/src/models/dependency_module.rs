@@ -132,7 +132,7 @@ pub fn delete_by_module_id(conn: &mut SqliteConnection, module_id: &i64) -> Quer
         .execute(conn)
 }
 
-pub fn delete_by_module_id_dependecy_id(
+pub fn delete_by_module_id_dependency_id(
     conn: &mut SqliteConnection,
     module_id: &i64,
     dependency_id: &i64,

@@ -146,7 +146,7 @@ class SigmaAtlas extends Component {
       settings: sensibleSettings,
     });
     this.#fa2_layout.start();
-    this.#fillDependecySearchOptions();
+    this.#fillDependencySearchOptions();
     this.#el_mod_dep_control.textContent = '⏹️';
 
     if (!this.#timer) {
@@ -159,7 +159,7 @@ class SigmaAtlas extends Component {
     this.toggleLoadingMessage(false);
   }
 
-  #fillDependecySearchOptions() {
+  #fillDependencySearchOptions() {
     this.#el_mod_dep_search_dependencies.replaceChildren();
     this.#sigma_renderer.graph
       .nodes()
