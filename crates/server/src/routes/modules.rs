@@ -34,8 +34,11 @@ pub struct ModuleSecurityFindingInfo {
     pub code: String,
     pub message: String,
     pub xml_id: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
     pub organization: String,
     pub technical_name: String,
+    pub repository: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -43,8 +46,11 @@ pub struct ModuleMigrationFindingInfo {
     pub code: String,
     pub message: String,
     pub context: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
     pub organization: String,
     pub technical_name: String,
+    pub repository: String,
 }
 
 // One Odoo-version tab's worth of content, so the template only has to loop
@@ -191,8 +197,11 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             code: w.code,
             message: w.message,
             xml_id: w.xml_id,
+            file: w.file,
+            line: w.line,
             organization: w.org_name,
             technical_name: w.technical_name,
+            repository: w.repository,
         };
         let group = get_group(&mut by_version, w.version_odoo);
         if is_error {
@@ -212,8 +221,11 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             code: n.code,
             message: n.message,
             context: n.context,
+            file: n.file,
+            line: n.line,
             organization: n.org_name,
             technical_name: n.technical_name,
+            repository: n.repository,
         };
         let group = get_group(&mut by_version, n.version_odoo);
         if is_warning {

@@ -65,12 +65,18 @@ pub struct ModuleMigrationNoteFullInfo {
     pub message: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub context: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub file: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub line: Option<i32>,
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub version_odoo: i32,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository: String,
 }
 
 /// Every consideration for every module's *current* snapshot (mirrors
@@ -80,7 +86,9 @@ pub struct ModuleMigrationNoteFullInfo {
 pub fn get_all_current(conn: &mut SqliteConnection) -> Vec<ModuleMigrationNoteFullInfo> {
     diesel::sql_query(
         "SELECT mmn.severity, mmn.code, mmn.message, mmn.context, \
-         mod.version_odoo, mod.technical_name, gh_org.name as org_name \
+          mmn.file, mmn.line, \
+          mod.version_odoo, mod.technical_name, \
+          gh_org.name as org_name, gh_repo.name as repository \
          FROM module_migration_note as mmn \
          INNER JOIN module_version as mv ON mv.id = mmn.module_version_id \
          INNER JOIN module as mod ON mod.id = mmn.module_id AND mod.version_module = mv.version_module \

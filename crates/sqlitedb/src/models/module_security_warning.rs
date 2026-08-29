@@ -61,12 +61,18 @@ pub struct ModuleSecurityWarningFullInfo {
     pub message: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub xml_id: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub file: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub line: Option<i32>,
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub version_odoo: i32,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository: String,
 }
 
 /// Every warning for every module's *current* snapshot (mirrors
@@ -77,7 +83,9 @@ pub struct ModuleSecurityWarningFullInfo {
 pub fn get_all_current(conn: &mut SqliteConnection) -> Vec<ModuleSecurityWarningFullInfo> {
     diesel::sql_query(
         "SELECT msw.severity, msw.code, msw.message, msw.xml_id, \
-         mod.version_odoo, mod.technical_name, gh_org.name as org_name \
+          msw.file, msw.line, \
+          mod.version_odoo, mod.technical_name, \
+          gh_org.name as org_name, gh_repo.name as repository \
          FROM module_security_warning as msw \
          INNER JOIN module_version as mv ON mv.id = msw.module_version_id \
          INNER JOIN module as mod ON mod.id = msw.module_id AND mod.version_module = mv.version_module \
