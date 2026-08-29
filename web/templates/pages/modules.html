@@ -19,7 +19,9 @@
             <option value="name">Name</option>
             <option value="description">Description</option>
             <option value="category">Category</option>
+            {% if SEMANTIC_SEARCH_ENABLED %}
             <option value="semantic">Semantic</option>
+            {% endif %}
         </select>
         <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
         <select id="version">

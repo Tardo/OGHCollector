@@ -21,6 +21,7 @@ pub struct OGHServerConfig {
     mcp_url: String,
     trusted_proxies: Vec<IpNet>,
     seo_enabled: bool,
+    semantic_search_enabled: bool,
 }
 
 impl OGHServerConfig {
@@ -66,6 +67,7 @@ impl OGHServerConfig {
             })
             .collect::<Vec<IpNet>>();
         let seo_enabled = settings.get_bool("seo_enabled").unwrap_or(false);
+        let semantic_search_enabled = settings.get_bool("semantic_search_enabled").unwrap_or(true);
         OGHServerConfig {
             bind_address,
             port,
@@ -81,6 +83,7 @@ impl OGHServerConfig {
             mcp_url,
             trusted_proxies,
             seo_enabled,
+            semantic_search_enabled,
         }
     }
 
@@ -159,6 +162,10 @@ impl OGHServerConfig {
 
     pub fn get_seo_enabled(&self) -> bool {
         self.seo_enabled
+    }
+
+    pub fn get_semantic_search_enabled(&self) -> bool {
+        self.semantic_search_enabled
     }
 }
 

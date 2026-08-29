@@ -49,8 +49,16 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     // Load/download the embedding model off the startup path so the first
-    // /v1/search/semantic call doesn't pay the cost.
-    std::thread::spawn(oghembed::warmup);
+    // /v1/search/semantic call doesn't pay the cost. Skipped entirely when the
+    // feature is disabled, so no model is downloaded or kept in memory.
+    if SERVER_CONFIG.get_semantic_search_enabled() {
+        std::thread::spawn(oghembed::warmup);
+    } else {
+        log::info!(
+            "semantic search disabled; the embedding model will not be loaded and \
+             /v1/semantic-search is not served"
+        );
+    }
 
     // MiniJinja
     if SERVER_CONFIG.get_template_autoreload() {
@@ -200,9 +208,13 @@ async fn main() -> std::io::Result<()> {
                     .service(routes::api::v1::module::route_versions)
                     .service(routes::api::v1::repository::route)
                     .service(routes::api::v1::search::route_criteria)
-                    .service(routes::api::v1::search::route_semantic)
                     .service(routes::api::v1::search::route),
             )
+            .configure(|cfg| {
+                if SERVER_CONFIG.get_semantic_search_enabled() {
+                    cfg.service(routes::api::v1::search::route_semantic);
+                }
+            })
             .wrap(DefaultHeaders::new().add((
                 "Cache-Control",
                 format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),

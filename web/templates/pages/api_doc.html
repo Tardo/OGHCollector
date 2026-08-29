@@ -84,7 +84,9 @@
         <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
         <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
         <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
+        {% if SEMANTIC_SEARCH_ENABLED %}
         <button class="nav-link" id="api-pills-semantic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-semantic" type="button" role="tab" aria-controls="api-pills-semantic" aria-selected="false">Semantic search</button>
+        {% endif %}
     </div>
     <ul class="nav nav-pills mb-3 d-flex d-md-none mb-5" id="pills-tab" role="tablist">
         <li class="nav-item dropdown bg-primary-subtle">
@@ -105,9 +107,11 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
                 </li>
+                {% if SEMANTIC_SEARCH_ENABLED %}
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="api-pills-semantic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-semantic" type="button" role="tab" aria-controls="api-pills-semantic" aria-selected="false">Semantic search</button>
                 </li>
+                {% endif %}
             </ul>
         </li>
     </ul>
@@ -522,6 +526,7 @@
 ]"
             ) }}
         </div>
+        {% if SEMANTIC_SEARCH_ENABLED %}
         <div class="tab-pane fade" id="api-pills-semantic" role="tabpanel" aria-labelledby="api-pills-semantic-tab" tabindex="0">
             {{ api_doc_tab_pane(
                 "semantic",
@@ -583,6 +588,7 @@
 ]"
             ) }}
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

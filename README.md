@@ -123,6 +123,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
 | `trusted_proxies` | list of strings | IPs/CIDRs (e.g. your reverse proxy's address, or the Docker network subnet) allowed to set `X-Forwarded-For`/`Forwarded`; honored only when the request's direct TCP peer matches one of these, otherwise the headers are stripped and the real peer address is used instead. Needed for correct client IPs in access logs (and `REQ_BASE_URL` scheme/host) behind Traefik/nginx/etc. | `[]` |
 | `seo_enabled` | bool | Allow search engines/social previews to index and share the site: `/robots.txt` returns `Allow: /` instead of `Disallow: /`, and pages get a canonical link plus Open Graph/Twitter Card meta tags. Off by default so nothing is shared/indexed until explicitly opted in. | `false` |
+| `semantic_search_enabled` | bool | Enable embedding-based "Semantic" search (the `/v1/semantic-search` endpoint, the "Semantic" option in the search dropdowns, and its entry on the `/api` page). When off, the option is hidden, the route is not served and the embedding model is never downloaded or loaded in memory. On by default so the feature keeps working unless explicitly disabled. | `true` |
 
 ```yaml
 # docker-compose.override.yaml
