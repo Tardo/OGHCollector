@@ -150,6 +150,31 @@ html[data-bs-theme="dark"] .navbar {
   color: var(--bs-secondary-color);
   font-size: 0.875rem;
   padding: 1rem 0;
+
+  .app-footer-inner {
+    max-width: 1140px;
+    margin: 0 auto;
+  }
+
+  .footer-github {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    color: var(--bs-secondary-color);
+    text-decoration: none;
+    white-space: nowrap;
+
+    .footer-github-icon {
+      width: 1.15rem;
+      height: 1.15rem;
+      display: inline-block;
+    }
+
+    &:hover,
+    &:focus-visible {
+      color: var(--bs-body-color);
+    }
+  }
 }
 
 // ---- Page scaffolding ----
