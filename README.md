@@ -112,7 +112,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `workers` | int | Number of worker processes | `2` |
 | `template_autoreload` | bool | Reload templates automatically when they change | `false` |
 | `static_autoreload` | bool | Reload static files automatically when they change | `false` |
-| `allowed_origins` | list of strings | Allowed CORS origins | `[]` |
+| `allowed_origins` | list of strings | Allowed cross-origin CORS origins. Empty denies cross-origin browser access. | `[]` |
 | `timezone` | string | Timezone used for display | `UTC` |
 | `cookie_key` | string | Key used to sign session cookies | |
 | `upload_limit` | int | Maximum upload size, in bytes | `2097152` |
@@ -120,6 +120,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `db_pool_max_size` | int | Maximum number of pooled DB connections | `15` |
 | `doodba_max_modules` | int | Maximum number of modules accepted per Doodba tool request (converter/dependency-resolver/migration-plan); larger requests are rejected with `400` | `500` |
 | `mcp_info_enabled` | bool | Show the `/mcp` page explaining how to connect popular LLM clients to the MCP endpoint, and its nav link | `false` |
+| `scan_enabled` | bool | Enable the live instance scanner. Disabled by default because it creates outbound requests; enable it only behind the access controls appropriate for your deployment. | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
 | `trusted_proxies` | list of strings | IPs/CIDRs (e.g. your reverse proxy's address, or the Docker network subnet) allowed to set `X-Forwarded-For`/`Forwarded`; honored only when the request's direct TCP peer matches one of these, otherwise the headers are stripped and the real peer address is used instead. Needed for correct client IPs in access logs (and `REQ_BASE_URL` scheme/host) behind Traefik/nginx/etc. | `[]` |
 | `seo_enabled` | bool | Allow search engines/social previews to index and share the site: `/robots.txt` returns `Allow: /` instead of `Disallow: /`, and pages get a canonical link plus Open Graph/Twitter Card meta tags. Off by default so nothing is shared/indexed until explicitly opted in. | `false` |
@@ -243,6 +244,9 @@ services:
 
 > `oghmcp` has no authentication of its own. If `oghserver` sits behind auth or a private network,
 > give `oghmcp` the same treatment.
+>
+> `scan_instance` is disabled in MCP unless `OGHCOLLECTOR_SCAN_ENABLED=true`. Enable it only where
+> access to the endpoint is controlled, as it makes outbound requests.
 
 ---
 
@@ -254,6 +258,7 @@ services:
 | `OGHCOLLECTOR_TOKEN_GL` | collector | GitLab API token (fallback if the `gl_token` Docker secret isn't set) |
 | `DATABASE_URL` | Diesel CLI | SQLite connection string (local, non-Docker development only) |
 | `OGHCOLLECTOR_DB_PATH` | mcp | Path to the SQLite database (default `data/data.db`) |
+| `OGHCOLLECTOR_SCAN_ENABLED` | server, mcp | Enable live instance scans. Disabled by default. |
 | `OGHCOLLECTOR_MCP_BIND_ADDR` | mcp | HTTP bind address (default `0.0.0.0:8081`) |
 | `OGHCOLLECTOR_MCP_ALLOWED_HOSTS` | mcp | Comma-separated `Host` header allowlist (default `localhost,127.0.0.1,::1`) |
 | `OGHCOLLECTOR_MCP_CACHE_TTL` | mcp | Overrides `cache_ttl` from `mcp.yaml` (default `3600`) |

@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-dev \
     libpython3-dev \
-    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYO3_PYTHON=python3
@@ -89,6 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
     python3 \
+    libpython3.13 \
     libssl3 \
     libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*

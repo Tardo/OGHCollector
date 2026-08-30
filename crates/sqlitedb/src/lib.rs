@@ -64,3 +64,16 @@ pub fn new_read_pool(db_path: &str, max_size: u32) -> Pool {
         .build(manager)
         .unwrap_or_else(|e| panic!("Failed to create read pool for {db_path}: {e}"))
 }
+
+// Like `new_read_pool` but returns `None` instead of panicking when the DB is
+// missing or unreadable. Callers that must degrade gracefully (e.g. the scanner
+// inferring a version from collector data) use this so a missing DB never
+// crashes the probe.
+pub fn try_read_pool(db_path: &str, max_size: u32) -> Option<Pool> {
+    let manager = ConnectionManager::<SqliteConnection>::new(db_path);
+    Pool::builder()
+        .max_size(max_size)
+        .connection_customizer(Box::new(ReadCustomizer))
+        .build(manager)
+        .ok()
+}

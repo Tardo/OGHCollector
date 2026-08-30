@@ -30,6 +30,7 @@ export default [
       'web/js/pages/pack.mjs',
       'web/js/pages/committer.mjs',
       'web/js/pages/committers.mjs',
+      'web/js/pages/scan.mjs',
     ],
     output: {
       sourcemap: (!is_production && 'inline') || false,

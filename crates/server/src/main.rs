@@ -24,6 +24,21 @@ use middlewares::not_found;
 use middlewares::trusted_proxy::strip_untrusted_forwarded_headers;
 use sqlitedb::Pool;
 
+fn is_same_origin(origin: &header::HeaderValue, req: &actix_web::dev::RequestHead) -> bool {
+    let host = req
+        .headers
+        .get(header::X_FORWARDED_HOST)
+        .or_else(|| req.headers.get(header::HOST))
+        .and_then(|value| value.to_str().ok());
+    let scheme = req
+        .headers
+        .get(header::X_FORWARDED_PROTO)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("http");
+
+    host.is_some_and(|host| origin.as_bytes() == format!("{scheme}://{host}").as_bytes())
+}
+
 /// IDE run configs (e.g. rust-analyzer's codelens) commonly launch this binary
 /// with cwd set to `crates/server` rather than the workspace root - a bare
 /// relative default then silently opened (and, before this check, created) an
@@ -132,8 +147,9 @@ async fn main() -> std::io::Result<()> {
     // start HTTP server
     HttpServer::new(move || {
         let cors = Cors::default()
-            .allowed_origin_fn(|origin, _req_head| {
+            .allowed_origin_fn(|origin, req_head| {
                 SERVER_CONFIG.is_allowed_origin(origin.to_str().unwrap_or(""))
+                    || is_same_origin(origin, req_head)
             })
             .allowed_methods(vec!["GET", "POST"])
             .allowed_headers(vec![header::CONTENT_TYPE, header::ACCEPT])
@@ -201,6 +217,12 @@ async fn main() -> std::io::Result<()> {
                     cfg.service(routes::mcp_info::route);
                 }
             })
+            .configure(|cfg| {
+                if SERVER_CONFIG.get_scan_enabled() {
+                    cfg.service(routes::scan::route)
+                        .service(routes::scan::route_run);
+                }
+            })
             .service(
                 web::scope(routes::api::v1::PATH)
                     .service(routes::api::v1::module::route)
@@ -238,4 +260,26 @@ async fn main() -> std::io::Result<()> {
     .workers(*SERVER_CONFIG.get_workers())
     .run()
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_same_origin;
+    use actix_web::{http::header, test::TestRequest};
+
+    #[test]
+    fn same_origin_uses_the_request_host() {
+        let req = TestRequest::default()
+            .insert_header((header::HOST, "localhost:8085"))
+            .to_srv_request();
+
+        assert!(is_same_origin(
+            &header::HeaderValue::from_static("http://localhost:8085"),
+            req.head(),
+        ));
+        assert!(!is_same_origin(
+            &header::HeaderValue::from_static("https://example.com"),
+            req.head(),
+        ));
+    }
 }

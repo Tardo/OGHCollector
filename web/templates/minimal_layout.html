@@ -7,6 +7,9 @@
     <link rel="prefetch" href="/modules" />
     <link rel="prefetch" href="/favorites" />
     <link rel="prefetch" href="/atlas" />
+    {% if SCAN_ENABLED %}
+    <link rel="prefetch" href="/scan" />
+    {% endif %}
     <link rel="prefetch" href="/committers" />
     <link rel="prefetch" href="/logs" />
     <link rel="prefetch" href="/osv" />
@@ -41,6 +44,9 @@
                     <li class="nav-item"><a class="nav-link {% if page_name in ['modules', 'module'] %}active{% endif %}" href="/modules">Modules</a></li>
                     <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'osv' %}active{% endif %}" href="/osv">Vulnerabilities</a></li>
                     <li class="nav-item"><a class="nav-link {% if page_name == 'atlas' %}active{% endif %}" href="/atlas">Atlas</a></li>
+                    {% if SCAN_ENABLED %}
+                    <li class="nav-item"><a class="nav-link {% if page_name == 'scan' %}active{% endif %}" href="/scan">Scan</a></li>
+                    {% endif %}
                     <li class="nav-item"><a class="nav-link {% if page_name in ['committers', 'committer'] %}active{% endif %}" href="/committers">Committers</a></li>
                     <li class="nav-item dropdown dev-only">
                         <a class="nav-link {% if page_name in ['doodba_converter', 'doodba_dep_resolver', 'doodba_migration_plan'] %}active{% endif %} dropdown-toggle" id="navbarDropdown" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">

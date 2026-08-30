@@ -18,6 +18,7 @@ pub struct OGHServerConfig {
     db_pool_max_size: u32,
     doodba_max_modules: usize,
     mcp_info_enabled: bool,
+    scan_enabled: bool,
     mcp_url: String,
     trusted_proxies: Vec<IpNet>,
     seo_enabled: bool,
@@ -51,6 +52,7 @@ impl OGHServerConfig {
         let db_pool_max_size = settings.get_int("db_pool_max_size").unwrap_or(15) as u32;
         let doodba_max_modules = settings.get_int("doodba_max_modules").unwrap_or(500) as usize;
         let mcp_info_enabled = settings.get_bool("mcp_info_enabled").unwrap_or(false);
+        let scan_enabled = settings.get_bool("scan_enabled").unwrap_or(false);
         let mcp_url = settings
             .get_string("mcp_url")
             .unwrap_or("http://localhost:8081/mcp".to_string());
@@ -80,6 +82,7 @@ impl OGHServerConfig {
             db_pool_max_size,
             doodba_max_modules,
             mcp_info_enabled,
+            scan_enabled,
             mcp_url,
             trusted_proxies,
             seo_enabled,
@@ -108,7 +111,7 @@ impl OGHServerConfig {
     }
     pub fn is_allowed_origin(&self, origin: &str) -> bool {
         if self.get_allowed_origins().is_empty() {
-            return true;
+            return false;
         }
         let Ok(url) = Url::parse(origin) else {
             return false;
@@ -146,6 +149,10 @@ impl OGHServerConfig {
 
     pub fn get_mcp_info_enabled(&self) -> bool {
         self.mcp_info_enabled
+    }
+
+    pub fn get_scan_enabled(&self) -> bool {
+        self.scan_enabled
     }
 
     pub fn get_mcp_url(&self) -> &String {

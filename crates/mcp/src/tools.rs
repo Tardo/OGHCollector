@@ -16,6 +16,21 @@ use serde::{Deserialize, Serialize};
 use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
 use sqlitedb::{models, Pool};
 
+/// Params for the `scan_instance` tool.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScanInstanceParams {
+    /// Full URL of the Odoo instance to scan, e.g. "https://demo.odoo.com". A
+    /// bare host ("demo.odoo.com") is accepted and probed over HTTPS.
+    pub url: String,
+}
+
+fn live_scan_enabled() -> bool {
+    matches!(
+        std::env::var("OGHCOLLECTOR_SCAN_ENABLED").as_deref(),
+        Ok("1" | "true" | "TRUE" | "yes" | "YES")
+    )
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SearchModulesParams {
     /// Substring to match against a module's technical name.
@@ -1373,6 +1388,34 @@ impl OghMcp {
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         json_result(&entries)
+    }
+
+    #[tool(
+        description = "Live scan of a running Odoo *instance* given its URL (not the metadata \
+                        database). Probes the well-known endpoints as an anonymous HTTP client \
+                        - the /web entry point, /web/database/info, /web/database/manager, \
+                        /web/session and /web/modules - and reads the response headers, cookies \
+                        and bodies to build a report: Odoo version, discovered modules, TLS \
+                        certificate status, HTTPS vs HTTP, debug mode, session-cookie flags, and \
+                        whether database manager/info endpoints are publicly reachable. The \
+                        `findings` array is the important part - it lists \
+                        the critical points most-severe-first (database enumeration exposed, debug \
+                        mode, missing HSTS/CSP, non-HttpOnly cookies, an end-of-life version, ...). \
+                      Disabled unless OGHCOLLECTOR_SCAN_ENABLED=true to prevent an MCP deployment \
+                      becoming a public scanning service. Use it to assess an instance before a migration or a security review; follow \
+                      up with get_module on any module the scan lists to inspect its metadata."
+    )]
+    async fn scan_instance(
+        &self,
+        Parameters(params): Parameters<ScanInstanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !live_scan_enabled() {
+            return json_result(&serde_json::json!({
+                "error": "Live scanning is disabled. Set OGHCOLLECTOR_SCAN_ENABLED=true after applying appropriate access controls."
+            }));
+        }
+        let report = oghscan::scan_instance(&params.url).await;
+        json_result(&report)
     }
 }
 

@@ -15,4 +15,5 @@ pub mod modules;
 pub mod osv;
 pub mod pack;
 pub mod robots;
+pub mod scan;
 pub mod sitemap;

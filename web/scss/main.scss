@@ -30,10 +30,13 @@ $offcanvas-box-shadow: 0 1rem 3rem rgba(0, 0, 0, .175);
 // forms: only the pieces actually used (mode switch + version select)
 @import "../../node_modules/bootstrap/scss/forms/form-select";
 @import "../../node_modules/bootstrap/scss/forms/form-check";
+@import "../../node_modules/bootstrap/scss/forms/form-text";
+@import "../../node_modules/bootstrap/scss/forms/form-control";
+@import "../../node_modules/bootstrap/scss/forms/input-group";
 @import "../../node_modules/bootstrap/scss/buttons";
 @import "../../node_modules/bootstrap/scss/transitions";
 @import "../../node_modules/bootstrap/scss/dropdown";
-// @import "bootstrap/scss/button-group";
+// @import "../../node_modules/bootstrap/scss/button-group";
 @import "../../node_modules/bootstrap/scss/nav";
 @import "../../node_modules/bootstrap/scss/navbar";
 // @import "bootstrap/scss/card";

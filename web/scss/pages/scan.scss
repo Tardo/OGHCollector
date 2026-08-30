@@ -1,0 +1,233 @@
+// Copyright 2026 Alexandre D. Díaz
+.scan-form-card {
+  margin-bottom: 1.5rem;
+
+  // Bootstrap's native .input-group joins the form-control and button; just
+  // round the outer corners so it reads as one control, like the modules page.
+  .input-group {
+    border-radius: 0.4rem;
+  }
+
+  #scan_url,
+  #scan_run_btn {
+    border-color: var(--bs-border-color, #495057);
+    border-radius: 0;
+  }
+
+  #scan_url:first-child {
+    border-radius: 0.4rem 0 0 0.4rem;
+  }
+
+  #scan_run_btn:last-child {
+    border-left: none;
+    border-radius: 0 0.4rem 0.4rem 0;
+  }
+
+  #scan_url {
+    // Flat, bordered like the modules #search: explicit 1px border, rounded
+    // outer corners (right edge flush against the button) and a smooth focus
+    // transition instead of Bootstrap's abrupt form-control look.
+    border: 1px solid var(--bs-border-color, #495057);
+    border-radius: 0.4rem 0 0 0.4rem;
+    padding: 0.5rem 0.9em;
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+
+    &::placeholder {
+      color: var(--bs-secondary-color);
+    }
+
+    &:focus {
+      border-color: #85a4d3;
+      box-shadow: 0 0 0 0.25rem rgba(133, 164, 211, 0.25);
+    }
+  }
+}
+
+.scan-finding {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem 1rem;
+  border-radius: var(--bs-border-radius);
+  background-color: var(--bs-tertiary-bg);
+  border-left: 3px solid var(--bs-secondary-color);
+  font-size: 0.9rem;
+
+  .scan-finding-badge {
+    flex: 0 0 auto;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.1rem 0.45rem;
+    border-radius: 0.2rem;
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-secondary-color);
+  }
+
+  .scan-finding-msg {
+    color: var(--bs-body-color);
+  }
+}
+
+.scan-finding-critical {
+  border-left-color: var(--bs-danger);
+  background-color: var(--bs-danger-bg-subtle);
+}
+
+.scan-sev-critical,
+.scan-sev-high {
+  border-left-color: var(--bs-danger);
+}
+
+.scan-sev-medium {
+  border-left-color: var(--bs-warning);
+}
+
+.scan-sev-low {
+  border-left-color: var(--bs-info);
+}
+
+.scan-sev-info {
+  border-left-color: var(--bs-secondary-color);
+}
+
+.scan-detail-card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.75rem;
+}
+
+.scan-detail-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.scan-db-list {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.scan-cookie-name {
+  font-weight: 600;
+  min-width: 8rem;
+}
+
+.scan-flag-off {
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.25rem;
+  background-color: var(--bs-danger-bg-subtle);
+  color: var(--bs-danger);
+  font-size: 0.75rem;
+}
+
+.scan-endpoint-status {
+  flex: 0 0 auto;
+  min-width: 4rem;
+  text-align: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-secondary-color);
+}
+
+// Risk score card takes on a danger->success gradient by rating so a poor scan
+// reads red at a glance and an excellent one reads green.
+.scan-score-card {
+  height: 100%;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--bs-border-color-translucent);
+  border-top: 3px solid var(--bs-secondary-color);
+  border-radius: var(--bs-border-radius-lg);
+  background-color: var(--bs-tertiary-bg);
+}
+
+.scan-score-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.25rem;
+}
+
+.scan-score-value {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-score-rating {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-top: 0.15rem;
+  color: var(--bs-secondary-color);
+}
+
+.scan-score-breakdown {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  letter-spacing: 0.02em;
+}
+
+.scan-sev-critical,
+.scan-sev-high {
+  border-top-color: var(--bs-danger);
+  .scan-score-rating {
+    color: var(--bs-danger);
+  }
+}
+
+.scan-sev-medium {
+  border-top-color: var(--bs-warning);
+  .scan-score-rating {
+    color: var(--bs-warning);
+  }
+}
+
+.scan-sev-low,
+.scan-sev-info {
+  border-top-color: var(--bs-info);
+  .scan-score-rating {
+    color: var(--bs-info);
+  }
+}
+
+.scan-sev-success {
+  border-top-color: var(--bs-success);
+  .scan-score-rating {
+    color: var(--bs-success);
+  }
+}
+
+// Security checklist rows: a compact pass/fail ledger alongside each check.
+.scan-check-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+
+  .scan-check-status {
+    flex: 0 0 auto;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.2rem;
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-secondary-color);
+  }
+}

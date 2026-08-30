@@ -803,6 +803,51 @@ pub fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<i32> {
         .expect("DB error in module::get_odoo_versions")
 }
 
+/// Infer the Odoo version from a set of installed module names using the
+/// collector's data (the `module` table maps each technical_name to the
+/// `version_odoo` it ships in). A module shipped in a single version pins that
+/// version; a module shipped in several versions constrains nothing, so we take
+/// the intersection of every installed module's version set. Returns the single
+/// shared version when the intersection is unambiguous, else `None`. Pure read
+/// - never mutates, safe from any read-only context.
+pub fn infer_version_from_modules(
+    conn: &mut SqliteConnection,
+    module_names: &[String],
+) -> Option<i32> {
+    if module_names.is_empty() {
+        return None;
+    }
+    let rows = module::table
+        .filter(module::technical_name.eq_any(module_names))
+        .filter(module::installable.eq(true))
+        .select((module::technical_name, module::version_odoo))
+        .load::<(String, i32)>(conn)
+        .optional()
+        .ok()??;
+
+    // Group the versions each module ships in, then intersect those per-module
+    // sets: a module present in several versions constrains nothing, while a
+    // module shipped in exactly one version pins it.
+    let mut versions_by_module: std::collections::BTreeMap<String, std::collections::HashSet<i32>> =
+        std::collections::BTreeMap::new();
+    for (name, version) in rows {
+        versions_by_module.entry(name).or_default().insert(version);
+    }
+
+    let mut intersection: Option<std::collections::HashSet<i32>> = None;
+    for versions in versions_by_module.values() {
+        intersection = Some(match intersection {
+            None => versions.clone(),
+            Some(existing) => existing.intersection(versions).copied().collect(),
+        });
+    }
+
+    match intersection {
+        Some(versions) if versions.len() == 1 => versions.into_iter().next(),
+        _ => None,
+    }
+}
+
 pub fn get_module_repository(
     conn: &mut SqliteConnection,
     version_odoo: &u8,
@@ -1302,4 +1347,118 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
         &gh_repo.id,
     )
     .ok_or_else(|| diesel::result::Error::NotFound)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+
+    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
+
+    fn setup_db() -> SqliteConnection {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        conn
+    }
+
+    // Inserts a module row via the real `add` path so all NOT NULL columns are
+    // set; the test only cares about technical_name + version_odoo + installable.
+    fn insert_module(
+        conn: &mut SqliteConnection,
+        tech_name: &str,
+        version_odoo: i32,
+        installable: bool,
+    ) {
+        add(
+            conn,
+            &ManifestInfo {
+                technical_name: tech_name.to_string(),
+                version_odoo: version_odoo as u8,
+                name: tech_name.to_string(),
+                version_module: "1.0.0".to_string(),
+                description: String::new(),
+                installation: String::new(),
+                usage: String::new(),
+                icon: String::new(),
+                author: String::new(),
+                website: String::new(),
+                license: String::new(),
+                category: String::new(),
+                auto_install: true,
+                application: false,
+                installable,
+                maintainer: String::new(),
+                git_org: "OCA".to_string(),
+                git_repo: "oca-partner".to_string(),
+                depends: vec![],
+                external_depends_python: vec![],
+                external_depends_bin: vec![],
+                folder_size: 0,
+                last_commit_hash: "abc".to_string(),
+                last_commit_author: String::new(),
+                last_commit_date: "2024-01-01".to_string(),
+                last_commit_name: String::new(),
+                last_commit_partof: String::new(),
+                committers: std::collections::HashMap::new(),
+                analysis: Default::default(),
+                source_unchanged: false,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn infer_version_single_version_module_pins_it() {
+        let mut conn = setup_db();
+        insert_module(&mut conn, "l10n_us_stock_account", 18, true);
+        let names = vec!["l10n_us_stock_account".to_string()];
+        assert_eq!(infer_version_from_modules(&mut conn, &names), Some(18));
+    }
+
+    #[test]
+    fn infer_version_module_in_multiple_versions_is_ambiguous() {
+        let mut conn = setup_db();
+        insert_module(&mut conn, "sale", 16, true);
+        insert_module(&mut conn, "sale", 17, true);
+        insert_module(&mut conn, "sale", 18, true);
+        let names = vec!["sale".to_string()];
+        assert_eq!(infer_version_from_modules(&mut conn, &names), None);
+    }
+
+    #[test]
+    fn infer_version_intersection_of_two_modules() {
+        let mut conn = setup_db();
+        // sale exists in every version (constrains nothing); the second module
+        // exists only in 18, so the intersection pins 18.
+        insert_module(&mut conn, "sale", 16, true);
+        insert_module(&mut conn, "sale", 17, true);
+        insert_module(&mut conn, "sale", 18, true);
+        insert_module(&mut conn, "l10n_us_stock_account", 18, true);
+        let names = vec!["sale".to_string(), "l10n_us_stock_account".to_string()];
+        assert_eq!(infer_version_from_modules(&mut conn, &names), Some(18));
+    }
+
+    #[test]
+    fn infer_version_disjoint_versions_yields_no_intersection() {
+        let mut conn = setup_db();
+        insert_module(&mut conn, "mod_a", 16, true);
+        insert_module(&mut conn, "mod_b", 18, true);
+        let names = vec!["mod_a".to_string(), "mod_b".to_string()];
+        assert_eq!(infer_version_from_modules(&mut conn, &names), None);
+    }
+
+    #[test]
+    fn infer_version_ignores_non_installable_rows() {
+        let mut conn = setup_db();
+        insert_module(&mut conn, "mod_x", 16, false);
+        let names = vec!["mod_x".to_string()];
+        assert_eq!(infer_version_from_modules(&mut conn, &names), None);
+    }
+
+    #[test]
+    fn infer_version_none_for_empty_input() {
+        let mut conn = setup_db();
+        assert_eq!(infer_version_from_modules(&mut conn, &[]), None);
+    }
 }

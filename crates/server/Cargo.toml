@@ -10,6 +10,7 @@ documentation.workspace = true
 sqlitedb = { path = "../sqlitedb" }
 oghutils = { path = "../oghutils" }
 oghembed = { path = "../oghembed" }
+oghscan = { path = "../scan" }
 diesel = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true

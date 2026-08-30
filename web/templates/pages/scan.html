@@ -1,0 +1,154 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Scan" %}
+{% set meta_description = "Probe an Odoo instance and get a report on its version, security headers and database exposure." %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/scan.css" as="style">
+    <script type="module" src="/static/auto/scan.mjs"></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<header class="page-header">
+    <h1 id="scan_title">Scan an instance</h1>
+    <p class="page-header-desc" id="scan_subtitle">Enter an Odoo URL to probe it as an HTTP client.</p>
+</header>
+
+
+<form id="scan_form" class="scan-form-card" novalidate>
+    <div class="input-group">
+        <input
+            type="text"
+            class="form-control"
+            id="scan_url"
+            name="url"
+            placeholder="https://demo.odoo.com"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Odoo instance URL"
+        />
+        <button class="btn btn-outline-secondary" type="submit" id="scan_run_btn">Scan</button>
+    </div>
+    <p class="form-text mt-2 mb-0">
+        Only <code>http</code>/<code>https</code> URLs to public addresses are scanned &mdash;
+        private, loopback and cloud-metadata addresses are refused.
+    </p>
+</form>
+
+
+<div id="scan_error" class="alert alert-danger d-none" role="alert"></div>
+
+<div id="scan_loading" class="d-none text-center py-5">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Scanning&hellip;</span>
+    </div>
+    <p class="mt-3 text-body-secondary" id="scan_loading_text">Probing endpoints&hellip;</p>
+</div>
+
+<div id="scan_results" class="d-none">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="fs-6 text-uppercase text-body-secondary mb-0">Results</h2>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="scan_new_btn">New scan</button>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Version</div>
+                <div class="stat-card-value" id="scan_version">&ndash;</div>
+                <div class="stat-card-note" id="scan_version_note"></div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">HTTPS</div>
+                <div class="stat-card-value" id="scan_https">&ndash;</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Debug mode</div>
+                <div class="stat-card-value" id="scan_debug">&ndash;</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-card-label">Findings</div>
+                <div class="stat-card-value" id="scan_findings_count">&ndash;</div>
+                <div class="stat-card-note" id="scan_findings_note"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="scan_findings" class="d-flex flex-column gap-2 mb-3"></div>
+
+    <div id="scan_security" class="scan-security d-none">
+        <div class="row g-3 align-items-stretch">
+            <div class="col-12 col-md-4">
+                <div class="scan-score-card" id="scan_score_card">
+                    <div class="scan-score-label">Security score</div>
+                    <div class="scan-score-value" id="scan_score_value">&ndash;</div>
+                    <div class="scan-score-rating" id="scan_score_rating"></div>
+                    <div class="scan-score-breakdown" id="scan_score_breakdown"></div>
+                </div>
+            </div>
+            <div class="col-12 col-md-8">
+                <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                    <div class="scan-detail-card-title">Security checks</div>
+                    <div id="scan_checks" class="scan-detail-card-body"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mt-1">
+        <div class="col-lg-6">
+                <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                <div class="scan-detail-card-title">Timings</div>
+                <div id="scan_timings" class="scan-detail-card-body"></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                <div class="scan-detail-card-title">Database exposure</div>
+                <div id="scan_database" class="scan-detail-card-body"></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                <div class="scan-detail-card-title">TLS certificate</div>
+                <div id="scan_certificate" class="scan-detail-card-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mt-3">
+        <div class="col-12">
+                <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                <div class="scan-detail-card-title">Modules</div>
+                <div id="scan_modules" class="scan-detail-card-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mt-3">
+        <div class="col-12">
+                <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                <div class="scan-detail-card-title">Session cookies</div>
+                <div id="scan_cookies" class="scan-detail-card-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mt-3">
+        <div class="col-12">
+                <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
+                <div class="scan-detail-card-title">Probed endpoints</div>
+                <div id="scan_endpoints" class="scan-detail-card-body"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
