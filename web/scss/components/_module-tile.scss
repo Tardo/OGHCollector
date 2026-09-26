@@ -59,7 +59,7 @@
     border-radius: var(--bs-border-radius);
 }
 
-.module-tile-icon-generic {
+.module-tile-icon-generic.material-icons {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -89,7 +89,7 @@
     white-space: nowrap;
 }
 
-.module-tile-remove {
+.module-tile-remove.material-icons {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -127,7 +127,7 @@
     border-radius: var(--bs-border-radius-lg);
 }
 
-.empty-state-icon {
+.empty-state-icon.material-icons {
     font-size: 1.75rem;
     opacity: 0.6;
 }

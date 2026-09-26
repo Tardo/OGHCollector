@@ -17,9 +17,10 @@ export function createModuleTileLink(mod, name, meta) {
   // leaving a blank gap where the icon should be.
   icon.onerror = () => {
     const fallback = document.createElement('span');
-    fallback.className = 'module-tile-icon module-tile-icon-generic';
+    fallback.className =
+      'module-tile-icon module-tile-icon-generic material-icons';
     fallback.setAttribute('aria-hidden', 'true');
-    fallback.textContent = '\u{1F4E6}';
+    fallback.textContent = 'inventory_2';
     icon.replaceWith(fallback);
   };
   icon.src = `/common/odoo/module/${encodeURIComponent(mod.org)}/${encodeURIComponent(mod.technical_name)}/icon`;

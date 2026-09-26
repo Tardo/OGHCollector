@@ -36,7 +36,8 @@ function createModuleTile(mod, onRemove) {
     'aria-label',
     `Remove ${mod.name || mod.technical_name}`,
   );
-  remove_btn.textContent = '×';
+  remove_btn.classList.add('material-icons');
+  remove_btn.textContent = 'close';
   remove_btn.addEventListener('click', () => onRemove(mod));
   tile.appendChild(remove_btn);
 
@@ -81,9 +82,9 @@ function createPackCard(pack) {
   const title = document.createElement('span');
   title.className = 'pack-card-title fw-semibold';
   const title_icon = document.createElement('span');
-  title_icon.className = 'pack-card-icon';
+  title_icon.className = 'pack-card-icon material-icons';
   title_icon.setAttribute('aria-hidden', 'true');
-  title_icon.textContent = '\u{1F4E6}';
+  title_icon.textContent = 'inventory_2';
   title.appendChild(title_icon);
   const title_name = document.createElement('span');
   title_name.className = 'pack-card-name';
@@ -146,7 +147,7 @@ function createPackCard(pack) {
   more_btn.setAttribute('aria-expanded', 'false');
   more_btn.title = 'More actions';
   more_btn.innerHTML =
-    '<span aria-hidden="true">⋮</span><span class="visually-hidden">More actions</span>';
+    '<span class="material-icons" aria-hidden="true">more_vert</span><span class="visually-hidden">More actions</span>';
   more_wrap.appendChild(more_btn);
 
   const menu = document.createElement('ul');

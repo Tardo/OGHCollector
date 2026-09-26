@@ -26,7 +26,11 @@ export function showDragPanelError(panel_el, message) {
   text_el.dataset.origText ??= text_el.textContent;
   panel_el.classList.remove('drag-over', 'processing');
   panel_el.classList.add('has-error');
-  text_el.textContent = `⚠️ ${message} Click or drag to try again.`;
+  const icon = document.createElement('span');
+  icon.className = 'material-icons';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = 'warning';
+  text_el.replaceChildren(icon, ` ${message} Click or drag to try again.`);
 }
 
 // file.type (MIME) is unreliable for YAML - browsers report

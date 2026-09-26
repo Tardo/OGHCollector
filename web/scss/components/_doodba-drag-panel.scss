@@ -6,6 +6,18 @@
 // page's own gradient, plus drag-over/processing/error states driven by
 // classes toggled from drag-panel-processing.mjs.
 
+// Doodba components use shadow DOM, so the document's .material-icons rule
+// does not style their Save and error icons.
+.material-icons {
+    font-family: 'Material Icons';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 1.25em;
+    line-height: 1;
+    font-feature-settings: 'liga';
+    vertical-align: middle;
+}
+
 .doodba-drag-panel {
     position: relative;
     display: flex;

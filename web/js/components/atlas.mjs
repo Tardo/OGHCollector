@@ -147,7 +147,7 @@ class SigmaAtlas extends Component {
     });
     this.#fa2_layout.start();
     this.#fillDependencySearchOptions();
-    this.#el_mod_dep_control.textContent = '⏹️';
+    this.#el_mod_dep_control.firstElementChild.textContent = 'stop';
 
     if (!this.#timer) {
       this.#timer = setTimeout(
@@ -253,7 +253,9 @@ class SigmaAtlas extends Component {
 
   onPauseAtlasLayout() {
     this.#fa2_layout.stop();
-    this.#el_mod_dep_control.textContent = '▶️';
+    this.#el_mod_dep_control.firstElementChild.textContent = 'play_arrow';
+    this.#el_mod_dep_control.setAttribute('aria-label', 'Resume layout');
+    this.#el_mod_dep_control.title = 'Resume layout';
   }
 
   onClickControl() {
@@ -264,10 +266,12 @@ class SigmaAtlas extends Component {
         this.#timer = null;
       }
       this.#fa2_layout.stop();
-      this.#el_mod_dep_control.textContent = '▶️';
+      this.onPauseAtlasLayout();
     } else {
       this.#fa2_layout.start();
-      this.#el_mod_dep_control.textContent = '⏹️';
+      this.#el_mod_dep_control.firstElementChild.textContent = 'stop';
+      this.#el_mod_dep_control.setAttribute('aria-label', 'Pause layout');
+      this.#el_mod_dep_control.title = 'Pause layout';
     }
   }
 

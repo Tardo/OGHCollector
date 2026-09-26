@@ -81,7 +81,19 @@ function buildPackMenuItems(menu, mod, available_versions) {
       link.title = `Not available for Odoo ${pack.odoo_version}`;
     }
     const label = document.createElement('span');
-    label.textContent = `${isInPack(pack.id, mod) ? '✓ ' : ''}${pack.name}`;
+    const in_pack = isInPack(pack.id, mod);
+    link.setAttribute(
+      'aria-label',
+      `${in_pack ? 'Remove from' : 'Add to'} ${pack.name}`,
+    );
+    if (in_pack) {
+      const check = document.createElement('span');
+      check.className = 'material-icons';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = 'check';
+      label.appendChild(check);
+    }
+    label.append(pack.name);
     link.appendChild(label);
     if (pack.odoo_version) {
       const version_badge = document.createElement('span');
@@ -150,7 +162,7 @@ function initFavoriteActions() {
   const syncToggleBtn = is_favorite => {
     toggle_btn.classList.toggle('active', is_favorite);
     toggle_btn.setAttribute('aria-pressed', String(is_favorite));
-    icon.textContent = is_favorite ? '★' : '☆';
+    icon.textContent = is_favorite ? 'star' : 'star_border';
   };
   syncToggleBtn(isFavorite(mod));
   toggle_btn.addEventListener('click', () =>

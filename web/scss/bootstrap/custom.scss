@@ -12,6 +12,21 @@
   --ommd-accent-dim: #2f4870;
 }
 
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.25em;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
+}
+
 // User/Developer mode: `data-mode` is set on <html> before first paint
 // (base_layout.html) and toggled by the navbar switch (main.mjs).
 html[data-mode='user'] .dev-only {
@@ -89,10 +104,9 @@ html[data-mode='user'] .dev-only {
     display: inline-flex;
     color: var(--bs-body-bg);
 
-    svg {
+    .material-icons {
       width: 1rem;
-      height: 1rem;
-      display: block;
+      font-size: 1rem;
     }
   }
 }

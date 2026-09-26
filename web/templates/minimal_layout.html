@@ -67,20 +67,17 @@
                         <a class="nav-link p-0 avatar-menu-toggle {% if page_name == 'favorites' %}active{% endif %}" id="avatarMenuToggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="User menu">
                             <span class="avatar-badge" aria-hidden="true">
                                 <span class="avatar-badge-face">
-                                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-                                        <circle cx="8" cy="5" r="3"></circle>
-                                        <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6z"></path>
-                                    </svg>
+                                     <span class="material-icons" aria-hidden="true">person</span>
                                 </span>
                             </span>
                             <span class="visually-hidden">Open user menu</span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end avatar-dropdown-menu" aria-labelledby="avatarMenuToggle">
-                            <li><a class="dropdown-item {% if page_name == 'favorites' %}active{% endif %}" href="/favorites">&#9733; Favorites &amp; Packs</a></li>
+                             <li><a class="dropdown-item {% if page_name == 'favorites' %}active{% endif %}" href="/favorites"><span class="material-icons" aria-hidden="true">star</span> Favorites &amp; Packs</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
                                 <button type="button" class="dropdown-item theme-switch d-flex align-items-center gap-2" id="theme-toggle" title="Toggle light / dark theme">
-                                    <span class="theme-icon">🌙</span> Toggle theme
+                                     <span class="theme-icon material-icons" aria-hidden="true">dark_mode</span> Toggle theme
                                 </button>
                             </li>
                             <li>

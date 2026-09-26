@@ -141,15 +141,16 @@
         border-color: var(--bs-danger-border-subtle);
     }
 
-    // The GitHub "view on GitHub" icon sits at the end of the message cell,
+    // The "view on GitHub" icon sits at the end of the message cell,
     // only where a file/line was resolved. Aligned to the text baseline and
     // brightens on hover so the icon-only link still reads as clickable.
     .gh-finding-link {
         display: inline-flex;
         vertical-align: middle;
 
-        .gh-finding-icon {
+        .gh-finding-icon.material-icons {
             vertical-align: middle;
+            font-size: 1rem;
         }
 
         &:hover .gh-finding-icon {

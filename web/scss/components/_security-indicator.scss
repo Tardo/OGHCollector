@@ -1,0 +1,26 @@
+.security-indicator {
+    display: inline-flex;
+    overflow: hidden;
+    vertical-align: middle;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+
+    .segment {
+        min-width: 2.5rem;
+        padding: 0.2rem 0.5rem;
+        text-align: center;
+        color: #aeb9c2;
+        background: #1e2a33;
+
+        &-errors.has-findings {
+            color: #fff;
+            background: #ce2546;
+        }
+
+        &-warnings.has-findings {
+            color: #161616;
+            background: #f49a29;
+        }
+    }
+}

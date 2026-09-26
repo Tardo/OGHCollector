@@ -60,7 +60,7 @@
     {% if modules and modules[0].icon %}
     <img class="module-icon" src="data:image/png;base64,{{ modules[0].icon }}" alt="" />
     {% else %}
-    <span class="module-icon module-icon-generic" aria-hidden="true">&#128230;</span>
+    <span class="module-icon module-icon-generic material-icons" aria-hidden="true">inventory_2</span>
     {% endif %}
     <div>
         <h1>{{ modules[0].name if modules else technical_name }}</h1>
@@ -68,7 +68,7 @@
     </div>
     <div class="dropdown module-favorite-actions" data-org="{{ org }}" data-technical-name="{{ technical_name }}" data-name="{{ modules[0].name if modules else technical_name }}">
         <button type="button" class="btn btn-outline-secondary favorite-toggle-btn" title="Add to favorites (saved in this browser only)">
-            <span class="favorite-icon">&#9734;</span> Favorite
+            <span class="favorite-icon material-icons" aria-hidden="true">star_border</span> Favorite
         </button>
         <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Add to a pack (saved in this browser only)">
             <span class="visually-hidden">Add to pack</span>

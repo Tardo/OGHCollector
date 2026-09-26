@@ -74,8 +74,8 @@ pub struct ModuleControllerResponse {
     pub docstring: Option<String>,
 }
 
-// Grave security findings only ("error" severity): minor ones are log-lines
-// in system_event by design, not part of the module's public record.
+// Grave security findings only ("error" severity): minor ones are counted
+// separately; their details remain in the system_event log.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleSecurityWarningResponse {
     pub code: String,
@@ -126,6 +126,7 @@ pub struct ModuleFullInfoResponse {
     pub models: Vec<ModuleModelResponse>,
     pub controllers: Vec<ModuleControllerResponse>,
     pub security_warnings: Vec<ModuleSecurityWarningResponse>,
+    pub security_warning_count: usize,
     pub migration_considerations: Vec<ModuleMigrationConsiderationResponse>,
     /// Modules (same Odoo version, any repository) that declare this module
     /// as an Odoo dependency.
@@ -210,18 +211,23 @@ fn get_module_controllers(
 fn get_module_security_warnings(
     conn: &mut SqliteConnection,
     module_version_id: &i64,
-) -> Vec<ModuleSecurityWarningResponse> {
-    models::module_security_warning::get_by_module_version_id(conn, module_version_id)
-        .into_iter()
-        .filter(|w| w.severity == models::module_security_warning::SEVERITY_ERROR)
-        .map(|w| ModuleSecurityWarningResponse {
-            code: w.code,
-            message: w.message,
-            xml_id: w.xml_id,
-            file: w.file,
-            line: w.line,
-        })
-        .collect()
+) -> (Vec<ModuleSecurityWarningResponse>, usize) {
+    let mut errors = Vec::new();
+    let mut warnings = 0;
+    for w in models::module_security_warning::get_by_module_version_id(conn, module_version_id) {
+        if w.severity == models::module_security_warning::SEVERITY_WARNING {
+            warnings += 1;
+        } else if w.severity == models::module_security_warning::SEVERITY_ERROR {
+            errors.push(ModuleSecurityWarningResponse {
+                code: w.code,
+                message: w.message,
+                xml_id: w.xml_id,
+                file: w.file,
+                line: w.line,
+            });
+        }
+    }
+    (errors, warnings)
 }
 
 fn get_module_migration_considerations(
@@ -328,33 +334,29 @@ pub fn process_modules_db(
             Some(v) => models::module_version::get_by_module_id_version_module(conn, &module.id, v),
             None => models::module_version::resolve_current(conn, module),
         };
-        let (
-            views,
-            module_models,
-            controllers,
-            security_warnings,
-            migration_considerations,
-            version,
-        ) = match &resolved_version {
-            Some(mv) => (
-                get_module_views(conn, &mv.id),
-                get_module_models(conn, &mv.id),
-                get_module_controllers(conn, &mv.id),
-                get_module_security_warnings(conn, &mv.id),
-                get_module_migration_considerations(conn, &mv.id),
-                mv.version_module.clone(),
-            ),
-            None => (
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                version_module
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| module.version_module.clone()),
-            ),
-        };
+        let (security_warnings, security_warning_count) = resolved_version
+            .as_ref()
+            .map(|mv| get_module_security_warnings(conn, &mv.id))
+            .unwrap_or_default();
+        let (views, module_models, controllers, migration_considerations, version) =
+            match &resolved_version {
+                Some(mv) => (
+                    get_module_views(conn, &mv.id),
+                    get_module_models(conn, &mv.id),
+                    get_module_controllers(conn, &mv.id),
+                    get_module_migration_considerations(conn, &mv.id),
+                    mv.version_module.clone(),
+                ),
+                None => (
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    version_module
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| module.version_module.clone()),
+                ),
+            };
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version,
@@ -381,6 +383,7 @@ pub fn process_modules_db(
             models: module_models,
             controllers,
             security_warnings,
+            security_warning_count,
             migration_considerations,
             required_by,
         });

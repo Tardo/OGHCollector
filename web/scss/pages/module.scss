@@ -1,4 +1,5 @@
 // Copyright 2025 Alexandre D. Díaz
+@import "../components/security-indicator";
 .module-page-header {
     display: flex;
     align-items: center;
@@ -23,7 +24,7 @@
     border-radius: var(--bs-border-radius);
 }
 
-.module-icon-generic {
+.module-icon-generic.material-icons {
     display: flex;
     align-items: center;
     justify-content: center;

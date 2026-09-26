@@ -38,7 +38,9 @@ function initThemeSwitch() {
   const icon = theme_toggle.querySelector('.theme-icon');
   const syncIcon = () => {
     icon.textContent =
-      document.documentElement.dataset.bsTheme === 'light' ? '☀️' : '🌙';
+      document.documentElement.dataset.bsTheme === 'light'
+        ? 'light_mode'
+        : 'dark_mode';
   };
   syncIcon();
   theme_toggle.addEventListener('click', () => {
