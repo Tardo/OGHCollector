@@ -295,6 +295,8 @@ pub struct ModuleMigrationConsideration {
     pub code: String,
     pub message: String,
     pub context: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -308,6 +310,7 @@ pub struct ModuleCodeAnalysis {
     pub models: Vec<ModuleModel>,
     pub records: Vec<ModuleRecord>,
     pub controllers: Vec<ModuleController>,
+    pub security_warnings: Vec<models::module_security_warning::SecurityWarningInfo>,
     /// What to check before/after upgrading this module to a newer Odoo
     /// version (old-API classes, hand-rolled SQL, deprecated view/QWeb
     /// syntax, ...) - found by static analysis, not a guarantee.
@@ -470,6 +473,8 @@ fn get_module_migration_considerations(
             code: n.code,
             message: n.message,
             context: n.context,
+            file: n.file,
+            line: n.line,
         })
         .collect()
 }
@@ -629,6 +634,22 @@ fn build_module_code_analysis(
         models: module_models,
         records: module_records,
         controllers: module_controllers,
+        security_warnings: resolved_version
+            .as_ref()
+            .map(|mv| {
+                models::module_security_warning::get_by_module_version_id(conn, &mv.id)
+                    .into_iter()
+                    .map(|w| models::module_security_warning::SecurityWarningInfo {
+                        severity: w.severity,
+                        code: w.code,
+                        message: w.message,
+                        xml_id: w.xml_id,
+                        file: w.file,
+                        line: w.line,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         migration_considerations,
     }
 }
@@ -1201,14 +1222,17 @@ impl OghMcp {
                         every HTTP endpoint the module exposes (route paths, resolved auth, \
                         http/json type, allowed methods, csrf, whether the handler calls \
                         .sudo()) - useful for both API discovery and security review (e.g. \
-                        public routes calling sudo). Also lists `migration_considerations`: \
+                         public routes calling sudo). `security_warnings` includes review \
+                         priorities with severity, rule code and source file/line, not confirmed \
+                         exploits. Also lists `migration_considerations`: \
                         static-analysis findings worth checking before/after upgrading this \
                         module to a newer Odoo version - old-API base classes, hand-rolled SQL \
                         (e.g. a `_auto = False` model whose init() creates a real TABLE the ORM \
                         never migrates), deprecated view/QWeb syntax (attrs=/states=, t-raw, \
-                        <tree> root tags), etc. `severity` is \"warning\" (will likely break, or \
-                        needs an actual code change) or \"info\" (still works, but worth a \
-                        second look). This is the heaviest tool \
+                         <tree> root tags), etc., with source file/line where available. No target \
+                         version is selected: apply version-specific advice only to the target \
+                         stated in the message. Severity is review priority, not proof that the \
+                         current module is broken. This is the heaviest tool \
                         in this server - only call it when you actually need view/model/field/ \
                         method/record/migration detail, not just to check what a module does or \
                         what it depends on. Defaults to the latest known module version; pass \
@@ -1398,9 +1422,11 @@ impl OghMcp {
                         and bodies to build a report: Odoo version, discovered modules, TLS \
                         certificate status, HTTPS vs HTTP, debug mode, session-cookie flags, and \
                         whether database manager/info endpoints are publicly reachable. The \
-                        `findings` array is the important part - it lists \
-                        the critical points most-severe-first (database enumeration exposed, debug \
-                        mode, missing HSTS/CSP, non-HttpOnly cookies, an end-of-life version, ...). \
+                         `findings` array gives review priorities with stable codes; `endpoints` \
+                         carries the observed statuses and sanitized headers. `checks[].passed` \
+                         is null when inconclusive. There is no numeric security score. A visible \
+                         database manager does not prove permission to delete databases; developer \
+                         mode is not an authentication bypass. No authenticated exploit testing is performed. \
                       Disabled unless OGHCOLLECTOR_SCAN_ENABLED=true to prevent an MCP deployment \
                       becoming a public scanning service. Use it to assess an instance before a migration or a security review; follow \
                       up with get_module on any module the scan lists to inspect its metadata."

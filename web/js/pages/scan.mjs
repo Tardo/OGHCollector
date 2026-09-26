@@ -102,30 +102,22 @@ function renderFindings(report) {
   }
 }
 
-// Map the backend risk rating to a severity class so the score card takes on a
-// danger->success gradient at a glance (critical = red, excellent = green).
-const RATING_CLASS = {
-  critical: 'scan-sev-critical',
-  poor: 'scan-sev-high',
-  fair: 'scan-sev-medium',
-  good: 'scan-sev-info',
-  excellent: 'scan-sev-success',
-  incomplete: 'scan-sev-info',
-};
-
-function renderScore(report) {
-  const score = report.score || {};
+function renderReviewSummary(report) {
   const card = document.getElementById('scan_score_card');
   const valueEl = document.getElementById('scan_score_value');
   const ratingEl = document.getElementById('scan_score_rating');
   const breakdownEl = document.getElementById('scan_score_breakdown');
 
-  const scoreValue = Number(score.score);
-  valueEl.textContent = Number.isFinite(scoreValue) ? `${scoreValue}/100` : '–';
-
-  const rating = score.rating || 'none';
-  ratingEl.textContent =
-    rating === 'none' ? '' : rating.charAt(0).toUpperCase() + rating.slice(1);
+  const findings = report.findings || [];
+  const breakdown = Object.keys(SEVERITY_CLASS)
+    .map(severity => [
+      severity,
+      findings.filter(f => f.severity === severity).length,
+    ])
+    .filter(([, count]) => count > 0);
+  const severity = breakdown[0]?.[0];
+  valueEl.textContent = report.reachable ? severity || 'None' : 'Unknown';
+  ratingEl.textContent = 'Highest observed severity';
 
   card.classList.remove(
     'scan-sev-critical',
@@ -135,16 +127,10 @@ function renderScore(report) {
     'scan-sev-info',
     'scan-sev-success',
   );
-  card.classList.add(RATING_CLASS[rating] || '');
-
-  const breakdown = [
-    ['critical', score.critical],
-    ['high', score.high],
-    ['medium', score.medium],
-    ['low', score.low],
-    ['info', score.info],
-  ].filter(([, count]) => count > 0);
-  breakdownEl.textContent = breakdown.map(([sev]) => sev).join(', ');
+  card.classList.add(SEVERITY_CLASS[severity] || 'scan-sev-info');
+  breakdownEl.textContent = breakdown
+    .map(([sev, count]) => `${count} ${sev}`)
+    .join(', ');
 }
 
 function renderChecks(report) {
@@ -496,7 +482,7 @@ function renderReport(report) {
   renderSummary(report);
   renderFindings(report);
   renderChecks(report);
-  renderScore(report);
+  renderReviewSummary(report);
   showScoreSection();
   renderTimings(report);
   renderDatabase(report);

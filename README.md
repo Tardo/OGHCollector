@@ -244,6 +244,26 @@ services:
 
 ---
 
+## Security and migration reports
+
+- Static findings are review priorities, not confirmed vulnerabilities. Intentional broad-access
+  naming (`public`, `all`, portal ACLs named after their group) still reduces noise; security-model
+  privilege-escalation checks are independent. MCP `get_module_code_analysis` includes
+  `security_warnings` and migration notes with source file/line where available.
+- Migration notes are a checklist, not a target-version compatibility test. Apply version-specific
+  advice only to the target mentioned in each note.
+- Live scans return `findings`, endpoint evidence and `checks` (`passed: null` means inconclusive).
+  The arbitrary numeric `score` has been removed from the JSON response and dashboard. HTTP 200
+  alone does not establish sensitive-file or database exposure, and module names are not used to
+  guess a running Odoo version.
+
+After updating analysis rules, refresh existing snapshots by running the collector with
+`OGHCOLLECTOR_FORCE_REANALYZE=1` (otherwise unchanged module sources are skipped):
+
+```sh
+OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
+```
+
 ## Environment Variables
 
 | Variable | Used by | Purpose |

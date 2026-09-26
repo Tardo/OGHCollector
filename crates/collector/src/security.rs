@@ -1,18 +1,8 @@
 // Copyright Alexandre D. Díaz
 //! Static security checks over a module's analyzed records (ir.model.access
-//! rows from CSV/XML and ir.rule records) and HTTP controllers. Grave
-//! findings ("error") are shown on the module detail page; the rest
-//! ("warning") only go to the system event log (see main.rs).
-//!
-//! Odoo-version handling: what actually varies across versions is the xml_id
-//! of the portal group (`portal.group_portal` on Odoo <= 11,
-//! `base.group_portal` since 12). All hardcoded id lists below are matched
-//! by `local_id` (the part after the last '.') rather than the fully
-//! qualified id: besides making the historical portal variant a non-issue,
-//! it also handles Odoo's own convention of referencing an xml_id without
-//! its module prefix from within that same module (e.g. `base`'s own
-//! `ir.model.access.csv` refers to its own `group_erp_manager`, not
-//! `base.group_erp_manager`).
+//! rows from CSV/XML and ir.rule records) and HTTP controllers. Findings
+//! identify review priorities, not confirmed exploits. Effective access also
+//! depends on other modules, global rules, field restrictions and Python code.
 use sqlitedb::models::module_code_analysis::{ControllerAnalysisInfo, RecordAnalysisInfo};
 use sqlitedb::models::module_security_warning::{
     SecurityWarningInfo, SEVERITY_ERROR, SEVERITY_WARNING,
@@ -33,9 +23,9 @@ const PRIVILEGED_MODEL_XML_IDS: [&str; 6] = [
 ];
 const ADMIN_GROUP_XML_IDS: [&str; 2] = ["group_system", "group_erp_manager"];
 
-/// Part of a (possibly module-unqualified) external id after the last '.'.
-fn local_id(xml_id: &str) -> &str {
-    xml_id.rsplit('.').next().unwrap_or(xml_id)
+fn is_core_id(xml_id: &str, ids: &[&str]) -> bool {
+    let local = xml_id.strip_prefix("base.").unwrap_or(xml_id);
+    ids.contains(&local) || (xml_id == "portal.group_portal" && ids.contains(&"group_portal"))
 }
 
 /// Field lookup tolerant to both sources: XML records store the plain field
@@ -92,8 +82,8 @@ fn granted_write_perms(rec: &RecordAnalysisInfo) -> String {
     out.join("/")
 }
 
-/// True for a domain that matches every record: `[]` or anything containing
-/// the classic `(1, '=', 1)` leaf, whatever the spacing/quoting.
+/// Recognize only complete, unconditionally true domains. A true leaf inside
+/// an AND/NOT expression does not make the whole domain true.
 fn is_permissive_domain(domain: Option<&str>) -> bool {
     let Some(domain) = domain else { return false };
     let norm: String = domain
@@ -101,7 +91,7 @@ fn is_permissive_domain(domain: Option<&str>) -> bool {
         .filter(|c| !c.is_whitespace())
         .map(|c| if c == '"' { '\'' } else { c })
         .collect();
-    norm == "[]" || norm.contains("(1,'=',1)")
+    matches!(norm.as_str(), "[]" | "[(1,'=',1)]")
 }
 
 fn warning(
@@ -120,33 +110,15 @@ fn warning(
     }
 }
 
-/// ACLs carrying an "all" or "public" token in the xml_id or name (e.g.
-/// `access_res_partner_all`, `access_thing_public_user`) follow the common
-/// Odoo convention for a deliberately global grant - the author meant
-/// "everyone", so the finding is demoted one level to cut false positives
-/// (grave -> log-only, minor -> silent). Token match, not substring:
-/// "install"/"wallet" must not count.
+/// Explicitly named broad access is useful inventory, not an unexpected grant.
+/// This does not suppress the independent security-model escalation check.
 fn is_intentional_global(rec: &RecordAnalysisInfo) -> bool {
-    fn has_token(s: &str) -> bool {
-        s.split(['_', '.']).any(|t| t == "all" || t == "public")
-    }
-    has_token(&rec.xml_id) || field_str(rec, "name").is_some_and(has_token)
+    names_scope(rec, "all") || names_scope(rec, "public")
 }
 
-/// True when the ACL's xml_id/name explicitly names the group it grants
-/// access to (e.g. `access_auth_passkey_key_portal` for `base.group_portal`),
-/// following the standard Odoo/OCA `access_<model>_<group_suffix>`
-/// convention. A portal/public write grant named after its own group is a
-/// deliberate self-service design (typically paired with an ir.rule scoping
-/// it to the user's own records), not an oversight, so it gets the same
-/// demotion as `is_intentional_global`.
-fn names_its_group(rec: &RecordAnalysisInfo, group: &str) -> bool {
-    let suffix = group.rsplit('.').next().unwrap_or(group);
-    let suffix = suffix.strip_prefix("group_").unwrap_or(suffix);
-    fn has_token(s: &str, token: &str) -> bool {
-        s.split(['_', '.']).any(|t| t == token)
-    }
-    has_token(&rec.xml_id, suffix) || field_str(rec, "name").is_some_and(|n| has_token(n, suffix))
+fn names_scope(rec: &RecordAnalysisInfo, scope: &str) -> bool {
+    let has_token = |s: &str| s.split(['_', '.']).any(|t| t == scope);
+    has_token(&rec.xml_id) || field_str(rec, "name").is_some_and(has_token)
 }
 
 fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
@@ -161,19 +133,10 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
             if !write_perms.is_empty() {
                 out.push(warning(
                     rec,
-                    if intentional {
-                        SEVERITY_WARNING
-                    } else {
-                        SEVERITY_ERROR
-                    },
+                    if intentional { SEVERITY_WARNING } else { SEVERITY_ERROR },
                     "acl-global-write",
                     format!(
-                        "Access rule grants {write_perms} on '{model_label}' to EVERY user (portal/public included): no group is set{}",
-                        if intentional {
-                            " ('all'/'public' naming suggests it is intentional)"
-                        } else {
-                            ""
-                        }
+                        "ACL grants {write_perms} on '{model_label}' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user."
                     ),
                 ));
             } else if perm(rec, "perm_read") && !intentional {
@@ -187,23 +150,21 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                 ));
             }
         }
-        Some(g) if PUBLIC_GROUP_XML_IDS.contains(&local_id(g)) && !write_perms.is_empty() => {
-            let intentional = is_intentional_global(rec) || names_its_group(rec, g);
+        Some(g) if is_core_id(g, &PUBLIC_GROUP_XML_IDS) && !write_perms.is_empty() => {
+            let intentional = is_intentional_global(rec)
+                || names_scope(
+                    rec,
+                    g.rsplit('.')
+                        .next()
+                        .unwrap_or(g)
+                        .trim_start_matches("group_"),
+                );
             out.push(warning(
                 rec,
-                if intentional {
-                    SEVERITY_WARNING
-                } else {
-                    SEVERITY_ERROR
-                },
+                if intentional { SEVERITY_WARNING } else { SEVERITY_ERROR },
                 "acl-public-write",
                 format!(
-                    "Access rule grants {write_perms} on '{model_label}' to the portal/public group '{g}'{}",
-                    if intentional {
-                        " (naming names its own group, likely a deliberate self-service grant - verify a companion ir.rule scopes it to the user's own records)"
-                    } else {
-                        ""
-                    }
+                    "ACL grants {write_perms} on '{model_label}' to '{g}'. Verify record rules restrict these operations to intended records, including records owned by other users/companies."
                 ),
             ));
         }
@@ -214,15 +175,14 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     // an escalation vector for any group that isn't already admin.
     if !write_perms.is_empty() {
         if let Some(model_ref) = model_ref {
-            let group_is_admin =
-                matches!(group, Some(g) if ADMIN_GROUP_XML_IDS.contains(&local_id(g)));
-            if PRIVILEGED_MODEL_XML_IDS.contains(&local_id(model_ref)) && !group_is_admin {
+            let group_is_admin = matches!(group, Some(g) if is_core_id(g, &ADMIN_GROUP_XML_IDS));
+            if is_core_id(model_ref, &PRIVILEGED_MODEL_XML_IDS) && !group_is_admin {
                 out.push(warning(
                     rec,
                     SEVERITY_ERROR,
                     "acl-privilege-escalation",
                     format!(
-                        "Access rule grants {write_perms} on security model '{model_ref}' to {}: members can escalate their own permissions",
+                        "ACL grants {write_perms} on security model '{model_ref}' to {}. Review field restrictions and Python guards for possible privilege escalation; the ACL alone does not prove exploitability.",
                         group.map(|g| format!("group '{g}'")).unwrap_or_else(|| "every user".to_string())
                     ),
                 ));
@@ -235,43 +195,44 @@ fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     if !is_permissive_domain(field_str(rec, "domain_force")) {
         return;
     }
-    // Group rules OR-combine, so an always-true group rule grants that group
-    // access to every record, bypassing sibling rules. A *global* one
-    // AND-combines and is a harmless no-op - not reported.
+    if ["perm_read", "perm_write", "perm_create", "perm_unlink"]
+        .iter()
+        .all(|p| perm_explicit_false(rec, p))
+    {
+        return;
+    }
+    // Group rules OR-combine, but ACLs and global rules still constrain access.
     match field_str(rec, "groups") {
-        Some(groups) if PUBLIC_GROUP_XML_IDS.iter().any(|g| groups.contains(g)) => {
+        Some(groups)
+            if groups
+                .split(['\'', '"'])
+                .any(|g| is_core_id(g, &PUBLIC_GROUP_XML_IDS)) =>
+        {
             out.push(warning(
                 rec,
                 SEVERITY_ERROR,
                 "rule-public-bypass",
-                "Record rule with an always-true domain grants portal/public users access to every record of its model".to_string(),
+                "Always-true portal/public group rule removes restrictions from other group rules for applicable operations. ACLs and global rules still apply; test access to other users' records.".to_string(),
             ));
         }
-        // An always-true rule scoped to a manager/admin group is the canonical
-        // Odoo pattern to lift restrictions for supervisors - not a finding.
+        Some("[]" | "False" | "[(5,)]" | "[(6, 0, [])]") => {}
         Some(groups)
-            if groups.contains("manager")
-                || groups.contains("admin")
-                || ADMIN_GROUP_XML_IDS.iter().any(|g| groups.contains(g)) => {}
-        // "_all" naming (e.g. `rule_settlement_all`) marks a deliberately
-        // global grant, same convention as ACLs - not a finding.
-        Some(_) if is_intentional_global(rec) => {}
-        // A rule that explicitly turns off write/create/unlink only widens
-        // reads for its group, not the other three operations - a common,
-        // deliberate "broaden visibility, keep edits scoped" pattern. Must
-        // be the explicit flag, not naming: perm_write/create/unlink default
-        // to True when the record omits them, so a rule merely *named*
-        // "readonly" without the flags set is still a full bypass.
+            if is_intentional_global(rec)
+                || groups.split(['\'', '"']).any(|g| {
+                    is_core_id(g, &ADMIN_GROUP_XML_IDS)
+                        || g.split(['_', '.'])
+                            .any(|t| matches!(t, "manager" | "admin"))
+                }) => {}
         Some(_)
-            if perm_explicit_false(rec, "perm_write")
-                && perm_explicit_false(rec, "perm_create")
-                && perm_explicit_false(rec, "perm_unlink") => {}
+            if ["perm_write", "perm_create", "perm_unlink"]
+                .iter()
+                .all(|p| perm_explicit_false(rec, p)) => {}
         Some(_) => {
             out.push(warning(
                 rec,
                 SEVERITY_WARNING,
                 "rule-group-bypass",
-                "Record rule with an always-true domain bypasses every other record rule of its model for its group".to_string(),
+                "Always-true group rule removes restrictions from other group rules for applicable operations. Verify this scope is intended; ACLs and global rules still apply.".to_string(),
             ));
         }
         None => {}
@@ -282,6 +243,9 @@ fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
 pub fn analyze_records(records: &[RecordAnalysisInfo]) -> Vec<SecurityWarningInfo> {
     let mut out = Vec::new();
     for rec in records {
+        if perm_explicit_false(rec, "active") {
+            continue;
+        }
         match rec.model.as_str() {
             "ir.model.access" => check_access(rec, &mut out),
             "ir.rule" => check_rule(rec, &mut out),
@@ -312,15 +276,8 @@ fn controller_warning(
     }
 }
 
-/// Security findings over the module's HTTP endpoints. Deliberate severity
-/// calls: CSRF disabled on an *authenticated* HTTP endpoint is grave (a
-/// malicious page can act with the victim's session); disabled on a
-/// public/none one is the normal webhook pattern and `.sudo()` inside a
-/// public route is extremely common in website modules - both are real
-/// review signals but not definite holes, so they only reach the log.
-/// A public `.sudo()` route that also calls `_document_check_access` (the
-/// portal access_token pattern) gates its record access itself and isn't
-/// reported at all.
+/// A method call's presence is evidence to review, not proof that every path
+/// or every record is protected by it.
 pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<SecurityWarningInfo> {
     let mut out = Vec::new();
     for ctrl in controllers {
@@ -330,7 +287,11 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
         // the same way) and for state-changing methods; an empty `methods`
         // list means the route accepts every method, POST included.
         let csrf_relevant = ctrl.http_type == "http"
-            && (ctrl.methods.is_empty() || ctrl.methods.iter().any(|m| m != "GET"));
+            && (ctrl.methods.is_empty()
+                || ctrl
+                    .methods
+                    .iter()
+                    .any(|m| !matches!(m.as_str(), "GET" | "HEAD" | "OPTIONS" | "TRACE")));
         if ctrl.csrf == Some(false) && csrf_relevant {
             if auth == Some("user") {
                 out.push(controller_warning(
@@ -338,7 +299,7 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                     SEVERITY_ERROR,
                     "route-user-csrf-off",
                     format!(
-                        "HTTP endpoint '{}.{}' disables CSRF protection while requiring an authenticated session: a malicious page can act on behalf of the logged-in user",
+                        "HTTP endpoint '{}.{}' disables CSRF protection for unsafe methods with session authentication. Restore CSRF or verify an independent request-authentication mechanism prevents cross-site actions.",
                         ctrl.class_name, ctrl.name
                     ),
                 ));
@@ -354,27 +315,17 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                 ));
             }
         }
-        if is_public && ctrl.uses_sudo && !ctrl.checks_token_access {
+        if is_public && ctrl.uses_sudo {
             out.push(controller_warning(
                 ctrl,
                 SEVERITY_WARNING,
                 "route-public-sudo",
                 format!(
-                    "Unauthenticated endpoint '{}.{}' (auth=\"{}\") calls .sudo(): privileged code reachable without login, review what it exposes",
+                    "Endpoint '{}.{}' (auth=\"{}\") calls .sudo(). Check authorization before each privileged operation and validate user-controlled record IDs.{}",
                     ctrl.class_name,
                     ctrl.name,
-                    auth.unwrap_or("?")
-                ),
-            ));
-        }
-        if auth == Some("none") {
-            out.push(controller_warning(
-                ctrl,
-                SEVERITY_WARNING,
-                "route-auth-none",
-                format!(
-                    "Endpoint '{}.{}' uses auth=\"none\": it runs with no user/session at all",
-                    ctrl.class_name, ctrl.name
+                    auth.unwrap_or("?"),
+                    if ctrl.checks_token_access { " _document_check_access is present, but its coverage is not verified." } else { "" }
                 ),
             ));
         }
@@ -717,24 +668,58 @@ mod tests {
     }
 
     #[test]
-    fn test_public_sudo_and_auth_none_are_minor() {
+    fn test_public_sudo_requires_review_even_with_a_token_check() {
         let found = analyze_controllers(&[route(Some("public"), None, &[], true)]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "route-public-sudo");
         assert_eq!(found[0].severity, SEVERITY_WARNING);
 
-        // auth="none" + sudo: both signals reported.
+        // auth="none" is inventory, not a finding on its own.
         let found = analyze_controllers(&[route(Some("none"), None, &[], true)]);
         let codes: Vec<&str> = found.iter().map(|w| w.code.as_str()).collect();
-        assert_eq!(codes, vec!["route-public-sudo", "route-auth-none"]);
+        assert_eq!(codes, vec!["route-public-sudo"]);
+        assert!(analyze_controllers(&[route(Some("none"), None, &[], false)]).is_empty());
 
         // sudo behind an authenticated route: normal, clean.
         assert!(analyze_controllers(&[route(Some("user"), None, &[], true)]).is_empty());
-        // Public sudo gated by _document_check_access (portal token): clean.
+        // A token check may protect another record or only one branch.
         let mut portal = route(Some("public"), None, &[], true);
         portal.checks_token_access = true;
-        assert!(analyze_controllers(&[portal]).is_empty());
+        let found = analyze_controllers(&[portal]);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].message.contains("coverage is not verified"));
         // Unknown auth (inherited-route override): no guessing, clean.
         assert!(analyze_controllers(&[route(None, None, &[], true)]).is_empty());
+    }
+
+    #[test]
+    fn test_restricted_domains_inactive_rules_and_safe_methods_are_not_findings() {
+        for domain in [
+            "['&', (1, '=', 1), ('user_id', '=', user.id)]",
+            "['!', (1, '=', 1)]",
+            "[(1, '=', 1), ('company_id', '=', company_id)]",
+        ] {
+            assert!(
+                analyze_records(&[rule(domain, Some("[(4, ref('base.group_portal'))]"))])
+                    .is_empty()
+            );
+        }
+        let mut inactive = rule("[]", Some("[(4, ref('base.group_portal'))]"));
+        inactive.fields.as_mut().unwrap()["active"] = serde_json::json!("False");
+        assert!(analyze_records(&[inactive]).is_empty());
+        assert!(analyze_records(&[rule("[]", Some("[]"))]).is_empty());
+        assert!(analyze_controllers(&[route(
+            Some("user"),
+            Some(false),
+            &["GET", "HEAD", "OPTIONS"],
+            false
+        )])
+        .is_empty());
+
+        let mut acl = access_csv("custom.group_system", ["1", "1", "0", "0"]);
+        acl.fields.as_mut().unwrap()["model_id:id"] = serde_json::json!("base.model_res_users");
+        assert!(analyze_records(&[acl])
+            .iter()
+            .any(|w| w.code == "acl-privilege-escalation"));
     }
 }

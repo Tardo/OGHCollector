@@ -6,8 +6,8 @@
 //! judgement); this module turns them into findings, same split security.rs
 //! uses for the records/controllers it judges.
 //!
-//! Two severities: "warning" (will likely break, or needs an actual code
-//! change) and "info" (still works today, but worth a second look).
+//! No target version is selected: version-specific notes are conditional on
+//! the target named in the message, not defects in the current source version.
 use sqlitedb::models::module_code_analysis::{MigrationFactInfo, ModelAnalysisInfo};
 use sqlitedb::models::module_migration_note::{
     MigrationConsiderationInfo, SEVERITY_INFO, SEVERITY_WARNING,
@@ -62,9 +62,14 @@ pub fn analyze_models(models: &[ModelAnalysisInfo]) -> Vec<MigrationConsideratio
     let mut out = Vec::new();
     for m in models {
         if attrs_bool(&m.attrs, "auto") == Some(false) {
+            let mut seen = std::collections::BTreeSet::new();
             for sql in attrs_str_list(&m.attrs, "init_sql") {
-                let upper = sql.to_uppercase();
-                if upper.contains("CREATE TABLE") {
+                let upper = sql
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_uppercase();
+                if upper.starts_with("CREATE TABLE ") && seen.insert("table") {
                     out.push(note(
                         SEVERITY_WARNING,
                         "migration-sql-table",
@@ -77,7 +82,11 @@ pub fn analyze_models(models: &[ModelAnalysisInfo]) -> Vec<MigrationConsideratio
                         None,
                         None,
                     ));
-                } else if upper.contains("VIEW") {
+                } else if (upper.starts_with("CREATE VIEW ")
+                    || upper.starts_with("CREATE OR REPLACE VIEW ")
+                    || upper.starts_with("CREATE MATERIALIZED VIEW "))
+                    && seen.insert("view")
+                {
                     out.push(note(
                         SEVERITY_INFO,
                         "migration-sql-view",
@@ -189,18 +198,18 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                 "migration-view-attrs-states",
                 ctx,
                 format!(
-                    "View '{}' uses the deprecated `attrs=`/`states=` syntax: removed in Odoo 17.0+, replace with direct `invisible`/`readonly`/`required` domain expressions.",
+                    "For a target of Odoo 17.0+: view '{}' uses `attrs=`/`states=`, which are no longer supported. Convert modifiers to direct Python boolean expressions in `invisible`/`readonly`/`required`; preserve the original AND/OR logic.",
                     ctx_str()
                 ),
                 f.file.clone(),
                 f.line,
             )),
             "view_t_raw" => out.push(note(
-                SEVERITY_WARNING,
+                SEVERITY_INFO,
                 "migration-template-t-raw",
                 ctx,
                 format!(
-                    "Template '{}' uses `t-raw`: removed in Odoo 17.0, replace with `t-out` (auto-escaped) or `Markup`.",
+                    "Template '{}' uses `t-raw`, deprecated since Odoo 15.0. Prefer `t-out` for escaped output. For intentional HTML, verify sanitization at its source before marking it safe; Markup alone does not sanitize untrusted content.",
                     ctx_str()
                 ),
                 f.file.clone(),
@@ -210,7 +219,7 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<MigrationConsiderationI
                 SEVERITY_WARNING,
                 "migration-openerp-manifest",
                 None,
-                "Manifest file is `__openerp__.py`: renamed to `__manifest__.py` since Odoo 10.0 - a strong signal this module hasn't been touched since.".to_string(),
+                "For a target of Odoo 10.0+: use the `__manifest__.py` manifest name instead of `__openerp__.py`. The filename alone does not establish module age or compatibility.".to_string(),
                 f.file.clone(),
                 f.line,
             )),
@@ -268,6 +277,28 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "migration-sql-view");
         assert_eq!(found[0].severity, SEVERITY_INFO);
+    }
+
+    #[test]
+    fn test_sql_notes_require_ddl_and_do_not_repeat_per_statement() {
+        let m = model(
+            Some(false),
+            &[
+                "SELECT preview FROM x_report",
+                "DROP VIEW IF EXISTS x_report",
+                "CREATE\nTABLE IF NOT EXISTS x_report (id int)",
+                "CREATE TABLE IF NOT EXISTS x_other (id int)",
+                "CREATE OR REPLACE VIEW x_view AS SELECT 1",
+            ],
+        );
+        let found = analyze_models(&[m]);
+        assert_eq!(
+            found.iter().map(|n| n.code.as_str()).collect::<Vec<_>>(),
+            ["migration-sql-table", "migration-sql-view"]
+        );
+        let found = analyze_facts(&[fact("view_t_raw", Some("template"), None)]);
+        assert_eq!(found[0].severity, SEVERITY_INFO);
+        assert!(found[0].message.contains("does not sanitize"));
     }
 
     #[test]

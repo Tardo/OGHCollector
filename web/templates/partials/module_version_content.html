@@ -23,7 +23,7 @@
         <li>{% if c.context %}<code>{{ c.context }}</code> &mdash; {% endif %}{{ c.message }} <span class="badge {{ c.severity == 'warning' and 'text-bg-warning' or 'text-bg-secondary' }}">{{ c.code }}</span>{% if c.file %} &middot; <a href="{{ module.git | replace('.git', '/blob/' + module.odoo_version + '/' + module.technical_name + '/' + c.file) }}{% if c.line %}#L{{ c.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
         {% endfor %}
     </ul>
-    <p class="mb-0 small">Found by automated static analysis: patterns worth a look before/after upgrading this module to a newer Odoo version.</p>
+    <p class="mb-0 small">Migration review checklist, not a compatibility verdict. No target version is selected: apply version-specific advice only when migrating to that version or later.</p>
 </div>
 {% endif %}
 <div class="row">

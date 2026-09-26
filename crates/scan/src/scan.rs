@@ -35,7 +35,8 @@ const USER_AGENT: &str = concat!("OGHCollector-Scan/", env!("CARGO_PKG_VERSION")
 // Odoo versions still under bugfix support. The scanner has no live access to
 // Odoo's support matrix, so this manual table is the only source of truth it
 // has - bump it when a version leaves beta or an older one hits end-of-life.
-const SUPPORTED_VERSIONS: &[&str] = &["16.0", "17.0", "18.0"];
+// Standard support matrix as of September 2026; extended/vendor support differs.
+const SUPPORTED_VERSIONS: &[&str] = &["17.0", "18.0", "19.0"];
 
 // Per-request budget: a probe must answer within REQUEST_TIMEOUT and a
 // connection must be established within CONNECT_TIMEOUT, otherwise it is
@@ -51,9 +52,6 @@ const MAX_MODULES: usize = 200;
 // ponytail: global cap; use authenticated per-client limits if this is exposed publicly.
 const MAX_CONCURRENT_SCANS: usize = 2;
 const MAX_CONCURRENT_PROBES: usize = 4;
-
-// Slow-response threshold for the root entry point, in milliseconds.
-const SLOW_THRESHOLD_MS: f64 = 3000.0;
 
 // Scan cache: a previous report of the same normalized host is reused for
 // SCAN_CACHE_TTL before re-probing, so repeated scans of one instance (the
@@ -113,10 +111,8 @@ pub struct ScanReport {
     /// The peer TLS certificate, when the target is HTTPS and a certificate was
     /// presented (even if the chain is untrusted - see `verified`).
     pub certificate: Option<CertificateInfo>,
-    /// The critical points, most severe first.
+    /// Review findings with stable rule codes and severity.
     pub findings: Vec<Finding>,
-    /// The aggregate risk score and severity breakdown.
-    pub score: SecurityScore,
     /// The pass/fail result of each security check that ran.
     pub checks: Vec<SecurityCheck>,
 }
@@ -151,7 +147,7 @@ pub struct DatabaseInfo {
     pub info_status: Option<u16>,
     /// Database names returned by `/web/database/info`, when exposed.
     pub databases: Vec<String>,
-    /// True when `/web/database/manager` answered 2xx.
+    /// True when a 2xx response contains database-management form paths.
     pub manager_available: bool,
 }
 
@@ -194,6 +190,8 @@ pub struct ProbeResult {
     pub redirect_location: Option<String>,
     /// Sanitized headers (cookie values redacted).
     pub headers: BTreeMap<String, String>,
+    /// Recognized sensitive-file format; contents/secrets are never serialized.
+    pub sensitive_file_signature: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -203,31 +201,13 @@ pub struct Finding {
     pub message: String,
 }
 
-/// A single security check that ran against the instance. `code` groups related
-/// findings (e.g. several sensitive files all share `sensitive-file`) so the
-/// risk score and the web page can reason about categories, not just raw counts.
+/// A single security check that ran against the instance.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SecurityCheck {
     pub code: String,
     /// `None` means this check could not be assessed from an anonymous probe.
     pub passed: Option<bool>,
     pub detail: String,
-}
-
-/// The overall risk rating, computed from the findings. Higher `score` is
-/// better (100 = nothing wrong); `rating` is the human-readable bucket.
-#[derive(Debug, Clone, Serialize)]
-pub struct SecurityScore {
-    /// 0-100, higher is better. Penalty-weighted: a critical finding costs more
-    /// than a low one, so a single exposure drags the score down fast.
-    pub score: u8,
-    /// "excellent", "good", "fair", "poor" or "critical".
-    pub rating: &'static str,
-    pub critical: usize,
-    pub high: usize,
-    pub medium: usize,
-    pub low: usize,
-    pub info: usize,
 }
 
 /// Information extracted from the peer TLS certificate of an HTTPS target.
@@ -429,15 +409,6 @@ pub async fn scan_instance(target: &str) -> ScanReport {
         is_odoo: false,
         certificate: cert,
         findings: Vec::new(),
-        score: SecurityScore {
-            score: 0,
-            rating: "unknown",
-            critical: 0,
-            high: 0,
-            medium: 0,
-            low: 0,
-            info: 0,
-        },
         checks: Vec::new(),
     };
     // Module enumeration and version assessment only make sense for an
@@ -446,17 +417,13 @@ pub async fn scan_instance(target: &str) -> ScanReport {
     if report.is_odoo {
         report.modules = analyze_modules(&probes);
     }
-    // Detect the version after module enumeration so the best-effort
-    // module-specific fallback below can run when no header/manifest/page marker
-    // is available.
-    report.version = detect_version(&probes, &report.modules);
+    report.version = detect_version(&probes);
     report.modules.module_links = infer_module_links(
         &report.modules.module_names,
         report.version.detected.as_deref(),
     );
     report.findings = build_findings(&report);
     report.checks = collect_checks(&report);
-    report.score = compute_score(&report.findings, &report.checks);
 
     // Store the result so a repeated scan of the same host is served from cache.
     store_report(&normalized, report.clone());
@@ -507,22 +474,13 @@ impl ScanReport {
             is_odoo: false,
             certificate: None,
             findings: vec![Finding::new(
-                "critical",
+                "info",
                 "unreachable",
                 format!("Instance could not be scanned: {error}"),
             )],
-            score: SecurityScore {
-                score: 0,
-                rating: "critical",
-                critical: 1,
-                high: 0,
-                medium: 0,
-                low: 0,
-                info: 0,
-            },
             checks: vec![SecurityCheck {
                 code: "unreachable".into(),
-                passed: Some(false),
+                passed: None,
                 detail: "No probe received an HTTP response.".into(),
             }],
         }
@@ -532,15 +490,6 @@ impl ScanReport {
         let mut report = Self::fatal(target, "Scanner is busy. Please retry shortly.");
         report.findings[0].severity = "info".into();
         report.findings[0].code = "scan-limited".into();
-        report.score = SecurityScore {
-            score: 0,
-            rating: "unknown",
-            critical: 0,
-            high: 0,
-            medium: 0,
-            low: 0,
-            info: 1,
-        };
         report.checks[0] = SecurityCheck {
             code: "scan-availability".into(),
             passed: None,
@@ -719,20 +668,8 @@ fn probe_urls(base: &str) -> Vec<String> {
         format!("{base}/website/info"),
         format!("{base}/web/static/manifest.json"),
     ];
-    // Security surface: version-control / backup dirs that leak source or
-    // secrets, plus the OAuth and mailing entry points. A 200 here on a file
-    // that should be private is a real exposure, so these are probed too.
-    for extra in [
-        "/.git/HEAD",
-        "/.env",
-        "/.hg",
-        "/.svn",
-        "/.DS_Store",
-        "/backup/",
-        "/web/oauth/login",
-        "/mailing",
-    ] {
-        urls.push(format!("{base}{extra}"));
+    for (path, _, _) in SENSITIVE_PATHS {
+        urls.push(format!("{base}{path}"));
     }
     urls
 }
@@ -1077,6 +1014,7 @@ async fn probe_one(client: &reqwest::Client, url: &str) -> Probe {
                     ttfb_ms: 0.0,
                     redirect_location: None,
                     headers: BTreeMap::new(),
+                    sensitive_file_signature: false,
                 },
                 body: String::new(),
                 raw_set_cookie: None,
@@ -1137,6 +1075,7 @@ async fn probe_one(client: &reqwest::Client, url: &str) -> Probe {
             ttfb_ms: ttfb.as_secs_f64() * 1000.0,
             redirect_location,
             headers,
+            sensitive_file_signature: sensitive_file_signature(url, &bytes),
         },
         body,
         raw_set_cookie,
@@ -1196,11 +1135,10 @@ fn pick_main(probes: &[Probe]) -> Option<Probe> {
 
 /// Version comes first from the `x-openerp-version` or `x-odoo-version` header,
 /// present on virtually every Odoo response), then from the web app manifest,
-/// then from the public `/website/info` page's own "Odoo Version" marker, and
-/// finally - best effort - from an installed module that is only shipped in a
-/// specific version. Each stage falls through to the next when it finds
-/// nothing, so the strongest available signal always wins.
-fn detect_version(probes: &[Probe], modules: &ModuleInfo) -> VersionInfo {
+/// then from the public `/website/info` page's own "Odoo Version" marker.
+/// Module names cannot establish a runtime version: the catalog is incomplete
+/// and private ports/backports can exist.
+fn detect_version(probes: &[Probe]) -> VersionInfo {
     for p in probes {
         for header in ["x-openerp-version", "x-odoo-version"] {
             if let Some(v) = p.result.headers.get(header) {
@@ -1227,12 +1165,6 @@ fn detect_version(probes: &[Probe], modules: &ModuleInfo) -> VersionInfo {
     if let Some(v) = detect_version_from_page(probes) {
         return version_detected(v, "page");
     }
-    // Last resort: infer the version from the installed modules using the
-    // collector's DB (see `infer_version_from_db`). A module shipped in a single
-    // version pins that version; ambiguous intersections fall through.
-    if let Some(v) = infer_version_from_db(&modules.module_names) {
-        return version_detected(v, "db");
-    }
     VersionInfo {
         detected: None,
         source: "none",
@@ -1255,21 +1187,6 @@ fn detect_version_from_page(probes: &[Probe]) -> Option<String> {
         return Some(m[1].to_string());
     }
     None
-}
-
-/// Infer the Odoo version from installed module names using the collector's DB.
-/// The `module` table maps each technical_name to the `version_odoo` it ships
-/// in; a module shipped in a single version pins that version and the
-/// intersection of every installed module's version set gives the answer. Fully
-/// dynamic and self-updatable - the collector keeps the DB fresh, so no version
-/// data is hardcoded here. Returns `None` when the DB is unavailable, has no
-/// matching modules, or the versions are ambiguous.
-fn infer_version_from_db(module_names: &[String]) -> Option<String> {
-    let path = std::env::var("OGHCOLLECTOR_DB_PATH").ok()?;
-    let pool = sqlitedb::try_read_pool(&path, 1)?;
-    let mut conn = pool.get().ok()?;
-    sqlitedb::models::module::infer_version_from_modules(&mut conn, module_names)
-        .map(|v| format!("{}.0", v))
 }
 
 /// Resolves the installed module names against the collector DB to find which
@@ -1299,11 +1216,18 @@ fn version_detected(raw: String, source: &'static str) -> VersionInfo {
     // The header/manifest reports the full Odoo release (e.g. "17.0.12"); the
     // support table is keyed by major.minor only, so compare that projection.
     let supported = SUPPORTED_VERSIONS.contains(&version_key(&raw).as_str());
+    let major = raw.split('.').next().and_then(|v| v.parse::<u16>().ok());
     VersionInfo {
         detected: Some(raw),
         source,
         supported,
-        status: if supported { "supported" } else { "outdated" },
+        status: if supported {
+            "supported"
+        } else if major.is_some_and(|v| (1..17).contains(&v)) {
+            "outdated"
+        } else {
+            "unknown"
+        },
     }
 }
 
@@ -1321,7 +1245,7 @@ fn analyze_session(probes: &[Probe]) -> (Vec<CookieInfo>, bool) {
             if let Some(c) = parse_cookie(raw) {
                 // The same session cookie is set on every response, so keep only
                 // the first occurrence per name - otherwise it would be reported
-                // once per probe and inflate the findings (and the risk score).
+                // once per probe and inflate the findings.
                 if !cookies
                     .iter()
                     .any(|existing: &CookieInfo| existing.name == c.name)
@@ -1346,9 +1270,9 @@ fn parse_cookie(raw: &str) -> Option<CookieInfo> {
     let mut samesite = None;
     for flag in parts.iter().skip(1) {
         let lower = flag.to_lowercase();
-        if lower.starts_with("secure") {
+        if lower == "secure" {
             secure = true;
-        } else if lower.starts_with("httponly") {
+        } else if lower == "httponly" {
             httponly = true;
         } else if let Some(rest) = lower.strip_prefix("samesite=") {
             samesite = Some(rest.to_string());
@@ -1385,14 +1309,24 @@ fn analyze_database(probes: &[Probe]) -> DatabaseInfo {
 
     let (info_available, info_status, databases) = match info {
         Some(p) if p.result.status_code == 200 && !p.body.trim().is_empty() => {
-            (true, Some(200), parse_databases(&p.body))
+            let databases = parse_databases(&p.body);
+            (!databases.is_empty(), Some(200), databases)
         }
         Some(p) => (false, Some(p.result.status_code), Vec::new()),
         None => (false, None, Vec::new()),
     };
 
     let manager_available = match manager {
-        Some(p) => (200..300).contains(&p.result.status_code),
+        Some(p) => {
+            (200..300).contains(&p.result.status_code)
+                && [
+                    "/web/database/create",
+                    "/web/database/backup",
+                    "/web/database/drop",
+                ]
+                .iter()
+                .any(|path| p.body.contains(path))
+        }
         None => false,
     };
 
@@ -1527,17 +1461,34 @@ fn string_field(item: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
-/// Sensitive paths that should never be served, with the severity and message
-/// when one leaks (a non-HTML HTTP 200). Version-control dirs leak source;
-/// `.env` leaks secrets; backups and `.DS_Store` leak data.
+/// Concrete files whose body format can be checked; a 200 alone proves nothing.
 const SENSITIVE_PATHS: &[(&str, &str, &str)] = &[
-    ("/.git/HEAD", "critical", "Version control metadata at /.git/HEAD is exposed, leaking source history and configuration."),
-    ("/.env", "critical", "An .env file is served, which may contain database credentials and application secrets."),
-    ("/.hg", "high", "Mercurial metadata at /.hg is exposed."),
-    ("/.svn", "high", "Subversion metadata at /.svn is exposed."),
+    ("/.git/HEAD", "high", "A Git HEAD signature is served at /.git/HEAD. Block access to .git and check whether repository objects or secrets were exposed."),
+    ("/.env", "high", "Environment-variable assignments are served at /.env. Remove public access and rotate any exposed credentials after reviewing the file."),
     ("/.DS_Store", "low", "A .DS_Store file is served, leaking local file names."),
-    ("/backup/", "high", "A /backup/ directory is reachable and may contain downloadable backups."),
 ];
+
+fn sensitive_file_signature(url: &str, bytes: &[u8]) -> bool {
+    let body = String::from_utf8_lossy(bytes);
+    let body = body.trim();
+    if url.ends_with("/.git/HEAD") {
+        body.strip_prefix("ref: refs/").is_some_and(|reference| {
+            !reference.is_empty() && !reference.chars().any(char::is_whitespace)
+        }) || (matches!(body.len(), 40 | 64) && body.bytes().all(|b| b.is_ascii_hexdigit()))
+    } else if url.ends_with("/.env") {
+        body.lines().any(|line| {
+            let line = line.trim().strip_prefix("export ").unwrap_or(line.trim());
+            line.split_once('=').is_some_and(|(key, _)| {
+                let key = key.trim();
+                !key.is_empty()
+                    && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                    && !key.as_bytes()[0].is_ascii_digit()
+            })
+        })
+    } else {
+        url.ends_with("/.DS_Store") && bytes.starts_with(b"\x00\x00\x00\x01Bud1")
+    }
+}
 
 fn analyze_sensitive_files(endpoints: &[ProbeResult]) -> (Vec<Finding>, SecurityCheck) {
     let mut findings = Vec::new();
@@ -1546,6 +1497,7 @@ fn analyze_sensitive_files(endpoints: &[ProbeResult]) -> (Vec<Finding>, Security
         for (path, severity, message) in SENSITIVE_PATHS {
             if e.url.ends_with(*path)
                 && e.status_code == 200
+                && e.sensitive_file_signature
                 && !e
                     .content_type
                     .as_deref()
@@ -1565,8 +1517,11 @@ fn analyze_sensitive_files(endpoints: &[ProbeResult]) -> (Vec<Finding>, Security
             findings,
             SecurityCheck {
                 code: "sensitive-files".into(),
-                passed: Some(true),
-                detail: "No version-control, backup or env files exposed.".into(),
+                passed: SENSITIVE_PATHS.iter().all(|(path, _, _)|
+                    endpoints.iter().any(|e| e.url.ends_with(path)
+                        && matches!(e.status_code, 401 | 403 | 404 | 410)))
+                    .then_some(true),
+                detail: "No sensitive-file signature found. Redirects, errors and unrecognized bodies are inconclusive; only the listed paths were checked.".into(),
             },
         )
     } else {
@@ -1584,14 +1539,13 @@ fn analyze_sensitive_files(endpoints: &[ProbeResult]) -> (Vec<Finding>, Security
 fn analyze_cors(endpoints: &[ProbeResult]) -> (Vec<Finding>, SecurityCheck) {
     let Some(main) = endpoints
         .iter()
-        .find(|e| e.url.ends_with("/web"))
-        .or_else(|| endpoints.first())
+        .find(|e| e.url.ends_with("/web") && (200..300).contains(&e.status_code))
     else {
         return (
             Vec::new(),
             SecurityCheck {
                 code: "cors".into(),
-                passed: Some(true),
+                passed: None,
                 detail: "No response headers to evaluate.".into(),
             },
         );
@@ -1613,13 +1567,13 @@ fn analyze_cors(endpoints: &[ProbeResult]) -> (Vec<Finding>, SecurityCheck) {
     if cao == "*" {
         (
             vec![Finding::new(
-                "medium",
+                "info",
                 "permissive-cors",
-                "Access-Control-Allow-Origin is '*': any site can read this API's responses from browser JavaScript.",
+                "Access-Control-Allow-Origin: * on /web permits cross-origin reads without credentials. Browsers reject wildcard origins for credentialed reads; verify whether this public response is intended to be shared.",
             )],
             SecurityCheck {
                 code: "cors".into(),
-                passed: Some(false),
+                passed: None,
                 detail: "Access-Control-Allow-Origin: *".into(),
             },
         )
@@ -1701,56 +1655,16 @@ fn collect_checks(report: &ScanReport) -> Vec<SecurityCheck> {
     checks
 }
 
-/// Convert findings into a 0-100 score (higher is better) and a rating bucket.
-/// Penalty-weighted so a single critical finding drags the score down more than
-/// several lows; the rating is driven by the worst severity present.
-fn compute_score(findings: &[Finding], checks: &[SecurityCheck]) -> SecurityScore {
-    let (mut c, mut h, mut m, mut l, mut i) = (0usize, 0, 0, 0, 0);
-    for f in findings {
-        match f.severity.as_str() {
-            "critical" => c += 1,
-            "high" => h += 1,
-            "medium" => m += 1,
-            "low" => l += 1,
-            _ => i += 1,
-        }
-    }
-    let score = 100usize.saturating_sub(c * 40 + h * 15 + m * 6 + l * 2);
-    let rating = if c > 0 {
-        "critical"
-    } else if h > 0 {
-        "poor"
-    } else if m > 0 {
-        "fair"
-    } else if l > 0 {
-        "good"
-    } else if checks.iter().any(|check| check.passed.is_none()) {
-        "incomplete"
-    } else {
-        "excellent"
-    };
-    SecurityScore {
-        score: score as u8,
-        rating,
-        critical: c,
-        high: h,
-        medium: m,
-        low: l,
-        info: i,
-    }
-}
-
-/// Build the critical-point findings from the gathered signals. Most severe
-/// first: unreachable > db exposure > debug/cookies/https > header hygiene.
+/// Build review findings from the observed signals.
 fn build_findings(report: &ScanReport) -> Vec<Finding> {
     if !report.reachable {
         return report
             .error
             .as_ref()
-            .map(|e| vec![Finding::new("critical", "unreachable", e.clone())])
+            .map(|e| vec![Finding::new("info", "unreachable", e.clone())])
             .unwrap_or_else(|| {
                 vec![Finding::new(
-                    "critical",
+                    "info",
                     "unreachable",
                     "No probe received an HTTP response.",
                 )]
@@ -1780,8 +1694,8 @@ fn build_findings(report: &ScanReport) -> Vec<Finding> {
                 "high",
                 "version-outdated",
                 format!(
-                    "Odoo {} is not among the currently supported versions {:?}. End-of-life \
-                      versions receive no security patches and are the single highest-risk finding.",
+                    "Odoo {} is outside the standard support versions {:?} (matrix: September 2026). \
+                      Verify vendor/extended support and deployed security patches; plan an upgrade if unsupported.",
                     report.version.detected.clone().unwrap_or_default(),
                     SUPPORTED_VERSIONS
                 ),
@@ -1792,86 +1706,84 @@ fn build_findings(report: &ScanReport) -> Vec<Finding> {
 
     if report.database.info_available {
         findings.push(Finding::new(
-            "critical",
-            "db-info-exposed",
-            "The /web/database/info endpoint is publicly reachable and returns the list of \
-             databases. With /web/database/manager also open, an attacker can enumerate and \
-             drop databases.",
-        ));
-    } else if report.database.info_status == Some(200) {
-        findings.push(Finding::new(
             "medium",
             "db-info-exposed",
-            "The /web/database/info endpoint answered 200 but listed no databases - it is \
-             reachable and worth a look.",
+            "The /web/database/info response lists database names. Disable database listing \
+             (list_db = False) or restrict these endpoints. This does not demonstrate permission to delete databases.",
         ));
     }
 
     if report.database.manager_available {
         findings.push(Finding::new(
-            "high",
+            "medium",
             "db-manager-exposed",
-            "The /web/database/manager page is publicly reachable. It lists, drops and \
-             manages databases - it should be locked behind an allowlist or disabled.",
+            "Database-manager forms are publicly visible at /web/database/manager. Restrict access \
+             and protect the master password (admin_passwd). Management operations were not attempted.",
         ));
     }
 
     if report.debug_mode {
         findings.push(Finding::new(
-            "high",
+            "info",
             "debug-mode",
-            "Odoo debug mode appears to be enabled. Debug mode exposes SQL queries, stack \
-             traces and a file editor to anyone who passes ?debug=, which aids attacks.",
+            "Odoo developer-mode markers were observed. Developer mode is not an authentication \
+             bypass or evidence of an exposed server-side debugger.",
         ));
     }
 
     if let Some(main) = &report.main_endpoint {
-        let headers = &main.headers;
-        if headers.get("strict-transport-security").is_none() {
-            findings.push(Finding::new(
-                "medium",
-                "missing-hsts",
-                "No Strict-Transport-Security header: browsers will not be forced onto HTTPS.",
-            ));
-        }
-        if headers.get("content-security-policy").is_none() {
-            findings.push(Finding::new(
-                "medium",
-                "missing-csp",
-                "No Content-Security-Policy header set on the response.",
-            ));
-        }
-        if headers.get("x-frame-options").is_none() {
-            findings.push(Finding::new(
+        if (200..300).contains(&main.status_code) {
+            let headers = &main.headers;
+            if report.is_https && headers.get("strict-transport-security").is_none() {
+                findings.push(Finding::new(
+                    "medium",
+                    "missing-hsts",
+                    "No Strict-Transport-Security header: browsers will not be forced onto HTTPS.",
+                ));
+            }
+            if headers.get("content-security-policy").is_none() {
+                findings.push(Finding::new(
+                    "low",
+                    "missing-csp",
+                    "No Content-Security-Policy header set on the response.",
+                ));
+            }
+            let frame_ancestors = headers.get("content-security-policy").is_some_and(|csp| {
+                csp.split(';')
+                    .any(|directive| directive.split_whitespace().next() == Some("frame-ancestors"))
+            });
+            if headers.get("x-frame-options").is_none() && !frame_ancestors {
+                findings.push(Finding::new(
                 "medium",
                 "missing-xfo",
-                "No X-Frame-Options header: the app can be framed, enabling clickjacking.",
+                "No X-Frame-Options or CSP frame-ancestors directive on this response. Review framing restrictions for sensitive pages.",
             ));
-        }
-        if headers.get("x-content-type-options").is_none() {
-            findings.push(Finding::new(
-                "low",
-                "missing-xcto",
-                "No X-Content-Type-Options header: MIME-sniffing is not discouraged.",
-            ));
-        }
-        if headers.get("referrer-policy").is_none() {
-            findings.push(Finding::new(
-                "low",
-                "missing-referrer-policy",
-                "No Referrer-Policy header: referrer info may leak outside the site.",
-            ));
-        }
-        if let Some(server) = &report.server_header {
-            if server_leaks_version(server) {
+            }
+            if headers.get("x-content-type-options").is_none() {
                 findings.push(Finding::new(
-                    "info",
-                    "server-leak",
-                    format!(
-                        "The Server header '{server}' reveals a software version, aiding \
-                         attackers in targeting known vulnerabilities.",
-                    ),
+                    "low",
+                    "missing-xcto",
+                    "No X-Content-Type-Options header: MIME-sniffing is not discouraged.",
                 ));
+            }
+            if headers.get("referrer-policy").is_none() {
+                findings.push(Finding::new(
+                    "low",
+                    "missing-referrer-policy",
+                    "No Referrer-Policy header: referrer info may leak outside the site.",
+                ));
+            }
+            if let Some(server) = &report.server_header {
+                if server_leaks_version(server) {
+                    findings.push(Finding::new(
+                        "info",
+                        "server-leak",
+                        format!(
+                            "The Server header '{server}' reveals a software version, aiding \
+                         attackers in targeting known vulnerabilities.",
+                        ),
+                    ));
+                }
             }
         }
     }
@@ -1900,10 +1812,10 @@ fn build_findings(report: &ScanReport) -> Vec<Finding> {
         }
         if cookie.samesite.is_none() {
             findings.push(Finding::new(
-                "medium",
+                "low",
                 format!("cookie-{}-no-samesite", cookie.name),
                 format!(
-                    "Session cookie '{}' has no SameSite attribute: it is exposed to CSRF.",
+                    "Session cookie '{}' omits SameSite. Modern browsers usually default to Lax; set an explicit policy appropriate to login/payment flows. This alone does not prove CSRF.",
                     cookie.name
                 ),
             ));
@@ -1916,18 +1828,6 @@ fn build_findings(report: &ScanReport) -> Vec<Finding> {
             "no-https",
             "The instance is served over plain HTTP, not HTTPS. Credentials and session \
              cookies travel in the clear.",
-        ));
-    }
-
-    if report.timings.main_total_ms > SLOW_THRESHOLD_MS {
-        findings.push(Finding::new(
-            "low",
-            "slow-response",
-            format!(
-                "The /web entry point took {:.0} ms, slow for a static front page - a sign of
-                 a heavy stack, a missing cache or a distant database.",
-                report.timings.main_total_ms
-            ),
         ));
     }
 
@@ -1968,21 +1868,11 @@ mod tests {
                 ttfb_ms: 5.0,
                 redirect_location: None,
                 headers,
+                sensitive_file_signature: sensitive_file_signature(url, body.as_bytes()),
             },
             body.to_string(),
             None,
         )
-    }
-
-    fn empty_modules() -> ModuleInfo {
-        ModuleInfo {
-            page_status: None,
-            page_content_type: None,
-            module_names: Vec::new(),
-            module_count: 0,
-            truncated: false,
-            module_links: Vec::new(),
-        }
     }
 
     #[test]
@@ -2060,7 +1950,7 @@ mod tests {
             .result
             .headers
             .insert("x-openerp-version".to_string(), "17.0.3".to_string());
-        let v = detect_version(&probes, &empty_modules());
+        let v = detect_version(&probes);
         assert_eq!(v.detected.as_deref(), Some("17.0.3"));
         assert_eq!(v.source, "header");
         assert_eq!(v.status, "supported");
@@ -2073,7 +1963,7 @@ mod tests {
             200,
             "{\"version\":\"16.1\"}",
         )];
-        let v = detect_version(&probes, &empty_modules());
+        let v = detect_version(&probes);
         assert_eq!(v.detected.as_deref(), Some("16.1"));
         assert_eq!(v.source, "manifest");
     }
@@ -2081,7 +1971,7 @@ mod tests {
     #[test]
     fn detect_version_none_when_nothing_present() {
         let probes = vec![probe("https://x/web", 200, "<html>nothing</html>")];
-        let v = detect_version(&probes, &empty_modules());
+        let v = detect_version(&probes);
         assert_eq!(v.status, "unknown");
         assert_eq!(v.source, "none");
     }
@@ -2093,7 +1983,7 @@ mod tests {
             200,
             "<html data-odoo-vsn=\"18.0\">",
         )];
-        let v = detect_version(&probes, &empty_modules());
+        let v = detect_version(&probes);
         assert_eq!(v.detected.as_deref(), Some("18.0"));
         assert_eq!(v.source, "page");
     }
@@ -2101,7 +1991,7 @@ mod tests {
     #[test]
     fn detect_version_reads_version_label_from_info_page() {
         let probes = vec![probe("https://x/website/info", 200, "Odoo Version 17.4")];
-        let v = detect_version(&probes, &empty_modules());
+        let v = detect_version(&probes);
         assert_eq!(v.detected.as_deref(), Some("17.4"));
         assert_eq!(v.source, "page");
     }
@@ -2140,7 +2030,7 @@ mod tests {
             probe(
                 "https://x/web/database/manager",
                 200,
-                "<html>manager</html>",
+                "<form action='/web/database/backup'></form>",
             ),
         ];
         let db = analyze_database(&probes);
@@ -2198,12 +2088,7 @@ mod tests {
             .result
             .headers
             .insert("x-odoo-version".to_string(), "18.1".to_string());
-        assert_eq!(
-            detect_version(&[modern], &empty_modules())
-                .detected
-                .as_deref(),
-            Some("18.1")
-        );
+        assert_eq!(detect_version(&[modern]).detected.as_deref(), Some("18.1"));
     }
 
     #[test]
@@ -2252,7 +2137,7 @@ mod tests {
     }
 
     #[test]
-    fn build_findings_flags_critical_db_exposure() {
+    fn build_findings_reports_evidence_without_claiming_database_deletion() {
         let mut main = probe("https://x/web", 200, "");
         main.result
             .headers
@@ -2295,15 +2180,6 @@ mod tests {
             is_odoo: true,
             certificate: None,
             findings: Vec::new(),
-            score: SecurityScore {
-                score: 0,
-                rating: "unknown",
-                critical: 0,
-                high: 0,
-                medium: 0,
-                low: 0,
-                info: 0,
-            },
             checks: Vec::new(),
         };
         let findings = build_findings(&report);
@@ -2317,15 +2193,21 @@ mod tests {
         assert!(codes.contains(&"cookie-session-no-samesite"));
         assert!(codes.contains(&"missing-hsts"));
         assert!(codes.contains(&"server-leak"));
-        assert!(codes.contains(&"slow-response"));
-        // The exposed database manager yields a critical finding.
-        assert!(findings.iter().any(|f| f.severity == "critical"));
+        assert!(!codes.contains(&"slow-response"));
+        assert!(!findings.iter().any(|f| f.severity == "critical"));
+        assert_eq!(
+            findings
+                .iter()
+                .find(|f| f.code == "debug-mode")
+                .unwrap()
+                .severity,
+            "info"
+        );
 
         let mut unclassified = report;
         unclassified.is_odoo = false;
         let findings = build_findings(&unclassified);
         assert!(findings.iter().any(|f| f.code == "db-info-exposed"));
-        assert!(compute_score(&findings, &[]).score < 100);
     }
 
     #[test]
@@ -2382,18 +2264,24 @@ mod tests {
             is_odoo: true,
             certificate: None,
             findings: Vec::new(),
-            score: SecurityScore {
-                score: 0,
-                rating: "unknown",
-                critical: 0,
-                high: 0,
-                medium: 0,
-                low: 0,
-                info: 0,
-            },
             checks: Vec::new(),
         };
         assert!(build_findings(&report).is_empty());
+        let mut report = report;
+        let main = report.main_endpoint.as_mut().unwrap();
+        main.headers.remove("x-frame-options");
+        main.headers.insert(
+            "content-security-policy".into(),
+            "frame-ancestors 'self'".into(),
+        );
+        assert!(!build_findings(&report)
+            .iter()
+            .any(|f| f.code == "missing-xfo"));
+        report.main_endpoint.as_mut().unwrap().status_code = 302;
+        report.main_endpoint.as_mut().unwrap().headers.clear();
+        assert!(!build_findings(&report)
+            .iter()
+            .any(|f| f.code.starts_with("missing-")));
     }
 
     #[test]
@@ -2419,8 +2307,40 @@ mod tests {
         assert!(!report.reachable);
         assert_eq!(report.findings.len(), 1);
         assert_eq!(report.findings[0].code, "unreachable");
-        assert_eq!(report.score.rating, "critical");
+        assert_eq!(report.findings[0].severity, "info");
+        assert_eq!(report.checks[0].passed, None);
         assert_eq!(report.checks.len(), 1);
+    }
+
+    #[test]
+    fn sensitive_file_checks_require_body_evidence_and_do_not_pass_missing_probes() {
+        assert!(sensitive_file_signature(
+            "https://x/.git/HEAD",
+            b"ref: refs/heads/main\n"
+        ));
+        assert!(sensitive_file_signature(
+            "https://x/.env",
+            b"export DB_PASSWORD=example\n"
+        ));
+        assert!(sensitive_file_signature(
+            "https://x/.DS_Store",
+            b"\x00\x00\x00\x01Bud1"
+        ));
+        for body in [b"Not found".as_slice(), b"<html>Welcome</html>", b""] {
+            assert!(!sensitive_file_signature("https://x/.git/HEAD", body));
+            assert!(!sensitive_file_signature("https://x/.env", body));
+        }
+        let fallback = probe("https://x/.env", 200, "Not found").result;
+        let (findings, check) = analyze_sensitive_files(&[fallback]);
+        assert!(findings.is_empty());
+        assert_eq!(check.passed, None);
+        assert_eq!(analyze_sensitive_files(&[]).1.passed, None);
+        assert_eq!(analyze_cors(&[]).1.passed, None);
+        let denied = SENSITIVE_PATHS
+            .iter()
+            .map(|(path, _, _)| probe(&format!("https://x{path}"), 404, "Not found").result)
+            .collect::<Vec<_>>();
+        assert_eq!(analyze_sensitive_files(&denied).1.passed, Some(true));
     }
 
     #[test]
@@ -2429,11 +2349,13 @@ mod tests {
             ProbeResult {
                 url: "https://x/.git/HEAD".into(),
                 status_code: 200,
+                sensitive_file_signature: true,
                 ..Default::default()
             },
             ProbeResult {
                 url: "https://x/.env".into(),
                 status_code: 200,
+                sensitive_file_signature: true,
                 ..Default::default()
             },
             ProbeResult {
@@ -2462,7 +2384,7 @@ mod tests {
             ..Default::default()
         }];
         let (findings, check) = analyze_sensitive_files(&endpoints);
-        assert_eq!(check.passed, Some(true));
+        assert_eq!(check.passed, None); // Other paths were not probed.
         assert!(findings.is_empty());
     }
 
@@ -2475,7 +2397,7 @@ mod tests {
             ..Default::default()
         }];
         let (findings, check) = analyze_sensitive_files(&endpoints);
-        assert_eq!(check.passed, Some(true));
+        assert_eq!(check.passed, None); // A fallback is not a confirmed denial.
         assert!(findings.is_empty());
     }
 
@@ -2493,9 +2415,10 @@ mod tests {
             ..Default::default()
         }];
         let (findings, check) = analyze_cors(&endpoints);
-        assert_eq!(check.passed, Some(false));
+        assert_eq!(check.passed, None);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].code, "permissive-cors");
+        assert_eq!(findings[0].severity, "info");
     }
 
     #[test]
@@ -2535,40 +2458,19 @@ mod tests {
     }
 
     #[test]
-    fn compute_score_weights_and_rates() {
-        let clean = compute_score(&[], &[]);
-        assert_eq!(clean.score, 100);
-        assert_eq!(clean.rating, "excellent");
-
-        let one_critical = compute_score(
-            &[
-                Finding::new("critical", "x", "x"),
-                Finding::new("info", "y", "y"),
-            ],
-            &[],
+    fn inconclusive_responses_are_not_database_exposure_or_obsolete_versions() {
+        let db = analyze_database(&[
+            probe("https://x/web/database/info", 200, "<html>Login</html>"),
+            probe("https://x/web/database/manager", 200, "<html>Login</html>"),
+        ]);
+        assert!(!db.info_available);
+        assert!(!db.manager_available);
+        for raw in ["20.0", "garbage", "18.4"] {
+            assert_eq!(version_detected(raw.into(), "header").status, "unknown");
+        }
+        assert_eq!(
+            version_detected("19.0".into(), "header").status,
+            "supported"
         );
-        assert_eq!(one_critical.score, 60);
-        assert_eq!(one_critical.rating, "critical");
-
-        let mixed = compute_score(
-            &[
-                Finding::new("high", "a", "a"),
-                Finding::new("medium", "b", "b"),
-                Finding::new("low", "c", "c"),
-            ],
-            &[],
-        );
-        assert_eq!(mixed.score, 100 - 15 - 6 - 2);
-        assert_eq!(mixed.rating, "poor");
-
-        let severe = compute_score(
-            &[
-                Finding::new("critical", "x", "x"),
-                Finding::new("critical", "x", "x"),
-                Finding::new("critical", "x", "x"),
-            ],
-            &[],
-        );
-        assert_eq!(severe.score, 0);
     }
 }
