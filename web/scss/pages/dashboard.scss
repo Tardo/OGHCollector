@@ -89,6 +89,22 @@ mirlo-module-counter {
     line-height: 1.5;
 }
 
+.hero-search {
+    position: relative;
+    z-index: 2;
+    height: 3rem;
+    margin-bottom: 1.5rem;
+
+    mirlo-module-search {
+        position: absolute;
+        width: 100%;
+    }
+
+    @media (max-width: 767.98px) {
+        height: 8.5rem;
+    }
+}
+
 .hero-panel {
     position: relative;
     overflow: hidden;
@@ -183,15 +199,4 @@ mirlo-module-counter {
     .hero-copy h1 { font-size: clamp(2.65rem, 11vw, 3.6rem); }
     .hero-actions .btn { width: 100%; justify-content: space-between; }
     .hero-panel { padding: 1.2rem; }
-}
-
-#module_search {
-    z-index: 3;
-    top: 25%;
-
-    // See module.scss/#module_search for why this needs to clear the navbar.
-    @media (max-width: 767.98px) {
-        top: 4.5rem;
-        width: 94vw !important;
-    }
 }

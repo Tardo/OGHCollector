@@ -23,7 +23,7 @@
             <option value="semantic">Semantic</option>
             {% endif %}
         </select>
-        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
+        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." aria-label="Search modules" />
         <select id="version">
             <option value="">All versions</option>
         </select>
@@ -31,21 +31,6 @@
     <ul id="results"></ul>
 </template>
 
-
-<div id="module_search" class="position-fixed start-50 w-50 translate-middle-x d-none">
-    <mirlo-module-search class="d-block" />
-</div>
-
-<div class="position-fixed start-0 p-3 d-none d-lg-block ">
-    <div class="toast align-items-center show" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="d-flex">
-            <div class="toast-body">
-                TIP: You can type at any time to search modules.
-            </div>
-            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-    </div>
-</div>
 
 <template id="template-mirlo-module-counter">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-counter.css" as="style" />
@@ -80,6 +65,9 @@
         <span class="hero-eyebrow"><span class="hero-pulse" aria-hidden="true"></span> THE OPEN ODOO INDEX <span class="hero-eyebrow-line"></span> LIVE DATA</span>
         <h1 id="hero-title">The Odoo ecosystem,<br><span>in focus.</span></h1>
         <p>Explore the modules shaping Odoo. Discover dependencies, security findings and code intelligence across the open-source ecosystem — all in one place.</p>
+        <div id="module_search" class="hero-search">
+            <mirlo-module-search class="d-block" />
+        </div>
         <div class="hero-actions">
             <a class="btn btn-primary btn-lg" href="/modules">Explore modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a>
             <a class="btn btn-outline-secondary btn-lg" href="/atlas">View dependency atlas <span class="material-icons" aria-hidden="true">north_east</span></a>
