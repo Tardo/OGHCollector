@@ -2,6 +2,7 @@
 import alias from '@rollup/plugin-alias';
 import {nodeResolve} from '@rollup/plugin-node-resolve';
 import commonjs from "@rollup/plugin-commonjs";
+import json from '@rollup/plugin-json';
 import terser from '@rollup/plugin-terser';
 import autoprefixer from 'autoprefixer';
 import cssnano from 'cssnano';
@@ -16,6 +17,7 @@ export default [
     input: [
       'web/js/main.mjs',
       'web/js/pages/dashboard.mjs',
+      'web/js/pages/localization.mjs',
       'web/js/pages/osv.mjs',
       'web/js/pages/doodba_tools/converter.mjs',
       'web/js/pages/doodba_tools/dependency-resolver.mjs',
@@ -72,6 +74,7 @@ export default [
       commonjs({
         include: /node_modules/,
       }),
+      json(),
 
       libStylePlugin({
         importCSS: false,

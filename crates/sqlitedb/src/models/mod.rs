@@ -253,6 +253,34 @@ mod tests {
     }
 
     #[test]
+    fn test_localization_only_includes_direct_country_modules() {
+        use diesel::connection::SimpleConnection;
+        let mut conn = setup_db();
+        conn.batch_execute(
+            "INSERT INTO gh_organization (id, name) VALUES (1, 'OCA');
+             INSERT INTO gh_repository (id, name, gh_organization_id, create_date, update_date)
+             VALUES (1, 'l10n-spain', 1, '', '');
+             INSERT INTO module (technical_name, version_odoo, name, version_module,
+                 gh_repository_id, create_date, update_date, folder_size, last_commit_hash,
+                 last_commit_author, last_commit_name, last_commit_date, source_path)
+             VALUES ('l10n_es', 18, 'Spain base', '', 1, '', '', 0, '', '', '', '', ''),
+                    ('l10n_es_invoice', 18, 'Spain invoice', '', 1, '', '', 0, '', '', '', '', ''),
+                    ('l10n_es_invoice', 19, 'Spain invoice', '', 1, '', '', 0, '', '', '', '', ''),
+                    ('l10n_estonia', 18, 'Other', '', 1, '', '', 0, '', '', '', '', ''),
+                    ('delivery_dhl_parcel', 18, 'Not a localization', '', 1, '', '', 0, '', '', '', '', '');",
+        )
+        .unwrap();
+
+        let countries = super::module::localization_countries(&mut conn);
+        assert_eq!(countries.len(), 1);
+        assert_eq!((countries[0].code.as_str(), countries[0].count), ("ES", 2));
+        let modules = super::module::list_localization(&mut conn, "es");
+        assert_eq!(modules.len(), 2);
+        assert_eq!(modules[1].technical_name, "l10n_es_invoice");
+        assert_eq!(modules[1].versions_odoo.len(), 2);
+    }
+
+    #[test]
     fn test_module_add_and_get() {
         let mut conn = setup_db();
         use std::collections::HashMap;

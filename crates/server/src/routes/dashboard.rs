@@ -30,30 +30,38 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (modules_count, modules_latest, modules_total, org_total) = web::block(move || {
-        let mut conn = pool.get().unwrap();
-        let count = models::module::count(&mut conn)
-            .into_iter()
-            .map(|x| ModuleCountInfoResponse {
-                count: x.count,
-                version_odoo: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-            })
-            .collect::<Vec<ModuleCountInfoResponse>>();
-        let latest = models::module::get_latest_modules_created(&mut conn)
-            .into_iter()
-            .map(|x| LastestCreatedInfo {
-                id: x.id,
-                version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-                technical_name: x.technical_name,
-                org_name: x.org_name,
-                create_date: x.create_date,
-            })
-            .collect::<Vec<LastestCreatedInfo>>();
-        let modules_total = models::module::count_distinct(&mut conn);
-        let org_total = models::gh_organization::count(&mut conn);
-        (count, latest, modules_total, org_total)
-    })
-    .await?;
+    let (modules_count, modules_latest, modules_total, org_total, localization_countries) =
+        web::block(move || {
+            let mut conn = pool.get().unwrap();
+            let count = models::module::count(&mut conn)
+                .into_iter()
+                .map(|x| ModuleCountInfoResponse {
+                    count: x.count,
+                    version_odoo: odoo_version_u8_to_string(&(x.version_odoo as u8)),
+                })
+                .collect::<Vec<ModuleCountInfoResponse>>();
+            let latest = models::module::get_latest_modules_created(&mut conn)
+                .into_iter()
+                .map(|x| LastestCreatedInfo {
+                    id: x.id,
+                    version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
+                    technical_name: x.technical_name,
+                    org_name: x.org_name,
+                    create_date: x.create_date,
+                })
+                .collect::<Vec<LastestCreatedInfo>>();
+            let modules_total = models::module::count_distinct(&mut conn);
+            let org_total = models::gh_organization::count(&mut conn);
+            let localization_countries = models::module::localization_countries(&mut conn);
+            (
+                count,
+                latest,
+                modules_total,
+                org_total,
+                localization_countries,
+            )
+        })
+        .await?;
 
     let version_total = modules_count.len();
 
@@ -68,6 +76,7 @@ pub async fn route(
                 modules_total => modules_total,
                 org_total => org_total,
                 version_total => version_total,
+                localization_countries => localization_countries,
             )
         ),
     )

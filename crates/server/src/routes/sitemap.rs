@@ -66,6 +66,10 @@ fn build_sitemap(base: &Url, conn: &mut SqliteConnection) -> String {
         let loc = page_url(base, &["module", &m.org_name, &m.technical_name]);
         body.push_str(&format!("  <url><loc>{loc}</loc></url>\n"));
     }
+    for country in models::module::localization_countries(conn) {
+        let loc = page_url(base, &["localization", &country.code.to_lowercase()]);
+        body.push_str(&format!("  <url><loc>{loc}</loc></url>\n"));
+    }
     for c in models::committer::list(conn) {
         let loc = page_url(base, &["committer", &c.name]);
         body.push_str(&format!("  <url><loc>{loc}</loc></url>\n"));

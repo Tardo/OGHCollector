@@ -245,6 +245,30 @@ pub struct ModuleListInfo {
     pub versions_odoo: Vec<i32>,
 }
 
+#[derive(QueryableByName, Debug, Serialize)]
+pub struct LocalizationCountry {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub code: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
+}
+
+/// Only modules named l10n_XX or l10n_XX_*, not every addon in an
+/// l10n-* repository (which can contain unrelated modules).
+pub fn localization_countries(conn: &mut SqliteConnection) -> Vec<LocalizationCountry> {
+    diesel::sql_query(
+        "SELECT upper(substr(mod.technical_name, 6, 2)) AS code, \
+         count(DISTINCT org.id || '/' || mod.technical_name) AS count FROM module AS mod \
+         INNER JOIN gh_repository AS repo ON mod.gh_repository_id = repo.id \
+         INNER JOIN gh_organization AS org ON repo.gh_organization_id = org.id \
+         WHERE mod.technical_name GLOB 'l10n_[a-z][a-z]*' \
+           AND substr(mod.technical_name, 8, 1) IN ('', '_') \
+         GROUP BY code ORDER BY count DESC, code",
+    )
+    .load(conn)
+    .expect("DB error in module::localization_countries")
+}
+
 #[derive(QueryableByName)]
 struct ModuleListRow {
     #[diesel(sql_type = diesel::sql_types::Text)]
@@ -763,6 +787,39 @@ pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
             .versions_str
             .split(',')
             .filter_map(|s| s.trim().parse::<i32>().ok())
+            .collect(),
+    })
+    .collect()
+}
+
+pub fn list_localization(conn: &mut SqliteConnection, code: &str) -> Vec<ModuleListInfo> {
+    let base = format!("l10n_{code}");
+    diesel::sql_query(
+        "SELECT mod.technical_name, MAX(mod.name) as name, MAX(mod.description) as description, \
+         MAX(mod.category) as category, gh_org.name as org_name, \
+         GROUP_CONCAT(DISTINCT mod.version_odoo) as versions_str \
+         FROM module as mod \
+         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
+         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
+         WHERE mod.technical_name = ? OR mod.technical_name GLOB ? \
+         GROUP BY gh_org.name, mod.technical_name \
+         ORDER BY mod.technical_name, gh_org.name",
+    )
+    .bind::<diesel::sql_types::Text, _>(&base)
+    .bind::<diesel::sql_types::Text, _>(format!("{base}_*"))
+    .load::<ModuleListRow>(conn)
+    .expect("DB error in module::list_localization")
+    .into_iter()
+    .map(|row| ModuleListInfo {
+        technical_name: row.technical_name,
+        name: row.name,
+        description: row.description,
+        category: row.category,
+        org_name: row.org_name,
+        versions_odoo: row
+            .versions_str
+            .split(',')
+            .filter_map(|s| s.parse().ok())
             .collect(),
     })
     .collect()

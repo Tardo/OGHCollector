@@ -98,7 +98,28 @@
     </div>
 </div>
 
-<div class="section-heading"><div><span class="section-kicker">02 / RECENT ACTIVITY</span><h2>Latest modules tracked</h2></div><a href="/modules">Browse all modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a></div>
+<section class="localization-section" aria-labelledby="localization-title">
+    <div class="section-heading"><div><span class="section-kicker">02 / LOCALIZATION</span><h2 id="localization-title">Odoo around the world</h2></div><p>Explore modules built for each country.</p></div>
+    <div class="localization-panel">
+        <div class="globe-stage">
+            <div class="globe-topline"><span>GLOBAL / LOCALIZATION</span><span class="globe-live">● LIVE INDEX</span></div>
+            <canvas id="localization-globe" aria-hidden="true"></canvas>
+            <div class="globe-caption" id="globe-caption" aria-live="polite">Hover to pause · Drag to rotate · Select a highlighted country</div>
+        </div>
+        <div class="localization-sidebar">
+            <span class="section-kicker">EXPLORE BY COUNTRY</span>
+            <h3>Local knowledge.<br><span>Global reach.</span></h3>
+            <p>Highlighted countries have directly associated <code>l10n_XX</code> modules in the index. Choose a country to see its modules across Odoo versions.</p>
+            <div class="localization-countries" aria-label="Countries with localization modules">
+                {% for country in localization_countries %}
+                <a href="/localization/{{ country.code | lower }}" data-country="{{ country.code }}"><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="section-heading"><div><span class="section-kicker">03 / RECENT ACTIVITY</span><h2>Latest modules tracked</h2></div><a href="/modules">Browse all modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a></div>
 <div class="row user-select-none" id="modules_latest">
     <div class="col-12">
         <div class="latest-table"><table class="table table-hover">

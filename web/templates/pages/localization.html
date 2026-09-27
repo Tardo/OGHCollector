@@ -1,0 +1,29 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Localization " ~ country_code %}
+{% set meta_description = "Odoo localization modules directly associated with country " ~ country_code ~ "." %}
+{% block base_head_content %}
+{{ super() }}
+    <link rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css">
+    <script type="module" src="/static/auto/localization.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+<div class="localization-results" data-country="{{ country_code }}">
+    <a class="localization-back" href="/#localization-title"><span class="material-icons" aria-hidden="true">arrow_back</span> Back to the globe</a>
+    <header class="page-header">
+        <span class="section-kicker">02 / LOCALIZATION / {{ country_code }}</span>
+        <h1>Localization: <span id="localization-country-name">{{ country_code }}</span></h1>
+        <p class="page-header-desc">{{ modules | length }} modules directly associated with {{ country_code }} across all indexed Odoo versions and organizations.</p>
+    </header>
+    <div class="localization-results-list">
+        {% for module in modules %}
+        <a class="localization-result" href="/module/{{ module.org_name | urlencode }}/{{ module.technical_name | urlencode }}">
+            <span><strong>{{ module.technical_name }}</strong><small>{{ module.name }} · {{ module.org_name }}</small></span>
+            <span class="localization-versions">{{ module.versions | join(', ') }}</span>
+            <span class="material-icons" aria-hidden="true">arrow_forward</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

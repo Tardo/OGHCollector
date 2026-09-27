@@ -17,6 +17,7 @@
     "@eslint/js": "^10.0.1",
     "@rollup/plugin-alias": "^6.0.0",
     "@rollup/plugin-commonjs": "^29.0.3",
+    "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-terser": "^1.0.0",
     "autoprefixer": "^10.5.4",
@@ -43,11 +44,15 @@
     "terser": "^5.49.2"
   },
   "dependencies": {
+    "d3-geo": "^3.1.1",
     "graphology-layout": "^0.6.1",
     "graphology-layout-forceatlas2": "^0.10.1",
     "graphology-types": "^0.24.8",
+    "iso-3166-1": "^2.1.1",
     "js-yaml": "^5.2.3",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
   },
   "prettier": {
     "printWidth": 80,
