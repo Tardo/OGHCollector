@@ -927,6 +927,42 @@ mod tests {
     }
 
     #[test]
+    fn test_longevity_ranks_span_and_deduplicates_months() {
+        use super::module::CommitterActivity;
+        let mut conn = setup_db();
+        for (module_name, author, periods) in [
+            ("one", "Alice", vec![((2020, 1), 2), ((2024, 1), 1)]),
+            ("two", "Alice", vec![((2020, 1), 1)]),
+            ("three", "Bob", vec![((2023, 1), 10), ((2024, 1), 10)]),
+            (
+                "four",
+                "Odoo Translation Bot",
+                vec![((2010, 1), 1), ((2025, 1), 1)],
+            ),
+        ] {
+            let mut info = make_bare_module_info(module_name);
+            info.committers.insert(
+                author.to_string(),
+                CommitterActivity {
+                    total: periods.iter().map(|(_, count)| count).sum(),
+                    periods: periods.into_iter().collect(),
+                    ..Default::default()
+                },
+            );
+            super::module::add(&mut conn, &info).unwrap();
+        }
+        let ranked = super::committer::rank_longevity(&mut conn, 20);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].name, "Alice");
+        assert_eq!(
+            (ranked[0].first_seen.as_str(), ranked[0].last_seen.as_str()),
+            ("2020-01", "2024-01")
+        );
+        assert_eq!((ranked[0].span_months, ranked[0].active_months), (48, 2));
+        assert_eq!((ranked[1].span_months, ranked[1].active_months), (12, 2));
+    }
+
+    #[test]
     fn test_module_view_replace_for_module() {
         use super::module_code_analysis::ViewAnalysisInfo;
         let mut conn = setup_db();

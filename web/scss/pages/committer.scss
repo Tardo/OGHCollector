@@ -9,3 +9,53 @@
         width: 94vw !important;
     }
 }
+
+.activity-chart, .work-landscape {
+    margin: 2rem 0 3rem;
+}
+
+.activity-chart-row {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr) 5rem;
+    align-items: center;
+    gap: 1rem;
+    margin: .5rem 0;
+    font-variant-numeric: tabular-nums;
+
+    strong { text-align: right; }
+}
+
+.activity-chart-track {
+    height: 1.25rem;
+    border-radius: .3rem;
+    background: var(--bs-border-color-translucent);
+    overflow: hidden;
+
+    span { display: block; height: 100%; border-radius: inherit; background: var(--ommd-accent); }
+}
+
+.landscape-repos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.5rem;
+    padding: 0;
+    list-style: none;
+    font-size: .85rem;
+
+    li { display: flex; align-items: center; gap: .4rem; }
+    li span { flex: 0 0 .75rem; height: .75rem; border-radius: .2rem; }
+}
+
+.landscape-viewport { overflow-x: auto; }
+
+#committer-landscape {
+    display: block;
+    width: 100%;
+    min-width: 850px;
+    height: clamp(340px, 55vw, 560px);
+    border-radius: .75rem;
+    touch-action: none;
+    cursor: grab;
+
+    &:active { cursor: grabbing; }
+}

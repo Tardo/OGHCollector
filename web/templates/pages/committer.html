@@ -34,7 +34,7 @@
 {% else %}
 <header class="page-header">
     <h1>{{ committer_name }}</h1>
-    <p class="page-header-desc">{{ stats.total_commits }} tracked commit{{ stats.total_commits != 1 and 's' or '' }} across {{ stats.total_modules }} module{{ stats.total_modules != 1 and 's' or '' }}</p>
+    <p class="page-header-desc">{{ stats.total_commits }} tracked commit{{ stats.total_commits != 1 and 's' or '' }} across {{ stats.total_modules }} module{{ stats.total_modules != 1 and 's' or '' }}{% if stats.fun_facts %} · {{ stats.fun_facts.first_seen }} – {{ stats.fun_facts.last_seen }}{% endif %}</p>
 </header>
 
 <div class="row mb-3 gx-sm-5 user-select-none mt-4" id="committer_stats">
@@ -120,14 +120,14 @@
     <div class="col-lg-3 col-6 pb-3">
         <div class="stat-card">
             <div class="stat-card-label">First Module Touched</div>
-            <div class="fs-5"><a href="/module/{{ stats.fun_facts.first_module_organization }}/{{ stats.fun_facts.first_module_technical_name }}">{{ stats.fun_facts.first_module_name }}</a></div>
+            <div class="fs-5"><a href="/module/{{ stats.fun_facts.first_module_organization | urlencode }}/{{ stats.fun_facts.first_module_technical_name | urlencode }}">{{ stats.fun_facts.first_module_name }}</a></div>
             <div>{{ stats.fun_facts.first_seen }}</div>
         </div>
     </div>
     <div class="col-lg-3 col-6 pb-3">
         <div class="stat-card">
             <div class="stat-card-label">Last Seen</div>
-            <div class="fs-5"><a href="/module/{{ stats.fun_facts.last_module_organization }}/{{ stats.fun_facts.last_module_technical_name }}">{{ stats.fun_facts.last_module_name }}</a></div>
+            <div class="fs-5"><a href="/module/{{ stats.fun_facts.last_module_organization | urlencode }}/{{ stats.fun_facts.last_module_technical_name | urlencode }}">{{ stats.fun_facts.last_module_name }}</a></div>
             <div>{{ stats.fun_facts.last_seen }}</div>
         </div>
     </div>
@@ -142,10 +142,37 @@
         <div class="stat-card">
             <div class="stat-card-label">Active Span</div>
             <div class="fs-5">{{ stats.fun_facts.active_span }}</div>
+            <div class="text-body-secondary small">Between first and last observed commit</div>
         </div>
     </div>
 </div>
+<div class="row mb-4 gx-sm-5">
+    <div class="col-md-6 pb-3"><div class="stat-card"><div class="stat-card-label">Months with commits</div><div class="fs-5">{{ stats.fun_facts.active_months }}</div><div class="text-body-secondary small">Across all indexed modules</div></div></div>
+    <div class="col-md-6 pb-3"><div class="stat-card"><div class="stat-card-label">Longest monthly streak</div><div class="fs-5">{{ stats.fun_facts.longest_streak }} month{{ stats.fun_facts.longest_streak != 1 and 's' or '' }}</div><div class="text-body-secondary small">Consecutive months with tracked commits</div></div></div>
+</div>
 {% endif %}
+
+{% if stats.activity_years %}
+<section class="activity-chart" aria-labelledby="activity-title">
+    <h2 class="h4" id="activity-title">Activity over time</h2>
+    <p class="text-body-secondary small">Tracked module commits per calendar year. Commits touching multiple modules may appear more than once.</p>
+    {% for year in stats.activity_years %}
+    <div class="activity-chart-row">
+        <span>{{ year.year }}</span>
+        <div class="activity-chart-track" role="img" aria-label="{{ year.year }}: {{ year.commits }} tracked commits"><span style="width: {{ year.commits * 100 / stats.busiest_year_commits if stats.busiest_year_commits else 0 }}%"></span></div>
+        <strong>{{ year.commits }}</strong>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+<section class="work-landscape" aria-labelledby="landscape-title">
+    <h2 class="h4" id="landscape-title">Work landscape · 3D</h2>
+    <p class="text-body-secondary small">Odoo versions × repositories × tracked commits. The height of each column represents commits; drag to rotate. Shows every indexed version and up to 5 repositories with the most commits.</p>
+    <ul id="landscape-repos" class="landscape-repos" aria-label="Repositories shown in the 3D view"></ul>
+    <div class="landscape-viewport"><canvas id="committer-landscape" aria-label="3D view of commits by Odoo version and repository; the tables below provide the full data" role="img"></canvas></div>
+    <p id="landscape-caption" class="text-body-secondary small" aria-live="polite">Drag to rotate the landscape; hover over a column for details.</p>
+</section>
 
 <div class="row mb-3 gx-sm-5 user-select-none">
     <div class="col-12">
@@ -174,7 +201,7 @@
 </ul>
 <div class="tab-content" id="versions-tabContent">
     {% for version in stats.versions %}
-    <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ version.odoo_version }}-tab" tabindex="0">
+    <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ version.odoo_version }}-tab" tabindex="0" data-odoo-version="{{ version.odoo_version }}">
         <div class="mb-2">{{ version.total_commits }} commit{{ version.total_commits != 1 and 's' or '' }} in this version</div>
         <table class="table table-striped table-striped-columns table-hover">
             <thead>
@@ -187,8 +214,8 @@
             </thead>
             <tbody>
                 {% for module in version.modules %}
-                <tr>
-                    <td><a href="/module/{{ module.organization }}/{{ module.technical_name }}">{{ module.name }}</a></td>
+                <tr data-repo="{{ module.organization }}/{{ module.repository }}" data-commits="{{ module.commits }}">
+                    <td><a href="/module/{{ module.organization | urlencode }}/{{ module.technical_name | urlencode }}">{{ module.name }}</a></td>
                     <td class="d-none d-lg-table-cell">{{ module.organization }}/{{ module.repository }}</td>
                     <td class="text-center">{{ module.commits }}</td>
                     <td class="text-center d-none d-md-table-cell"><span class="text-success">+{{ module.insertions }}</span> <span class="text-danger">-{{ module.deletions }}</span></td>

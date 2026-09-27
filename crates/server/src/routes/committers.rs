@@ -37,7 +37,7 @@ pub async fn route(
     let year = now.year();
     let month = now.month() as i32;
 
-    let periods = web::block(move || {
+    let (periods, longest_active) = web::block(move || {
         let mut conn = pool.get().unwrap();
 
         let month_entries = models::module_committer_period::rank_by_period(
@@ -49,8 +49,9 @@ pub async fn route(
         let year_entries =
             models::module_committer_period::rank_by_period(&mut conn, year, None, TOP_LIMIT);
         let all_entries = models::committer::rank_global(&mut conn, TOP_LIMIT);
+        let longest_active = models::committer::rank_longevity(&mut conn, TOP_LIMIT);
 
-        vec![
+        let periods = vec![
             CommittersPeriodGroup {
                 key: "month".to_string(),
                 label: "Month".to_string(),
@@ -99,7 +100,8 @@ pub async fn route(
                     })
                     .collect(),
             },
-        ]
+        ];
+        (periods, longest_active)
     })
     .await?;
 
@@ -110,6 +112,7 @@ pub async fn route(
             ..context!(
                 page_name => "committers",
                 periods => periods,
+                longest_active => longest_active,
             )
         ),
     )

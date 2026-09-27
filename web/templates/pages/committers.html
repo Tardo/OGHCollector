@@ -28,6 +28,29 @@
     <mirlo-committer-search class="d-block w-100" />
 </div>
 
+<section class="mb-5" aria-labelledby="longevity-title">
+    <h2 id="longevity-title" class="h4">Longest observed contribution span</h2>
+    <p class="text-body-secondary">From the first to the last month with tracked commits, across indexed modules. This span does not imply uninterrupted activity.</p>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover longevity-table">
+            <thead><tr><th scope="col">#</th><th scope="col">Committer</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col">Span</th><th scope="col">Active months</th></tr></thead>
+            <tbody>
+                {% for committer in longest_active %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><a href="/committer/{{ committer.name | urlencode }}">{{ committer.name }}</a></td>
+                    <td>{{ committer.first_seen }}</td>
+                    <td>{{ committer.last_seen }}</td>
+                    <td><strong>{{ committer.span_months // 12 }}y {{ committer.span_months % 12 }}m</strong></td>
+                    <td>{{ committer.active_months }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if not longest_active %}<p>No dated commit activity tracked yet.</p>{% endif %}
+</section>
+
 <div class="row user-select-none mt-5" id="top_committers">
     <div class="col-12">
         <ul class="nav nav-pills mb-3" id="periods-tab" role="tablist">

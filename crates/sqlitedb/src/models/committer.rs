@@ -95,6 +95,37 @@ pub fn rank_global(conn: &mut SqliteConnection, limit: i64) -> Vec<GlobalRankEnt
     .expect("DB error in committer::rank_global")
 }
 
+#[derive(QueryableByName, Debug, Serialize)]
+pub struct LongevityEntry {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub first_seen: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub last_seen: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub span_months: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub active_months: i64,
+}
+
+pub fn rank_longevity(conn: &mut SqliteConnection, limit: i64) -> Vec<LongevityEntry> {
+    diesel::sql_query(format!(
+        "SELECT com.name, MIN(printf('%04d-%02d', mcp.year, mcp.month)) AS first_seen, \
+         MAX(printf('%04d-%02d', mcp.year, mcp.month)) AS last_seen, \
+         MAX(mcp.year * 12 + mcp.month) - MIN(mcp.year * 12 + mcp.month) AS span_months, \
+         COUNT(DISTINCT mcp.year * 12 + mcp.month) AS active_months \
+         FROM module_committer_period AS mcp \
+         JOIN committer AS com ON com.id = mcp.committer_id \
+         WHERE com.name NOT IN ({BOT_COMMITTERS}) \
+         GROUP BY com.id \
+         ORDER BY span_months DESC, active_months DESC, com.name ASC LIMIT ?"
+    ))
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .load::<LongevityEntry>(conn)
+    .expect("DB error in committer::rank_longevity")
+}
+
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct CommitterListInfo {
     #[diesel(sql_type = diesel::sql_types::Text)]

@@ -1,5 +1,5 @@
 // Copyright Alexandre D. Díaz
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use actix_web::{get, web, HttpRequest, Responder, Result};
 use diesel::sqlite::SqliteConnection;
@@ -119,8 +119,16 @@ pub struct CommitterFunFacts {
     pub last_module_technical_name: String,
     pub last_module_organization: String,
     pub busiest_period: String,
-    pub busiest_period_commits: i32,
+    pub busiest_period_commits: i64,
     pub active_span: String,
+    pub active_months: usize,
+    pub longest_streak: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ActivityYear {
+    pub year: i32,
+    pub commits: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -138,20 +146,44 @@ pub struct CommitterStats {
     pub global_rank: Option<i64>,
     pub total_committers: Option<i64>,
     pub fun_facts: Option<CommitterFunFacts>,
+    pub activity_years: Vec<ActivityYear>,
+    pub busiest_year_commits: i64,
     pub quijote_fun_fact: Option<String>,
     pub quijote_fun_fact_chars: Option<i64>,
 }
 
-fn build_fun_facts(conn: &mut SqliteConnection, name: &str) -> Option<CommitterFunFacts> {
-    let periods = models::module_committer_period::get_activity_by_committer_name(conn, name);
-    let first = periods.first()?;
-    let last = periods.last()?;
-
-    let busiest = periods.iter().max_by_key(|p| p.commits)?;
+fn build_fun_facts(
+    periods: &[models::module_committer_period::PeriodActivity],
+) -> (Option<CommitterFunFacts>, Vec<ActivityYear>) {
+    let Some(first) = periods.first() else {
+        return (None, vec![]);
+    };
+    let last = periods.last().unwrap();
+    let mut months: BTreeMap<(i32, i32), i64> = BTreeMap::new();
+    for period in periods {
+        *months.entry((period.year, period.month)).or_default() += period.commits as i64;
+    }
+    let (&(busy_year, busy_month), &busy_commits) =
+        months.iter().max_by_key(|(_, commits)| *commits).unwrap();
+    let mut streak = 0;
+    let mut longest_streak = 0;
+    let mut previous = None;
+    let mut years = BTreeMap::new();
+    for (&(year, month), &commits) in &months {
+        *years.entry(year).or_insert(0) += commits;
+        let index = year * 12 + month;
+        streak = if previous == Some(index - 1) {
+            streak + 1
+        } else {
+            1
+        };
+        longest_streak = longest_streak.max(streak);
+        previous = Some(index);
+    }
 
     let months_active = (last.year - first.year) * 12 + (last.month - first.month);
-    let (years, months) = (months_active / 12, months_active % 12);
-    let active_span = match (years, months) {
+    let (span_years, span_months) = (months_active / 12, months_active % 12);
+    let active_span = match (span_years, span_months) {
         (0, 0) => "less than a month".to_string(),
         (0, m) => format!("{m} month{}", if m != 1 { "s" } else { "" }),
         (y, 0) => format!("{y} year{}", if y != 1 { "s" } else { "" }),
@@ -162,7 +194,7 @@ fn build_fun_facts(conn: &mut SqliteConnection, name: &str) -> Option<CommitterF
         ),
     };
 
-    Some(CommitterFunFacts {
+    let facts = CommitterFunFacts {
         first_seen: month_year_label(first.year, first.month),
         first_module_name: first.name.clone(),
         first_module_technical_name: first.technical_name.clone(),
@@ -171,10 +203,21 @@ fn build_fun_facts(conn: &mut SqliteConnection, name: &str) -> Option<CommitterF
         last_module_name: last.name.clone(),
         last_module_technical_name: last.technical_name.clone(),
         last_module_organization: last.organization.clone(),
-        busiest_period: month_year_label(busiest.year, busiest.month),
-        busiest_period_commits: busiest.commits,
+        busiest_period: month_year_label(busy_year, busy_month),
+        busiest_period_commits: busy_commits,
         active_span,
-    })
+        active_months: months.len(),
+        longest_streak,
+    };
+    (
+        Some(facts),
+        (first.year..=last.year)
+            .map(|year| ActivityYear {
+                year,
+                commits: *years.get(&year).unwrap_or(&0),
+            })
+            .collect(),
+    )
 }
 
 fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterStats {
@@ -245,7 +288,9 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
     top_repos.truncate(5);
 
     let rank_info = models::committer::get_global_rank_by_name(conn, name);
-    let fun_facts = build_fun_facts(conn, name);
+    let periods = models::module_committer_period::get_activity_by_committer_name(conn, name);
+    let (fun_facts, activity_years) = build_fun_facts(&periods);
+    let busiest_year_commits = activity_years.iter().map(|y| y.commits).max().unwrap_or(0);
     let quijote_fact = quijote_fun_fact(total_insertions - total_deletions);
 
     CommitterStats {
@@ -262,6 +307,8 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
         global_rank: rank_info.as_ref().map(|r| r.rank),
         total_committers: rank_info.as_ref().map(|r| r.total_committers),
         fun_facts,
+        activity_years,
+        busiest_year_commits,
         quijote_fun_fact: quijote_fact.as_ref().map(|(msg, _)| msg.clone()),
         quijote_fun_fact_chars: quijote_fact.map(|(_, chars)| chars),
     }
@@ -293,4 +340,39 @@ pub async fn route(
             )
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monthly_facts_aggregate_modules_before_finding_peak_and_streak() {
+        let period = |year, month, commits| models::module_committer_period::PeriodActivity {
+            technical_name: "module".into(),
+            name: "Module".into(),
+            organization: "OCA".into(),
+            year,
+            month,
+            commits,
+        };
+        let periods = [
+            period(2023, 12, 2),
+            period(2024, 1, 4),
+            period(2024, 1, 3),
+            period(2024, 3, 6),
+            period(2026, 2, 1),
+        ];
+        let (facts, years) = build_fun_facts(&periods);
+        let facts = facts.unwrap();
+        assert_eq!(
+            (facts.busiest_period.as_str(), facts.busiest_period_commits),
+            ("January 2024", 7)
+        );
+        assert_eq!((facts.active_months, facts.longest_streak), (4, 2));
+        assert_eq!(
+            years.iter().map(|year| year.commits).collect::<Vec<_>>(),
+            [2, 13, 0, 1]
+        );
+    }
 }
