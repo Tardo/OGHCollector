@@ -109,8 +109,9 @@ diff --git a/schema.rs b/schema.rs
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-@@ -99,43 +99,43 @@
+@@ -99,44 +99,44 @@
          icon -> Nullable<Text>,
+         source_path -> Text,
      }
  }
  

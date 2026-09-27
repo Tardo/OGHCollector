@@ -31,15 +31,15 @@ use sqlitedb::models;
 // which is why this returns it instead of letting it die inside the function.
 //
 // `NamedLock::create()` locks a file under `$TMPDIR`/`/tmp`, which is private
-// to each container - in Docker (`docker compose run` per invocation, as
-// `update_db.sh` does for every org/version) every run gets its own `/tmp`,
+// to each container - in Docker (separate one-off invocations or Ofelia's
+// scheduled exec) a lock under `/tmp` would not serialize across containers,
 // so this never actually serialized concurrent runs for the same org despite
 // looking like it does. Locking inside `data/` (the volume every invocation
 // shares) instead makes it a real cross-process/cross-container lock. Without
-// it, two overlapping runs for the same org (e.g. a cron re-firing
-// `update_db.sh` before the previous run finished) race on the same
-// `data/repos/<org>/<repo>` checkout: one run's `git reset --hard` to its
-// branch can land mid-scan of another run's analyzer, which still stamps
+// it, two overlapping runs for the same org (e.g. a manual run overlapping
+// with Ofelia's refresh) race on the same `data/repos/<org>/<repo>` checkout:
+// one run's `git reset --hard` to its branch can land mid-scan of another
+// run's analyzer, which still stamps
 // every module with its own run's requested Odoo version - so one version's
 // branch content ends up stored under a different version's label.
 fn try_lock(config: &OGHCollectorConfig) -> named_lock::NamedLockGuard {

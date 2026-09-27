@@ -3,14 +3,14 @@
    for the active tab and via routes::module::route_tab for the rest, fetched
    lazily on first tab activation to avoid computing dependency trees /
    models / required_by (up to 500 rows) for versions nobody looks at. #}
-{% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.technical_name) %}
+{% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.source_path) %}
 <p>Security findings <span class="security-indicator" role="img" aria-label="{{ module.security_warnings | length }} grave and {{ module.security_warning_count }} minor static-analysis findings; not a security audit"><span class="segment segment-errors{{ module.security_warnings and ' has-findings' or '' }}" title="Grave findings" aria-hidden="true">{{ module.security_warnings | length }}</span><span class="segment segment-warnings{{ module.security_warning_count and ' has-findings' or '' }}" title="Minor findings" aria-hidden="true">{{ module.security_warning_count }}</span></span></p>
 {% if module.security_warnings %}
 <div class="dev-only alert alert-danger" role="alert">
     <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">warning</span> Security warnings</h5>
     <ul>
         {% for w in module.security_warnings %}
-        <li>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }} <span class="badge text-bg-danger">{{ w.code }}</span>{% if w.file %} &middot; <a href="{{ module.git | replace('.git', '/blob/' + module.odoo_version + '/' + module.technical_name + '/' + w.file) }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
+        <li>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }} <span class="badge text-bg-danger">{{ w.code }}</span>{% if w.file %} &middot; <a href="{{ module.git | replace('.git', '/blob/' + module.odoo_version + '/' + module.source_path + '/' + w.file) }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
         {% endfor %}
     </ul>
     <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue.</p>
@@ -21,7 +21,7 @@
     <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">build</span> Migration considerations</h5>
     <ul>
         {% for c in module.migration_considerations %}
-        <li>{% if c.context %}<code>{{ c.context }}</code> &mdash; {% endif %}{{ c.message }} <span class="badge {{ c.severity == 'warning' and 'text-bg-warning' or 'text-bg-secondary' }}">{{ c.code }}</span>{% if c.file %} &middot; <a href="{{ module.git | replace('.git', '/blob/' + module.odoo_version + '/' + module.technical_name + '/' + c.file) }}{% if c.line %}#L{{ c.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
+        <li>{% if c.context %}<code>{{ c.context }}</code> &mdash; {% endif %}{{ c.message }} <span class="badge {{ c.severity == 'warning' and 'text-bg-warning' or 'text-bg-secondary' }}">{{ c.code }}</span>{% if c.file %} &middot; <a href="{{ module.git | replace('.git', '/blob/' + module.odoo_version + '/' + module.source_path + '/' + c.file) }}{% if c.line %}#L{{ c.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
         {% endfor %}
     </ul>
     <p class="mb-0 small">Migration review checklist, not a compatibility verdict. No target version is selected: apply version-specific advice only when migrating to that version or later.</p>

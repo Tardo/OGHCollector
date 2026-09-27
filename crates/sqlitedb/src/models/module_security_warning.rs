@@ -73,6 +73,8 @@ pub struct ModuleSecurityWarningFullInfo {
     pub org_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub source_path: String,
 }
 
 /// Every warning for every module's *current* snapshot (mirrors
@@ -84,7 +86,7 @@ pub fn get_all_current(conn: &mut SqliteConnection) -> Vec<ModuleSecurityWarning
     diesel::sql_query(
         "SELECT msw.severity, msw.code, msw.message, msw.xml_id, \
           msw.file, msw.line, \
-          mod.version_odoo, mod.technical_name, \
+           mod.version_odoo, mod.technical_name, mod.source_path, \
           gh_org.name as org_name, gh_repo.name as repository \
          FROM module_security_warning as msw \
          INNER JOIN module_version as mv ON mv.id = msw.module_version_id \

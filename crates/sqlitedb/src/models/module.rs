@@ -43,6 +43,7 @@ pub struct Model {
     pub installation: Option<String>,
     pub usage: Option<String>,
     pub icon: Option<String>,
+    pub source_path: String,
 }
 
 impl Model {
@@ -86,6 +87,7 @@ pub struct CommitterActivity {
 #[derive(Clone, Default)]
 pub struct ManifestInfo {
     pub technical_name: String,
+    pub source_path: String,
     pub version_odoo: u8,
     pub name: String,
     pub version_module: String,
@@ -285,6 +287,7 @@ struct NewModule<'a> {
     last_commit_name: &'a str,
     last_commit_date: &'a str,
     last_commit_partof: Option<&'a str>,
+    source_path: &'a str,
 }
 
 pub fn get_by_id(conn: &mut SqliteConnection, id: &i64) -> Option<Model> {
@@ -998,6 +1001,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
                 last_commit_name: &module_info.last_commit_name,
                 last_commit_date: &module_info.last_commit_date,
                 last_commit_partof,
+                source_path: &module_info.source_path,
             })
             .execute(conn)?;
         let new_id = crate::models::last_insert_rowid(conn);
@@ -1026,6 +1030,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             last_commit_name: module_info.last_commit_name.clone(),
             last_commit_date: module_info.last_commit_date.clone(),
             last_commit_partof: last_commit_partof.map(|s| s.to_string()),
+            source_path: module_info.source_path.clone(),
         };
 
         for item in module_info
@@ -1221,7 +1226,13 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     let hash_changed = !module_info.last_commit_hash.is_empty()
         && existing_module.last_commit_hash != module_info.last_commit_hash;
     if changes.is_empty() && !hash_changed {
-        return Ok(existing_module);
+        if existing_module.source_path == module_info.source_path {
+            return Ok(existing_module);
+        }
+        diesel::update(module::table.filter(module::id.eq(existing_module.id)))
+            .set(module::source_path.eq(&module_info.source_path))
+            .execute(conn)?;
+        return get_by_id(conn, &existing_module.id).ok_or(diesel::result::Error::NotFound);
     }
 
     // A git failure yields empty last_commit_* on `module_info` (see
@@ -1273,6 +1284,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             module::last_commit_name.eq(commit_name),
             module::last_commit_date.eq(commit_date),
             module::last_commit_partof.eq(commit_partof),
+            module::source_path.eq(&module_info.source_path),
         ))
         .execute(conn)?;
 

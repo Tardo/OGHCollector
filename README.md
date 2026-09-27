@@ -25,7 +25,8 @@ The project is a Rust workspace made of three services that share a single SQLit
 | **OGHServer** | `oghserver` | actix-web dashboard that reads the database in read-only mode (module search, dependency graph, migration tracking, committer stats, etc). |
 | **OGHMcp** | `oghmcp` | Read-only [MCP](https://modelcontextprotocol.io/) server exposing module, repository, dependency, code-analysis, and maintenance data as tools over a Streamable HTTP endpoint (`/mcp`), so any LLM client can reach it by URL. |
 
-All three ship in the same Docker image and the project is designed to be run with Docker Compose.
+All three ship in the same Docker image, but run as separate Docker Compose services. A fourth,
+one-shot `migrate` service prepares their shared SQLite database. Ofelia schedules collector updates.
 
 ---
 
@@ -44,22 +45,22 @@ All three ship in the same Docker image and the project is designed to be run wi
 git clone git@github.com:Tardo/OGHCollector.git
 cd OGHCollector
 
-# 1. Build the images
+# 1. Build the shared image
 docker compose build
 
-# 2. Populate the database at least once. The image entrypoint applies pending
-#    Diesel migrations automatically; see "Database & Migrations" below.
-docker compose run --rm -u appuser -T app oghcollector OCA 18.0
+# 2. Start the dashboard (:8080), MCP (:8081), collector and Ofelia.
+#    Compose applies migrations first.
+docker compose up -d
 
-# 3. Start the dashboard (:8080) and the MCP endpoint (:8081)
-docker compose up
+# 3. Populate the database now; otherwise Ofelia will do it on its next scheduled run
+docker compose exec -T collector oghcollector OCA 18.0
 ```
 
 The dashboard is now available at `http://localhost:8080` and the MCP endpoint at `http://localhost:8081/mcp`.
 
-> `oghserver` and `oghmcp` open the database **read-only**. Their containers create the database
-> and apply migrations before starting, but they will not serve collected module data until
-> `oghcollector` has run at least once.
+> `server` and `mcp` open the database **read-only**. Compose completes `migrate` before starting
+> them or `collector`; they will not serve collected module data until `collector` has run at
+> least once. `server`, `mcp`, `collector` and `ofelia` restart with `unless-stopped`.
 
 ---
 
@@ -69,13 +70,17 @@ The schema is managed with [Diesel](https://diesel.rs/); migration files live in
 
 ### With Docker (the normal workflow)
 
-The image entrypoint runs `oghmigrate` before every `oghserver`, `oghmcp`, or `oghcollector`
-command. It creates the database file if needed and applies all pending migrations, so there is
-nothing to run by hand. Run the collector to populate the schema with module data:
+The one-shot `migrate` service creates the database file if needed and applies pending migrations.
+Compose waits for it to succeed before starting `server`, `mcp`, or `collector`.
+Run the collector to populate the schema with module data:
 
 ```sh
-docker compose run --rm -u appuser -T app oghcollector OCA 18.0
+docker compose exec -T collector oghcollector OCA 18.0
 ```
+
+After upgrading to a version with new migrations, run `docker compose up -d --build` to recreate
+the migration job and the long-running services. To apply migrations without starting them, run
+`docker compose run --rm migrate`.
 
 ### Local (non-Docker) development
 
@@ -121,7 +126,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 ```yaml
 # docker-compose.override.yaml
 services:
-  app:
+  server:
     volumes:
       - ./server.yaml:/app/server.yaml
 ```
@@ -133,7 +138,7 @@ services:
 ### Usage
 
 ```sh
-docker compose run --rm -u appuser -T app oghcollector <origin> <version> [git_type]
+docker compose exec -T collector oghcollector <origin> <version> [git_type]
 ```
 
 - `<origin>`:
@@ -148,20 +153,17 @@ docker compose run --rm -u appuser -T app oghcollector <origin> <version> [git_t
 
 ```sh
 # Odoo core modules, 18.0 (GitHub)
-docker compose run --rm -u appuser -T app oghcollector odoo/odoo:/addons,/odoo/addons 18.0
+docker compose exec -T collector oghcollector odoo/odoo:/addons,/odoo/addons 18.0
 
 # OCA/web modules, 18.0 (GitHub)
-docker compose run --rm -u appuser -T app oghcollector OCA/web 18.0
+docker compose exec -T collector oghcollector OCA/web 18.0
 
 # All OCA modules, 18.0 (GitHub)
-docker compose run --rm -u appuser -T app oghcollector OCA 18.0
+docker compose exec -T collector oghcollector OCA 18.0
 
 # All MyGroup modules, 18.0 (self-hosted GitLab)
-docker compose run --rm -u appuser -T app oghcollector MyGroup 18.0 GL:https://mygitlabinstance.com/api/v4/
+docker compose exec -T collector oghcollector MyGroup 18.0 GL:https://mygitlabinstance.com/api/v4/
 ```
-
-> If you run this behind Traefik, you may need to add `-l traefik.enable=false` so the one-off
-> container isn't picked up as a routable service.
 
 ### Authentication
 
@@ -172,7 +174,7 @@ The recommended way to provide API tokens is through Docker secrets, so they nev
 ```yaml
 # docker-compose.override.yaml
 services:
-  app:
+  collector:
     secrets:
       - gh_token
       - gl_token
@@ -192,12 +194,14 @@ variables (used as a fallback when the corresponding secret file isn't found).
 
 ### Scheduling updates
 
-To refresh the database periodically, add a cron job on the host that invokes [`update_db.sh`](./update_db.sh),
-which loops over every supported Odoo/OpenERP version for `odoo/odoo` and `OCA`:
-
-```cron
-0 */6 * * * cd /path/to/OGHCollector && ./update_db.sh
-```
+Ofelia runs the `refresh` job defined in the `collector` labels in [`docker-compose.yaml`](./docker-compose.yaml)
+at 00:00, 06:00, 12:00 and 18:00 UTC. It collects OpenERP (6.1–9.0), Odoo (10.0–19.0) and
+OCA (6.1–19.0) sequentially, as before. Change `ofelia.job-exec.refresh.schedule` to adjust
+the schedule (this Ofelia version uses a six-field cron expression, starting with seconds), then
+run `docker compose up -d` to recreate the collector and Ofelia. `no-overlap` skips a scheduled
+run if the previous batch is still running. See execution status with `docker compose logs ofelia`.
+Ofelia needs the Docker socket to execute jobs in the running collector container; the collector
+retains the same database volume, environment and Docker secrets as manual executions.
 
 ---
 
@@ -271,7 +275,7 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_TOKEN_GH` | collector | GitHub API token (fallback if the `gh_token` Docker secret isn't set) |
 | `OGHCOLLECTOR_TOKEN_GL` | collector | GitLab API token (fallback if the `gl_token` Docker secret isn't set) |
 | `DATABASE_URL` | Diesel CLI | SQLite connection string (local, non-Docker development only) |
-| `OGHCOLLECTOR_DB_PATH` | server, mcp, Docker migration entrypoint | Path to the SQLite database (default `data/data.db`); the MCP's first CLI argument takes precedence |
+| `OGHCOLLECTOR_DB_PATH` | server, mcp, migrate | Path to the SQLite database (default `data/data.db`); the MCP's first CLI argument takes precedence. The collector always writes to `data/data.db`. |
 | `OGHCOLLECTOR_SCAN_ENABLED` | server, mcp | Enable live instance scans. Disabled by default. |
 | `OGHCOLLECTOR_MCP_BIND_ADDR` | mcp | HTTP bind address (default `0.0.0.0:8081`) |
 | `OGHCOLLECTOR_MCP_ALLOWED_HOSTS` | mcp | Comma-separated `Host` header allowlist (default `localhost,127.0.0.1,::1`) |

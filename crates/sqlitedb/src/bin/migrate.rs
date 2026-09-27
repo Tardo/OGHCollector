@@ -1,7 +1,6 @@
 // Copyright Alexandre D. Díaz
-//! Standalone migration runner, called directly from `docker-entrypoint.sh` before
-//! `server`/`mcp`/`collector` start, so the schema is current no matter which binary
-//! is the container's actual entrypoint (previously only `collector` ever migrated).
+//! Standalone migration runner, used by the Docker Compose `migrate` service before
+//! `server`, `mcp`, or `collector` starts.
 use named_lock::NamedLock;
 use std::fs::{self, File};
 use std::path::Path;

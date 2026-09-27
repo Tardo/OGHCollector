@@ -1305,6 +1305,7 @@ impl OGHCollectorAnalyzer {
 
             Ok(ManifestInfo {
                 technical_name: module_name.into(),
+                source_path: module_name.into(),
                 version_odoo,
                 name,
                 version_module,
@@ -1463,6 +1464,11 @@ impl OGHCollectorAnalyzer {
                             continue;
                         }
                     };
+                    manifest.source_path = path
+                        .strip_prefix(repo_info.get_clone_path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/");
                     manifest.folder_size = folder_size;
                     manifest.last_commit_hash = git_info.last_commit_hash;
                     manifest.last_commit_author = git_info.last_commit_author;
@@ -2323,7 +2329,7 @@ def migrate(cr, version):
         ));
         let _ = fs::remove_dir_all(&dir);
         let repos_dir = dir.join("repos");
-        let module_dir = repos_dir.join("my_module");
+        let module_dir = repos_dir.join("odoo/addons/my_module");
         fs::create_dir_all(&module_dir).unwrap();
         fs::write(
             module_dir.join("__manifest__.py"),
@@ -2364,15 +2370,16 @@ def migrate(cr, version):
         let repo_infos = vec![RepoInfo {
             name: "test_repo".to_string(),
             org: "test_org".to_string(),
-            clone_path: format!("{}/", repos_dir.display()),
+            clone_path: repos_dir.to_string_lossy().to_string(),
             full_path: repos_dir.to_string_lossy().to_string(),
         }];
-        let read_paths = vec!["".to_string()];
+        let read_paths = vec!["/odoo/addons".to_string()];
         let analyzer = OGHCollectorAnalyzer::new(&160u8);
 
         // First run: nothing stored yet, so it must analyze and report changed.
         let first = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
         assert_eq!(first.len(), 1);
+        assert_eq!(first[0].source_path, "odoo/addons/my_module");
         assert!(!first[0].source_unchanged);
         assert!(!first[0].last_commit_hash.is_empty());
 
@@ -2382,6 +2389,7 @@ def migrate(cr, version):
         // Second run, no new commits: must skip re-analysis.
         let second = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
         assert_eq!(second.len(), 1);
+        assert_eq!(second[0].source_path, "odoo/addons/my_module");
         assert!(second[0].source_unchanged);
         assert_eq!(second[0].last_commit_hash, first[0].last_commit_hash);
 

@@ -215,3 +215,81 @@ pub async fn route_tab(
         .content_type("text/html; charset=utf-8")
         .body(html.0))
 }
+
+#[cfg(test)]
+mod tests {
+    use minijinja::{context, Environment};
+    use serde_json::json;
+
+    #[test]
+    fn module_source_links_follow_the_scanned_directory() {
+        let mut env = Environment::new();
+        env.add_template(
+            "module",
+            include_str!("../../../../web/templates/partials/module_version_content.html"),
+        )
+        .unwrap();
+        env.add_template(
+            "overview",
+            include_str!("../../../../web/templates/partials/modules_version_content.html"),
+        )
+        .unwrap();
+        for (org, repo, path) in [
+            ("OCA", "web", "web_responsive"),
+            ("odoo", "odoo", "addons/web"),
+            ("odoo", "odoo", "odoo/addons/base"),
+        ] {
+            let module = json!({
+                "git": format!("https://github.com/{org}/{repo}.git"),
+                "organization": org,
+                "repository": repo,
+                "odoo_version": "18.0",
+                "source_path": path,
+                "folder_size": 0,
+                "security_warnings": [{"file": "models/test.py", "line": 42, "code": "TEST"}],
+                "security_warning_count": 0,
+                "migration_considerations": [],
+                "dependencies": {"odoo": {}, "pip": [], "bin": []},
+                "required_by": [],
+                "views": [],
+                "controllers": [],
+                "models": [],
+            });
+            let html = env
+                .get_template("module")
+                .unwrap()
+                .render(context!(module => module, history => Vec::<String>::new()))
+                .unwrap();
+            assert!(html.contains(&format!("https://github.com/{org}/{repo}/tree/18.0/{path}")));
+            assert!(html.contains(&format!(
+                "https://github.com/{org}/{repo}/blob/18.0/{path}/models/test.py#L42"
+            )));
+            let group = json!({
+                "odoo_version": "18.0",
+                "pull_requests": [],
+                "avg_days_open": null,
+                "security_errors": [{
+                    "organization": org,
+                    "repository": repo,
+                    "technical_name": "web",
+                    "source_path": path,
+                    "file": "models/test.py",
+                    "line": 42,
+                    "code": "TEST",
+                    "message": "test"
+                }],
+                "security_warnings": [],
+                "migration_warnings": [],
+                "migration_infos": [],
+            });
+            let overview = env
+                .get_template("overview")
+                .unwrap()
+                .render(context!(g => group))
+                .unwrap();
+            assert!(overview.contains(&format!(
+                "https://github.com/{org}/{repo}/blob/18.0/{path}/models/test.py#L42"
+            )));
+        }
+    }
+}

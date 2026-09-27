@@ -115,7 +115,7 @@
             <tr>
                 <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
                 <td><span class="badge text-bg-danger">{{ w.code }}</span></td>
-                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ w.organization }}/{{ w.repository }}/blob/{{ g.odoo_version }}/{{ w.technical_name }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ w.organization }}/{{ w.repository }}/blob/{{ g.odoo_version }}/{{ w.source_path }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -141,7 +141,7 @@
             <tr>
                 <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
                 <td><span class="badge text-bg-warning">{{ w.code }}</span></td>
-                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ w.organization }}/{{ w.repository }}/blob/{{ g.odoo_version }}/{{ w.technical_name }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ w.organization }}/{{ w.repository }}/blob/{{ g.odoo_version }}/{{ w.source_path }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -172,7 +172,7 @@
             <tr>
                 <td><a href="/module/{{ n.organization }}/{{ n.technical_name }}">{{ n.technical_name }}</a></td>
                 <td><span class="badge text-bg-warning">{{ n.code }}</span></td>
-                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ n.organization }}/{{ n.repository }}/blob/{{ g.odoo_version }}/{{ n.technical_name }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ n.organization }}/{{ n.repository }}/blob/{{ g.odoo_version }}/{{ n.source_path }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -198,7 +198,7 @@
             <tr>
                 <td><a href="/module/{{ n.organization }}/{{ n.technical_name }}">{{ n.technical_name }}</a></td>
                 <td><span class="badge text-bg-secondary">{{ n.code }}</span></td>
-                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ n.organization }}/{{ n.repository }}/blob/{{ g.odoo_version }}/{{ n.technical_name }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="https://github.com/{{ n.organization }}/{{ n.repository }}/blob/{{ g.odoo_version }}/{{ n.source_path }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View on GitHub">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>

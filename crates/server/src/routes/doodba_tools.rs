@@ -539,6 +539,7 @@ mod tests {
         module::add(
             conn,
             &module::ManifestInfo {
+                source_path: tech_name.to_string(),
                 technical_name: tech_name.to_string(),
                 version_odoo,
                 name: tech_name.to_string(),

@@ -97,6 +97,7 @@ diesel::table! {
         installation -> Nullable<Text>,
         usage -> Nullable<Text>,
         icon -> Nullable<Text>,
+        source_path -> Text,
     }
 }
 

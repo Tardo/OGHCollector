@@ -77,6 +77,8 @@ pub struct ModuleMigrationNoteFullInfo {
     pub org_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub source_path: String,
 }
 
 /// Every consideration for every module's *current* snapshot (mirrors
@@ -87,7 +89,7 @@ pub fn get_all_current(conn: &mut SqliteConnection) -> Vec<ModuleMigrationNoteFu
     diesel::sql_query(
         "SELECT mmn.severity, mmn.code, mmn.message, mmn.context, \
           mmn.file, mmn.line, \
-          mod.version_odoo, mod.technical_name, \
+           mod.version_odoo, mod.technical_name, mod.source_path, \
           gh_org.name as org_name, gh_repo.name as repository \
          FROM module_migration_note as mmn \
          INNER JOIN module_version as mv ON mv.id = mmn.module_version_id \

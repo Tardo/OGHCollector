@@ -1,34 +1,71 @@
+name: oghcollector
+
+x-app: &app
+  image: oghcollector:local
+  build:
+    context: .
+    target: final
+  volumes:
+    - app_data:/app/data
+  environment:
+    RUST_LOG: info
+    RUST_BACKTRACE: 0
+
 services:
-  app:
-    build:
-      context: .
-      target: final
+  migrate:
+    <<: *app
+    entrypoint: oghmigrate
+    command: []
+
+  server:
+    <<: *app
+    command: oghserver
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - 8080:8080
-    volumes:
-      - app_data:/app/data
-      # - ./server.yaml:/app/server.yaml
-    environment:
-      RUST_LOG: info
-      RUST_BACKTRACE: 0
 
   mcp:
-    build:
-      context: .
-      target: final
+    <<: *app
     command: oghmcp
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - 8081:8081
+
+  collector:
+    <<: *app
+    command: [sleep, infinity]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.refresh.schedule: "0 0 */6 * * *"
+      ofelia.job-exec.refresh.no-overlap: "true"
+      ofelia.job-exec.refresh.user: appuser
+      ofelia.job-exec.refresh.command: >-
+        sh -ec 'for version in 6.1 7.0 8.0 9.0; do
+        oghcollector odoo/odoo:/addons,/openerp/addons "$$version"; done;
+        for version in 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0; do
+        oghcollector odoo/odoo:/addons,/odoo/addons "$$version"; done;
+        for version in 6.1 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0; do
+        oghcollector OCA "$$version"; done'
+
+  ofelia:
+    image: mcuadros/ofelia:0.3.22
+    command: [daemon, --docker, -f, "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}"]
+    restart: unless-stopped
+    depends_on:
+      collector:
+        condition: service_started
     volumes:
-      - app_data:/app/data
-      # - ./mcp.yaml:/app/mcp.yaml
-    environment:
-      RUST_LOG: info
-      RUST_BACKTRACE: 0
-      # Required for any client that isn't connecting via localhost/127.0.0.1 - rmcp
-      # rejects other Host headers by default (DNS-rebinding protection). Set this to
-      # the public hostname(s)/IP(s) clients will actually use, e.g.:
-      # OGHCOLLECTOR_MCP_ALLOWED_HOSTS: mcp.example.com,203.0.113.10
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   app_data:

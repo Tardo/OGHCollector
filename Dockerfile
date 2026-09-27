@@ -117,19 +117,15 @@ COPY --from=build /out/static    /app/static
 COPY --from=build /out/templates /app/web/templates
 
 COPY files/pip_names.txt /app/files/pip_names.txt
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-
 RUN chown -R appuser:appuser /app \
     && chmod 755 \
     /usr/local/bin/diesel \
     /usr/local/bin/oghserver \
     /usr/local/bin/oghcollector \
     /usr/local/bin/oghmcp \
-    /usr/local/bin/oghmigrate \
-    /usr/local/bin/docker-entrypoint.sh
+    /usr/local/bin/oghmigrate
 
 USER appuser
 WORKDIR /app
 EXPOSE 8080 8081
-ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["oghserver"]

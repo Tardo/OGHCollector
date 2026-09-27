@@ -153,9 +153,38 @@ mod tests {
         )
         .expect("Failed to create old schema");
 
+        conn.batch_execute(
+            "INSERT INTO gh_organization (id, name) VALUES (1, 'OCA'), (2, 'odoo');
+             INSERT INTO gh_repository (id, name, gh_organization_id, create_date, update_date)
+             VALUES (1, 'web', 1, '', ''), (2, 'odoo', 2, '', '');
+             INSERT INTO module (technical_name, version_odoo, name, version_module,
+                 gh_repository_id, create_date, update_date, folder_size, last_commit_hash,
+                 last_commit_author, last_commit_name, last_commit_date)
+             VALUES ('web_responsive', 160, '', '', 1, '', '', 0, '', '', '', ''),
+                    ('web', 160, '', '', 2, '', '', 0, '', '', '', ''),
+                    ('base', 160, '', '', 2, '', '', 0, '', '', '', ''),
+                    ('base', 90, '', '', 2, '', '', 0, '', '', '', '');",
+        )
+        .unwrap();
+
         // Now run Diesel migrations on top — must not fail.
         conn.run_pending_migrations(MIGRATIONS)
             .expect("Migrations failed on existing DB");
+
+        use diesel::RunQueryDsl;
+        let paths: Vec<super::NameRow> =
+            diesel::sql_query("SELECT source_path AS name FROM module ORDER BY id")
+                .load(&mut conn)
+                .unwrap();
+        assert_eq!(
+            paths.into_iter().map(|row| row.name).collect::<Vec<_>>(),
+            [
+                "web_responsive",
+                "addons/web",
+                "odoo/addons/base",
+                "openerp/addons/base"
+            ]
+        );
 
         // Verify the DB is functional after migration.
         let org = super::gh_organization::add(&mut conn, "TestOrg").unwrap();
@@ -230,6 +259,7 @@ mod tests {
 
         let mut info = super::module::ManifestInfo {
             technical_name: "test_module".to_string(),
+            source_path: "test_module".to_string(),
             version_odoo: 16,
             name: "Test Module".to_string(),
             version_module: "16.0.1.0.0".to_string(),
@@ -280,6 +310,10 @@ mod tests {
         assert_eq!(updated.id, module.id);
         assert_eq!(updated.installation_str(), "pip install foo --upgrade");
         assert_eq!(updated.usage_str(), "Go to Settings > Foo > Bar");
+        info.source_path = "addons/test_module".to_string();
+        let moved = super::module::add(&mut conn, &info).unwrap();
+        assert_eq!(moved.source_path, "addons/test_module");
+        assert_eq!(moved.update_date, updated.update_date);
     }
 
     #[test]
@@ -289,6 +323,7 @@ mod tests {
 
         let info = super::module::ManifestInfo {
             technical_name: "dup_module".to_string(),
+            source_path: "dup_module".to_string(),
             version_odoo: 17,
             name: "Dup Module".to_string(),
             version_module: "17.0.1.0.0".to_string(),
@@ -332,6 +367,7 @@ mod tests {
 
         let module_info = super::module::ManifestInfo {
             technical_name: "dep_test".to_string(),
+            source_path: "dep_test".to_string(),
             version_odoo: 16,
             name: "Dep Test".to_string(),
             version_module: "16.0.1.0.0".to_string(),
@@ -464,6 +500,7 @@ mod tests {
 
         let make_info = |name: &str, ver: u8| super::module::ManifestInfo {
             technical_name: name.to_string(),
+            source_path: name.to_string(),
             version_odoo: ver,
             name: name.to_string(),
             version_module: format!("{ver}.0.1.0.0"),
@@ -510,6 +547,7 @@ mod tests {
 
         let make_info = |name: &str| super::module::ManifestInfo {
             technical_name: name.to_string(),
+            source_path: name.to_string(),
             version_odoo: 16,
             name: name.to_string(),
             version_module: "16.0.1.0.0".to_string(),
@@ -569,6 +607,7 @@ mod tests {
 
         let make_info = |name: &str| super::module::ManifestInfo {
             technical_name: name.to_string(),
+            source_path: name.to_string(),
             version_odoo: 16,
             name: name.to_string(),
             version_module: "16.0.1.0.0".to_string(),
@@ -759,6 +798,7 @@ mod tests {
             );
             super::module::ManifestInfo {
                 technical_name: "period_test".to_string(),
+                source_path: "period_test".to_string(),
                 version_odoo: 16,
                 name: "Period Test".to_string(),
                 version_module: "16.0.1.0.0".to_string(),
@@ -825,6 +865,7 @@ mod tests {
     fn make_bare_module_info(name: &str) -> super::module::ManifestInfo {
         super::module::ManifestInfo {
             technical_name: name.to_string(),
+            source_path: name.to_string(),
             version_odoo: 16,
             name: name.to_string(),
             version_module: "16.0.1.0.0".to_string(),
