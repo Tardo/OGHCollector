@@ -11,7 +11,7 @@
     color: var(--bs-body-color, #dee2e6);
     background-color: var(--bs-body-bg, #212529);
     border: 1px solid var(--bs-border-color, #495057);
-    border-radius: 0.4rem;
+    border-radius: 0.75rem;
     outline: none;
     transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 
@@ -20,8 +20,8 @@
     }
 
     &:focus {
-        border-color: #85a4d3;
-        box-shadow: 0 0 0 0.25rem rgba(133, 164, 211, 0.25);
+        border-color: var(--ommd-accent, #81efd2);
+        box-shadow: 0 0 0 0.2rem var(--ommd-glow, rgba(80, 203, 189, 0.14));
     }
 }
 
@@ -32,7 +32,7 @@
     max-height: 30em;
     overflow: auto;
     overflow-x: hidden;
-    border-radius: 0.4rem;
+    border-radius: 0.75rem;
     box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.4);
 
     li {
@@ -55,7 +55,7 @@
         // background-color here would let the page show through the dropdown.
         &.active .item,
         .item:hover {
-            background-image: linear-gradient(rgba(133, 164, 211, 0.2), rgba(133, 164, 211, 0.2));
+            background-image: linear-gradient(var(--ommd-glow, rgba(80, 203, 189, 0.14)), var(--ommd-glow, rgba(80, 203, 189, 0.14)));
         }
     }
 }

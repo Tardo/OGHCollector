@@ -5,26 +5,33 @@
 
 #version {
     font-size: 1rem;
-    padding: 0.3em 0.6em;
+    padding: 0.45em 0.75em;
     color: var(--bs-body-color, #dee2e6);
     background-color: var(--bs-tertiary-bg, #2b3035);
     border: 1px solid var(--bs-border-color, #495057);
-    border-radius: 0.4rem;
+    border-radius: 0.65rem;
     outline: none;
 }
 
 #counter {
-    font-size: xx-large;
+    display: inline-block;
+    color: var(--ommd-accent, #81efd2);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    font-size: clamp(2.5rem, 4vw, 3.25rem);
+    font-weight: 600;
+    letter-spacing: -0.07em;
 }
 
 table {
     padding: 1em;
-    min-width: 250px;
+    min-width: 0;
     min-height: 120px;
     width: 100%;
 
     td {
         text-align: center;
+
+        &:has(#counter) { font-size: 0.85rem; color: var(--bs-secondary-color, #a3b5c5); }
 
         ol {
             text-align: left;

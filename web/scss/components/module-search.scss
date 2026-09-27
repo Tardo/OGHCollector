@@ -28,11 +28,11 @@
 
         &:first-child {
             margin-left: 0;
-            border-radius: 0.4rem 0 0 0.4rem;
+            border-radius: 0.75rem 0 0 0.75rem;
         }
 
         &:last-child {
-            border-radius: 0 0.4rem 0.4rem 0;
+            border-radius: 0 0.75rem 0.75rem 0;
         }
 
         // Column layout collapses borders vertically, not horizontally.
@@ -43,18 +43,18 @@
 
             &:first-child {
                 margin-top: 0;
-                border-radius: 0.4rem 0.4rem 0 0;
+                border-radius: 0.75rem 0.75rem 0 0;
             }
 
             &:last-child {
-                border-radius: 0 0 0.4rem 0.4rem;
+                border-radius: 0 0 0.75rem 0.75rem;
             }
         }
 
         &:focus {
             z-index: 1;
-            border-color: #85a4d3;
-            box-shadow: 0 0 0 0.25rem rgba(133, 164, 211, 0.25);
+            border-color: var(--ommd-accent, #81efd2);
+            box-shadow: 0 0 0 0.2rem var(--ommd-glow, rgba(80, 203, 189, 0.14));
         }
     }
 

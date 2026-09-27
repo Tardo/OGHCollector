@@ -75,31 +75,45 @@
 </template>
 
 
-<div class="dashboard-hero text-center mx-auto mt-4 mb-5">
-    <h1 class="fw-semibold">Explore the Odoo module ecosystem</h1>
-    <p class="lead text-body-secondary">Tracking <span class="fw-bold text-primary">{{ modules_total }}</span> module{{ modules_total != 1 and 's' or '' }} across <span class="fw-bold text-primary">{{ org_total }}</span> organization{{ org_total != 1 and 's' or '' }} and <span class="fw-bold text-primary">{{ version_total }}</span> Odoo version{{ version_total != 1 and 's' or '' }} — manifests, dependencies, security findings and code analysis in one place.</p>
-    <div class="mt-4">
-        <a class="btn btn-primary btn-lg me-sm-2 mb-2 mb-sm-0" href="/modules">Browse modules</a>
-        <a class="btn btn-outline-secondary btn-lg mb-2 mb-sm-0" href="/atlas">Explore the dependency atlas</a>
+<section class="dashboard-hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+        <span class="hero-eyebrow"><span class="hero-pulse" aria-hidden="true"></span> THE OPEN ODOO INDEX <span class="hero-eyebrow-line"></span> LIVE DATA</span>
+        <h1 id="hero-title">The Odoo ecosystem,<br><span>in focus.</span></h1>
+        <p>Explore the modules shaping Odoo. Discover dependencies, security findings and code intelligence across the open-source ecosystem — all in one place.</p>
+        <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="/modules">Explore modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a>
+            <a class="btn btn-outline-secondary btn-lg" href="/atlas">View dependency atlas <span class="material-icons" aria-hidden="true">north_east</span></a>
+        </div>
+        <p class="hero-disclaimer">Independent project · Not affiliated with Odoo S.A. or the Odoo Community Association (OCA).</p>
+    </div>
+    <div class="hero-panel" aria-label="Index at a glance">
+        <div class="hero-panel-top"><span>ECOSYSTEM / OVERVIEW</span><span class="hero-panel-live"><span aria-hidden="true"></span> INDEXED</span></div>
+        <div class="hero-panel-main"><span class="hero-panel-label">Modules in the index</span><strong>{{ modules_total }}</strong><span class="hero-panel-caption">A growing map of open-source Odoo.</span></div>
+        <div class="hero-panel-bottom">
+            <div><span>ORGANIZATIONS</span><strong>{{ org_total }}</strong></div>
+            <div><span>ODOO VERSIONS</span><strong>{{ version_total }}</strong></div>
+        </div>
+        <span class="hero-panel-corner" aria-hidden="true">OD / 001</span>
+    </div>
+</section>
+
+<div class="section-heading"><div><span class="section-kicker">01 / DISCOVER</span><h2>Explore by version</h2></div><p>One ecosystem, many releases.</p></div>
+<div class="row mb-5 g-3 user-select-none" id="modules_count">
+    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
+        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="17.0"></mirlo-module-counter>
+    </div>
+    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
+        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="18.0"></mirlo-module-counter>
+    </div>
+    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
+        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="19.0"></mirlo-module-counter>
     </div>
 </div>
 
-<div class="row mb-5 gx-sm-5 user-select-none" id="modules_count">
-    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 stat-card" version="17.0"></mirlo-module-counter>
-    </div>
-    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 stat-card" version="18.0"></mirlo-module-counter>
-    </div>
-    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block rounded-3 stat-card" version="19.0"></mirlo-module-counter>
-    </div>
-</div>
-
+<div class="section-heading"><div><span class="section-kicker">02 / RECENT ACTIVITY</span><h2>Latest modules tracked</h2></div><a href="/modules">Browse all modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a></div>
 <div class="row user-select-none" id="modules_latest">
     <div class="col-12">
-        <h2>Latest modules tracked</h2>
-        <table class="table table-striped table-striped-columns table-hover">
+        <div class="latest-table"><table class="table table-hover">
             <thead>
                 <tr>
                     <th class="col-8">Module</th>
@@ -118,7 +132,7 @@
                 </tr>
                 {% endfor %}
             </tbody>
-        </table>
+        </table></div>
     </div>
 </div>
 {% endblock %}
