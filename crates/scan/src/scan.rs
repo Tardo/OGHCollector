@@ -1223,7 +1223,7 @@ fn version_detected(raw: String, source: &'static str) -> VersionInfo {
         supported,
         status: if supported {
             "supported"
-        } else if major.is_some_and(|v| (1..17).contains(&v)) {
+        } else if major.is_some_and(|v| (1..18).contains(&v)) {
             "outdated"
         } else {
             "unknown"
@@ -1929,7 +1929,15 @@ mod tests {
         assert_eq!(supported.status, "supported");
         assert!(supported.supported);
 
+        let supported = version_detected("20.0.1".to_string(), "header");
+        assert_eq!(supported.status, "supported");
+        assert!(supported.supported);
+
         let outdated = version_detected("14.0".to_string(), "header");
+        assert_eq!(outdated.status, "outdated");
+        assert!(!outdated.supported);
+
+        let outdated = version_detected("17.0.3".to_string(), "header");
         assert_eq!(outdated.status, "outdated");
         assert!(!outdated.supported);
     }
@@ -1953,7 +1961,7 @@ mod tests {
         let v = detect_version(&probes);
         assert_eq!(v.detected.as_deref(), Some("17.0.3"));
         assert_eq!(v.source, "header");
-        assert_eq!(v.status, "supported");
+        assert_eq!(v.status, "outdated");
     }
 
     #[test]
@@ -2465,7 +2473,7 @@ mod tests {
         ]);
         assert!(!db.info_available);
         assert!(!db.manager_available);
-        for raw in ["20.0", "garbage", "18.4"] {
+        for raw in ["21.0", "garbage", "18.4"] {
             assert_eq!(version_detected(raw.into(), "header").status, "unknown");
         }
         assert_eq!(
