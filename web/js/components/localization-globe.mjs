@@ -8,7 +8,9 @@ if (canvas) {
   const ctx = canvas.getContext('2d');
   const stage = canvas.closest('.globe-stage');
   const caption = document.querySelector('#globe-caption');
+  const versionSelect = document.querySelector('#localization-version');
   const links = new Map();
+  const countryLinks = [];
   const countries = feature(world, world.objects.countries).features;
   const codes = new Map(
     countries.map(country => [whereNumeric(country.id)?.alpha2, country.id]),
@@ -24,7 +26,29 @@ if (canvas) {
     }
     link.querySelector('.country-name').textContent = country.country;
     const id = codes.get(country.alpha2);
-    if (id) links.set(id, link);
+    if (id) countryLinks.push({id, link});
+  }
+
+  const requestedVersion = new URL(location.href).searchParams.get('version');
+  if (
+    [...versionSelect.options].some(option => option.value === requestedVersion)
+  ) {
+    versionSelect.value = requestedVersion;
+  }
+
+  function filterCountries() {
+    links.clear();
+    for (const {id, link} of countryLinks) {
+      const matches =
+        Number(link.dataset.version) === Number(versionSelect.value) * 10;
+      link.hidden = !matches;
+      if (matches) {
+        link.href = `/localization/${link.dataset.country.toLowerCase()}?version=${encodeURIComponent(versionSelect.value)}`;
+        links.set(id, link);
+      }
+    }
+    showCountry(null);
+    draw();
   }
 
   const projection = geoOrthographic().clipAngle(90).precision(1);
@@ -115,6 +139,14 @@ if (canvas) {
     canvas.style.cursor = link ? 'pointer' : 'grab';
     draw();
   }
+
+  filterCountries();
+  versionSelect.addEventListener('change', () => {
+    filterCountries();
+    const url = new URL(location.href);
+    url.searchParams.set('version', versionSelect.value);
+    history.replaceState(null, '', url);
+  });
 
   canvas.addEventListener('pointerenter', () => {
     hovering = true;

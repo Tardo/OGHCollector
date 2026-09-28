@@ -30,40 +30,54 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    let (modules_count, modules_latest, modules_total, org_total, localization_countries) =
-        web::block(move || {
-            let mut conn = pool.get().unwrap();
-            let count = models::module::count(&mut conn)
-                .into_iter()
-                .map(|x| ModuleCountInfoResponse {
-                    count: x.count,
-                    version_odoo: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-                })
-                .collect::<Vec<ModuleCountInfoResponse>>();
-            let latest = models::module::get_latest_modules_created(&mut conn)
-                .into_iter()
-                .map(|x| LastestCreatedInfo {
-                    id: x.id,
-                    version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-                    technical_name: x.technical_name,
-                    org_name: x.org_name,
-                    create_date: x.create_date,
-                })
-                .collect::<Vec<LastestCreatedInfo>>();
-            let modules_total = models::module::count_distinct(&mut conn);
-            let org_total = models::gh_organization::count(&mut conn);
-            let localization_countries = models::module::localization_countries(&mut conn);
-            (
-                count,
-                latest,
-                modules_total,
-                org_total,
-                localization_countries,
-            )
-        })
-        .await?;
+    let (
+        modules_count,
+        modules_latest,
+        modules_total,
+        org_total,
+        localization_countries,
+        localization_default_version,
+    ) = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let counts = models::module::count(&mut conn);
+        let localization_default_version = counts.last().map(|x| x.version_odoo);
+        let count = counts
+            .into_iter()
+            .map(|x| ModuleCountInfoResponse {
+                count: x.count,
+                version_odoo: odoo_version_u8_to_string(&(x.version_odoo as u8)),
+            })
+            .collect::<Vec<ModuleCountInfoResponse>>();
+        let latest = models::module::get_latest_modules_created(&mut conn)
+            .into_iter()
+            .map(|x| LastestCreatedInfo {
+                id: x.id,
+                version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
+                technical_name: x.technical_name,
+                org_name: x.org_name,
+                create_date: x.create_date,
+            })
+            .collect::<Vec<LastestCreatedInfo>>();
+        let modules_total = models::module::count_distinct(&mut conn);
+        let org_total = models::gh_organization::count(&mut conn);
+        let localization_countries = models::module::localization_countries_by_version(&mut conn);
+        (
+            count,
+            latest,
+            modules_total,
+            org_total,
+            localization_countries,
+            localization_default_version,
+        )
+    })
+    .await?;
 
     let version_total = modules_count.len();
+    let localization_versions = modules_count
+        .iter()
+        .map(|x| &x.version_odoo)
+        .rev()
+        .collect::<Vec<_>>();
 
     tmpl_env.render(
         "pages/dashboard.html",
@@ -77,6 +91,8 @@ pub async fn route(
                 org_total => org_total,
                 version_total => version_total,
                 localization_countries => localization_countries,
+                localization_versions => localization_versions,
+                localization_default_version => localization_default_version,
             )
         ),
     )

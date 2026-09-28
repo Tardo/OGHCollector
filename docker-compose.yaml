@@ -52,9 +52,9 @@ services:
       ofelia.job-exec.refresh.command: >-
         sh -ec 'for version in 6.1 7.0 8.0 9.0; do
         oghcollector odoo/odoo:/addons,/openerp/addons "$$version"; done;
-        for version in 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0; do
+        for version in 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0 20.0; do
         oghcollector odoo/odoo:/addons,/odoo/addons "$$version"; done;
-        for version in 6.1 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0; do
+        for version in 6.1 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0 20.0; do
         oghcollector OCA "$$version"; done'
 
   ofelia:

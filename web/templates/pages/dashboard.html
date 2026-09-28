@@ -108,10 +108,16 @@
         </div>
         <div class="localization-sidebar">
             <span class="section-kicker">EXPLORE BY COUNTRY</span>
-            <p>Highlighted countries have directly associated <code>l10n_XX</code> modules in the index. Choose a country to see its modules across Odoo versions.</p>
+            <label for="localization-version">Odoo version</label>
+            <select id="localization-version" aria-label="Filter localization by Odoo version">
+                {% for version in localization_versions %}
+                <option value="{{ version }}"{% if loop.first %} selected{% endif %}>{{ version }}</option>
+                {% endfor %}
+            </select>
+            <p>Highlighted countries have directly associated <code>l10n_XX</code> modules in the selected Odoo version. Choose a country to see its modules.</p>
             <div class="localization-countries" aria-label="Countries with localization modules">
                 {% for country in localization_countries %}
-                <a href="/localization/{{ country.code | lower }}" data-country="{{ country.code }}"><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
+                <a href="/localization/{{ country.code | lower }}?version={{ localization_versions[0] | urlencode }}" data-country="{{ country.code }}" data-version="{{ country.version_odoo }}"{% if country.version_odoo != localization_default_version %} hidden{% endif %}><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
                 {% endfor %}
             </div>
         </div>

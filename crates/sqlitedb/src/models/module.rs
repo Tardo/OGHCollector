@@ -253,6 +253,32 @@ pub struct LocalizationCountry {
     pub count: i64,
 }
 
+#[derive(QueryableByName, Debug, Serialize)]
+pub struct LocalizationCountryVersion {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub code: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub count: i64,
+}
+
+pub fn localization_countries_by_version(
+    conn: &mut SqliteConnection,
+) -> Vec<LocalizationCountryVersion> {
+    diesel::sql_query(
+        "SELECT upper(substr(mod.technical_name, 6, 2)) AS code, mod.version_odoo, \
+         count(DISTINCT org.id || '/' || mod.technical_name) AS count FROM module AS mod \
+         INNER JOIN gh_repository AS repo ON mod.gh_repository_id = repo.id \
+         INNER JOIN gh_organization AS org ON repo.gh_organization_id = org.id \
+         WHERE mod.technical_name GLOB 'l10n_[a-z][a-z]*' \
+           AND substr(mod.technical_name, 8, 1) IN ('', '_') \
+         GROUP BY code, mod.version_odoo ORDER BY count DESC, code",
+    )
+    .load(conn)
+    .expect("DB error in module::localization_countries_by_version")
+}
+
 /// Only modules named l10n_XX or l10n_XX_*, not every addon in an
 /// l10n-* repository (which can contain unrelated modules).
 pub fn localization_countries(conn: &mut SqliteConnection) -> Vec<LocalizationCountry> {
@@ -621,7 +647,7 @@ pub fn get_info(conn: &mut SqliteConnection, technical_name: &str) -> Vec<Module
 }
 
 pub fn count(conn: &mut SqliteConnection) -> Vec<ModuleCountInfo> {
-    diesel::sql_query("SELECT version_odoo, count(*) as count FROM module GROUP BY version_odoo")
+    diesel::sql_query("SELECT version_odoo, count(*) as count FROM module GROUP BY version_odoo ORDER BY version_odoo")
         .load::<ModuleCountInfo>(conn)
         .expect("DB error in module::count")
 }
@@ -792,7 +818,11 @@ pub fn list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
     .collect()
 }
 
-pub fn list_localization(conn: &mut SqliteConnection, code: &str) -> Vec<ModuleListInfo> {
+pub fn list_localization(
+    conn: &mut SqliteConnection,
+    code: &str,
+    version: Option<i32>,
+) -> Vec<ModuleListInfo> {
     let base = format!("l10n_{code}");
     diesel::sql_query(
         "SELECT mod.technical_name, MAX(mod.name) as name, MAX(mod.description) as description, \
@@ -801,12 +831,15 @@ pub fn list_localization(conn: &mut SqliteConnection, code: &str) -> Vec<ModuleL
          FROM module as mod \
          INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
-         WHERE mod.technical_name = ? OR mod.technical_name GLOB ? \
+         WHERE (mod.technical_name = ? OR mod.technical_name GLOB ?) \
+            AND (? IS NULL OR mod.version_odoo = ?) \
          GROUP BY gh_org.name, mod.technical_name \
          ORDER BY mod.technical_name, gh_org.name",
     )
     .bind::<diesel::sql_types::Text, _>(&base)
     .bind::<diesel::sql_types::Text, _>(format!("{base}_*"))
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(version)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(version)
     .load::<ModuleListRow>(conn)
     .expect("DB error in module::list_localization")
     .into_iter()

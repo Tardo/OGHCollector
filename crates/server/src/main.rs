@@ -59,6 +59,23 @@ fn resolve_db_path() -> PathBuf {
     })
 }
 
+fn configure_v1(cfg: &mut web::ServiceConfig, semantic_search_enabled: bool) {
+    cfg.service(
+        web::scope(routes::api::v1::PATH)
+            .service(routes::api::v1::module::route)
+            .service(routes::api::v1::module::route_odoo_version)
+            .service(routes::api::v1::module::route_versions)
+            .service(routes::api::v1::repository::route)
+            .service(routes::api::v1::search::route_criteria)
+            .service(routes::api::v1::search::route)
+            .configure(|scope_cfg| {
+                if semantic_search_enabled {
+                    scope_cfg.service(routes::api::v1::search::route_semantic);
+                }
+            }),
+    );
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
@@ -224,20 +241,7 @@ async fn main() -> std::io::Result<()> {
                         .service(routes::scan::route_run);
                 }
             })
-            .service(
-                web::scope(routes::api::v1::PATH)
-                    .service(routes::api::v1::module::route)
-                    .service(routes::api::v1::module::route_odoo_version)
-                    .service(routes::api::v1::module::route_versions)
-                    .service(routes::api::v1::repository::route)
-                    .service(routes::api::v1::search::route_criteria)
-                    .service(routes::api::v1::search::route),
-            )
-            .configure(|cfg| {
-                if SERVER_CONFIG.get_semantic_search_enabled() {
-                    cfg.service(routes::api::v1::search::route_semantic);
-                }
-            })
+            .configure(|cfg| configure_v1(cfg, SERVER_CONFIG.get_semantic_search_enabled()))
             .wrap(DefaultHeaders::new().add((
                 "Cache-Control",
                 format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),
@@ -265,8 +269,30 @@ async fn main() -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_same_origin;
-    use actix_web::{http::header, test::TestRequest};
+    use super::{configure_v1, is_same_origin};
+    use actix_web::{http::header, test as awtest, test::TestRequest, App};
+
+    #[actix_web::test]
+    async fn semantic_search_is_served_under_v1_only_when_enabled() {
+        let enabled =
+            awtest::init_service(App::new().configure(|cfg| configure_v1(cfg, true))).await;
+        // Missing q is rejected by the handler's query extractor before it needs a DB/model.
+        let request = TestRequest::get().uri("/v1/semantic-search").to_request();
+        let response = awtest::call_service(&enabled, request).await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let request = TestRequest::get().uri("/semantic-search").to_request();
+        let response = awtest::call_service(&enabled, request).await;
+        assert_eq!(response.status(), actix_web::http::StatusCode::NOT_FOUND);
+
+        let disabled =
+            awtest::init_service(App::new().configure(|cfg| configure_v1(cfg, false))).await;
+        let request = TestRequest::get().uri("/v1/semantic-search").to_request();
+        let response = awtest::call_service(&disabled, request).await;
+        assert_eq!(response.status(), actix_web::http::StatusCode::NOT_FOUND);
+    }
 
     #[test]
     fn same_origin_uses_the_request_host() {

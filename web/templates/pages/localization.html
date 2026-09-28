@@ -10,11 +10,11 @@
 {% block content %}
 {{ super() }}
 <div class="localization-results" data-country="{{ country_code }}">
-    <a class="localization-back" href="/#localization-title"><span class="material-icons" aria-hidden="true">arrow_back</span> Back to the globe</a>
+    <a class="localization-back" href="/{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}#localization-title"><span class="material-icons" aria-hidden="true">arrow_back</span> Back to the globe</a>
     <header class="page-header">
         <span class="section-kicker">02 / LOCALIZATION / {{ country_code }}</span>
         <h1>Localization: <span id="localization-country-name">{{ country_code }}</span></h1>
-        <p class="page-header-desc">{{ modules | length }} modules directly associated with {{ country_code }} across all indexed Odoo versions and organizations.</p>
+        <p class="page-header-desc">{{ modules | length }} modules directly associated with {{ country_code }} {% if selected_version %}in Odoo {{ selected_version }}{% else %}across all indexed Odoo versions{% endif %} and organizations.</p>
     </header>
     <div class="localization-results-list">
         {% for module in modules %}

@@ -245,6 +245,8 @@ mirlo-module-counter {
 
     h3 { font-size: clamp(1.65rem, 2.7vw, 2.5rem); font-weight: 700; line-height: 1.1; margin: 1.25rem 0; }
     h3 span { color: var(--ommd-accent); }
+    label { margin-top: 1.25rem; font-size: 0.85rem; font-weight: 600; }
+    select { margin: 0.5rem 0 1rem; padding: 0.6rem; border: 1px solid var(--bs-border-color); border-radius: 0.5rem; background: var(--bs-body-bg); color: var(--bs-body-color); }
     p { color: var(--bs-secondary-color); line-height: 1.65; font-size: 0.9rem; }
 }
 

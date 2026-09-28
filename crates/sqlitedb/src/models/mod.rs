@@ -274,10 +274,22 @@ mod tests {
         let countries = super::module::localization_countries(&mut conn);
         assert_eq!(countries.len(), 1);
         assert_eq!((countries[0].code.as_str(), countries[0].count), ("ES", 2));
-        let modules = super::module::list_localization(&mut conn, "es");
+        let by_version = super::module::localization_countries_by_version(&mut conn);
+        assert_eq!(by_version.len(), 2);
+        assert_eq!((by_version[0].version_odoo, by_version[0].count), (18, 2));
+        assert_eq!((by_version[1].version_odoo, by_version[1].count), (19, 1));
+        assert_eq!(
+            super::module::count(&mut conn).last().unwrap().version_odoo,
+            19
+        );
+        let modules = super::module::list_localization(&mut conn, "es", None);
         assert_eq!(modules.len(), 2);
         assert_eq!(modules[1].technical_name, "l10n_es_invoice");
         assert_eq!(modules[1].versions_odoo.len(), 2);
+        let filtered = super::module::list_localization(&mut conn, "es", Some(19));
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].technical_name, "l10n_es_invoice");
+        assert_eq!(filtered[0].versions_odoo, vec![19]);
     }
 
     #[test]
