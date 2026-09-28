@@ -36,7 +36,7 @@ const USER_AGENT: &str = concat!("OGHCollector-Scan/", env!("CARGO_PKG_VERSION")
 // Odoo's support matrix, so this manual table is the only source of truth it
 // has - bump it when a version leaves beta or an older one hits end-of-life.
 // Standard support matrix as of September 2026; extended/vendor support differs.
-const SUPPORTED_VERSIONS: &[&str] = &["17.0", "18.0", "19.0"];
+const SUPPORTED_VERSIONS: &[&str] = &["18.0", "19.0", "20.0"];
 
 // Per-request budget: a probe must answer within REQUEST_TIMEOUT and a
 // connection must be established within CONNECT_TIMEOUT, otherwise it is

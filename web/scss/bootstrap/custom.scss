@@ -429,15 +429,15 @@ html[data-bs-theme="dark"] .navbar {
 #modules_count mirlo-module-counter.stat-card {
   border-top: 3px solid var(--bs-border-color-translucent);
 
-  &[version="17.0"] {
+  &[version="18.0"] {
     border-top-color: #c98a4b;
   }
 
-  &[version="18.0"] {
+  &[version="19.0"] {
     border-top-color: var(--ommd-accent);
   }
 
-  &[version="19.0"] {
+  &[version="20.0"] {
     border-top-color: #5fb488;
   }
 }
