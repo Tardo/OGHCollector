@@ -1,5 +1,5 @@
 // Copyright Alexandre D. Díaz
-use duct::cmd;
+use duct::{cmd, cmd as cmd_fn};
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -92,31 +92,35 @@ pub trait GitClient {
         dest: &str,
     ) -> Option<RepoInfo> {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
-        let clone_path_exists = Path::new(&clone_path).exists();
-        if clone_path_exists {
+        let git = |args: &[&str]| {
+            cmd_fn("git", args)
+                .dir(&clone_path)
+                .stdin_null()
+                .run()
+                .is_ok()
+        };
+        let mut needs_clone = !Path::new(&clone_path).exists();
+        if !needs_clone {
             log::info!("Updating repo: {repo_name} @ {branch}");
-            cmd!("git", "fetch", "origin", "--prune")
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            cmd!("git", "reset", "--hard", &format!("origin/{branch}"))
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            cmd!("git", "clean", "-fdx")
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            cmd!("git", "switch", "-C", branch, &format!("origin/{branch}"))
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .ok()?;
-            log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
-        } else {
+            let origin_branch = format!("origin/{branch}");
+            let updated = git(&["fetch", "origin", "--prune"])
+                && git(&["reset", "--hard", &origin_branch])
+                && git(&["clean", "-fdx"])
+                && git(&["switch", "-C", branch, &origin_branch]);
+            if updated {
+                log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
+            } else {
+                // Diverged history (upstream force-push), corrupt objects, etc:
+                // the clone is disposable, so start over instead of skipping the repo.
+                log::warn!("Update of '{repo_name}' failed - removing and re-cloning");
+                if fs::remove_dir_all(&clone_path).is_err() {
+                    log::error!("Cannot remove broken clone: {clone_path}");
+                    return None;
+                }
+                needs_clone = true;
+            }
+        }
+        if needs_clone {
             log::info!("Cloning repo: {repo_name} @ {branch}");
             let base_dir = format!("{dest}/{org_name}");
             if fs::create_dir_all(&base_dir).is_err() {
