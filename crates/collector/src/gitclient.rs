@@ -92,54 +92,93 @@ pub trait GitClient {
         dest: &str,
     ) -> Option<RepoInfo> {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
-        let git = |args: &[&str]| {
-            cmd_fn("git", args)
-                .dir(&clone_path)
-                .stdin_null()
-                .run()
-                .is_ok()
-        };
-        let mut needs_clone = !Path::new(&clone_path).exists();
+        let base_dir = format!("{dest}/{org_name}");
+        let git =
+            |dir: &str, args: &[&str]| cmd_fn("git", args).dir(dir).stdin_null().run().is_ok();
+        let origin_branch = format!("origin/{branch}");
+        // `.git` check (not just `exists()`): git run inside a non-repo dir
+        // walks up to any parent repo and would act on that one instead.
+        let mut needs_clone = !Path::new(&clone_path).join(".git").exists();
         if !needs_clone {
             log::info!("Updating repo: {repo_name} @ {branch}");
-            let origin_branch = format!("origin/{branch}");
-            let updated = git(&["fetch", "origin", "--prune"])
-                && git(&["reset", "--hard", &origin_branch])
-                && git(&["clean", "-fdx"])
-                && git(&["switch", "-C", branch, &origin_branch]);
+            // Never delete the clone because of a fetch failure (network down,
+            // rate limit, auth) or because the branch doesn't exist upstream:
+            // neither means the checkout is broken, and the clone is shared by
+            // every Odoo version of the org - wiping it here is what emptied
+            // `data/repos` whenever a run couldn't reach GitHub or a repo
+            // lacked the requested version's branch.
+            if !git(&clone_path, &["fetch", "origin", "--prune"]) {
+                log::error!("'{repo_name}': fetch failed - keeping the existing clone, skipping");
+                return None;
+            }
+            let remote_ref = format!("refs/remotes/{origin_branch}");
+            if !git(&clone_path, &["rev-parse", "--verify", "-q", &remote_ref]) {
+                log::info!("'{repo_name}': branch '{branch}' doesn't exist upstream - skipping");
+                return None;
+            }
+            let updated = git(&clone_path, &["reset", "--hard", &origin_branch])
+                && git(&clone_path, &["clean", "-fdx"])
+                && git(&clone_path, &["switch", "-C", branch, &origin_branch]);
             if updated {
                 log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
             } else {
-                // Diverged history (upstream force-push), corrupt objects, etc:
-                // the clone is disposable, so start over instead of skipping the repo.
-                log::warn!("Update of '{repo_name}' failed - removing and re-cloning");
-                if fs::remove_dir_all(&clone_path).is_err() {
-                    log::error!("Cannot remove broken clone: {clone_path}");
-                    return None;
-                }
+                // Remote is reachable and has the branch, so the local clone
+                // itself is broken (corrupt objects, ...): rebuild it below.
+                log::warn!("Update of '{repo_name}' failed - re-cloning");
                 needs_clone = true;
             }
         }
         if needs_clone {
             log::info!("Cloning repo: {repo_name} @ {branch}");
-            let base_dir = format!("{dest}/{org_name}");
             if fs::create_dir_all(&base_dir).is_err() {
                 log::error!("Cannot create directory: {base_dir}");
                 return None;
             }
-
-            cmd!(
+            // Clone aside and swap only on success, so a failed (re)clone never
+            // leaves the repo missing: the old checkout survives until a
+            // complete replacement exists.
+            let tmp_name = format!("{repo_name}.tmp");
+            let tmp_path = format!("{base_dir}/{tmp_name}");
+            let _ = fs::remove_dir_all(&tmp_path);
+            let cloned = cmd!(
                 "git",
                 "clone",
                 "--no-single-branch",
                 "--branch",
                 branch,
                 repo_url,
+                &tmp_name,
             )
             .dir(&base_dir)
             .stdin_null()
             .run()
+            .is_ok();
+            let swapped = cloned
+                && (!Path::new(&clone_path).exists() || fs::remove_dir_all(&clone_path).is_ok())
+                && fs::rename(&tmp_path, &clone_path).is_ok();
+            if !swapped {
+                log::error!("'{repo_name}': clone @ {branch} failed - skipping");
+                let _ = fs::remove_dir_all(&tmp_path);
+                return None;
+            }
+        }
+
+        // HEAD must be exactly the tip of the requested branch, not just
+        // "some" checkout: a stale/other-branch tree would be analyzed and
+        // stored under this version's label.
+        let head = cmd!("git", "rev-parse", "HEAD")
+            .dir(&clone_path)
+            .stdin_null()
+            .read()
             .ok()?;
+        let tip = cmd!("git", "rev-parse", &origin_branch)
+            .dir(&clone_path)
+            .stdin_null()
+            .read()
+            .ok()?;
+        if head.trim() != tip.trim() {
+            log::error!("'{repo_name}': HEAD is not at '{origin_branch}' - skipping");
+            return None;
         }
 
         // Guards against ever analyzing the wrong branch's content under the
