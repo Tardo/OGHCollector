@@ -43,7 +43,7 @@ use crate::gitclient::RepoInfo;
 // field/model keyword argument) is deliberately captured beyond what the UI
 // currently renders: the goal is for this data to be useful to an LLM (and
 // eventually served over MCP), not just for the module detail page.
-const ANALYZER_PY_SRC: &str = r#"
+const ANALYZER_PY_SRC: &str = r##"
 import ast
 import csv
 import json
@@ -371,7 +371,22 @@ def _analyze_migration_facts(tree, rel_path):
                         }
                     )
                     break
+            old_decorated = []
             for stmt in node.body:
+                if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_model_class(node):
+                    if any(_expr_repr(d) in ("api.multi", "api.one") for d in stmt.decorator_list):
+                        old_decorated.append(stmt)
+                    if stmt.name in ("fields_view_get", "name_get"):
+                        facts.append(
+                            {
+                                "kind": stmt.name,
+                                "context": node.name,
+                                "detail": None,
+                                "file": rel_path,
+                                "line": stmt.lineno,
+                            }
+                        )
+                    continue
                 if not isinstance(stmt, ast.Assign):
                     continue
                 for target in stmt.targets:
@@ -385,6 +400,28 @@ def _analyze_migration_facts(tree, rel_path):
                                 "line": stmt.lineno,
                             }
                         )
+                    elif isinstance(target, ast.Name) and target.id == "_sql_constraints":
+                        facts.append(
+                            {
+                                "kind": "sql_constraints",
+                                "context": node.name,
+                                "detail": None,
+                                "file": rel_path,
+                                "line": stmt.lineno,
+                            }
+                        )
+            if old_decorated:
+                # One fact per class, not per method: it's a single mechanical
+                # cleanup, listing every method would only bury other notes.
+                facts.append(
+                    {
+                        "kind": "api_multi_one",
+                        "context": node.name,
+                        "detail": str(len(old_decorated)),
+                        "file": rel_path,
+                        "line": old_decorated[0].lineno,
+                    }
+                )
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "openerp" or alias.name.startswith("openerp."):
@@ -411,11 +448,11 @@ def _analyze_migration_facts(tree, rel_path):
         elif (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "trg_validate"
+            and node.func.attr in ("trg_validate", "user_has_groups")
         ):
             facts.append(
                 {
-                    "kind": "workflow_call",
+                    "kind": "workflow_call" if node.func.attr == "trg_validate" else "user_has_groups",
                     "context": None,
                     "detail": _expr_repr(node.func),
                     "file": rel_path,
@@ -434,6 +471,304 @@ def _analyze_migration_facts(tree, rel_path):
                 }
             )
     return facts
+
+
+# Interpolating any of these into SQL is safe: psycopg2.sql / odoo.tools.SQL
+# composables and numeric casts can't carry attacker-controlled SQL text.
+SQL_SAFE_CALLS = {"Identifier", "SQL", "Literal", "AsIs", "identifier", "int", "float", "len", "bool"}
+# Names a model method can't receive from an RPC caller.
+NON_RPC_PARAMS = {"self", "cls", "cr", "registry", "env"}
+# Markers for an already-reviewed hit: pylint's own check names, bandit's
+# nosec, ruff's S608 and a bare `# noqa`. `# noqa: E501` (line length, all
+# over OCA) must not count. Only pylint's disable has block scope.
+INLINE_SUPPRESS_RE = re.compile(
+    r"#.*(pylint:\s*disable=[\w, -]*(sql-injection|eval-used|exec-used)|nosec|noqa\b(?!\s*:)|noqa\s*:.*\bS608\b)"
+)
+BLOCK_SUPPRESS_RE = re.compile(r"^\s*#\s*pylint:\s*disable=[\w, -]*sql-injection")
+
+
+def _safe(fn, *args, default=None):
+    # One unexpected AST shape costs that file's facts, never the whole
+    # module's analysis (which would otherwise be stored empty and stamped
+    # as done until the next commit).
+    try:
+        return fn(*args)
+    except Exception:
+        return [] if default is None else default
+
+
+def _sql_value_safe(node):
+    # pylint-odoo's allow-list plus constants: private attributes/methods
+    # (self._table, self._select()) are the standard reporting-model pattern.
+    if isinstance(node, ast.Constant):
+        return True
+    # `limit and " LIMIT %s" or ""`: an `and` only passes an earlier operand
+    # through when it's falsy (0, "", None - harmless), so just its last one
+    # matters; any operand of an `or` / branch of an `x if c else y` can win.
+    if isinstance(node, ast.BoolOp):
+        values = node.values[-1:] if isinstance(node.op, ast.And) else node.values
+        return all(_sql_value_safe(v) for v in values)
+    if isinstance(node, ast.IfExp):
+        return _sql_value_safe(node.body) and _sql_value_safe(node.orelse)
+    if isinstance(node, ast.Call):
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        if name in SQL_SAFE_CALLS:
+            return True
+        node = func
+    return isinstance(node, ast.Attribute) and node.attr.startswith("_")
+
+
+def _sql_risky_values(node):
+    # The unsafe values a %, +, .format() or f-string expression splices into
+    # a SQL string; [] when it isn't string-building or everything is safe.
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        right = node.right
+        if isinstance(right, (ast.Tuple, ast.List)):
+            values = right.elts
+        elif isinstance(right, ast.Dict):
+            values = right.values
+        else:
+            values = [right]
+        return [v for v in values if not _sql_value_safe(v)] + _sql_risky_values(node.left)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        out = []
+        for side in (node.left, node.right):
+            if isinstance(side, (ast.BinOp, ast.JoinedStr, ast.Call)):
+                out += _sql_risky_values(side)
+            elif not _sql_value_safe(side):
+                out.append(side)
+        return out
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+        return [
+            a for a in list(node.args) + [k.value for k in node.keywords] if not _sql_value_safe(a)
+        ]
+    if isinstance(node, ast.JoinedStr):
+        return [
+            v.value
+            for v in node.values
+            if isinstance(v, ast.FormattedValue) and not _sql_value_safe(v.value)
+        ]
+    return []
+
+
+def _risky_parts(node):
+    # Narrows an unsafe spliced value to the operands that can actually end
+    # up in the string: `ids and "AND x IN " + alias or ""` only gates on
+    # `ids`, while `alias` is spliced in.
+    if _sql_value_safe(node):
+        return []
+    if isinstance(node, ast.BoolOp):
+        values = node.values[-1:] if isinstance(node.op, ast.And) else node.values
+        return [p for v in values for p in _risky_parts(v)]
+    if isinstance(node, ast.IfExp):
+        return _risky_parts(node.body) + _risky_parts(node.orelse)
+    inner = _sql_risky_values(node)
+    if inner or (isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod))):
+        return [p for v in inner for p in _risky_parts(v)]
+    return [node]
+
+
+def _is_request_payload(node):
+    # The raw client payload of an HTTP request.
+    r = _expr_repr(node) or ""
+    return r.startswith(("request.params", "request.httprequest.form", "request.httprequest.args"))
+
+
+def _caller_names(node):
+    # Names whose own value flows into `node`. `rec.amount` reads a stored
+    # field (not the caller's text), so a Name used only as an attribute base
+    # doesn't count - a method call on it (`kw.get('x')`) still does.
+    calls = {id(n.func) for n in ast.walk(node) if isinstance(n, ast.Call)}
+    bases = {
+        id(n.value) for n in ast.walk(node) if isinstance(n, ast.Attribute) and id(n) not in calls
+    }
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and id(n) not in bases}
+
+
+def _is_client_controlled(node, params):
+    # Values an RPC/HTTP caller sets directly: the method's own parameters
+    # (any public model method is callable over RPC), the request payload and
+    # the context (also sent by the client).
+    if _caller_names(node) & params:
+        return True
+    for n in ast.walk(node):
+        r = _expr_repr(n) or ""
+        if _is_request_payload(n) or r.startswith(
+            ("self._context", "self.env.context", "request.httprequest", "request.get_json_data", "request.jsonrequest")
+        ):
+            return True
+    return False
+
+
+def _function_params(func):
+    a = func.args
+    names = [x.arg for x in a.posonlyargs + a.args + a.kwonlyargs]
+    names += [x.arg for x in (a.vararg, a.kwarg) if x]
+    return {n for n in names if n not in NON_RPC_PARAMS}
+
+
+def _suppressed(lines, node, scope=None):
+    # Inline marker on the flagged statement, or - pylint's block scope - a
+    # comment-only `# pylint: disable=sql-injection` earlier in the function.
+    end = getattr(node, "end_lineno", None) or node.lineno
+    if any(INLINE_SUPPRESS_RE.search(lines[i - 1]) for i in range(node.lineno, end + 1) if i <= len(lines)):
+        return True
+    return scope is not None and any(
+        BLOCK_SUPPRESS_RE.search(lines[i - 1]) for i in range(scope.lineno, min(node.lineno, len(lines) + 1))
+    )
+
+
+def _analyze_sql_injection(tree, rel_path, lines):
+    facts = []
+    for owner in ast.walk(tree):
+        if not isinstance(owner, ast.ClassDef):
+            continue
+        for func in owner.body:
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            # Only parameters of an RPC/route-reachable method count as
+            # client-controlled; @api.private (17.0+) opts a method out of RPC.
+            exposed = (
+                _is_model_class(owner)
+                and not func.name.startswith("_")
+                and not any((_expr_repr(d) or "").endswith("private") for d in func.decorator_list)
+            )
+            params = _function_params(func) if exposed or _route_decorator(func) else set()
+            # `assert mode in (...)` / `if mode not in ALLOWED: raise` is an
+            # allow-list check: that parameter can't carry arbitrary SQL.
+            params -= {
+                n.left.id
+                for n in ast.walk(func)
+                if isinstance(n, ast.Compare)
+                and isinstance(n.left, ast.Name)
+                and any(isinstance(op, (ast.In, ast.NotIn)) for op in n.ops)
+            }
+            assigned = {}
+            for n in ast.walk(func):
+                if isinstance(n, ast.Assign):
+                    for t in n.targets:
+                        if isinstance(t, ast.Name):
+                            assigned.setdefault(t.id, []).append(n.value)
+                elif isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name):
+                    assigned.setdefault(n.target.id, []).append(n.value)
+            for n in ast.walk(func):
+                if not (isinstance(n, ast.Call) and n.args):
+                    continue
+                f = n.func
+                is_execute = isinstance(f, ast.Attribute) and f.attr in ("execute", "executemany") and (
+                    (_expr_repr(f.value) or "").split(".")[-1] in ("cr", "_cr")
+                )
+                is_sql = (isinstance(f, ast.Name) and f.id == "SQL") or (
+                    isinstance(f, ast.Attribute) and f.attr == "SQL"
+                )
+                if not (is_execute or is_sql) or _suppressed(lines, n, func):
+                    continue
+                query = n.args[0]
+                risky = [p for v in _sql_risky_values(query) for p in _risky_parts(v)]
+                if not risky and isinstance(query, ast.Name):
+                    # One hop: the query string built a few lines above.
+                    for value in assigned.get(query.id, []):
+                        if _suppressed(lines, value):
+                            continue
+                        risky += [p for v in _sql_risky_values(value) for p in _risky_parts(v)] or (
+                            [value]
+                            if isinstance(value, ast.Name) and value.id in params
+                            else []
+                        )
+                if not risky:
+                    continue
+                # Also one hop for each spliced value (`where = kw['x']`).
+                tainted = any(
+                    _is_client_controlled(v, params)
+                    or any(
+                        _is_client_controlled(src, params)
+                        for name in _caller_names(v)
+                        for src in assigned.get(name, [])
+                    )
+                    for v in risky
+                )
+                facts.append(
+                    {
+                        "kind": "sql_injection_tainted" if tainted else "sql_injection",
+                        "context": f"{owner.name}.{func.name}",
+                        "detail": _truncate(lines[n.lineno - 1].strip()) if n.lineno <= len(lines) else None,
+                        "file": rel_path,
+                        "line": n.lineno,
+                    }
+                )
+    return facts
+
+
+def _analyze_dangerous_calls(tree, rel_path, lines):
+    # Sinks that are dangerous with any non-literal input: arbitrary code
+    # execution, unsafe deserialization, shell injection, disabled TLS checks.
+    facts = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call):
+            continue
+        name = _expr_repr(n.func) or ""
+        kwargs = {k.arg: k.value for k in n.keywords if k.arg}
+        literal_arg = bool(n.args) and isinstance(n.args[0], ast.Constant)
+        kind = None
+        if name in ("eval", "exec") and n.args and not literal_arg:
+            kind = "code_eval"
+        elif name in ("pickle.loads", "pickle.load", "cPickle.loads", "marshal.loads", "yaml.unsafe_load") or (
+            name == "yaml.load"
+            and "Safe" not in (_expr_repr(kwargs.get("Loader")) or "")
+            and not (len(n.args) > 1 and "Safe" in (_expr_repr(n.args[1]) or ""))
+        ):
+            kind = "unsafe_deserialization"
+        elif (
+            name.startswith("subprocess.")
+            and isinstance(kwargs.get("shell"), ast.Constant)
+            and kwargs["shell"].value is True
+            and not literal_arg
+        ) or (name in ("os.system", "os.popen") and n.args and not literal_arg):
+            kind = "shell_injection"
+        elif isinstance(kwargs.get("verify"), ast.Constant) and kwargs["verify"].value is False:
+            kind = "tls_verify_disabled"
+        if kind and not _suppressed(lines, n):
+            facts.append(
+                {
+                    "kind": kind,
+                    "context": name,
+                    "detail": _truncate(lines[n.lineno - 1].strip()) if n.lineno <= len(lines) else None,
+                    "file": rel_path,
+                    "line": n.lineno,
+                }
+            )
+    return facts
+
+
+def _mass_assignment(func):
+    # A route handler passing the raw request payload straight into
+    # write()/create(): every field of the model becomes client-settable.
+    # Reassigning the kwargs name anywhere counts as filtering it first.
+    kw = func.args.kwarg.arg if func.args.kwarg else None
+    if kw and any(
+        isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == kw for t in n.targets)
+        for n in ast.walk(func)
+    ):
+        kw = None
+
+    def raw(a):
+        if isinstance(a, ast.Name):
+            return a.id == kw
+        if isinstance(a, ast.Call) and getattr(a.func, "id", None) == "dict" and a.args:
+            return raw(a.args[0])
+        if isinstance(a, ast.Dict):
+            return any(k is None and raw(v) for k, v in zip(a.keys, a.values))
+        return _is_request_payload(a)
+
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr in ("write", "create")
+        and n.args
+        and raw(n.args[0])
+        for n in ast.walk(func)
+    )
 
 
 def _route_decorator(func_node):
@@ -515,6 +850,7 @@ def _analyze_controllers(tree, rel_path):
                     # Portal token-validation pattern: the endpoint gates its
                     # record access on _document_check_access(..., access_token).
                     "checks_token_access": _calls_method(stmt, "_document_check_access"),
+                    "mass_assignment": _safe(_mass_assignment, stmt, default=False),
                     "signature": _signature(stmt),
                     "docstring": _truncate(ast.get_docstring(stmt, clean=True)),
                     "file": rel_path,
@@ -835,6 +1171,7 @@ def analyze_module(module_path):
     records = []
     controllers = []
     migration_facts = []
+    security_facts = []
     for dirpath, dirnames, filenames in os.walk(module_path):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for filename in filenames:
@@ -856,19 +1193,22 @@ def analyze_module(module_path):
                     tree = ast.parse(source)
                 except (SyntaxError, ValueError):
                     continue
-                models.extend(_analyze_python_source(tree))
-                controllers.extend(_analyze_controllers(tree, rel_path))
-                migration_facts.extend(_analyze_migration_facts(tree, rel_path))
+                lines = source.splitlines()
+                models.extend(_safe(_analyze_python_source, tree))
+                controllers.extend(_safe(_analyze_controllers, tree, rel_path))
+                migration_facts.extend(_safe(_analyze_migration_facts, tree, rel_path))
+                security_facts.extend(_safe(_analyze_sql_injection, tree, rel_path, lines))
+                security_facts.extend(_safe(_analyze_dangerous_calls, tree, rel_path, lines))
             elif filename.endswith(".xml"):
                 try:
                     with open(full_path, "rb") as fh:
                         data = fh.read()
                 except OSError:
                     continue
-                xml_views, xml_facts = _analyze_xml_source(data, rel_path)
+                xml_views, xml_facts = _safe(_analyze_xml_source, data, rel_path, default=([], []))
                 views.extend(xml_views)
                 migration_facts.extend(xml_facts)
-                records.extend(_analyze_xml_records(data, rel_path))
+                records.extend(_safe(_analyze_xml_records, data, rel_path))
             elif filename.endswith(".csv") and "." in filename[: -len(".csv")]:
                 # Odoo data CSVs are named after their model (ir.model.access
                 # .csv, res.groups.csv, ...); a dotless stem can't be a model,
@@ -881,7 +1221,7 @@ def analyze_module(module_path):
                         text = fh.read()
                 except OSError:
                     continue
-                records.extend(_analyze_data_csv(text, filename[: -len(".csv")], rel_path))
+                records.extend(_safe(_analyze_data_csv, text, filename[: -len(".csv")], rel_path))
     # The module folder name is its technical name, so refs like
     # "my_module.view_x" from inside my_module resolve locally too.
     _resolve_inherited_view_types(views, os.path.basename(os.path.normpath(module_path)))
@@ -903,9 +1243,16 @@ def analyze_module(module_path):
             "records": records,
             "controllers": controllers,
             "migration_facts": migration_facts,
+            "security_facts": security_facts,
         }
     )
-"#;
+"##;
+
+/// Version of the analysis rules: ANALYZER_PY_SRC plus the judging in
+/// collector::security and collector::migration. Stored per module, so a
+/// module is re-analyzed when this changes even if its branch never gets
+/// another commit. Bump it whenever any of those three change.
+pub const ANALYSIS_VERSION: i32 = 1;
 
 #[derive(Debug, Default)]
 pub struct GitInfo {
@@ -1377,11 +1724,9 @@ impl OGHCollectorAnalyzer {
     /// when its last commit hash hasn't moved since the previous run - the
     /// same signal already stored on the `module` row. Set
     /// `OGHCOLLECTOR_FORCE_REANALYZE` to bypass this and re-analyze
-    /// everything regardless (e.g. after changing `ANALYZER_PY_SRC` itself:
-    /// a code-only change never shows up as a module commit, so nothing
-    /// would otherwise invalidate the stale analysis).
-    // ponytail: analyzer-version marker stored per module would auto-detect
-    // that case and make the env var unnecessary; add if this bites someone.
+    /// everything regardless. A change to the rules themselves never shows up
+    /// as a module commit: that case is caught by the stored
+    /// `analysis_version` instead (see `ANALYSIS_VERSION`).
     pub fn get_module_info(
         &self,
         conn: &mut DbSqliteConnection,
@@ -1427,9 +1772,10 @@ impl OGHCollectorAnalyzer {
                     .next();
                     let source_unchanged = !force_reanalyze
                         && !git_info.last_commit_hash.is_empty()
-                        && existing
-                            .as_ref()
-                            .is_some_and(|m| m.last_commit_hash == git_info.last_commit_hash);
+                        && existing.as_ref().is_some_and(|m| {
+                            m.last_commit_hash == git_info.last_commit_hash
+                                && m.analysis_version == ANALYSIS_VERSION
+                        });
 
                     let (folder_size, committers, analysis) = if source_unchanged {
                         log::info!(
@@ -2316,6 +2662,232 @@ def migrate(cr, version):
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    // Code-level security facts: which SQL counts as caller-controlled
+    // ("_tainted" = grave), which is only worth a review, and which must stay
+    // silent (parametrized, allow-listed, private-attribute, suppressed).
+    #[test]
+    fn test_security_facts_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "security_facts"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("main.py"),
+            r#"
+import pickle, subprocess, requests, yaml
+from odoo import http, models
+from odoo.http import request
+
+
+class Thing(models.Model):
+    _name = "x.thing"
+
+    def public_search(self, name, mode):
+        assert mode in ("a", "b")
+        self.env.cr.execute("SELECT 1 WHERE n = '%s'" % name)  # T1
+        self.env.cr.execute(f"SELECT 1 WHERE m = {mode}")  # R1
+        self.env.cr.execute("SELECT id FROM %s" % self._table)
+        self.env.cr.execute("SELECT 1 WHERE n = %s", (name,))
+        query = "SELECT 1 WHERE n = '%s'" % name
+        self.env.cr.execute(query)  # T2
+        self.env.cr.execute("SELECT 1 " + name)  # pylint: disable=sql-injection
+        rec = self.browse(name)
+        self.env.cr.execute("SELECT %s LIMIT %s" % (rec.amount, name and "10" or "1"))  # R2
+
+    def _private(self, where):
+        self.env.cr.execute("SELECT 1 WHERE %s" % where)  # R3
+        self.env.cr.execute("SELECT 1 WHERE n = %s" % self.env.context.get("n"))  # T3
+
+
+class Ctl(http.Controller):
+    @http.route("/x/update", auth="public", csrf=False, methods=["POST"])
+    def update(self, **kw):
+        request.env["x.thing"].sudo().browse(1).write(kw)
+
+    @http.route("/x/safe", auth="user")
+    def safe(self, **kw):
+        kw = {k: kw[k] for k in ("name",) if k in kw}
+        request.env["x.thing"].browse(1).write(kw)
+
+    @http.route("/x/find", auth="public")
+    def find(self, q=None):
+        request.env.cr.execute("SELECT 1 WHERE n = '%s'" % q)  # T4
+
+
+def helpers(data, cmd):
+    eval(data)  # D1
+    eval("1 + 1")
+    pickle.loads(data)  # D2
+    yaml.load(data, Loader=yaml.SafeLoader)
+    yaml.load(data)  # D3
+    subprocess.run(cmd, shell=True)  # D4
+    subprocess.run(["ls"], shell=False)
+    requests.get("https://x", verify=False)  # D5
+"#,
+        )
+        .unwrap();
+
+        let result = OGHCollectorAnalyzer::new(&170u8).analyze_module_source(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+
+        let mut found: Vec<(String, String)> = result
+            .security_facts
+            .iter()
+            .map(|f| {
+                let detail = f.detail.as_deref().unwrap_or("");
+                let marker = detail.rsplit("# ").next().unwrap_or("").to_string();
+                (marker, f.kind.clone())
+            })
+            .collect();
+        found.sort();
+        let expected = [
+            ("D1", "code_eval"),
+            ("D2", "unsafe_deserialization"),
+            ("D3", "unsafe_deserialization"),
+            ("D4", "shell_injection"),
+            ("D5", "tls_verify_disabled"),
+            ("R1", "sql_injection"),
+            ("R2", "sql_injection"),
+            ("R3", "sql_injection"),
+            ("T1", "sql_injection_tainted"),
+            ("T2", "sql_injection_tainted"),
+            ("T3", "sql_injection_tainted"),
+            ("T4", "sql_injection_tainted"),
+        ];
+        assert_eq!(
+            found,
+            expected
+                .iter()
+                .map(|(m, k)| (m.to_string(), k.to_string()))
+                .collect::<Vec<_>>()
+        );
+
+        let update = result
+            .controllers
+            .iter()
+            .find(|c| c.name == "update")
+            .unwrap();
+        assert!(update.mass_assignment);
+        // Reassigned (filtered) kwargs before write: not mass assignment.
+        let safe = result
+            .controllers
+            .iter()
+            .find(|c| c.name == "safe")
+            .unwrap();
+        assert!(!safe.mass_assignment);
+    }
+
+    // Rule-calibration harness, not a regression test: runs the extractor and
+    // every judging rule over real checkouts and prints per-code counts plus a
+    // few samples, so a rule change can be measured against real Odoo/OCA
+    // source before it reaches the public site. Usage:
+    //   OGH_CALIBRATE="<addons dir>[:<addons dir>...]" OGH_CALIBRATE_VERSION=180 \
+    //     cargo test -p collector calibrate -- --ignored --nocapture
+    // Each dir is scanned two levels deep for __manifest__.py/__openerp__.py.
+    #[test]
+    #[ignore]
+    fn calibrate() {
+        // Surfaces "Module source analysis failed" (RUST_LOG=warn): a crash
+        // must not pass for a clean module.
+        let _ = env_logger::builder().is_test(true).try_init();
+        let roots = std::env::var("OGH_CALIBRATE").expect("set OGH_CALIBRATE");
+        let version: u8 = std::env::var("OGH_CALIBRATE_VERSION")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(180);
+        let analyzer = OGHCollectorAnalyzer::new(&version);
+        let mut module_dirs = Vec::new();
+        for root in roots.split(':') {
+            let mut stack = vec![(PathBuf::from(root), 0)];
+            while let Some((dir, depth)) = stack.pop() {
+                if analyzer
+                    .is_odoo_module_folder(&dir)
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    module_dirs.push(dir);
+                } else if depth < 2 {
+                    for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
+                        if e.path().is_dir() {
+                            stack.push((e.path(), depth + 1));
+                        }
+                    }
+                }
+            }
+        }
+        let mut by_code: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        let mut empty = 0;
+        for dir in &module_dirs {
+            let name = dir.file_name().unwrap().to_string_lossy().to_string();
+            let manifest = ["__manifest__.py", "__openerp__.py"]
+                .iter()
+                .map(|f| dir.join(f))
+                .find(|p| p.is_file())
+                .and_then(|p| {
+                    analyzer
+                        .read_manifest("o", "r", &name, &p.to_string_lossy())
+                        .ok()
+                });
+            let category = manifest.map(|m| m.category).unwrap_or_default();
+            let a = analyzer.analyze_module_source(dir);
+            if a.views.is_empty()
+                && a.models.is_empty()
+                && a.records.is_empty()
+                && a.controllers.is_empty()
+            {
+                empty += 1;
+            }
+            let mut found: Vec<(String, String, String)> = Vec::new();
+            for w in crate::security::analyze_module(&name, &category, &a) {
+                found.push((
+                    format!("sec {} {}", w.severity, w.code),
+                    w.xml_id.unwrap_or_default(),
+                    format!("{}:{}", w.file.unwrap_or_default(), w.line.unwrap_or(0)),
+                ));
+            }
+            for n in crate::migration::analyze_module(version, &a) {
+                found.push((
+                    format!("mig {} {}", n.severity, n.code),
+                    n.context.unwrap_or_default(),
+                    format!(
+                        "{}:{} {}",
+                        n.file.unwrap_or_default(),
+                        n.line.unwrap_or(0),
+                        n.message
+                    ),
+                ));
+            }
+            for (code, ctx, loc) in found {
+                by_code
+                    .entry(code)
+                    .or_default()
+                    .push(format!("{} {ctx} {loc}", dir.display()));
+            }
+        }
+        println!(
+            "modules scanned: {} (empty analysis: {empty})",
+            module_dirs.len()
+        );
+        let samples: usize = std::env::var("OGH_CALIBRATE_SAMPLES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4);
+        for (code, hits) in &by_code {
+            println!("{:>6}  {code}", hits.len());
+            for h in hits
+                .iter()
+                .step_by((hits.len() / samples.max(1)).max(1))
+                .take(samples)
+            {
+                println!("          {}", h.chars().take(260).collect::<String>());
+            }
+        }
+    }
+
     // Proves the incremental-analysis short-circuit end to end: a module
     // analyzed once and persisted (like main.rs does after every run) must
     // be skipped on a re-run with no new commits, and picked back up as soon
@@ -2383,8 +2955,14 @@ def migrate(cr, version):
         assert!(!first[0].source_unchanged);
         assert!(!first[0].last_commit_hash.is_empty());
 
-        // Persist it, exactly like main.rs does after every run.
-        module::add(&mut conn, &first[0]).unwrap();
+        // Persist it, exactly like main.rs does after every run - but stamped
+        // with an older rules version first: no new commits, yet the rules
+        // changed, so it must still be re-analyzed.
+        let stored = module::add(&mut conn, &first[0]).unwrap();
+        module::set_analysis_version(&mut conn, &stored.id, ANALYSIS_VERSION - 1).unwrap();
+        let stale = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
+        assert!(!stale[0].source_unchanged);
+        module::set_analysis_version(&mut conn, &stored.id, ANALYSIS_VERSION).unwrap();
 
         // Second run, no new commits: must skip re-analysis.
         let second = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
@@ -2415,7 +2993,8 @@ def migrate(cr, version):
         // is the module::add UPDATE path, not the INSERT path exercised
         // above) - otherwise the skip could never re-arm after a module's
         // first real change.
-        module::add(&mut conn, &third[0]).unwrap();
+        let stored = module::add(&mut conn, &third[0]).unwrap();
+        module::set_analysis_version(&mut conn, &stored.id, ANALYSIS_VERSION).unwrap();
         let fourth = analyzer.get_module_info(&mut conn, &read_paths, &repo_infos);
         assert_eq!(fourth.len(), 1);
         assert!(fourth[0].source_unchanged);

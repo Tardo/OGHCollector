@@ -104,6 +104,10 @@ pub struct ControllerAnalysisInfo {
     pub uses_sudo: bool,
     #[serde(default)]
     pub checks_token_access: bool,
+    // Passes the raw request payload (`**kwargs`, request.params) straight
+    // into write()/create(). Judged by collector::security, not persisted.
+    #[serde(default)]
+    pub mass_assignment: bool,
     #[serde(default)]
     pub signature: String,
     #[serde(default)]
@@ -149,4 +153,8 @@ pub struct ModuleAnalysisInfo {
     pub controllers: Vec<ControllerAnalysisInfo>,
     #[serde(default)]
     pub migration_facts: Vec<MigrationFactInfo>,
+    // Same raw-fact shape, judged by collector::security instead (SQL
+    // built by string formatting, eval/pickle/shell sinks, ...).
+    #[serde(default)]
+    pub security_facts: Vec<MigrationFactInfo>,
 }

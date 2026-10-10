@@ -248,18 +248,29 @@ async fn main() {
                 )
                 .unwrap();
 
-                // Static security checks over the records and HTTP controllers
-                // just analyzed: grave findings land in module_security_warning
-                // (shown on the module detail page), minor ones only leave a
-                // system_event log line.
-                let mut sec_warnings = security::analyze_records(&new_module_info.analysis.records);
-                sec_warnings.extend(security::analyze_controllers(
-                    &new_module_info.analysis.controllers,
-                ));
-                for w in sec_warnings
-                    .iter()
-                    .filter(|w| w.severity != models::module_security_warning::SEVERITY_ERROR)
-                {
+                // Static security checks (ACLs, record rules, controllers and
+                // code-level sinks, see collector::security). Every finding is
+                // stored; minor ones also leave a system_event log line, but
+                // only when new for this version snapshot, so re-analysis
+                // (a new commit, an ANALYSIS_VERSION bump) doesn't re-log
+                // findings already reported.
+                let sec_warnings = security::analyze_module(
+                    &new_module.technical_name,
+                    &new_module_info.category,
+                    &new_module_info.analysis,
+                );
+                let known: std::collections::HashSet<(String, Option<String>)> =
+                    models::module_security_warning::get_by_module_version_id(
+                        &mut conn,
+                        &module_version.id,
+                    )
+                    .into_iter()
+                    .map(|w| (w.code, w.xml_id))
+                    .collect();
+                for w in sec_warnings.iter().filter(|w| {
+                    w.severity != models::module_security_warning::SEVERITY_ERROR
+                        && !known.contains(&(w.code.clone(), w.xml_id.clone()))
+                }) {
                     let _ = models::system_event::register_security_warning(
                         &mut conn,
                         &new_module.technical_name,
@@ -278,14 +289,8 @@ async fn main() {
                 .unwrap();
 
                 // "What to check before/after upgrading this module" findings
-                // over the same analysis pass: old-API classes, hand-rolled
-                // SQL, deprecated view/QWeb syntax, ... (see
-                // collector::migration). Shown on the module detail page,
-                // same as security warnings.
-                let mut mig_notes = migration::analyze_models(&new_module_info.analysis.models);
-                mig_notes.extend(migration::analyze_facts(
-                    &new_module_info.analysis.migration_facts,
-                ));
+                // over the same analysis pass (see collector::migration).
+                let mig_notes = migration::analyze_module(*odoo_ver, &new_module_info.analysis);
                 models::module_migration_note::replace_for_module(
                     &mut conn,
                     &new_module.id,
@@ -293,6 +298,11 @@ async fn main() {
                     &mig_notes,
                 )
                 .unwrap();
+                let _ = models::module::set_analysis_version(
+                    &mut conn,
+                    &new_module.id,
+                    analyzer::ANALYSIS_VERSION,
+                );
             }
 
             // Check Odoo Version

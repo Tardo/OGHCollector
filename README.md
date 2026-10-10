@@ -250,19 +250,34 @@ services:
 
 ## Security and migration reports
 
-- Static findings are review priorities, not confirmed vulnerabilities. Intentional broad-access
-  naming (`public`, `all`, portal ACLs named after their group) still reduces noise; security-model
-  privilege-escalation checks are independent. MCP `get_module_code_analysis` includes
-  `security_warnings` and migration notes with source file/line where available.
-- Migration notes are a checklist, not a target-version compatibility test. Apply version-specific
-  advice only to the target mentioned in each note.
+- Static findings are review priorities, not confirmed vulnerabilities. "Grave" (`error`) is
+  reserved for high-precision cases: SQL built by string formatting from caller-controlled input
+  (an RPC-callable method's parameters, the request payload or the context; CWE-89), routes
+  writing the raw request payload into `write()`/`create()` without access checks (CWE-915),
+  write/unlink ACLs open to every user or to portal/public, always-true portal/public record
+  rules, CSRF disabled on authenticated state-changing routes, and write access to security
+  models. Other SQL formatting, `eval`/`exec`, pickle/unsafe YAML, `shell=True`,
+  `verify=False` and user-writable `Html(sanitize=False)` fields are minor review items.
+- Noise control: `test_*` / "Tests"-category modules (never installed in production) are not
+  scanned, intentional broad-access naming (`public`, `all`, portal ACLs named after their
+  group) and create-only grants are not grave, an always-true portal rule over the module's own
+  deny-all ACL is ignored, and the markers OCA uses for reviewed hits
+  (`# pylint: disable=sql-injection`, `# noqa`, `# nosec`) are honored. MCP
+  `get_module_code_analysis` includes `security_warnings` and migration notes with source
+  file/line where available.
+- Migration notes know which Odoo version each API change happened in (checked against Odoo's
+  source): "Migrating to X.0: ..." for a module still below it, "Since X.0: ..." when the
+  module's own version already ignores or rejects that code. Repeats of one note within a file
+  are folded into one line.
 - Live scans return `findings`, endpoint evidence and `checks` (`passed: null` means inconclusive).
   The arbitrary numeric `score` has been removed from the JSON response and dashboard. HTTP 200
   alone does not establish sensitive-file or database exposure, and module names are not used to
   guess a running Odoo version.
 
-After updating analysis rules, refresh existing snapshots by running the collector with
-`OGHCOLLECTOR_FORCE_REANALYZE=1` (otherwise unchanged module sources are skipped):
+Each module stores the `ANALYSIS_VERSION` (`crates/collector/src/analyzer.rs`) its findings were
+computed with; bump it whenever the extractor or the security/migration rules change, and the next
+collector run re-analyzes every module, even those whose branch gets no new commits. To force a
+full re-analysis regardless, set `OGHCOLLECTOR_FORCE_REANALYZE=1`:
 
 ```sh
 OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0

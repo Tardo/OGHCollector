@@ -219,6 +219,13 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
     // module_migration_note model doc). Both shown here, split by severity
     // per version - same shape as the security findings above.
     for n in models::module_migration_note::get_all_current(conn) {
+        // Site-wide list = what already applies to each module's own
+        // version. Notes for a future upgrade ("Migrating to X.0", see
+        // collector::migration) would be tens of thousands of rows here;
+        // they stay on each module's page.
+        if n.message.starts_with("Migrating to ") {
+            continue;
+        }
         let is_warning = n.severity == models::module_migration_note::SEVERITY_WARNING;
         let entry = ModuleMigrationFindingInfo {
             code: n.code,

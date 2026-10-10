@@ -1223,16 +1223,20 @@ impl OghMcp {
                         http/json type, allowed methods, csrf, whether the handler calls \
                         .sudo()) - useful for both API discovery and security review (e.g. \
                          public routes calling sudo). `security_warnings` includes review \
-                         priorities with severity, rule code and source file/line, not confirmed \
-                         exploits. Also lists `migration_considerations`: \
-                        static-analysis findings worth checking before/after upgrading this \
-                        module to a newer Odoo version - old-API base classes, hand-rolled SQL \
-                        (e.g. a `_auto = False` model whose init() creates a real TABLE the ORM \
-                        never migrates), deprecated view/QWeb syntax (attrs=/states=, t-raw, \
-                         <tree> root tags), etc., with source file/line where available. No target \
-                         version is selected: apply version-specific advice only to the target \
-                         stated in the message. Severity is review priority, not proof that the \
-                         current module is broken. This is the heaviest tool \
+                         priorities with severity, rule code (CWE in the message for code-level \
+                         ones: SQL injection, mass assignment, eval, unsafe deserialization, \
+                         shell, disabled TLS checks) and source file/line, not confirmed \
+                         exploits; \"error\" is reserved for high-precision cases. Also lists \
+                         `migration_considerations`: static-analysis findings worth checking \
+                        before/after upgrading this module to a newer Odoo version - old-API \
+                        code, removed/renamed APIs (api.multi, fields_view_get, name_get, \
+                        user_has_groups, _sql_constraints, ...), hand-rolled SQL (e.g. a \
+                        `_auto = False` model whose init() creates a real TABLE the ORM never \
+                        migrates), deprecated view/QWeb syntax (attrs=/states=, t-raw, <tree>), \
+                         etc., with source file/line where available. Each message names the \
+                         Odoo version of the change: \"Migrating to X.0\" when this module's \
+                         version is below it, \"Since X.0\" when its own version already \
+                         ignores or rejects that code. This is the heaviest tool \
                         in this server - only call it when you actually need view/model/field/ \
                         method/record/migration detail, not just to check what a module does or \
                         what it depends on. Defaults to the latest known module version; pass \

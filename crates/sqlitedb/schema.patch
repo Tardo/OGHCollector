@@ -109,9 +109,8 @@ diff --git a/schema.rs b/schema.rs
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-@@ -99,44 +99,44 @@
-         icon -> Nullable<Text>,
-         source_path -> Text,
+@@ -101,43 +101,43 @@
+         analysis_version -> Integer,
      }
  }
  
@@ -158,7 +157,7 @@ diff --git a/schema.rs b/schema.rs
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -148,32 +148,32 @@
+@@ -150,32 +150,32 @@
          module_version_id -> BigInt,
      }
  }
@@ -194,7 +193,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          context -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -181,13 +181,13 @@
+@@ -183,13 +183,13 @@
          line -> Nullable<Integer>,
      }
  }
@@ -209,7 +208,7 @@ diff --git a/schema.rs b/schema.rs
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -195,47 +195,47 @@
+@@ -197,47 +197,47 @@
          module_version_id -> BigInt,
      }
  }
@@ -261,7 +260,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          xml_id -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -243,73 +243,73 @@
+@@ -245,73 +245,73 @@
          line -> Nullable<Integer>,
      }
  }

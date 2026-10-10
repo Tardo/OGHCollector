@@ -1,9 +1,15 @@
 // Copyright Alexandre D. Díaz
 //! Static security checks over a module's analyzed records (ir.model.access
-//! rows from CSV/XML and ir.rule records) and HTTP controllers. Findings
+//! rows from CSV/XML and ir.rule records), HTTP controllers, code-level
+//! sinks (SQL formatting, eval, pickle, shell, TLS) and Html fields. Findings
 //! identify review priorities, not confirmed exploits. Effective access also
 //! depends on other modules, global rules, field restrictions and Python code.
-use sqlitedb::models::module_code_analysis::{ControllerAnalysisInfo, RecordAnalysisInfo};
+//! "error" (shown prominently on ommd.info) is kept for high-precision
+//! rules; calibrate changes with analyzer.rs's ignored `calibrate` test.
+use sqlitedb::models::module_code_analysis::{
+    ControllerAnalysisInfo, MigrationFactInfo, ModelAnalysisInfo, ModuleAnalysisInfo,
+    RecordAnalysisInfo,
+};
 use sqlitedb::models::module_security_warning::{
     SecurityWarningInfo, SEVERITY_ERROR, SEVERITY_WARNING,
 };
@@ -126,10 +132,13 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     let model_ref = field_str(rec, "model_id").map(strip_ref);
     let model_label = model_ref.unwrap_or("?");
     let write_perms = granted_write_perms(rec);
+    // Create alone can add records but not alter anyone else's (core utm
+    // grants it to portal on purpose): grave only with write or unlink.
+    let tampers = perm(rec, "perm_write") || perm(rec, "perm_unlink");
 
     match group {
         None => {
-            let intentional = is_intentional_global(rec);
+            let intentional = is_intentional_global(rec) || !tampers;
             if !write_perms.is_empty() {
                 out.push(warning(
                     rec,
@@ -139,7 +148,7 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                         "ACL grants {write_perms} on '{model_label}' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user."
                     ),
                 ));
-            } else if perm(rec, "perm_read") && !intentional {
+            } else if perm(rec, "perm_read") && !is_intentional_global(rec) {
                 out.push(warning(
                     rec,
                     SEVERITY_WARNING,
@@ -151,7 +160,8 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
             }
         }
         Some(g) if is_core_id(g, &PUBLIC_GROUP_XML_IDS) && !write_perms.is_empty() => {
-            let intentional = is_intentional_global(rec)
+            let intentional = !tampers
+                || is_intentional_global(rec)
                 || names_scope(
                     rec,
                     g.rsplit('.')
@@ -191,7 +201,38 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     }
 }
 
-fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
+/// `model_x` / `module.model_x` / `ref('module.model_x')` -> `model_x`.
+fn local_id(value: &str) -> &str {
+    let v = strip_ref(value);
+    v.rsplit('.').next().unwrap_or(v)
+}
+
+/// True when this module's own ACLs for (model, group) exist and all grant
+/// nothing: a rule can only widen operations an ACL already allows, so an
+/// always-true rule over a 0,0,0,0 ACL (e.g. core calendar's portal
+/// attendee rule) opens nothing. ACLs from other modules can't be seen
+/// here, hence "no ACL in this module" keeps the finding.
+fn acl_denies_all(records: &[RecordAnalysisInfo], model: &str, group: &str) -> bool {
+    let mut acls = records.iter().filter(|r| {
+        r.model == "ir.model.access"
+            && field_str(r, "model_id").is_some_and(|m| local_id(m) == local_id(model))
+            && field_str(r, "group_id").is_some_and(|g| local_id(g) == local_id(group))
+    });
+    let mut any = false;
+    let all_denied = acls.all(|a| {
+        any = true;
+        ["perm_read", "perm_write", "perm_create", "perm_unlink"]
+            .iter()
+            .all(|p| !perm(a, p))
+    });
+    any && all_denied
+}
+
+fn check_rule(
+    rec: &RecordAnalysisInfo,
+    records: &[RecordAnalysisInfo],
+    out: &mut Vec<SecurityWarningInfo>,
+) {
     if !is_permissive_domain(field_str(rec, "domain_force")) {
         return;
     }
@@ -208,6 +249,14 @@ fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                 .split(['\'', '"'])
                 .any(|g| is_core_id(g, &PUBLIC_GROUP_XML_IDS)) =>
         {
+            let model = field_str(rec, "model_id");
+            if groups
+                .split(['\'', '"'])
+                .filter(|g| is_core_id(g, &PUBLIC_GROUP_XML_IDS))
+                .all(|g| model.is_some_and(|m| acl_denies_all(records, m, g)))
+            {
+                return;
+            }
             out.push(warning(
                 rec,
                 SEVERITY_ERROR,
@@ -239,6 +288,130 @@ fn check_rule(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     }
 }
 
+/// Odoo core and OCA ship `test_*` modules (category "Hidden/Tests") that
+/// only exist for their own test suites and are never installed in
+/// production; their deliberately loose ACLs used to be ~70% of all grave
+/// findings. A `_test` suffix is not used: `account_test`/`payment_test`
+/// are real, installable modules.
+pub fn is_test_module(technical_name: &str, category: &str) -> bool {
+    technical_name.starts_with("test_")
+        || category
+            .split('/')
+            .any(|c| matches!(c.trim().to_lowercase().as_str(), "test" | "tests"))
+}
+
+/// Every security finding for one analyzed module.
+pub fn analyze_module(
+    technical_name: &str,
+    category: &str,
+    analysis: &ModuleAnalysisInfo,
+) -> Vec<SecurityWarningInfo> {
+    if is_test_module(technical_name, category) {
+        return Vec::new();
+    }
+    let mut out = analyze_records(&analysis.records);
+    out.extend(analyze_controllers(&analysis.controllers));
+    out.extend(analyze_facts(&analysis.security_facts));
+    out.extend(analyze_models(&analysis.models));
+    out
+}
+
+fn fact_warning(
+    f: &MigrationFactInfo,
+    severity: &str,
+    code: &str,
+    message: String,
+) -> SecurityWarningInfo {
+    SecurityWarningInfo {
+        severity: severity.to_string(),
+        code: code.to_string(),
+        message,
+        xml_id: f.context.clone(),
+        file: f.file.clone(),
+        line: f.line,
+    }
+}
+
+/// Code-level sinks spotted by the analyzer (see `_analyze_sql_injection` /
+/// `_analyze_dangerous_calls` in analyzer.rs). "error" is reserved for SQL
+/// built from values an RPC/HTTP caller sets directly; everything else is a
+/// review item, since static analysis can't tell where the value came from.
+pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<SecurityWarningInfo> {
+    let mut out = Vec::new();
+    for f in facts {
+        let snippet = f.detail.as_deref().unwrap_or("");
+        let (severity, code, message) = match f.kind.as_str() {
+            "sql_injection_tainted" => (
+                SEVERITY_ERROR,
+                "sql-injection",
+                format!("SQL built by string formatting from caller-controlled input (an RPC-callable method's parameter, the request payload or the context): `{snippet}`. Pass values as query parameters (`cr.execute(query, params)`, `SQL(\"... %s\", value)`). CWE-89."),
+            ),
+            "sql_injection" => (
+                SEVERITY_WARNING,
+                "sql-injection-review",
+                format!("SQL built by string formatting: `{snippet}`. Values don't come straight from the caller here; verify none can be user-controlled or use query parameters / `SQL()`. CWE-89."),
+            ),
+            "code_eval" => (
+                SEVERITY_WARNING,
+                "code-eval",
+                format!("`{snippet}` evaluates a non-literal expression with Python's eval/exec: use `ast.literal_eval` for data or `odoo.tools.safe_eval` for expressions. CWE-95."),
+            ),
+            "unsafe_deserialization" => (
+                SEVERITY_WARNING,
+                "unsafe-deserialization",
+                format!("`{snippet}` deserializes with pickle/marshal/unsafe YAML, which executes code from crafted input: use JSON or `yaml.safe_load` for anything not fully trusted. CWE-502."),
+            ),
+            "shell_injection" => (
+                SEVERITY_WARNING,
+                "shell-injection",
+                format!("`{snippet}` runs a shell command built at runtime: pass an argument list without `shell=True`. CWE-78."),
+            ),
+            "tls_verify_disabled" => (
+                SEVERITY_WARNING,
+                "tls-verify-disabled",
+                format!("`{snippet}` disables TLS certificate verification, allowing man-in-the-middle on this connection. CWE-295."),
+            ),
+            _ => continue,
+        };
+        out.push(fact_warning(f, severity, code, message));
+    }
+    out
+}
+
+/// `fields.Html(sanitize=False)` stores raw HTML that any user able to write
+/// the field can turn into stored XSS for everyone who views it.
+pub fn analyze_models(models: &[ModelAnalysisInfo]) -> Vec<SecurityWarningInfo> {
+    let mut out = Vec::new();
+    for m in models {
+        for f in &m.fields {
+            let attr = |k: &str| {
+                f.attrs
+                    .as_ref()
+                    .and_then(|a| a.get(k))
+                    .and_then(|v| v.as_str())
+            };
+            // Computed (without inverse), related or group-restricted fields
+            // aren't writable by arbitrary users: nothing to restrict further.
+            let unsanitized = f.field_type == "Html"
+                && attr("sanitize") == Some("False")
+                && (attr("compute").is_none() || attr("inverse").is_some())
+                && attr("related").is_none()
+                && attr("groups").is_none();
+            if unsanitized {
+                out.push(SecurityWarningInfo {
+                    severity: SEVERITY_WARNING.to_string(),
+                    code: "html-unsanitized".to_string(),
+                    message: format!("Html field '{}.{}' sets `sanitize=False`: content is stored and rendered unfiltered, so restrict who can write it. CWE-79.", m.model_name, f.name),
+                    xml_id: Some(format!("{}.{}", m.model_name, f.name)),
+                    file: None,
+                    line: None,
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Computes every security finding for one module from its analyzed records.
 pub fn analyze_records(records: &[RecordAnalysisInfo]) -> Vec<SecurityWarningInfo> {
     let mut out = Vec::new();
@@ -248,7 +421,7 @@ pub fn analyze_records(records: &[RecordAnalysisInfo]) -> Vec<SecurityWarningInf
         }
         match rec.model.as_str() {
             "ir.model.access" => check_access(rec, &mut out),
-            "ir.rule" => check_rule(rec, &mut out),
+            "ir.rule" => check_rule(rec, records, &mut out),
             _ => {}
         }
     }
@@ -314,6 +487,20 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                     ),
                 ));
             }
+        }
+        if ctrl.mass_assignment {
+            let grave = is_public || ctrl.uses_sudo;
+            out.push(controller_warning(
+                ctrl,
+                if grave { SEVERITY_ERROR } else { SEVERITY_WARNING },
+                "route-mass-assignment",
+                format!(
+                    "Endpoint '{}.{}' passes the raw request payload into write()/create(){}: the client can set any field of the model. Whitelist the accepted fields. CWE-915.",
+                    ctrl.class_name,
+                    ctrl.name,
+                    if grave { " without access-rights checks (public route or sudo)" } else { "" }
+                ),
+            ));
         }
         if is_public && ctrl.uses_sudo {
             out.push(controller_warning(
@@ -447,6 +634,12 @@ mod tests {
             assert_eq!(found[0].code, "acl-public-write");
             assert_eq!(found[0].severity, SEVERITY_ERROR);
         }
+        // Create-only (core utm's portal ACLs): reported, but not grave.
+        let found = analyze_records(&[access_csv("base.group_portal", ["1", "0", "1", "0"])]);
+        assert_eq!(found[0].severity, SEVERITY_WARNING);
+        let found = analyze_records(&[access_csv("", ["1", "0", "1", "0"])]);
+        assert_eq!(found[0].code, "acl-global-write");
+        assert_eq!(found[0].severity, SEVERITY_WARNING);
         // Read-only portal access is a normal pattern, not a finding.
         let found = analyze_records(&[access_csv("base.group_portal", ["1", "0", "0", "0"])]);
         assert!(found.is_empty());
@@ -721,5 +914,124 @@ mod tests {
         assert!(analyze_records(&[acl])
             .iter()
             .any(|w| w.code == "acl-privilege-escalation"));
+    }
+
+    #[test]
+    fn test_test_modules_are_skipped_but_real_ones_are_not() {
+        let analysis = ModuleAnalysisInfo {
+            records: vec![access_csv("", ["1", "1", "0", "0"])],
+            ..Default::default()
+        };
+        for (name, category) in [
+            ("test_mail", "Hidden"),
+            ("l10n_x_edi_tests", "Hidden/Tests"),
+            ("profiler", "Tests"),
+        ] {
+            assert!(
+                analyze_module(name, category, &analysis).is_empty(),
+                "{name}"
+            );
+        }
+        // Real, installable modules despite the name.
+        for name in ["account_test", "payment_test"] {
+            assert_eq!(
+                analyze_module(name, "Accounting", &analysis).len(),
+                1,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_always_true_portal_rule_over_a_deny_all_acl_is_not_a_finding() {
+        // Odoo core calendar: always-true portal rule on calendar.attendee,
+        // but the same module's portal ACL for it is 0,0,0,0.
+        let mut rule_rec = rule("[(1, '=', 1)]", Some("[(4, ref('base.group_portal'))]"));
+        rule_rec.fields.as_mut().unwrap()["model_id"] =
+            serde_json::json!("ref('model_calendar_attendee')");
+        let mut acl = access_csv("base.group_portal", ["0", "0", "0", "0"]);
+        acl.fields.as_mut().unwrap()["model_id:id"] = serde_json::json!("model_calendar_attendee");
+        assert!(analyze_records(&[rule_rec.clone(), acl.clone()]).is_empty());
+        // The ACL grants read: every attendee becomes readable, still grave.
+        acl.fields.as_mut().unwrap()["perm_read"] = serde_json::json!("1");
+        let found = analyze_records(&[rule_rec.clone(), acl]);
+        assert_eq!(found[0].code, "rule-public-bypass");
+        // No ACL in this module (another module may grant it): kept.
+        assert_eq!(analyze_records(&[rule_rec]).len(), 1);
+    }
+
+    #[test]
+    fn test_code_facts_severity() {
+        let fact = |kind: &str| MigrationFactInfo {
+            kind: kind.to_string(),
+            context: Some("X.method".to_string()),
+            detail: Some("cr.execute(q % x)".to_string()),
+            file: Some("models/x.py".to_string()),
+            line: Some(7),
+        };
+        let found = analyze_facts(&[
+            fact("sql_injection_tainted"),
+            fact("sql_injection"),
+            fact("code_eval"),
+            fact("unsafe_deserialization"),
+            fact("shell_injection"),
+            fact("tls_verify_disabled"),
+            fact("unknown"),
+        ]);
+        let got: Vec<(&str, &str)> = found
+            .iter()
+            .map(|w| (w.code.as_str(), w.severity.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("sql-injection", SEVERITY_ERROR),
+                ("sql-injection-review", SEVERITY_WARNING),
+                ("code-eval", SEVERITY_WARNING),
+                ("unsafe-deserialization", SEVERITY_WARNING),
+                ("shell-injection", SEVERITY_WARNING),
+                ("tls-verify-disabled", SEVERITY_WARNING),
+            ]
+        );
+        assert_eq!(found[0].xml_id.as_deref(), Some("X.method"));
+        assert_eq!(found[0].line, Some(7));
+        assert!(found[0].message.contains("CWE-89"));
+    }
+
+    #[test]
+    fn test_mass_assignment_is_grave_without_access_checks() {
+        let mut public = route(Some("public"), None, &["POST"], false);
+        public.mass_assignment = true;
+        let found = analyze_controllers(&[public]);
+        assert_eq!(found[0].code, "route-mass-assignment");
+        assert_eq!(found[0].severity, SEVERITY_ERROR);
+        let mut user = route(Some("user"), None, &["POST"], false);
+        user.mass_assignment = true;
+        assert_eq!(analyze_controllers(&[user])[0].severity, SEVERITY_WARNING);
+    }
+
+    #[test]
+    fn test_unsanitized_html_only_when_user_writable() {
+        let field = |attrs: serde_json::Value| ModelAnalysisInfo {
+            model_name: "x.page".to_string(),
+            fields: vec![sqlitedb::models::module_code_analysis::FieldAnalysisInfo {
+                name: "body".to_string(),
+                field_type: "Html".to_string(),
+                relation: None,
+                attrs: Some(attrs),
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            analyze_models(&[field(serde_json::json!({"sanitize": "False"}))]).len(),
+            1
+        );
+        for attrs in [
+            serde_json::json!({"sanitize": "False", "compute": "'_c'"}),
+            serde_json::json!({"sanitize": "False", "groups": "'base.group_system'"}),
+            serde_json::json!({"sanitize": "True"}),
+        ] {
+            assert!(analyze_models(&[field(attrs)]).is_empty());
+        }
     }
 }

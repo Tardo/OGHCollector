@@ -44,6 +44,7 @@ pub struct Model {
     pub usage: Option<String>,
     pub icon: Option<String>,
     pub source_path: String,
+    pub analysis_version: i32,
 }
 
 impl Model {
@@ -1121,6 +1122,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
             last_commit_date: module_info.last_commit_date.clone(),
             last_commit_partof: last_commit_partof.map(|s| s.to_string()),
             source_path: module_info.source_path.clone(),
+            analysis_version: 0,
         };
 
         for item in module_info
@@ -1404,4 +1406,16 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
         &gh_repo.id,
     )
     .ok_or_else(|| diesel::result::Error::NotFound)
+}
+
+/// Stamps which version of the collector's analysis rules produced this
+/// module's stored analysis (see collector::analyzer::ANALYSIS_VERSION).
+pub fn set_analysis_version(
+    conn: &mut SqliteConnection,
+    module_id: &i64,
+    version: i32,
+) -> QueryResult<usize> {
+    diesel::update(module::table.find(module_id))
+        .set(module::analysis_version.eq(version))
+        .execute(conn)
 }

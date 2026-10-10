@@ -98,6 +98,7 @@ diesel::table! {
         usage -> Nullable<Text>,
         icon -> Nullable<Text>,
         source_path -> Text,
+        analysis_version -> Integer,
     }
 }
 
