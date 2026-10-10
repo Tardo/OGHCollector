@@ -10,7 +10,7 @@ use super::{
     author, gh_organization, gh_repository, maintainer, module_author,
     module_code_analysis::ModuleAnalysisInfo, module_committer, module_committer_period,
     module_maintainer, module_model, module_record, module_version, module_view, system_event,
-    BOT_COMMITTERS,
+    HUMAN_COMMITTER,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -701,7 +701,7 @@ pub fn rank_committer(conn: &mut SqliteConnection) -> Vec<ModuleRankCommitterInf
            FROM module as mod \
            INNER JOIN module_committer as mod_com ON mod.id = mod_com.module_id \
            INNER JOIN committer as com ON mod_com.committer_id = com.id \
-           WHERE com.name NOT IN ({BOT_COMMITTERS}) \
+           WHERE {HUMAN_COMMITTER} \
            GROUP BY com.id, mod.version_odoo \
          ) WHERE rank <= 5 ORDER BY rank ASC"
     ))
@@ -895,6 +895,31 @@ pub fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<i32> {
         .order(module::version_odoo.desc())
         .load::<i32>(conn)
         .expect("DB error in module::get_odoo_versions")
+}
+
+/// Odoo series (ascending) `technical_name` exists in within `org_name`, in
+/// any of its repositories (modules move between repos of the same org).
+pub fn get_odoo_versions_by_technical_name_organization_name(
+    conn: &mut SqliteConnection,
+    technical_name: &str,
+    org_name: &str,
+) -> Vec<i32> {
+    use crate::schema::{gh_organization, gh_repository};
+    module::table
+        .inner_join(gh_repository::table.on(gh_repository::id.eq(module::gh_repository_id)))
+        .inner_join(
+            gh_organization::table.on(gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(
+            module::technical_name
+                .eq(technical_name)
+                .and(gh_organization::name.eq(org_name)),
+        )
+        .select(module::version_odoo)
+        .distinct()
+        .order(module::version_odoo.asc())
+        .load::<i32>(conn)
+        .expect("DB error in module::get_odoo_versions_by_technical_name_organization_name")
 }
 
 pub fn get_module_repository(

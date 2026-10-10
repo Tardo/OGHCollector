@@ -385,12 +385,18 @@ mod template_tests {
                 "views": [],
                 "controllers": [],
                 "models": [],
+                "health": {"score": 62, "grade": "fair", "factors": [
+                    {"name": "Security", "points": null, "detail": "No code analysis"},
+                    {"name": "Activity", "points": 20, "detail": "Last human commit 8 months ago"},
+                ]},
             });
             let html = env
                 .get_template("module")
                 .unwrap()
-                .render(context!(module => module, history => Vec::<String>::new()))
+                .render(context!(module => module, history => Vec::<String>::new(), HEALTH_SCORE_ENABLED => true))
                 .unwrap();
+            assert!(html.contains(">62</span>") && html.contains("Security n/a"));
+            assert!(html.contains(r#"title="Last human commit 8 months ago">Activity 20"#));
             assert!(html.contains(&format!("https://github.com/{org}/{repo}/tree/18.0/{path}")));
             assert!(html.contains(&format!(
                 "https://github.com/{org}/{repo}/blob/18.0/{path}/models/test.py#L42"

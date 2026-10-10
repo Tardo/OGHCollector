@@ -12,7 +12,7 @@ use sqlitedb::{models, Pool};
 // query-string variants, no per-user/localStorage-only pages like
 // /favorites or /pack, no dev-tool pages (doodba/osv/logs/api/mcp, hidden
 // behind the navbar's `dev-only` user/dev mode switch).
-const STATIC_PATHS: &[&[&str]] = &[&[], &["modules"], &["committers"], &["atlas"]];
+const STATIC_PATHS: &[&[&str]] = &[&[], &["modules"], &["committers"], &["atlas"], &["about"]];
 
 const EMPTY_URLSET: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
      <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>\n";

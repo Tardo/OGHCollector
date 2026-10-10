@@ -2,7 +2,7 @@
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::BOT_COMMITTERS;
+use crate::models::HUMAN_COMMITTER;
 use crate::schema::committer;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
@@ -52,7 +52,7 @@ pub fn get_global_rank_by_name(conn: &mut SqliteConnection, name: &str) -> Optio
                   COUNT(*) OVER () as total_committers \
            FROM module_committer as mod_com \
            INNER JOIN committer as com ON mod_com.committer_id = com.id \
-           WHERE com.name NOT IN ({BOT_COMMITTERS}) \
+           WHERE {HUMAN_COMMITTER} \
            GROUP BY com.id \
          ) WHERE committer_name = ?"
     ))
@@ -85,7 +85,7 @@ pub fn rank_global(conn: &mut SqliteConnection, limit: i64) -> Vec<GlobalRankEnt
                 COUNT(DISTINCT mod_com.module_id) as modules_touched \
          FROM module_committer as mod_com \
          INNER JOIN committer as com ON mod_com.committer_id = com.id \
-         WHERE com.name NOT IN ({BOT_COMMITTERS}) \
+         WHERE {HUMAN_COMMITTER} \
          GROUP BY com.id \
          ORDER BY total_commits DESC \
          LIMIT ?"
@@ -117,7 +117,7 @@ pub fn rank_longevity(conn: &mut SqliteConnection, limit: i64) -> Vec<LongevityE
          COUNT(DISTINCT mcp.year * 12 + mcp.month) AS active_months \
          FROM module_committer_period AS mcp \
          JOIN committer AS com ON com.id = mcp.committer_id \
-         WHERE com.name NOT IN ({BOT_COMMITTERS}) \
+         WHERE {HUMAN_COMMITTER} \
          GROUP BY com.id \
          ORDER BY span_months DESC, active_months DESC, com.name ASC LIMIT ?"
     ))

@@ -3,6 +3,7 @@ use array_tool::vec::Uniq;
 use std::collections::HashMap;
 
 use actix_web::{get, web, Error as AWError, HttpResponse};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
@@ -99,6 +100,127 @@ pub struct ModuleMigrationConsiderationResponse {
     pub line: Option<i32>,
 }
 
+// One part of `ModuleHealth`, worth `HEALTH_FACTOR_MAX` points; `points` is
+// None when there's no data for it, and it's then left out of the score.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleHealthFactor {
+    pub name: String,
+    pub points: Option<u8>,
+    pub detail: String,
+}
+
+/// Synthetic summary of facts already shown on the module page (security
+/// findings, human commit activity, reverse dependencies, Odoo series), so
+/// they don't have to be weighed by hand. A heuristic, not an audit.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModuleHealth {
+    /// 0-100 over the factors that have data.
+    pub score: u8,
+    /// "good" / "fair" / "poor"; never "good" with a grave security finding.
+    pub grade: String,
+    pub factors: Vec<ModuleHealthFactor>,
+}
+
+pub const HEALTH_FACTOR_MAX: u8 = 25;
+
+// Explained on /about (pages/about.html): keep its table in sync.
+// Step thresholds checked (2026-10) against whether 16.0/17.0 modules were
+// later migrated: that rate climbs with the Odoo series count (53% for 1 ->
+// 92% for 7+) and with "Required by" up to ~5 (68% for 0 -> 95%), then
+// flattens. Activity and security bands (and the 75/50 grade cutoffs) are
+// unvalidated: migration says nothing about upkeep/risk and there's no other
+// outcome to check them against.
+fn module_health(
+    security: Option<(usize, usize)>,
+    months_idle: Option<Option<i32>>,
+    required_by: usize,
+    series: usize,
+    first_series: &str,
+) -> ModuleHealth {
+    let factor = |name: &str, points: Option<u8>, detail: String| ModuleHealthFactor {
+        name: name.to_string(),
+        points,
+        detail,
+    };
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    let factors = vec![
+        match security {
+            None => factor("Security", None, "No code analysis".to_string()),
+            Some((0, 0)) => factor("Security", Some(25), "No findings".to_string()),
+            Some((0, minor)) => factor(
+                "Security",
+                Some(25 - (3 * minor).min(10) as u8),
+                format!("{minor} minor finding{}", plural(minor)),
+            ),
+            Some((grave, minor)) => factor(
+                "Security",
+                Some(10 - 5 * (grave - 1).min(2) as u8),
+                format!("{grave} grave, {minor} minor"),
+            ),
+        },
+        match months_idle {
+            None => factor("Activity", None, "No commit data".to_string()),
+            Some(None) => factor("Activity", Some(0), "Only bot commits".to_string()),
+            Some(Some(m)) => factor(
+                "Activity",
+                Some(match m {
+                    ..=6 => 25,
+                    7..=12 => 20,
+                    13..=24 => 12,
+                    25..=36 => 6,
+                    _ => 0,
+                }),
+                match m {
+                    ..=0 => "Human commit this month".to_string(),
+                    _ => format!("Last human commit {m} month{} ago", plural(m as usize)),
+                },
+            ),
+        },
+        factor(
+            "Required by",
+            Some(match required_by {
+                0 => 5,
+                1 => 15,
+                2..=4 => 20,
+                _ => 25,
+            }),
+            if required_by == 1 {
+                "1 module depends on it".to_string()
+            } else {
+                format!("{required_by} modules depend on it")
+            },
+        ),
+        factor(
+            "Maturity",
+            Some(match series {
+                ..=1 => 5,
+                2 => 12,
+                3 => 18,
+                _ => 25,
+            }),
+            format!("In {series} Odoo series since {first_series}"),
+        ),
+    ];
+    let (got, max) = factors
+        .iter()
+        .filter_map(|f| f.points)
+        .fold((0u32, 0u32), |(g, m), p| {
+            (g + p as u32, m + HEALTH_FACTOR_MAX as u32)
+        });
+    let score = (got * 100).checked_div(max).unwrap_or(0) as u8;
+    let has_grave = matches!(security, Some((g, _)) if g > 0);
+    let grade = match score {
+        75.. if !has_grave => "good",
+        50.. => "fair",
+        _ => "poor",
+    };
+    ModuleHealth {
+        score,
+        grade: grade.to_string(),
+        factors,
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ModuleFullInfoResponse {
     pub technical_name: String,
@@ -135,6 +257,7 @@ pub struct ModuleFullInfoResponse {
     pub required_by: Vec<models::module::ModuleCriteriaInfo>,
     /// This module's license checked against its whole dependency closure.
     pub license_review: LicenseReport,
+    pub health: ModuleHealth,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -362,6 +485,31 @@ pub fn process_modules_db(
                         .unwrap_or_else(|| module.version_module.clone()),
                 ),
             };
+        let activity = models::module_committer_period::get_human_activity(conn, &module.id);
+        let now = chrono::Utc::now();
+        let months_idle = (activity.rows > 0).then(|| {
+            activity
+                .last_month
+                .map(|m| (now.year() * 12 + now.month0() as i32 - m).max(0))
+        });
+        let series: Vec<i32> =
+            models::module::get_odoo_versions_by_technical_name_organization_name(
+                conn,
+                &module.technical_name,
+                &org.name,
+            )
+            .into_iter()
+            .filter(|v| *v <= module.version_odoo)
+            .collect();
+        let health = module_health(
+            resolved_version
+                .as_ref()
+                .map(|_| (security_warnings.len(), security_warning_count)),
+            months_idle,
+            required_by.len(),
+            series.len(),
+            &odoo_version_u8_to_string(&(*series.first().unwrap_or(&module.version_odoo) as u8)),
+        );
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
             version,
@@ -393,6 +541,7 @@ pub fn process_modules_db(
             migration_considerations,
             required_by,
             license_review,
+            health,
         });
     }
     res
@@ -639,4 +788,22 @@ pub async fn route_compare(
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::module_health;
+
+    #[test]
+    fn health_skips_missing_data_and_grave_findings_cap_the_grade() {
+        let h = module_health(Some((0, 0)), Some(Some(2)), 12, 5, "12.0");
+        assert_eq!((h.score, h.grade.as_str()), (100, "good"));
+        // No analysis/commit data: scored over the other two factors only.
+        let h = module_health(None, None, 12, 5, "12.0");
+        assert_eq!(h.score, 100);
+        let h = module_health(Some((1, 0)), Some(Some(0)), 50, 8, "8.0");
+        assert_eq!((h.score, h.grade.as_str()), (85, "fair"));
+        let h = module_health(Some((3, 4)), Some(None), 0, 1, "18.0");
+        assert_eq!((h.score, h.grade.as_str()), (10, "poor"));
+    }
 }

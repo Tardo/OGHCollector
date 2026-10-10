@@ -305,6 +305,16 @@
             \"proprietary\": [],
             \"licenses\": {\"AGPL-3\": 1, \"LGPL-3\": 5},
             \"findings\": []
+        },
+        \"health\": {
+            \"score\": 93,
+            \"grade\": \"good\",
+            \"factors\": [
+                {\"name\": \"Security\", \"points\": 25, \"detail\": \"No findings\"},
+                {\"name\": \"Activity\", \"points\": 25, \"detail\": \"Last human commit 3 months ago\"},
+                {\"name\": \"Required by\", \"points\": 18, \"detail\": \"2 modules depend on it\"},
+                {\"name\": \"Maturity\", \"points\": 25, \"detail\": \"In 10 Odoo series since 9.0\"}
+            ]
         }
     }
 ]",
@@ -340,6 +350,11 @@
         \"proprietary\": Array[string],
         \"licenses\": Object,
         \"findings\": Array[{\"severity\": string, \"code\": string, \"message\": string, \"module\": string, \"related\": Array[string]}]
+    },
+    \"health\": {
+        \"score\": number,
+        \"grade\": \"good\"|\"fair\"|\"poor\",
+        \"factors\": Array[{\"name\": string, \"points\": number|null, \"detail\": string}]
     },
     \"views\": Array[{
         \"xml_id\": string,

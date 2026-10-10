@@ -1,0 +1,290 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{# Methodology behind every derived figure on the site. The numbers quoted
+   here (health thresholds, rule severities, license ranks, API-change
+   versions) mirror the code: api/v1/module.rs::module_health,
+   collector/src/security.rs, collector/src/migration.rs::change and
+   oghutils/src/license.rs. Change them together. #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "About" %}
+{% set meta_description = "How Odoo module metadata is collected and how the security findings, migration notes, license review and health score are computed." %}
+{% block content %}
+{{ super() }}
+
+<header class="page-header">
+    <h1>About &amp; methodology</h1>
+</header>
+<p class="fs-5 text-secondary-emphasis">
+    Every figure on this site is derived automatically from the public source code of Odoo modules. This page
+    explains where the data comes from and how each indicator is computed, so you can judge how much to trust it.
+    None of it replaces reading the code: the indicators point at what deserves a closer look.
+</p>
+
+<nav class="panel mb-4" aria-label="On this page">
+    <div class="panel-body">
+        <ul class="list-inline mb-0">
+            <li class="list-inline-item"><a href="#collection">Data collection</a></li>
+            <li class="list-inline-item"><a href="#analysis">Code analysis</a></li>
+            {% if HEALTH_SCORE_ENABLED %}<li class="list-inline-item"><a href="#health">Health score</a></li>{% endif %}
+            <li class="list-inline-item"><a href="#security">Security findings</a></li>
+            <li class="list-inline-item"><a href="#migration">Migration notes</a></li>
+            <li class="list-inline-item"><a href="#licenses">License review</a></li>
+            <li class="list-inline-item"><a href="#activity">Committers &amp; activity</a></li>
+            <li class="list-inline-item"><a href="#pull-requests">Migration pull requests</a></li>
+            <li class="list-inline-item"><a href="#vulnerabilities">Vulnerabilities</a></li>
+            {% if SEMANTIC_SEARCH_ENABLED %}<li class="list-inline-item"><a href="#semantic-search">Semantic search</a></li>{% endif %}
+            <li class="list-inline-item"><a href="#limits">Limitations</a></li>
+        </ul>
+    </div>
+</nav>
+
+<div class="d-flex flex-column gap-4">
+
+<section class="panel" id="collection">
+    <header class="panel-header"><h2>Data collection</h2></header>
+    <div class="panel-body">
+        <p>
+            A collector walks every repository of the tracked GitHub/GitLab organizations, once per Odoo version, by
+            checking out that version's branch (<code>18.0</code>, <code>17.0</code>, ...). It runs periodically
+            (every 6 hours in the default deployment), so data can lag the repositories by that much.
+        </p>
+        <ul>
+            <li>A folder is a module when it has a manifest (<code>__manifest__.py</code>, or <code>__openerp__.py</code> on old series). The manifest's dictionary is read with an embedded Python interpreter; nothing else of the module is imported.</li>
+            <li>A missing <code>license</code> key is stored as Odoo's own default: <strong>AGPL-3</strong> below 9.0 and <strong>LGPL-3</strong> from 9.0.</li>
+            <li>A module is only re-analyzed when its last commit or the analyzer itself changed; otherwise the previous analysis is kept.</li>
+            <li>Each module version (<code>version</code> in the manifest) keeps its own snapshot of the analysis, which is what the version selector on a module page switches between.</li>
+            <li><strong>Required by</strong> lists the modules of the same Odoo version, in any repository or organization, that declare the module in <code>depends</code> (capped at 500).</li>
+        </ul>
+    </div>
+</section>
+
+<section class="panel" id="analysis">
+    <header class="panel-header"><h2>Code analysis</h2></header>
+    <div class="panel-body">
+        <p>
+            The source is parsed, never executed: Python files with Python's <code>ast</code> module, XML and CSV data
+            files with standard parsers. From that the analyzer extracts:
+        </p>
+        <ul>
+            <li><strong>Models</strong> created or extended, with their new fields (type, relation, keyword arguments) and public methods (signature, decorators, docstring).</li>
+            <li><strong>Views</strong> created or inherited, with their type.</li>
+            <li><strong>HTTP endpoints</strong> declared with <code>http.route</code>: paths, resolved <code>auth</code>, type, methods, CSRF setting and whether the handler uses <code>sudo()</code>.</li>
+            <li><strong>Data records</strong>: security groups, access rights (<code>ir.model.access</code>), record rules, cron jobs, and their <code>noupdate</code> flag.</li>
+            <li>Raw <strong>facts</strong> for the security and migration checks below (SQL built by string formatting, <code>eval</code>, deprecated syntax, ...).</li>
+        </ul>
+        <p class="mb-0">
+            Static analysis is best-effort: anything built dynamically at runtime (models named from variables,
+            routes registered in loops, views generated in Python) can be missed or incomplete.
+        </p>
+    </div>
+</section>
+
+{% if HEALTH_SCORE_ENABLED %}
+<section class="panel" id="health">
+    <header class="panel-header"><h2>Health score</h2></header>
+    <div class="panel-body">
+        <p>
+            A 0-100 summary of four facts already shown on the module page, so they don't have to be weighed by hand.
+            Each factor is worth 25 points. It's computed for the selected Odoo version.
+        </p>
+        <div class="table-responsive">
+        <table class="table table-sm">
+            <thead><tr><th>Factor</th><th>Measures</th><th>Points</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td class="text-nowrap">Security</td>
+                    <td>Static-analysis findings of the current module version (see <a href="#security">below</a>).</td>
+                    <td>No findings: 25 &middot; only minor ones: 25 minus 3 each, never below 15 &middot; grave ones: 10 for one, 5 for two, 0 for three or more</td>
+                </tr>
+                <tr>
+                    <td class="text-nowrap">Activity</td>
+                    <td>Months since the last commit by a person (bots excluded, see <a href="#activity">below</a>) on this version's branch.</td>
+                    <td>&le;6: 25 &middot; 7-12: 20 &middot; 13-24: 12 &middot; 25-36: 6 &middot; older, or bot commits only: 0</td>
+                </tr>
+                <tr>
+                    <td class="text-nowrap">Required by</td>
+                    <td>How many modules of the same Odoo version depend on it.</td>
+                    <td>0: 5 &middot; 1: 15 &middot; 2-4: 20 &middot; 5 or more: 25</td>
+                </tr>
+                <tr>
+                    <td class="text-nowrap">Maturity</td>
+                    <td>In how many Odoo versions the module exists within its organization, up to the selected one.</td>
+                    <td>1: 5 &middot; 2: 12 &middot; 3: 18 &middot; 4 or more: 25</td>
+                </tr>
+            </tbody>
+        </table>
+        </div>
+        <ul>
+            <li>A factor without data (no code analysis, no commit history collected) shows as <em>n/a</em> and is left out: the score is the points obtained over the points available, so missing data never counts as a zero.</li>
+            <li>Grades: <strong>good</strong> from 75, <strong>fair</strong> from 50, <strong>poor</strong> below. A module with any grave security finding is never graded good.</li>
+            <li>Activity is measured per branch, so older Odoo versions naturally score lower: they get fewer fixes once newer versions exist.</li>
+        </ul>
+        <p>
+            <strong>How the thresholds were chosen.</strong> Maturity and Required by were checked against what
+            later happened to the 16.0 and 17.0 modules: whether they were migrated to a newer version. That rate
+            climbs from 53% for modules present in a single Odoo version to 92% for those in seven or more, and from
+            68% for modules nobody depends on to about 95% for five or more dependants, then flattens; the steps
+            above follow those curves. Modules graded good were migrated 90-95% of the time, poor ones about 56%.
+            The activity and security steps, and the 75/50 cutoffs, have no comparable outcome to validate them against.
+        </p>
+        <p class="mb-0 small text-body-secondary">A heuristic to sort modules for review, not an audit or a quality guarantee.</p>
+    </div>
+</section>
+{% endif %}
+
+<section class="panel" id="security">
+    <header class="panel-header"><h2>Security findings</h2></header>
+    <div class="panel-body">
+        <p>
+            Rule-based checks over the extracted records, endpoints and code facts. They flag patterns that are
+            usually risky; only a manual review can confirm a real vulnerability. <strong>Grave</strong> is reserved
+            for high-precision rules; both kinds are counted on the module page, and grave ones are listed in detail
+            there in Dev mode. Modules named <code>test_*</code> or in a "Tests" category are skipped: they only exist for
+            Odoo's own test suites.
+        </p>
+        <div class="table-responsive">
+        <table class="table table-sm">
+            <thead><tr><th>Code</th><th>Flags</th><th>Severity</th></tr></thead>
+            <tbody>
+                <tr><td class="text-nowrap"><code>acl-global-write</code></td><td>Access right with no group (applies to every user, portal and public included) granting write or delete.</td><td>Grave; minor when it only grants create or its id/name says it's meant to be global</td></tr>
+                <tr><td class="text-nowrap"><code>acl-global-read</code></td><td>Access right with no group granting read.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>acl-public-write</code></td><td>Access right granting write or delete to the portal or public group.</td><td>Grave; minor when create-only or explicitly named for that audience</td></tr>
+                <tr><td class="text-nowrap"><code>acl-privilege-escalation</code></td><td>Write access to users, groups, record rules, access rights, models or fields for a group that isn't an administrator group.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>rule-public-bypass</code></td><td>Always-true record rule for portal/public, unless this module's own access rights deny that group everything.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>rule-group-bypass</code></td><td>Always-true record rule for another non-manager group.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>route-user-csrf-off</code></td><td>Logged-in HTTP endpoint accepting state-changing methods with CSRF disabled.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>route-public-csrf-off</code></td><td>Public endpoint with CSRF disabled (normal for webhooks).</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>route-mass-assignment</code></td><td>Endpoint passing the raw request payload to <code>create()</code>/<code>write()</code>.</td><td>Grave on public or <code>sudo()</code> routes, minor otherwise</td></tr>
+                <tr><td class="text-nowrap"><code>route-public-sudo</code></td><td>Public endpoint using <code>sudo()</code>.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>sql-injection</code></td><td>SQL built by string formatting from a value the caller controls directly: an argument of an RPC-callable method or route, the request payload or the context.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>sql-injection-review</code></td><td>SQL built by string formatting from any other value.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>code-eval</code></td><td><code>eval</code>/<code>exec</code> on non-literal input.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>unsafe-deserialization</code></td><td><code>pickle</code> or unsafe YAML loading.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>shell-injection</code></td><td>Subprocess calls with <code>shell=True</code>.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>tls-verify-disabled</code></td><td>HTTP requests with certificate verification off (<code>verify=False</code>).</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>html-unsanitized</code></td><td>User-writable <code>fields.Html(sanitize=False)</code>: stored XSS for everyone viewing it.</td><td>Minor</td></tr>
+            </tbody>
+        </table>
+        </div>
+        <p class="mb-0">
+            Effective access also depends on other modules, global rules, field restrictions and Python checks that
+            a single module's files can't show, which is why even grave findings are worded as review priorities.
+        </p>
+    </div>
+</section>
+
+<section class="panel" id="migration">
+    <header class="panel-header"><h2>Migration notes</h2></header>
+    <div class="panel-body">
+        <p>
+            A checklist of code that changes meaning across Odoo versions. Each API change is tied to the version
+            where it happened, checked against that version's source, so the note reads <em>"Migrating to X.0"</em>
+            for a module below it (what you'll have to change) and <em>"Since X.0"</em> for one at or after it (code
+            already ignored, broken or deprecated there). Repeats of the same note in one file are folded into one.
+        </p>
+        <div class="table-responsive">
+        <table class="table table-sm">
+            <thead><tr><th>Version</th><th>Change</th></tr></thead>
+            <tbody>
+                <tr><td>10.0</td><td>The <code>openerp</code> namespace was renamed to <code>odoo</code>.</td></tr>
+                <tr><td>11.0</td><td>The workflow engine (<code>trg_validate</code>) was removed.</td></tr>
+                <tr><td>13.0</td><td><code>@api.multi</code>/<code>@api.one</code> were removed; <code>track_visibility</code> became <code>tracking</code>.</td></tr>
+                <tr><td>15.0</td><td>QWeb <code>t-raw</code> is deprecated in favour of <code>t-out</code>.</td></tr>
+                <tr><td>16.0</td><td>The web client no longer calls <code>fields_view_get</code> (override <code>_get_view</code>).</td></tr>
+                <tr><td>17.0</td><td><code>attrs</code>/<code>states</code> are rejected in views; <code>name_get</code> no longer feeds <code>display_name</code>.</td></tr>
+                <tr><td>18.0</td><td><code>tree</code> views became <code>list</code>; <code>user_has_groups()</code> was removed; <code>group_operator</code> became <code>aggregator</code>; cron jobs lost <code>numbercall</code>/<code>doall</code>.</td></tr>
+                <tr><td>19.0</td><td>Only <code>__manifest__.py</code> is recognized; <code>_sql_constraints</code> is ignored in favour of <code>models.Constraint</code>.</td></tr>
+            </tbody>
+        </table>
+        </div>
+        <p class="mb-0">
+            Version-independent notes cover code that bypasses or predates the ORM: classes still on the old
+            <code>osv</code>/<code>orm</code> API or declaring fields as plain dicts (warnings), raw SQL that inserts,
+            updates or deletes rows (info), and <code>_auto = False</code> models whose <code>init()</code> creates a
+            real table (warning: its schema is never upgraded by Odoo) or a SQL view (info). Version changes that
+            break or silently disable code are warnings; deprecations and renames with a working alias are informational.
+        </p>
+    </div>
+</section>
+
+<section class="panel" id="licenses">
+    <header class="panel-header"><h2>License review</h2></header>
+    <div class="panel-body">
+        <p>
+            Odoo modules extend each other through Python inheritance, so each module is treated as a derivative work
+            of everything in its <code>depends</code> closure. The review compares the manifest licenses of the module
+            and that whole closure.
+        </p>
+        <ul>
+            <li><strong>Combined license</strong>: the strongest copyleft among the open-source modules involved (AGPL-3 &gt; GPL-3 &gt; GPL-2 &gt; LGPL-3). It's shown only when it's stronger than the module's own license; a proprietary module isn't distributed under its dependencies' copyleft.</li>
+            <li><strong>Errors</strong>: a proprietary module (OEEL-1, OPL-1, "Other proprietary") depending on GPL/AGPL code or the other way round, and GPL-2-only code combined with (L/A)GPL-3 code.</li>
+            <li><strong>Warnings</strong>: an LGPL-3 module that needs proprietary modules (commercial licenses required), and a module upgraded to AGPL-3 by its dependencies (AGPL's network clause: users of a hosted instance must be offered the source). An upgrade to a weaker copyleft is informational.</li>
+            <li><strong>Info</strong>: licenses outside Odoo's documented list (e.g. "Other OSI approved licence"), which can't be judged automatically.</li>
+        </ul>
+        <p class="mb-0 small text-body-secondary">A heuristic to spot problems early, not legal advice.</p>
+    </div>
+</section>
+
+<section class="panel" id="activity">
+    <header class="panel-header"><h2>Committers &amp; activity</h2></header>
+    <div class="panel-body">
+        <ul class="mb-0">
+            <li>Contributions come from <code>git log</code> of each module's folder on each version branch, counting only the commits that branch adds over the previous Odoo version's branch, so a commit is credited to the version that introduced it rather than to every later one.</li>
+            <li>People are identified by the git <em>committer</em> name; the same person with two spellings counts twice.</li>
+            <li>Bots and automation accounts (translation platforms, CI, merge and forward-port bots) are excluded from rankings and from the health score's activity factor. They're recognized by name pattern ("... bot", "...-bot", "...[bot]", "Launchpad Translations on behalf of ...", Weblate, ...), not by a fixed list, because they come in dozens of spellings.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="panel" id="pull-requests">
+    <header class="panel-header"><h2>Migration pull requests</h2></header>
+    <div class="panel-body">
+        <ul class="mb-0">
+            <li>An open pull/merge request counts as a migration of a module when its branch follows the OCA convention <code>{version}-mig-{module}</code> (e.g. <code>18.0-mig-sale_commission</code>). It's listed on the module page while it's open and the module doesn't exist yet for that version.</li>
+            <li>The average time a migration stays open counts merged requests only. The opening date comes from GitHub/GitLab; the closing one is when the collector noticed the request was gone, so it's only as precise as the refresh interval.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="panel" id="vulnerabilities">
+    <header class="panel-header"><h2>Vulnerabilities</h2></header>
+    <div class="panel-body">
+        <p class="mb-0">
+            Python dependencies declared in the manifest's <code>external_dependencies</code> are looked up on PyPI,
+            which reports the known advisories of a release from the
+            <a href="https://osv.dev/" target="_blank" rel="noopener">OSV</a> database. Only requirements that fix a
+            version can be checked: <code>==X</code> and <code>&lt;=X</code> at X, <code>&lt;X</code> at a published
+            release below X. Dependencies without a version or with only a lower bound (<code>&gt;=X</code>), and system
+            (binary) dependencies, are not checked, so "no advisories" never means "safe".
+        </p>
+    </div>
+</section>
+
+{% if SEMANTIC_SEARCH_ENABLED %}
+<section class="panel" id="semantic-search">
+    <header class="panel-header"><h2>Semantic search</h2></header>
+    <div class="panel-body">
+        <p class="mb-0">
+            Each module is turned into a vector from its name, technical name, category and the start of its
+            description, with a multilingual sentence-embedding model (<code>paraphrase-multilingual-MiniLM-L12-v2</code>),
+            so a query in any supported language can find modules described in another. Results rank by cosine
+            similarity, boosted when rare query words of four or more letters appear verbatim (names the model has
+            never seen, such as new regulations).
+        </p>
+    </div>
+</section>
+{% endif %}
+
+<section class="panel" id="limits">
+    <header class="panel-header"><h2>Limitations</h2></header>
+    <div class="panel-body">
+        <ul class="mb-0">
+            <li>Only the tracked organizations' public repositories are analyzed; a module's dependencies outside them are unknown here.</li>
+            <li>Everything is static: code paths, configuration and other installed modules can change the real behaviour.</li>
+            <li>Data is as fresh as the last collector run.</li>
+            <li>This is an independent project, not affiliated with Odoo S.A. or the Odoo Community Association. The <a href="https://github.com/Tardo/OGHCollector" target="_blank" rel="noopener">source code</a> is public: every rule above can be read there.</li>
+        </ul>
+    </div>
+</section>
+
+</div>
+{% endblock %}

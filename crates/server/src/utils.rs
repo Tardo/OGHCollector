@@ -90,6 +90,7 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
         MCP_URL => SERVER_CONFIG.get_mcp_url().clone(),
         SEO_ENABLED => SERVER_CONFIG.get_seo_enabled(),
         SEMANTIC_SEARCH_ENABLED => SERVER_CONFIG.get_semantic_search_enabled(),
+        HEALTH_SCORE_ENABLED => SERVER_CONFIG.get_health_score_enabled(),
     )
 }
 

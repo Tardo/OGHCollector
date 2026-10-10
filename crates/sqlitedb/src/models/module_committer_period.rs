@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::BOT_COMMITTERS;
+use crate::models::HUMAN_COMMITTER;
 use crate::schema::module_committer_period;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
@@ -136,7 +136,7 @@ pub fn rank_by_period(
                     COUNT(DISTINCT mcp.module_id) as modules_touched \
              FROM module_committer_period as mcp \
              INNER JOIN committer as com ON mcp.committer_id = com.id \
-             WHERE com.name NOT IN ({BOT_COMMITTERS}) AND mcp.year = ? AND mcp.month = ? \
+             WHERE {HUMAN_COMMITTER} AND mcp.year = ? AND mcp.month = ? \
              GROUP BY com.id \
              ORDER BY total_commits DESC \
              LIMIT ?"
@@ -153,7 +153,7 @@ pub fn rank_by_period(
                     COUNT(DISTINCT mcp.module_id) as modules_touched \
              FROM module_committer_period as mcp \
              INNER JOIN committer as com ON mcp.committer_id = com.id \
-             WHERE com.name NOT IN ({BOT_COMMITTERS}) AND mcp.year = ? \
+             WHERE {HUMAN_COMMITTER} AND mcp.year = ? \
              GROUP BY com.id \
              ORDER BY total_commits DESC \
              LIMIT ?"
@@ -163,4 +163,31 @@ pub fn rank_by_period(
         .load::<PeriodRankEntry>(conn)
         .expect("DB error in module_committer_period::rank_by_period"),
     }
+}
+
+#[derive(QueryableByName, Debug, Default)]
+pub struct HumanActivity {
+    /// Most recent month with a non-bot commit, as `year * 12 + month - 1`.
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub last_month: Option<i32>,
+    /// Period rows of any committer: 0 means no committer data was collected
+    /// (unknown activity), unlike a bot-only history.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub rows: i64,
+}
+
+/// Human activity on one module row (its Odoo-version branch only). Bots are
+/// left out because translation/CI commits keep idle modules looking fresh.
+pub fn get_human_activity(conn: &mut SqliteConnection, module_id: &i64) -> HumanActivity {
+    diesel::sql_query(format!(
+        "SELECT MAX(CASE WHEN {HUMAN_COMMITTER} \
+                    THEN mcp.year * 12 + mcp.month - 1 END) as last_month, \
+                COUNT(*) as rows \
+         FROM module_committer_period as mcp \
+         INNER JOIN committer as com ON mcp.committer_id = com.id \
+         WHERE mcp.module_id = ?"
+    ))
+    .bind::<diesel::sql_types::BigInt, _>(module_id)
+    .get_result::<HumanActivity>(conn)
+    .expect("DB error in module_committer_period::get_human_activity")
 }

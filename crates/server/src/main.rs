@@ -219,6 +219,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::committer::route)
             .service(routes::committers::route)
             .service(routes::api_doc::route)
+            .service(routes::about::route)
             .service(routes::badge::route)
             .service(routes::feed::route)
             .service(routes::feed::route_module)

@@ -1,4 +1,5 @@
 // Copyright Alexandre D. Díaz
+pub mod about;
 pub mod api;
 pub mod api_doc;
 pub mod atlas;

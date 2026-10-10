@@ -35,11 +35,20 @@ use diesel::sqlite::SqliteConnection;
 
 pub type Connection = PooledConnection<ConnectionManager<SqliteConnection>>;
 
-/// Bots/automation accounts excluded from committer rankings so they reflect
-/// human contributors. Single source of truth for `committer`, `module` and
-/// `module_committer_period`'s ranking queries.
-pub const BOT_COMMITTERS: &str = "'Odoo Translation Bot', 'OCA-git-bot', 'Weblate', 'oca-ci', \
-     'OCA Transbot', 'Launchpad Translations on behalf of openerp', 'oca-travis', 'GitHub'";
+/// SQL predicate on `com.name` (the `committer` table aliased as `com`) that
+/// is true for humans: bots/automation accounts are left out of committer
+/// rankings and of module health activity. Single source of truth for
+/// `committer`, `module` and `module_committer_period`'s queries. Bots come
+/// in many spellings ("OCA Git Bot", "fw-bot", "github-actions[bot]", one
+/// "Launchpad Translations on behalf of <team>" per team), hence suffix
+/// patterns instead of a list; a bare `%bot%` would hit people ("Ribot").
+/// SQLite's LIKE is ASCII case-insensitive.
+pub const HUMAN_COMMITTER: &str = "(com.name NOT IN ('Weblate', 'oca-ci', 'oca-travis', 'GitHub', \
+     'Travis CI User', 'Launchpad Code Hosting') \
+     AND com.name NOT LIKE 'Launchpad Translations on behalf of %' \
+     AND com.name NOT LIKE '% bot' AND com.name NOT LIKE '%-bot' \
+     AND com.name NOT LIKE '%[bot]' AND com.name NOT LIKE '%transbot' \
+     AND com.name NOT LIKE '%mergebot')";
 
 // Shared helper types for sql_query results.
 #[derive(diesel::QueryableByName)]
@@ -1273,5 +1282,36 @@ mod tests {
         // Default resolution ("latest") must land on the v2 snapshot.
         let current = super::module_version::resolve_current(&mut conn, &module_v2).unwrap();
         assert_eq!(current.id, module_version_v2.id);
+    }
+
+    #[test]
+    fn human_committer_filters_bot_spellings_but_not_people() {
+        use diesel::connection::SimpleConnection;
+        use diesel::RunQueryDsl;
+        let mut conn = setup_db();
+        conn.batch_execute(
+            "INSERT INTO committer(name) VALUES ('OCA Git Bot'), ('oca-git-bot'), ('fw-bot'), \
+             ('github-actions[bot]'), ('OCA Transbot'), ('Odoo''s Mergebot'), ('Weblate'), \
+             ('Launchpad Translations on behalf of openerp-spain-team'), \
+             ('Joan Ribot Terrasa'), ('Alexandra Bottemanne'), ('Ana Bot Tester');",
+        )
+        .unwrap();
+        let humans: Vec<String> = diesel::sql_query(format!(
+            "SELECT com.name as name FROM committer as com WHERE {} ORDER BY com.name",
+            super::HUMAN_COMMITTER
+        ))
+        .load::<super::NameRow>(&mut conn)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+        assert_eq!(
+            humans,
+            [
+                "Alexandra Bottemanne",
+                "Ana Bot Tester",
+                "Joan Ribot Terrasa"
+            ]
+        );
     }
 }

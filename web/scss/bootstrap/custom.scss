@@ -116,6 +116,11 @@ html[data-mode='user'] .dev-only {
   display: none !important;
 }
 
+// #anchor targets land below the sticky top bar instead of under it.
+[id] {
+  scroll-margin-top: calc(var(--app-topbar-h) + 1rem);
+}
+
 // ---- App shell: sidebar + (top bar / content) ----
 // The window stays the scroll container (sticky sidebar/top bar), so
 // window-based scroll handlers, scroll restoration and #anchors keep working.
