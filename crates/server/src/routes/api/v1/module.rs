@@ -6,7 +6,8 @@ use actix_web::{get, web, Error as AWError, HttpResponse};
 use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
-use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
+use oghutils::license::LicenseReport;
+use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string, parse_odoo_version};
 use sqlitedb::{models, Pool};
 
 use crate::utils::normalize_python_dep;
@@ -132,6 +133,8 @@ pub struct ModuleFullInfoResponse {
     /// Modules (same Odoo version, any repository) that declare this module
     /// as an Odoo dependency.
     pub required_by: Vec<models::module::ModuleCriteriaInfo>,
+    /// This module's license checked against its whole dependency closure.
+    pub license_review: LicenseReport,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -302,6 +305,7 @@ pub fn process_modules_db(
     let mut res: Vec<ModuleFullInfoResponse> = Vec::new();
     for module in modules {
         let full_deps = models::dependency::get_full_dependency_info(conn, module);
+        let license_review = full_deps.license_review(&[module.id]);
         let dependencies = ModuleDependencyInfoResponse {
             odoo: full_deps.odoo,
             pip: full_deps
@@ -388,6 +392,7 @@ pub fn process_modules_db(
             security_warning_count,
             migration_considerations,
             required_by,
+            license_review,
         });
     }
     res
@@ -557,6 +562,80 @@ pub async fn route_versions(
                 }
             })
             .collect::<Vec<_>>()
+    })
+    .await?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RouteModuleCompareRequest {
+    from: String,
+    to: String,
+    org: Option<String>,
+    repo: Option<String>,
+}
+
+fn find_module(
+    conn: &mut SqliteConnection,
+    technical_name: &str,
+    version_odoo: &u8,
+    org: Option<&str>,
+    repo: Option<&str>,
+) -> Option<models::module::Model> {
+    let modules = match (org, repo) {
+        (Some(org), Some(repo)) => {
+            models::module::get_by_technical_name_odoo_version_organization_name_repository_name(
+                conn,
+                technical_name,
+                version_odoo,
+                org,
+                repo,
+            )
+        }
+        (Some(org), None) => models::module::get_by_technical_name_odoo_version_organization_name(
+            conn,
+            technical_name,
+            version_odoo,
+            org,
+        ),
+        (None, Some(repo)) => models::module::get_by_technical_name_odoo_version_repository_name(
+            conn,
+            technical_name,
+            version_odoo,
+            repo,
+        ),
+        (None, None) => models::module::get_by_technical_name_odoo_version(
+            conn,
+            &[technical_name.to_string()],
+            version_odoo,
+        ),
+    };
+    modules.into_iter().next()
+}
+
+/// What changed in a module between two Odoo versions (manifest, direct
+/// dependencies, models/fields/methods, views, HTTP routes). `null` when the
+/// module doesn't exist at either version.
+#[get("/compare/{module_name}")]
+pub async fn route_compare(
+    pool: web::Data<Pool>,
+    path: web::Path<String>,
+    info: web::Query<RouteModuleCompareRequest>,
+) -> Result<HttpResponse, AWError> {
+    let module_name = path.into_inner();
+    let info = info.into_inner();
+    let parse = |raw: &str| {
+        parse_odoo_version(raw).ok_or_else(|| {
+            actix_web::error::ErrorBadRequest(format!("invalid odoo version: {raw:?}"))
+        })
+    };
+    let (from, to) = (parse(&info.from)?, parse(&info.to)?);
+    let result = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let (org, repo) = (info.org.as_deref(), info.repo.as_deref());
+        let old = find_module(&mut conn, &module_name, &from, org, repo)?;
+        let new = find_module(&mut conn, &module_name, &to, org, repo)?;
+        Some(models::module_compare::compare(&mut conn, &old, &new))
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))

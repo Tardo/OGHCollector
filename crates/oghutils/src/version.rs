@@ -7,6 +7,15 @@ pub fn odoo_version_string_to_u8(version: &str) -> u8 {
     (version.parse::<f32>().unwrap() * 10.0) as u8
 }
 
+/// `odoo_version_string_to_u8` for untrusted input (URL params): None
+/// instead of a panic for anything that isn't an "X.Y" version.
+pub fn parse_odoo_version(version: &str) -> Option<u8> {
+    let value = version.trim().parse::<f32>().ok()?;
+    (1.0..=25.5)
+        .contains(&value)
+        .then_some((value * 10.0) as u8)
+}
+
 pub struct OdooVersion {
     raw: String,
     version_odoo: u8,
@@ -48,6 +57,15 @@ impl OdooVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_odoo_version_rejects_garbage() {
+        assert_eq!(parse_odoo_version("17.0"), Some(170));
+        assert_eq!(parse_odoo_version("6.1"), Some(61));
+        assert_eq!(parse_odoo_version("abc"), None);
+        assert_eq!(parse_odoo_version("NaN"), None);
+        assert_eq!(parse_odoo_version("900"), None);
+    }
 
     #[test]
     fn test_u8_to_string_roundtrip() {

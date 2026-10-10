@@ -1,0 +1,168 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% set display_name = module_name or technical_name %}
+{% set meta_title = ("Compare " ~ display_name ~ " " ~ from_version ~ " → " ~ to_version) if diff else ("Compare " ~ display_name) %}
+{% set meta_description = "What changed in the Odoo module " ~ technical_name ~ " between two Odoo versions: manifest, dependencies, models, fields, views and HTTP routes." %}
+{% extends "minimal_layout.html" %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/module.css" as="style">
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+{% macro list_diff(title, d) -%}
+{% if d.added or d.removed %}
+<dt>{{ title }}</dt>
+<dd>
+    {% for name in d.added %}<span class="diff-chip diff-added" title="Added">+ {{ name }}</span>{% endfor %}
+    {% for name in d.removed %}<span class="diff-chip diff-removed" title="Removed">&minus; {{ name }}</span>{% endfor %}
+</dd>
+{% endif %}
+{%- endmacro %}
+
+{% macro item_diff(d, empty_text) -%}
+{% if d.added or d.removed or d.changed %}
+<ul class="list-unstyled diff-list">
+    {% for item in d.added %}<li class="diff-added"><span class="diff-sign" aria-label="Added">+</span><code>{{ item.name }}</code> <span class="text-body-secondary">{{ item.value }}</span></li>{% endfor %}
+    {% for item in d.removed %}<li class="diff-removed"><span class="diff-sign" aria-label="Removed">&minus;</span><code>{{ item.name }}</code> <span class="text-body-secondary">{{ item.value }}</span></li>{% endfor %}
+    {% for item in d.changed %}<li class="diff-changed"><span class="diff-sign" aria-label="Changed">~</span><code>{{ item.name }}</code> <span class="text-body-secondary"><del>{{ item.from }}</del> &rarr; {{ item.to }}</span></li>{% endfor %}
+</ul>
+{% else %}
+<p class="text-body-secondary mb-0">{{ empty_text }}</p>
+{% endif %}
+{%- endmacro %}
+
+<header class="page-header">
+    <h1>{{ display_name }}{% if diff %}: {{ from_version }} &rarr; {{ to_version }}{% endif %}</h1>
+    <p class="page-header-desc"><code>{{ technical_name }}</code> &middot; {{ org }} &middot; what changed between two Odoo versions of this module, from the stored manifest and static code analysis (models, views and routes in Dev mode).</p>
+    <div class="page-header-actions">
+        <a class="btn btn-outline-secondary btn-sm" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}"><span class="material-icons" aria-hidden="true">arrow_back</span> Module page</a>
+    </div>
+</header>
+
+{% if versions | length < 2 %}
+<div class="empty-state">
+    <span class="empty-state-icon material-icons" aria-hidden="true">compare_arrows</span>
+    <p class="mb-0">{% if versions %}This module is only tracked for Odoo {{ versions[0] }}: there's nothing to compare it with yet.{% else %}No data found for this module.{% endif %}</p>
+</div>
+{% else %}
+<form class="compare-form" method="get">
+    <label>From <select class="form-select form-select-sm" name="from" aria-label="Baseline Odoo version">
+        {% for v in versions %}<option value="{{ v }}" {{ v == from_version and 'selected' or '' }}>{{ v }}</option>{% endfor %}
+    </select></label>
+    <span class="material-icons" aria-hidden="true">arrow_forward</span>
+    <label>To <select class="form-select form-select-sm" name="to" aria-label="Target Odoo version">
+        {% for v in versions %}<option value="{{ v }}" {{ v == to_version and 'selected' or '' }}>{{ v }}</option>{% endfor %}
+    </select></label>
+    <button type="submit" class="btn btn-primary btn-sm">Compare</button>
+</form>
+
+{% if diff %}
+<div class="module-summary">
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">account_tree</span> Dependencies</div>
+        <div class="stat-card-value">+{{ diff.depends.added | length }} <small>/</small> &minus;{{ diff.depends.removed | length }}</div>
+        <div class="stat-card-note">Direct Odoo <code>depends</code></div>
+    </div>
+    <div class="stat-card dev-only">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">data_object</span> Models</div>
+        <div class="stat-card-value">{{ diff.models | length }}</div>
+        <div class="stat-card-note">Added, removed or changed</div>
+    </div>
+    <div class="stat-card dev-only">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">web</span> Views</div>
+        <div class="stat-card-value">+{{ diff.views.added | length }} <small>/</small> &minus;{{ diff.views.removed | length }} <small>/</small> ~{{ diff.views.changed | length }}</div>
+        <div class="stat-card-note">Added / removed / changed</div>
+    </div>
+    <div class="stat-card dev-only">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">http</span> HTTP routes</div>
+        <div class="stat-card-value">+{{ diff.routes.added | length }} <small>/</small> &minus;{{ diff.routes.removed | length }} <small>/</small> ~{{ diff.routes.changed | length }}</div>
+        <div class="stat-card-note">Added / removed / changed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">shield</span> Security findings</div>
+        <div class="stat-card-value">{% if diff.security_from %}{{ diff.security_from.grave }}/{{ diff.security_from.minor }}{% else %}?{% endif %} &rarr; {% if diff.security_to %}{{ diff.security_to.grave }}/{{ diff.security_to.minor }}{% else %}?{% endif %}</div>
+        <div class="stat-card-note">Grave / minor (static analysis)</div>
+    </div>
+</div>
+
+{% if not diff.analysis_available %}
+<div class="dev-only alert alert-warning" role="alert">No code analysis is stored for one of these versions yet, so models, views and HTTP routes aren't compared &mdash; only the manifest and dependencies.</div>
+{% endif %}
+
+<div class="compare-layout">
+    <section class="panel">
+        <header class="panel-header"><h2>Manifest</h2></header>
+        <div class="panel-body">
+            <dl class="spec-sheet">
+                <dt>Module version</dt>
+                <dd>{{ diff.from_module_version }} &rarr; {{ diff.to_module_version }}</dd>
+                {% for change in diff.manifest %}
+                <dt>{{ change.name | replace("_", " ") | capitalize }}</dt>
+                <dd><del class="text-body-secondary">{{ change.from or "(none)" }}</del> &rarr; {{ change.to or "(none)" }}</dd>
+                {% endfor %}
+            </dl>
+            {% if not diff.manifest %}<p class="text-body-secondary mb-0">Name, license, category, flags and maintainers are unchanged.</p>{% endif %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <header class="panel-header"><h2>Dependencies</h2></header>
+        <div class="panel-body">
+            {% if diff.depends.added or diff.depends.removed or diff.pip.added or diff.pip.removed or diff.bin.added or diff.bin.removed %}
+            <dl class="spec-sheet">
+                {{ list_diff("Odoo modules", diff.depends) }}
+                {{ list_diff("Python packages", diff.pip) }}
+                {{ list_diff("System packages", diff.bin) }}
+            </dl>
+            {% else %}
+            <p class="text-body-secondary mb-0">Same direct dependencies.</p>
+            {% endif %}
+        </div>
+    </section>
+
+    {# Code analysis is a Dev-mode thing everywhere else (module page), same here. #}
+    {% if diff.analysis_available %}
+    <div class="dev-only compare-layout">
+    <section class="panel">
+        <header class="panel-header"><h2>Models <span class="badge text-bg-light border">{{ diff.models | length }}</span></h2></header>
+        <div class="panel-body">
+            {% for mdl in diff.models %}
+            <div class="compare-model">
+                <h3 class="fs-6"><code>{{ mdl.model }}</code>
+                    {% if mdl.status == "added" %}<span class="badge text-bg-success">added</span>
+                    {% elif mdl.status == "removed" %}<span class="badge text-bg-danger">removed</span>
+                    {% else %}<span class="badge text-bg-secondary">changed</span>{% endif %}
+                </h3>
+                {% if mdl.fields.added or mdl.fields.removed or mdl.fields.changed %}
+                <strong class="small">Fields</strong>
+                {{ item_diff(mdl.fields, "") }}
+                {% endif %}
+                {% if mdl.methods.added or mdl.methods.removed or mdl.methods.changed %}
+                <strong class="small">Public methods</strong>
+                {{ item_diff(mdl.methods, "") }}
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="text-body-secondary mb-0">No model, field or public method changes.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <header class="panel-header"><h2>Views</h2></header>
+        <div class="panel-body">{{ item_diff(diff.views, "No view changes.") }}</div>
+    </section>
+
+    <section class="panel">
+        <header class="panel-header"><h2>HTTP routes</h2></header>
+        <div class="panel-body">{{ item_diff(diff.routes, "No HTTP route changes.") }}</div>
+    </section>
+    </div>
+    {% endif %}
+</div>
+<p class="small text-body-secondary mt-3">Static analysis of each version's latest snapshot: migration notes for the target version are on the <a href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}">module page</a>. Also available as JSON: <a href="/v1/compare/{{ technical_name | urlencode }}?from={{ from_version | urlencode }}&amp;to={{ to_version | urlencode }}&amp;org={{ org | urlencode }}"><code>/v1/compare/{{ technical_name }}</code></a>.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,9 +1,10 @@
 // Copyright Alexandre D. Díaz
-use crate::routes::api::v1::module::process_modules_db;
 use actix_multipart::form::{text::Text, MultipartForm};
 use actix_web::{get, post, web, Error as AWError, HttpRequest, HttpResponse, Responder, Result};
+use array_tool::vec::Uniq;
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
+use oghutils::license::LicenseReport;
 use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -12,7 +13,7 @@ use sqlitedb::{models, Pool};
 
 use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
-use crate::utils::get_minijinja_context;
+use crate::utils::{get_minijinja_context, normalize_python_dep};
 
 // These endpoints are unauthenticated and do all their work inside
 // web::block holding one of the few read-only DB connections (pool default
@@ -20,13 +21,7 @@ use crate::utils::get_minijinja_context;
 // lever, so reject both at the trust boundary before any DB work. The cap is
 // `doodba_max_modules` in server.yaml (default 500).
 fn validate_request(mods: &[Text<String>], versions: &[&str]) -> Result<(), AWError> {
-    let max = *SERVER_CONFIG.get_doodba_max_modules();
-    if mods.len() > max {
-        return Err(actix_web::error::ErrorBadRequest(format!(
-            "too many modules: {} (max {max})",
-            mods.len()
-        )));
-    }
+    validate_module_count(mods.len())?;
     // Empty is allowed (an optional upper-bound version left blank); a
     // non-empty value must parse, since odoo_version_string_to_u8 unwraps.
     for v in versions {
@@ -35,6 +30,18 @@ fn validate_request(mods: &[Text<String>], versions: &[&str]) -> Result<(), AWEr
                 "invalid odoo version: {v:?}"
             )));
         }
+    }
+    Ok(())
+}
+
+/// Shared module-count cap (`doodba_max_modules`) for every endpoint that
+/// walks the dependency closure of a caller-supplied module list.
+pub fn validate_module_count(count: usize) -> Result<(), AWError> {
+    let max = *SERVER_CONFIG.get_doodba_max_modules();
+    if count > max {
+        return Err(actix_web::error::ErrorBadRequest(format!(
+            "too many modules: {count} (max {max})"
+        )));
     }
     Ok(())
 }
@@ -110,17 +117,20 @@ pub async fn route_doodba_dependency_resolver(
 }
 
 // Same shape as ModuleDependencyInfoResponse plus `repos` (repo name ->
-// organization), needed to emit a doodba repos.yaml (git remotes) - kept as
-// an additive JSON field so the existing dependency-resolver frontend (which
-// only reads odoo/pip/bin) doesn't need to change.
+// organization), needed to emit a doodba repos.yaml (git remotes), and the
+// license review of the whole set.
 #[derive(Debug, Serialize)]
 pub struct DoodbaAddonsResponse {
     pub odoo: HashMap<String, Vec<String>>,
     pub pip: Vec<String>,
     pub bin: Vec<String>,
     pub repos: HashMap<String, String>,
+    pub license_review: LicenseReport,
 }
 
+// One walk over the union of the requested modules' closures. Groups by repo
+// name only (doodba's addons.yaml/repos.yaml are keyed that way), requested
+// modules first, then their dependencies.
 fn get_doodba_addons_full(
     conn: &mut SqliteConnection,
     mods: &[Text<String>],
@@ -129,54 +139,46 @@ fn get_doodba_addons_full(
     let odoo_ver = odoo_version_string_to_u8(odoo_version);
     let modules: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
     let modules = models::module::get_by_technical_name_odoo_version(conn, &modules, &odoo_ver);
-    let modules_infos = process_modules_db(conn, &modules, None);
+    let closure = models::dependency::get_full_dependency_info_many(conn, &modules);
+    let root_ids: Vec<i64> = modules.iter().map(|m| m.id).collect();
 
-    let mut dependencies_info = DoodbaAddonsResponse {
-        odoo: HashMap::new(),
-        pip: Vec::new(),
-        bin: Vec::new(),
-        repos: HashMap::new(),
-    };
-    for module_info in modules_infos {
-        dependencies_info
-            .repos
-            .entry(module_info.repository.clone())
-            .or_insert(module_info.organization);
-        let main_odoo_deps = dependencies_info
-            .odoo
-            .entry(module_info.repository)
-            .or_default();
-        if !main_odoo_deps.contains(&module_info.technical_name) {
-            main_odoo_deps.push(module_info.technical_name);
-        }
-        for (key, values) in module_info.dependencies.odoo {
-            let (org_name, repo_name) = match key.split_once('/') {
-                Some((org, repo)) => (org.to_string(), repo.to_string()),
-                None => (String::new(), key),
-            };
-            dependencies_info
-                .repos
-                .entry(repo_name.clone())
-                .or_insert(org_name);
-            let vec_ref = dependencies_info.odoo.entry(repo_name).or_default();
-            let new_values: Vec<String> = values
-                .into_iter()
-                .filter(|v| !vec_ref.contains(v))
-                .collect();
-            vec_ref.extend(new_values);
-        }
-        for value in module_info.dependencies.pip {
-            if !dependencies_info.pip.contains(&value) {
-                dependencies_info.pip.push(value);
-            }
-        }
-        for value in module_info.dependencies.bin {
-            if !dependencies_info.bin.contains(&value) {
-                dependencies_info.bin.push(value);
+    let roots = root_ids.iter().map(|id| {
+        let node = &closure.nodes[id];
+        (
+            node.organization.clone(),
+            node.repository.clone(),
+            vec![node.technical_name.clone()],
+        )
+    });
+    let deps = closure.odoo.iter().map(|(key, names)| {
+        let (org, repo) = key.split_once('/').unwrap_or(("", key));
+        (org.to_string(), repo.to_string(), names.clone())
+    });
+    let mut odoo: HashMap<String, Vec<String>> = HashMap::new();
+    let mut repos: HashMap<String, String> = HashMap::new();
+    for (org, repo, names) in roots.chain(deps) {
+        repos.entry(repo.clone()).or_insert(org);
+        let group = odoo.entry(repo).or_default();
+        for name in names {
+            if !group.contains(&name) {
+                group.push(name);
             }
         }
     }
-    dependencies_info
+
+    DoodbaAddonsResponse {
+        odoo,
+        pip: closure
+            .pip
+            .iter()
+            .cloned()
+            .map(normalize_python_dep)
+            .collect::<Vec<_>>()
+            .unique(),
+        bin: closure.bin.clone(),
+        repos,
+        license_review: closure.license_review(&root_ids),
+    }
 }
 
 #[post("/doodba/dependency-resolver/addons")]

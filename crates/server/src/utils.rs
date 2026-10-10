@@ -53,6 +53,26 @@ pub fn normalize_python_dep(name: String) -> String {
     PIP_NAMES_MAP.get(&lower).cloned().unwrap_or(name)
 }
 
+/// Escapes text for XML content and attribute values (sitemap, Atom feeds,
+/// SVG badges), dropping the control characters XML 1.0 can't carry at all -
+/// commit messages end up in event text and occasionally contain them.
+pub fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            '\t' | '\n' | '\r' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 pub fn get_base_url(req: &HttpRequest) -> String {
     let conn_info = req.connection_info();
     format!("{}://{}", conn_info.scheme(), conn_info.host())
@@ -71,4 +91,17 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
         SEO_ENABLED => SERVER_CONFIG.get_seo_enabled(),
         SEMANTIC_SEARCH_ENABLED => SERVER_CONFIG.get_semantic_search_enabled(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::xml_escape;
+
+    #[test]
+    fn test_xml_escape() {
+        assert_eq!(
+            xml_escape("a&b<c>\"d' \u{1b}[0m\tok"),
+            "a&amp;b&lt;c&gt;&quot;d&apos; [0m\tok"
+        );
+    }
 }

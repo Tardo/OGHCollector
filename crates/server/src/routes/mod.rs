@@ -2,12 +2,14 @@
 pub mod api;
 pub mod api_doc;
 pub mod atlas;
+pub mod badge;
 pub mod committer;
 pub mod committers;
 pub mod common;
 pub mod dashboard;
 pub mod doodba_tools;
 pub mod favorites;
+pub mod feed;
 pub mod localization;
 pub mod logs;
 pub mod mcp_info;

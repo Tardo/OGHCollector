@@ -12,7 +12,7 @@
 {% block content %}
 {{ super() }}
 
-{% macro api_doc_tab_pane(prefix, path_parameters, query_parameters, method, endpoint, example_curl, example, schema) -%}
+{% macro api_doc_tab_pane(prefix, path_parameters, query_parameters, method, endpoint, example_curl, example, schema, pipe="| jq", sample_label="cURL + jq") -%}
     <div class="row">
         <div class="col-12 col-lg-4">
             <h2 class="fs-4 fw-bold mb-4">Parameters</h2>
@@ -29,10 +29,10 @@
                 </div>
                 <div>
                     <ul class="nav nav-tabs px-2 pt-2 border">
-                        <li class="nav-item"><a class="nav-link active" aria-current="page" href="#">cURL + jq</a></li>
+                        <li class="nav-item"><a class="nav-link active" aria-current="page" href="#">{{ sample_label }}</a></li>
                     </ul>
                     <div class="p-3 text-bg-secondary">
-                        <code class="text-light">curl -s {{ REQ_BASE_URL }}{{ example_curl }} | jq</code>
+                        <code class="text-light">curl -s {{ REQ_BASE_URL }}{{ example_curl }} {{ pipe }}</code>
                     </div>
                 </div>
             </div>
@@ -84,6 +84,10 @@
         <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
         <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
         <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
+        <button class="nav-link" id="api-pills-licenses-tab" data-bs-toggle="pill" data-bs-target="#api-pills-licenses" type="button" role="tab" aria-controls="api-pills-licenses" aria-selected="false">Check licenses</button>
+        <button class="nav-link" id="api-pills-compare-tab" data-bs-toggle="pill" data-bs-target="#api-pills-compare" type="button" role="tab" aria-controls="api-pills-compare" aria-selected="false">Compare module versions</button>
+        <button class="nav-link" id="api-pills-feeds-tab" data-bs-toggle="pill" data-bs-target="#api-pills-feeds" type="button" role="tab" aria-controls="api-pills-feeds" aria-selected="false">Activity feeds (Atom)</button>
+        <button class="nav-link" id="api-pills-badges-tab" data-bs-toggle="pill" data-bs-target="#api-pills-badges" type="button" role="tab" aria-controls="api-pills-badges" aria-selected="false">README badges</button>
         {% if SEMANTIC_SEARCH_ENABLED %}
         <button class="nav-link" id="api-pills-semantic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-semantic" type="button" role="tab" aria-controls="api-pills-semantic" aria-selected="false">Semantic search</button>
         {% endif %}
@@ -106,6 +110,18 @@
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-licenses-tab" data-bs-toggle="pill" data-bs-target="#api-pills-licenses" type="button" role="tab" aria-controls="api-pills-licenses" aria-selected="false">Check licenses</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-compare-tab" data-bs-toggle="pill" data-bs-target="#api-pills-compare" type="button" role="tab" aria-controls="api-pills-compare" aria-selected="false">Compare module versions</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-feeds-tab" data-bs-toggle="pill" data-bs-target="#api-pills-feeds" type="button" role="tab" aria-controls="api-pills-feeds" aria-selected="false">Activity feeds (Atom)</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="api-pills-badges-tab" data-bs-toggle="pill" data-bs-target="#api-pills-badges" type="button" role="tab" aria-controls="api-pills-badges" aria-selected="false">README badges</button>
                 </li>
                 {% if SEMANTIC_SEARCH_ENABLED %}
                 <li class="nav-item" role="presentation">
@@ -282,7 +298,14 @@
                     }
                 ]
             }
-        ]
+        ],
+        \"license_review\": {
+            \"effective_license\": \"AGPL-3\",
+            \"effective_license_source\": \"web_responsive\",
+            \"proprietary\": [],
+            \"licenses\": {\"AGPL-3\": 1, \"LGPL-3\": 5},
+            \"findings\": []
+        }
     }
 ]",
                 "{
@@ -311,6 +334,13 @@
     \"organization\": string,
     \"odoo_version\": string,
     \"source_path\": string,
+    \"license_review\": {
+        \"effective_license\": string|null,
+        \"effective_license_source\": string|null,
+        \"proprietary\": Array[string],
+        \"licenses\": Object,
+        \"findings\": Array[{\"severity\": string, \"code\": string, \"message\": string, \"module\": string, \"related\": Array[string]}]
+    },
     \"views\": Array[{
         \"xml_id\": string,
         \"name\": string,
@@ -526,6 +556,289 @@
         \"repository\": string
     }
 ]"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-licenses" role="tabpanel" aria-labelledby="api-pills-licenses-tab" tabindex="0">
+            <p class="text-secondary-emphasis">Reviews the license of a set of modules deployed together plus everything they depend on: the license the combined work must be distributed under, proprietary modules pulled in, and conflicts (e.g. a proprietary module on GPL/AGPL code). Handy in CI &mdash; fail the build when a finding has <code>"severity": "error"</code>. A heuristic based on manifest licenses, not legal advice.</p>
+            {{ api_doc_tab_pane(
+                "licenses",
+                "<span class='text-secondary-emphasis'>None</span>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>odoo_version</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The odoo version
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>modules</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Comma-separated technical names (max 500 by default)
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/v1/license-check",
+                "'/v1/license-check?odoo_version=18.0&modules=mis_report_partner_details,sale_order_type'",
+                "{
+    \"odoo_version\": \"18.0\",
+    \"not_found\": [],
+    \"effective_license\": \"AGPL-3\",
+    \"effective_license_source\": \"mis_builder\",
+    \"proprietary\": [],
+    \"licenses\": {\"AGPL-3\": 6, \"LGPL-3\": 31},
+    \"findings\": [
+        {
+            \"severity\": \"warning\",
+            \"code\": \"LICENSE_EFFECTIVE_UPGRADE\",
+            \"message\": \"mis_report_partner_details (LGPL-3) depends on mis_builder (AGPL-3): combined with its dependencies it must be distributed under AGPL-3, including offering the source to users of a hosted instance.\",
+            \"module\": \"mis_report_partner_details\",
+            \"related\": [\"mis_builder (AGPL-3)\"]
+        }
+    ]
+}",
+                "{
+    \"odoo_version\": string,
+    \"not_found\": [string],
+    \"effective_license\": string|null,
+    \"effective_license_source\": string|null,
+    \"proprietary\": [string],
+    \"licenses\": {license: integer},
+    \"findings\": [
+        {
+            \"severity\": \"error\"|\"warning\"|\"info\",
+            \"code\": string,
+            \"message\": string,
+            \"module\": string,
+            \"related\": [string]
+        }
+    ]
+}"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-compare" role="tabpanel" aria-labelledby="api-pills-compare-tab" tabindex="0">
+            <p class="text-secondary-emphasis">What changed in a module between two Odoo versions: manifest, direct dependencies, models/fields/methods, views and HTTP routes. <code>null</code> when the module doesn't exist at one of them; <code>analysis_available: false</code> when one side has no stored code analysis. Also browsable from a module page (&ldquo;Compare&rdquo;).</p>
+            {{ api_doc_tab_pane(
+                "compare",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>module_name</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The technical name of the module
+                        </div>
+                    </li>
+                </ul>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>from</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Baseline Odoo version
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>to</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Odoo version to compare against
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>org</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The organization name
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>repo</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The repository name
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/v1/compare/{module_name}",
+                "'/v1/compare/web_responsive?from=17.0&to=18.0&org=OCA'",
+                "{
+    \"technical_name\": \"web_responsive\",
+    \"from_odoo_version\": \"17.0\",
+    \"to_odoo_version\": \"18.0\",
+    \"from_module_version\": \"1.0.0\",
+    \"to_module_version\": \"1.0.0\",
+    \"manifest\": [],
+    \"depends\": {\"added\": [], \"removed\": []},
+    \"pip\": {\"added\": [], \"removed\": []},
+    \"bin\": {\"added\": [], \"removed\": []},
+    \"analysis_available\": true,
+    \"models\": [
+        {
+            \"model\": \"res.users\",
+            \"status\": \"changed\",
+            \"fields\": {\"added\": [{\"name\": \"is_redirect_home\", \"value\": \"Boolean\"}], \"removed\": [], \"changed\": []},
+            \"methods\": {\"added\": [], \"removed\": [], \"changed\": []}
+        }
+    ],
+    \"views\": {\"added\": [], \"removed\": [], \"changed\": []},
+    \"routes\": {\"added\": [], \"removed\": [], \"changed\": []},
+    \"security_from\": {\"grave\": 0, \"minor\": 0},
+    \"security_to\": {\"grave\": 0, \"minor\": 0}
+}",
+                "{
+    \"technical_name\": string,
+    \"from_odoo_version\": string,
+    \"to_odoo_version\": string,
+    \"from_module_version\": string,
+    \"to_module_version\": string,
+    \"manifest\": [{\"name\": string, \"from\": string, \"to\": string}],
+    \"depends\" | \"pip\" | \"bin\": {\"added\": [string], \"removed\": [string]},
+    \"analysis_available\": bool,
+    \"models\": [
+        {
+            \"model\": string,
+            \"status\": \"added\"|\"removed\"|\"changed\",
+            \"fields\" | \"methods\": ITEM_DIFF
+        }
+    ],
+    \"views\" | \"routes\": ITEM_DIFF,
+    \"security_from\" | \"security_to\": {\"grave\": integer, \"minor\": integer}|null
+}
+
+ITEM_DIFF = {
+    \"added\": [{\"name\": string, \"value\": string}],
+    \"removed\": [{\"name\": string, \"value\": string}],
+    \"changed\": [{\"name\": string, \"from\": string, \"to\": string}]
+}"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-feeds" role="tabpanel" aria-labelledby="api-pills-feeds-tab" tabindex="0">
+            <p class="text-secondary-emphasis">Atom feeds of the collector's activity log (the 50 newest events), for feed readers or chat integrations (Slack/Teams RSS apps). <code>/module/{org}/{technical_name}/feed.atom</code> follows a single module &mdash; every event mentioning it, all versions.</p>
+            {{ api_doc_tab_pane(
+                "feeds",
+                "<span class='text-secondary-emphasis'>None</span>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>type</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Comma-separated event types: module, migration_pr, vulnerability, security, issue, repository, organization, dependency, committer, author, maintainer, collector &mdash; or <code>all</code>. Default: module, migration_pr, vulnerability, issue, repository, organization
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>odoo_version</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Only events about this Odoo version
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>q</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            Only events whose text contains this (e.g. a repository name)
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/feed.atom",
+                "'/feed.atom?type=migration_pr,vulnerability&odoo_version=18.0'",
+                "<feed xmlns=\"http://www.w3.org/2005/Atom\">
+  <title>Odoo Module Metadata: activity [18.0]</title>
+  <entry>
+    <title>[migration_pr] New migration PR #123 ...</title>
+    <updated>2026-10-10T12:30:00Z</updated>
+    <category term=\"migration_pr\"/>
+    <content type=\"text\">New migration PR #123 ...</content>
+  </entry>
+</feed>",
+                "Atom 1.0 (application/atom+xml)",
+                pipe="| head -20",
+                sample_label="cURL"
+            ) }}
+        </div>
+        <div class="tab-pane fade" id="api-pills-badges" role="tabpanel" aria-labelledby="api-pills-badges-tab" tabindex="0">
+            <p class="text-secondary-emphasis">SVG status badges for READMEs. Ready-to-paste Markdown / reStructuredText / HTML snippets are under &ldquo;Embed badges&rdquo; on every module page. Unknown modules render a grey &ldquo;not found&rdquo; badge.</p>
+            {{ api_doc_tab_pane(
+                "badges",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>org</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The organization name
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>technical_name</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            The technical name of the module
+                        </div>
+                    </li>
+                    <li class='mt-4'>
+                        <div>
+                            <span class='badge text-bg-secondary'>kind</span>
+                            <span class='text-danger-emphasis'>string</span>
+                            <span class='ms-3 text-warning'>Required</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            <code>versions</code> (Odoo versions carrying it), <code>status</code> (available / migration PR open / not migrated), <code>license</code> (its license, and the effective one of its dependencies when stronger), <code>security</code> (static-analysis findings)
+                        </div>
+                    </li>
+                </ul>",
+                "<ul class='list-unstyled'>
+                    <li>
+                        <div>
+                            <span class='badge text-bg-secondary'>odoo_version</span>
+                            <span class='text-danger-emphasis'>string</span>
+                        </div>
+                        <div class='mt-2 text-secondary-emphasis'>
+                            For <code>status</code>: the Odoo version to check (default: the newest tracked). For <code>license</code>/<code>security</code>: which version of the module (default: its newest)
+                        </div>
+                    </li>
+                </ul>",
+                "GET",
+                "/badge/{org}/{technical_name}/{kind}.svg",
+                "'/badge/OCA/web_responsive/status.svg?odoo_version=18.0'",
+                "odoo 18.0 | available",
+                "SVG image (image/svg+xml)",
+                pipe="-o badge.svg",
+                sample_label="cURL"
             ) }}
         </div>
         {% if SEMANTIC_SEARCH_ENABLED %}

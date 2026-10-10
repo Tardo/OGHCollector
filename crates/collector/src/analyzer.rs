@@ -1551,6 +1551,10 @@ impl OGHCollectorAnalyzer {
             let license_opt = manifest.get_item("license")?;
             let license: String = if let Some(license_value) = license_opt {
                 license_value.cast::<PyString>()?.extract::<String>()?
+            } else if self.version_odoo < 90 {
+                // OpenERP <= 8.0 defaulted a missing manifest license to
+                // AGPL-3; Odoo 9.0 switched the default (and core) to LGPL-3.
+                "AGPL-3".to_string()
             } else {
                 "LGPL-3".to_string()
             };

@@ -20,6 +20,15 @@
         <div class="stat-card-value">{{ module.dependencies.pip | length }} <small>pip</small> &middot; {{ module.dependencies.bin | length }} <small>bin</small></div>
         <div class="stat-card-note">Python packages / system binaries</div>
     </div>
+    {% set lr = module.license_review %}
+    {# Only an open-source module can be "upgraded" by its dependencies; a
+       proprietary one isn't distributed under the closure's copyleft. #}
+    {% set lr_upgrade = lr.findings | selectattr("code", "eq", "LICENSE_EFFECTIVE_UPGRADE") | first %}
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gavel</span> License</div>
+        <div class="stat-card-value">{{ module.license }}</div>
+        <div class="stat-card-note">{% if lr.findings and lr.findings[0].severity == "error" %}<span class="text-danger">License conflict in dependencies</span>{% elif lr_upgrade %}Combined: {{ lr.effective_license }}{% elif lr.proprietary %}Needs commercial licenses{% else %}No conflicts with its dependencies{% endif %}</div>
+    </div>
     <div class="stat-card">
         <div class="stat-card-label"><span class="material-icons" aria-hidden="true">folder</span> Folder size</div>
         <div class="stat-card-value">{{ (module.folder_size / 1048576) | round(2) }} <small>MB</small></div>
@@ -45,6 +54,18 @@
         {% endfor %}
     </ul>
     <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue.</p>
+</div>
+{% endif %}
+{% if lr.findings %}
+{% set lr_level = lr.findings[0].severity %}
+<div class="alert alert-{{ lr_level == 'error' and 'danger' or (lr_level == 'warning' and 'warning' or 'info') }}" role="alert">
+    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">gavel</span> License review</h5>
+    <ul>
+        {% for f in lr.findings %}
+        <li>{{ f.message }} <span class="badge {{ f.severity == 'error' and 'text-bg-danger' or (f.severity == 'warning' and 'text-bg-warning' or 'text-bg-info') }}">{{ f.code }}</span></li>
+        {% endfor %}
+    </ul>
+    <p class="mb-0 small">Based on the manifest licenses of this module and everything it depends on: a heuristic to spot problems early, not legal advice.</p>
 </div>
 {% endif %}
 {% if module.migration_considerations %}
@@ -290,7 +311,15 @@
                 <dt>Category</dt>
                 <dd>{{ module.category }}</dd>
                 <dt>License</dt>
-                <dd>{{ module.license }}</dd>
+                <dd>
+                    {{ module.license }}
+                    {% if lr_upgrade %}
+                    <div class="small text-body-secondary">Combined with its dependencies: <strong>{{ lr.effective_license }}</strong>{% if lr.effective_license_source %} (via <code>{{ lr.effective_license_source }}</code>){% endif %}</div>
+                    {% endif %}
+                    {% if lr.proprietary %}
+                    <div class="small text-body-secondary">Commercial licenses needed: {{ lr.proprietary | join(', ') }}</div>
+                    {% endif %}
+                </dd>
                 <dt>Application</dt>
                 <dd>{{ module.application and "Yes" or "No" }}</dd>
                 <dt>Auto-installable</dt>
@@ -306,6 +335,30 @@
                 <dt>Committers</dt>
                 <dd>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</dd>
             </dl>
+            {% set badge_base = "/badge/" ~ (module.organization | urlencode) ~ "/" ~ (module.technical_name | urlencode) %}
+            {% set badge_version = "?odoo_version=" ~ (module.odoo_version | urlencode) %}
+            {% set badges = [
+                ("Odoo versions", badge_base ~ "/versions.svg"),
+                ("Latest Odoo status", badge_base ~ "/status.svg"),
+                ("License", badge_base ~ "/license.svg" ~ badge_version),
+                ("Static analysis", badge_base ~ "/security.svg" ~ badge_version),
+            ] %}
+            <details class="badge-embed" data-module-path="/module/{{ module.organization | urlencode }}/{{ module.technical_name | urlencode }}">
+                <summary><span class="material-icons" aria-hidden="true">verified</span> Embed badges</summary>
+                <p class="small text-body-secondary">Status badges for a README, kept up to date with this site.</p>
+                <div class="badge-embed-previews">
+                    {% for alt, src in badges %}<img src="{{ src }}" alt="{{ alt }}" loading="lazy" height="20">{% endfor %}
+                </div>
+                <div class="d-flex gap-2 align-items-center my-2">
+                    <select class="form-select form-select-sm badge-embed-format" aria-label="Snippet format">
+                        <option value="markdown">Markdown</option>
+                        <option value="rst">reStructuredText</option>
+                        <option value="html">HTML</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-secondary btn-sm badge-embed-copy">Copy</button>
+                </div>
+                <textarea class="form-control form-control-sm badge-embed-code" rows="5" readonly aria-label="Badge snippet"></textarea>
+            </details>
         </div>
     </aside>
 </div>

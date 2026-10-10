@@ -208,7 +208,8 @@ retains the same database volume, environment and Docker secrets as manual execu
 ## OGHMcp
 
 Streamable HTTP MCP endpoint exposing module and repository discovery, module metadata, documentation,
-dependencies, code analysis, version history, and committer activity over the same data as `oghserver`.
+dependencies, code analysis, version history, version-to-version comparison, license review and
+committer activity over the same data as `oghserver`.
 
 ### Configuration
 
@@ -282,6 +283,29 @@ full re-analysis regardless, set `OGHCOLLECTOR_FORCE_REANALYZE=1`:
 ```sh
 OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 ```
+
+## License review, feeds, badges and version comparison
+
+- **License review**: every module page, the Doodba dependency resolver, shared packs, MCP
+  (`get_module_dependencies`, `review_module_licenses`) and `GET /v1/license-check` check the
+  manifest licenses of the modules *and their whole dependency closure*: the license the combined
+  work must be distributed under (e.g. an LGPL-3 module on an AGPL-3 dependency is effectively
+  AGPL-3), proprietary modules pulled in, and conflicts (proprietary code on GPL/AGPL, GPL-2-only
+  mixed with v3). It's a heuristic to catch problems early, not legal advice. In CI:
+
+  ```sh
+  curl -s "https://ommd.example/v1/license-check?odoo_version=18.0&modules=sale_order_type,web_responsive" \
+    | jq -e '[.findings[] | select(.severity == "error")] | length == 0'
+  ```
+
+- **Atom feeds**: `/feed.atom` (new/updated modules, migration PRs, vulnerabilities; filter with
+  `type`, `odoo_version`, `q`) and `/module/{org}/{technical_name}/feed.atom` to follow one
+  module. Works with any feed reader or Slack/Teams RSS integration.
+- **README badges**: `/badge/{org}/{technical_name}/{versions|status|license|security}.svg`; module
+  pages have copy-ready Markdown/reStructuredText/HTML snippets under "Embed badges".
+- **Version comparison**: "Compare" on a module page (or `GET /v1/compare/{module}?from=&to=`, MCP
+  `compare_module_versions`) shows what changed between two Odoo versions: manifest, dependencies,
+  models/fields/methods, views and HTTP routes.
 
 ## Environment Variables
 

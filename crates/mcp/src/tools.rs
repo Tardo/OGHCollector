@@ -13,6 +13,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 
+use oghutils::license::LicenseReport;
 use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
 use sqlitedb::{models, Pool};
 
@@ -284,6 +285,41 @@ pub struct ModuleDependencyInfo {
     pub organization: String,
     pub repository: String,
     pub dependencies: ModuleDependencies,
+    /// The module's license checked against its whole dependency closure
+    /// (heuristic, not legal advice).
+    pub license_review: LicenseReport,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ReviewModuleLicensesParams {
+    /// Odoo version all modules are resolved at, e.g. "17.0".
+    pub odoo_version: String,
+    /// Technical names of the modules to deploy together (a pack, a \
+    /// project's addons list). Max 500.
+    pub technical_names: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CompareModuleVersionsParams {
+    /// Module technical name, e.g. "sale_order_type".
+    pub technical_name: String,
+    /// Baseline Odoo version, e.g. "16.0".
+    pub from_version: String,
+    /// Odoo version to compare against, e.g. "17.0".
+    pub to_version: String,
+    /// Restrict to a GitHub/GitLab organization name.
+    pub org: Option<String>,
+    /// Restrict to a repository name.
+    pub repo: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleLicensesReview {
+    pub odoo_version: String,
+    /// Requested modules with no row at that Odoo version: not reviewed.
+    pub not_found: Vec<String>,
+    #[serde(flatten)]
+    pub review: LicenseReport,
 }
 
 // Both severities ("warning"/"info") - unlike security warnings these aren't
@@ -571,6 +607,7 @@ fn build_module_dependency_info(
 ) -> ModuleDependencyInfo {
     let (org, repo) = get_org_repo(conn, module);
     let full_deps = models::dependency::get_full_dependency_info(conn, module);
+    let license_review = full_deps.license_review(&[module.id]);
     ModuleDependencyInfo {
         technical_name: module.technical_name.clone(),
         odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
@@ -581,6 +618,30 @@ fn build_module_dependency_info(
             pip: full_deps.pip,
             bin: full_deps.bin,
         },
+        license_review,
+    }
+}
+
+fn review_module_licenses(
+    conn: &mut SqliteConnection,
+    technical_names: &[String],
+    odoo_version: &str,
+) -> ModuleLicensesReview {
+    let version_odoo = odoo_version_string_to_u8(odoo_version);
+    let modules =
+        models::module::get_by_technical_name_odoo_version(conn, technical_names, &version_odoo);
+    let not_found = technical_names
+        .iter()
+        .filter(|name| !modules.iter().any(|m| &m.technical_name == *name))
+        .cloned()
+        .collect();
+    let root_ids: Vec<i64> = modules.iter().map(|m| m.id).collect();
+    let review =
+        models::dependency::get_full_dependency_info_many(conn, &modules).license_review(&root_ids);
+    ModuleLicensesReview {
+        odoo_version: odoo_version_u8_to_string(&version_odoo),
+        not_found,
+        review,
     }
 }
 
@@ -1186,7 +1247,10 @@ impl OghMcp {
         description = "Get the transitive Odoo/pip/bin dependency closure for one module at one \
                         Odoo version. The `odoo` map is keyed by \"organization/repository\" \
                         since a dependency can live in a different repository than the module \
-                        itself. For direct (one-level) dependencies of every module in a \
+                        itself. Also returns `license_review`: the module's license checked \
+                        against the whole closure (effective license of the combined work, \
+                        proprietary modules pulled in, conflicts such as proprietary code on \
+                        GPL/AGPL). For direct (one-level) dependencies of every module in a \
                         repository at once, use list_repository_modules instead."
     )]
     async fn get_module_dependencies(
@@ -1206,6 +1270,92 @@ impl OghMcp {
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         json_result(&deps)
+    }
+
+    #[tool(
+        description = "License review of a set of modules deployed together (a pack, a \
+                        project's addons list) at one Odoo version, including everything they \
+                        depend on: the effective license the combined work must be \
+                        distributed under (strongest copyleft, e.g. AGPL-3 and the source \
+                        offer it implies for hosted instances), proprietary modules pulled in, \
+                        and findings graded error (e.g. a proprietary module on GPL/AGPL code, \
+                        GPL-2-only mixed with v3), warning or info. A heuristic based on \
+                        manifest licenses, not legal advice. Use it before recommending a \
+                        module pack."
+    )]
+    async fn review_module_licenses(
+        &self,
+        Parameters(params): Parameters<ReviewModuleLicensesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if params.technical_names.len() > 500 {
+            return Err(McpError::invalid_params(
+                "too many modules (max 500)".to_string(),
+                None,
+            ));
+        }
+        if oghutils::version::parse_odoo_version(&params.odoo_version).is_none() {
+            return Err(McpError::invalid_params(
+                format!("invalid odoo_version: {:?}", params.odoo_version),
+                None,
+            ));
+        }
+        let pool = self.pool.clone();
+        let review = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            review_module_licenses(&mut conn, &params.technical_names, &params.odoo_version)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&review)
+    }
+
+    #[tool(
+        description = "What changed in one module between two Odoo versions: manifest values \
+                        (license, category, flags, maintainers), direct Odoo/pip/bin \
+                        dependencies added or removed, models added/removed/changed with \
+                        their fields (type/comodel) and public methods (signatures), views \
+                        and HTTP routes (auth/type) added/removed/changed, and grave/minor \
+                        security finding counts on each side. Much smaller than calling \
+                        get_module_code_analysis twice - use it to plan or review a \
+                        migration, or to spot behavior changes before upgrading. Returns \
+                        null when the module doesn't exist at one of the versions; \
+                        `analysis_available: false` means one side has no stored code \
+                        analysis, so only manifest/dependencies were compared."
+    )]
+    async fn compare_module_versions(
+        &self,
+        Parameters(params): Parameters<CompareModuleVersionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let parse = |raw: &str| {
+            oghutils::version::parse_odoo_version(raw).ok_or_else(|| {
+                McpError::invalid_params(format!("invalid Odoo version: {raw:?}"), None)
+            })
+        };
+        let (from, to) = (parse(&params.from_version)?, parse(&params.to_version)?);
+        let pool = self.pool.clone();
+        let diff = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            let mut pick = |version: &u8| {
+                find_modules(
+                    &mut conn,
+                    &params.technical_name,
+                    version,
+                    &params.org,
+                    &params.repo,
+                )
+                .into_iter()
+                .next()
+            };
+            let (old, new) = (pick(&from)?, pick(&to)?);
+            Some(models::module_compare::compare(&mut conn, &old, &new))
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&diff)
     }
 
     #[tool(
@@ -1476,9 +1626,11 @@ impl ServerHandler for OghMcp {
                  (full transitive closure) or get_module_code_analysis (views/models/fields/\
                  methods) on individual modules only when you actually need that detail, since \
                  code analysis in particular can be large. Use list_module_versions to see a \
-                 module's recorded version history, and get_committer_activity to check what \
-                 else a specific person has committed to, e.g. to gauge whether they're still \
-                 active."
+                 module's recorded version history, compare_module_versions to see what changed \
+                 in a module between two Odoo versions, review_module_licenses before \
+                 recommending a set of modules (effective license, proprietary dependencies, \
+                 conflicts), and get_committer_activity to check what else a specific person \
+                 has committed to, e.g. to gauge whether they're still active."
                     .to_string(),
             )
     }

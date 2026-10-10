@@ -1,0 +1,2 @@
+DROP INDEX idx_system_event_event_type_id;
+DROP INDEX idx_dependency_module_module_id;

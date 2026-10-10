@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
+use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string, parse_odoo_version};
 use sqlitedb::{models, Pool};
 
 use super::api::v1::module::{process_modules_db, ModuleFullInfoResponse};
@@ -181,6 +181,7 @@ pub async fn route(
 #[get("/module/{org}/{technical_name}/tab/{odoo_version}")]
 pub async fn route_tab(
     tmpl_env: MiniJinjaRenderer,
+    req: HttpRequest,
     pool: web::Data<Pool>,
     path: web::Path<(String, String, String)>,
     info: web::Query<RouteModulePageRequest>,
@@ -209,15 +210,137 @@ pub async fn route_tab(
         .unwrap_or_default();
     let html = tmpl_env.render(
         "partials/module_version_content.html",
-        context!(module => module, history => history),
+        context!(
+            ..get_minijinja_context(&req),
+            ..context!(module => module, history => history)
+        ),
     )?;
     Ok(HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html.0))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RouteModuleCompareRequest {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+// The two versions to compare: what was asked for when it parses and the
+// module has it, otherwise the module's two newest versions (oldest first).
+fn pick_compare_versions(
+    available_desc: &[i32],
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Option<(i32, i32)> {
+    let pick = |raw: Option<&str>, fallback: Option<&i32>| {
+        raw.and_then(parse_odoo_version)
+            .map(|v| v as i32)
+            .filter(|v| available_desc.contains(v))
+            .or_else(|| fallback.copied())
+    };
+    let to = pick(to, available_desc.first())?;
+    let from = pick(
+        from,
+        available_desc
+            .iter()
+            .find(|v| **v < to)
+            .or(available_desc.get(1)),
+    )?;
+    Some((from, to))
+}
+
+/// Side-by-side "what changed" between two Odoo versions of one module.
+#[get("/module/{org}/{technical_name}/compare")]
+pub async fn route_compare(
+    tmpl_env: MiniJinjaRenderer,
+    req: HttpRequest,
+    pool: web::Data<Pool>,
+    path: web::Path<(String, String)>,
+    info: web::Query<RouteModuleCompareRequest>,
+) -> Result<impl Responder> {
+    let (org, technical_name) = path.into_inner();
+    let org_ctx = org.clone();
+    let technical_name_ctx = technical_name.clone();
+    let info = info.into_inner();
+    let (name, versions, picked, diff) = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let mut modules = models::module::get_by_technical_name_organization_name(
+            &mut conn,
+            &technical_name,
+            &org,
+        );
+        modules.sort_by_key(|m| std::cmp::Reverse(m.version_odoo));
+        modules.dedup_by_key(|m| m.version_odoo);
+        let available: Vec<i32> = modules.iter().map(|m| m.version_odoo).collect();
+        let name = modules.first().map(|m| m.name.clone());
+        let picked = pick_compare_versions(&available, info.from.as_deref(), info.to.as_deref());
+        let diff = picked.and_then(|(from, to)| {
+            let old = modules.iter().find(|m| m.version_odoo == from)?;
+            let new = modules.iter().find(|m| m.version_odoo == to)?;
+            Some(models::module_compare::compare(&mut conn, old, new))
+        });
+        let versions: Vec<String> = available
+            .iter()
+            .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+            .collect();
+        let picked = picked.map(|(from, to)| {
+            (
+                odoo_version_u8_to_string(&(from as u8)),
+                odoo_version_u8_to_string(&(to as u8)),
+            )
+        });
+        (name, versions, picked, diff)
+    })
+    .await?;
+
+    tmpl_env.render(
+        "pages/module_compare.html",
+        context!(
+            ..get_minijinja_context(&req),
+            ..context!(
+                page_name => "module_compare",
+                org => org_ctx,
+                technical_name => technical_name_ctx,
+                module_name => name,
+                versions => versions,
+                from_version => picked.as_ref().map(|p| p.0.clone()),
+                to_version => picked.map(|p| p.1),
+                diff => diff,
+            )
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    use super::pick_compare_versions;
+
+    #[test]
+    fn compare_versions_default_to_the_two_newest_and_ignore_bad_input() {
+        let available = [180, 170, 160];
+        assert_eq!(
+            pick_compare_versions(&available, None, None),
+            Some((170, 180))
+        );
+        assert_eq!(
+            pick_compare_versions(&available, Some("16.0"), Some("18.0")),
+            Some((160, 180))
+        );
+        assert_eq!(
+            pick_compare_versions(&available, Some("garbage"), Some("17.0")),
+            Some((160, 170))
+        );
+        assert_eq!(
+            pick_compare_versions(&available, None, Some("15.0")),
+            Some((170, 180))
+        );
+        assert_eq!(pick_compare_versions(&[180], None, None), None);
+    }
+}
+
+#[cfg(test)]
+mod template_tests {
     use minijinja::{context, Environment};
     use serde_json::json;
 
@@ -251,6 +374,14 @@ mod tests {
                 "migration_considerations": [],
                 "dependencies": {"odoo": {}, "pip": [], "bin": []},
                 "required_by": [],
+                "license": "AGPL-3",
+                "license_review": {
+                    "effective_license": "AGPL-3",
+                    "effective_license_source": "web",
+                    "proprietary": [],
+                    "licenses": {"AGPL-3": 1},
+                    "findings": [{"severity": "warning", "code": "LICENSE_X", "message": "msg", "module": "web", "related": []}],
+                },
                 "views": [],
                 "controllers": [],
                 "models": [],

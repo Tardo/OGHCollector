@@ -5,7 +5,7 @@ use diesel::sqlite::SqliteConnection;
 use url::Url;
 
 use crate::config::SERVER_CONFIG;
-use crate::utils::get_base_url;
+use crate::utils::{get_base_url, xml_escape};
 use sqlitedb::{models, Pool};
 
 // Only the pages a search engine should actually index: static, no
@@ -18,19 +18,12 @@ const EMPTY_URLSET: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
      <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>\n";
 
 // `Url::path_segments_mut` percent-encodes each segment, so an org/module/
-// committer name with e.g. a space or `&` still produces a valid URL.
+// committer name with e.g. a space or `&` still produces a valid URL. `&`
+// survives path percent-encoding, so XML still needs it escaped.
 fn page_url(base: &Url, segments: &[&str]) -> String {
     let mut url = base.clone();
     url.path_segments_mut().unwrap().extend(segments);
     xml_escape(url.as_ref())
-}
-
-// `&` survives path percent-encoding (it's not in the URL path
-// percent-encode set), but XML text content still needs it escaped.
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 // Same whole-page cache pattern as modules.rs's compute_modules_page_data:
@@ -109,13 +102,8 @@ pub async fn route(pool: web::Data<Pool>, req: HttpRequest) -> Result<HttpRespon
 
 #[cfg(test)]
 mod tests {
-    use super::{page_url, xml_escape};
+    use super::page_url;
     use url::Url;
-
-    #[test]
-    fn test_xml_escape() {
-        assert_eq!(xml_escape("a&b<c>"), "a&amp;b&lt;c&gt;");
-    }
 
     #[test]
     fn test_page_url_encodes_and_escapes_committer_name() {

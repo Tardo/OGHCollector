@@ -18,6 +18,7 @@
         <span class="search_container search_container-save" id="doodba_dep_resolver_save" style="display:none"><span class="material-icons" aria-hidden="true">save</span> Save</span>
     </div>
     <div id="doodba_dep_resolver_drag_panel" class="doodba-drag-panel"><span class="no_mouse">Drop your addons.yaml here, or click to browse, to resolve its full dependency list.</span></div>
+    <div id="doodba_dep_resolver_license"></div>
     <div id="doodba_dep_resolver_result" style="display: none">
         <div><label class="doodba-result-label" for="doodba_dep_resolver_result_odoo">Odoo modules <code>addons.yaml</code></label><textarea id="doodba_dep_resolver_result_odoo" readonly="readonly"></textarea></div>
         <div><label class="doodba-result-label" for="doodba_dep_resolver_result_pip">Python packages <code>pip.txt</code></label><textarea id="doodba_dep_resolver_result_pip" readonly="readonly"></textarea></div>
@@ -28,7 +29,7 @@
 
 <header class="page-header">
     <h1>Doodba dependency resolver</h1>
-    <p class="page-header-desc">Upload your <code>addons.yaml</code> and get back every module it depends on, plus the Python and system packages behind them — nothing missing when you deploy. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
+    <p class="page-header-desc">Upload your <code>addons.yaml</code> and get back every module it depends on, plus the Python and system packages behind them — nothing missing when you deploy — and a license review of the whole set. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
 </header>
 <mirlo-doodba-dependency-resolver></mirlo-doodba-dependency-resolver>
 

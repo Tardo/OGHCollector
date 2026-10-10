@@ -59,6 +59,50 @@ struct NewSystemEvent<'a> {
     is_html: bool,
 }
 
+const SELECT_EVENTS: &str =
+    "SELECT se.id, se.message, se.date, se.event_type_id, syset.name as event_type_name, \
+     se.severity, se.is_html \
+     FROM system_event as se \
+     INNER JOIN system_event_type as syset ON syset.id = se.event_type_id ";
+
+/// Newest `limit` events whose type is one of `event_types` (any type when
+/// empty) and whose message contains every string of `contains`. Messages are
+/// the only place module names/Odoo versions live (`'technical_name'`,
+/// `[18.0]`), so this is a substring filter, not a structured one.
+pub fn get_feed(
+    conn: &mut SqliteConnection,
+    event_types: &[String],
+    contains: &[String],
+    limit: i64,
+) -> Vec<Model> {
+    let mut conditions = Vec::new();
+    if !event_types.is_empty() {
+        conditions.push(format!(
+            "syset.name IN ({})",
+            vec!["?"; event_types.len()].join(", ")
+        ));
+    }
+    conditions.extend(
+        contains
+            .iter()
+            .map(|_| "instr(se.message, ?) > 0".to_string()),
+    );
+    let mut sql = SELECT_EVENTS.to_string();
+    if !conditions.is_empty() {
+        sql.push_str(&format!("WHERE {} ", conditions.join(" AND ")));
+    }
+    sql.push_str("ORDER BY se.id DESC LIMIT ?");
+
+    let mut query = diesel::sql_query(sql).into_boxed();
+    for value in event_types.iter().chain(contains) {
+        query = query.bind::<diesel::sql_types::Text, _>(value.clone());
+    }
+    query
+        .bind::<diesel::sql_types::BigInt, _>(limit)
+        .load::<Model>(conn)
+        .expect("DB error in system_event::get_feed")
+}
+
 /// Fetches one page of events, newest-first, for infinite scroll.
 /// `before_id` is the cursor (pass `i64::MAX` for the first page; then the
 /// `id` of the last row received). `date_from`/`date_to` are an inclusive
@@ -70,11 +114,7 @@ pub fn get_messages_page(
     date_to: Option<&str>,
     limit: i64,
 ) -> Vec<Model> {
-    const SELECT: &str =
-        "SELECT se.id, se.message, se.date, se.event_type_id, syset.name as event_type_name, \
-         se.severity, se.is_html \
-         FROM system_event as se \
-         INNER JOIN system_event_type as syset ON syset.id = se.event_type_id ";
+    const SELECT: &str = SELECT_EVENTS;
     const ERR: &str = "DB error in system_event::get_messages_page";
 
     match (date_from, date_to) {
@@ -401,4 +441,63 @@ pub fn register_new_osv_vulnerability(
         "Vulnerability {osv_id} found in dependency '{dep_name}' used by '{module_technical_name}' ({module_name}) [{module_version_odoo}]"
     );
     add(conn, "vulnerability", SEVERITY_ERROR, &msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+
+    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
+
+    #[test]
+    fn test_get_feed_filters_by_type_and_substrings_newest_first() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        add(
+            &mut conn,
+            "module",
+            SEVERITY_INFO,
+            "Module 'web' [18.0] updated",
+        )
+        .unwrap();
+        add(
+            &mut conn,
+            "committer",
+            SEVERITY_SUCCESS,
+            "New committer for 'web' [18.0]",
+        )
+        .unwrap();
+        add(
+            &mut conn,
+            "module",
+            SEVERITY_INFO,
+            "Module 'web' [17.0] updated",
+        )
+        .unwrap();
+        add(
+            &mut conn,
+            "module",
+            SEVERITY_INFO,
+            "Module 'web_x' [18.0] updated",
+        )
+        .unwrap();
+
+        let feed = get_feed(
+            &mut conn,
+            &["module".to_string()],
+            &["'web'".to_string(), "[18.0]".to_string()],
+            10,
+        );
+        assert_eq!(feed.len(), 1);
+        assert_eq!(feed[0].message, "Module 'web' [18.0] updated");
+
+        let all = get_feed(&mut conn, &[], &["'web'".to_string()], 2);
+        assert_eq!(
+            all.iter()
+                .map(|e| e.event_type_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["module", "committer"]
+        );
+    }
 }

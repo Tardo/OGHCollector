@@ -8,6 +8,7 @@
 {{ super() }}
 
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/module.css" as="style">
+    <link rel="alternate" type="application/atom+xml" title="{{ technical_name }} ({{ org }}): activity" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" />
     <script type="module" src="/static/auto/module.mjs" async></script>
 {% endblock %}
 {% block content %}
@@ -31,6 +32,11 @@
         <h1>{{ modules[0].name if modules else technical_name }}</h1>
         <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
     </div>
+    <div class="module-header-actions">
+    <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" title="Atom feed: new versions, migration PRs, findings and committers of this module"><span class="material-icons" aria-hidden="true">rss_feed</span> Follow</a>
+    {% if odoo_versions | length > 1 %}
+    <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/compare" title="What changed between two Odoo versions of this module"><span class="material-icons" aria-hidden="true">compare_arrows</span> Compare</a>
+    {% endif %}
     <div class="dropdown module-favorite-actions" data-org="{{ org }}" data-technical-name="{{ technical_name }}" data-name="{{ modules[0].name if modules else technical_name }}">
         <button type="button" class="btn btn-outline-secondary favorite-toggle-btn" title="Add to favorites (saved in this browser only)">
             <span class="favorite-icon material-icons" aria-hidden="true">star_border</span> Favorite
@@ -39,6 +45,7 @@
             <span class="visually-hidden">Add to pack</span>
         </button>
         <ul class="dropdown-menu dropdown-menu-end pack-dropdown-menu"></ul>
+    </div>
     </div>
 </header>
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">

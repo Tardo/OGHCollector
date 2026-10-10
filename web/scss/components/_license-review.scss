@@ -1,0 +1,86 @@
+// Copyright 2026 Alexandre D. Díaz
+
+// License review panel (web/js/utils/license-review.mjs). Also rendered
+// inside the Doodba components' shadow roots, so it relies on CSS custom
+// properties only (they cross the shadow boundary, Bootstrap classes don't).
+.license-review {
+    --license-review-accent: var(--bs-success);
+
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--bs-border-color-translucent);
+    border-left: 4px solid var(--license-review-accent);
+    border-radius: var(--bs-border-radius-lg);
+    background-color: var(--bs-tertiary-bg);
+
+    &[data-worst="error"] {
+        --license-review-accent: var(--bs-danger);
+    }
+
+    &[data-worst="warning"] {
+        --license-review-accent: var(--bs-warning);
+    }
+
+    &[data-worst="info"] {
+        --license-review-accent: var(--bs-info);
+    }
+
+    p,
+    ul {
+        margin: 0.5rem 0 0;
+    }
+
+    ul {
+        padding-left: 1.25rem;
+    }
+
+    li + li {
+        margin-top: 0.25rem;
+    }
+}
+
+.license-review-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+
+    .material-icons {
+        color: var(--license-review-accent);
+    }
+}
+
+.license-review-effective {
+    margin-left: auto;
+}
+
+.license-review-sev {
+    display: inline-block;
+    padding: 0 0.4em;
+    border-radius: var(--bs-border-radius-sm);
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #fff;
+    background-color: var(--bs-secondary);
+
+    [data-severity="error"] > & {
+        background-color: var(--bs-danger);
+    }
+
+    [data-severity="warning"] > & {
+        color: #000;
+        background-color: var(--bs-warning);
+    }
+
+    [data-severity="info"] > & {
+        color: #000;
+        background-color: var(--bs-info);
+    }
+}
+
+.license-review-counts,
+.license-review-note {
+    font-size: 0.85em;
+    color: var(--bs-secondary-color);
+}

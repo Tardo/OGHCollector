@@ -7,6 +7,7 @@ import {
   showDragPanelError,
   isYamlFile,
 } from '@app/utils/drag-panel-processing';
+import {renderLicenseReview} from '@app/utils/license-review';
 import '@scss/components/doodba-dependency-resolver.scss';
 
 class DoodbaDependencyResolver extends Component {
@@ -16,6 +17,7 @@ class DoodbaDependencyResolver extends Component {
   #el_result_odoo = null;
   #el_result_pip = null;
   #el_result_bin = null;
+  #el_license = null;
   #el_save = null;
 
   onSetup() {
@@ -55,6 +57,7 @@ class DoodbaDependencyResolver extends Component {
     this.#el_result_odoo = this.queryId('doodba_dep_resolver_result_odoo');
     this.#el_result_pip = this.queryId('doodba_dep_resolver_result_pip');
     this.#el_result_bin = this.queryId('doodba_dep_resolver_result_bin');
+    this.#el_license = this.queryId('doodba_dep_resolver_license');
     this.#el_save = this.queryId('doodba_dep_resolver_save');
   }
 
@@ -187,9 +190,10 @@ class DoodbaDependencyResolver extends Component {
       const yaml_txt = this.#makeYaml(json_data.odoo, yaml_data);
       this.#showResults(
         yaml_txt,
-        json_data.bin.join('\n'),
         json_data.pip.join('\n'),
+        json_data.bin.join('\n'),
       );
+      renderLicenseReview(this.#el_license, json_data.license_review);
       this.#el_search_select_ver.disabled = true;
       setDragPanelProcessing(this.#el_drag_panel, false);
     } catch (_err) {

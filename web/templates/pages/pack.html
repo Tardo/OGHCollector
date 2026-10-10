@@ -1,7 +1,7 @@
 {# Copyright 2026 Alexandre D. Díaz #}
 {% extends "minimal_layout.html" %}
 {% set meta_title = "Shared pack" %}
-{% set meta_description = "A shared Odoo module pack: modules, disk size, export to Doodba or import into your own Packs." %}
+{% set meta_description = "A shared Odoo module pack: modules, disk size, license review, export to Doodba or import into your own Packs." %}
 {% block base_head_content %}
 {{ super() }}
 
@@ -49,6 +49,8 @@
             </div>
         </div>
     </div>
+
+    <div id="pack_license_review" class="mb-4"></div>
 
     <div class="row g-4">
         <div class="col-lg-8">

@@ -92,7 +92,14 @@
                 <span class="badge text-bg-secondary">get_module_dependencies</span>
                 <div class="mt-2 text-secondary-emphasis">
                     The full dependency closure for one module: every Odoo module, Python package and
-                    system binary it needs, directly or transitively.
+                    system binary it needs, directly or transitively - plus a license review of it.
+                </div>
+            </li>
+            <li class="mb-3">
+                <span class="badge text-bg-secondary">compare_module_versions</span>
+                <div class="mt-2 text-secondary-emphasis">
+                    What changed in a module between two Odoo versions: manifest, dependencies,
+                    models/fields/methods, views and HTTP routes - for planning a migration.
                 </div>
             </li>
             <li class="mb-3">
@@ -106,8 +113,15 @@
     </div>
 </div>
 <div class="mb-4">
-    <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Maintainers</h4>
+    <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Packs &amp; maintainers</h4>
     <ul class="list-unstyled">
+        <li class="mb-3">
+            <span class="badge text-bg-secondary">review_module_licenses</span>
+            <div class="mt-2 text-secondary-emphasis">
+                License review of a set of modules deployed together, dependencies included: the
+                license of the combined work, proprietary modules pulled in and conflicts.
+            </div>
+        </li>
         <li class="mb-3">
             <span class="badge text-bg-secondary">get_committer_activity</span>
             <div class="mt-2 text-secondary-emphasis">

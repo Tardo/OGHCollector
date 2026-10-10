@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::schema::dependency;
 
-use super::{dependency_module, module};
+use super::{dependency_module, gh_organization, gh_repository, module};
+use oghutils::license::{LicenseNode, LicenseReport};
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
 #[diesel(table_name = dependency, check_for_backend(diesel::sqlite::Sqlite))]
@@ -96,14 +97,48 @@ pub fn get_module_dependency_info(
     .expect("DB error in dependency::get_module_dependency_info")
 }
 
-/// Full (transitive) dependency closure of a module: every Odoo addon it
-/// depends on directly or indirectly (grouped by `org/repo`), plus the
-/// flattened, deduped external pip/bin dependencies of the whole closure.
+/// One module of a dependency closure (roots included).
+#[derive(Debug, Clone)]
+pub struct ClosureNode {
+    pub technical_name: String,
+    pub organization: String,
+    pub repository: String,
+    pub license: String,
+}
+
+/// Full (transitive) dependency closure of one or more modules: every Odoo
+/// addon they depend on directly or indirectly (grouped by `org/repo`), plus
+/// the flattened, deduped external pip/bin dependencies of the whole closure.
 #[derive(Debug, Default, Clone)]
 pub struct FullDependencyInfo {
     pub odoo: HashMap<String, Vec<String>>,
     pub pip: Vec<String>,
     pub bin: Vec<String>,
+    /// Every module of the closure, roots included, by module id.
+    pub nodes: HashMap<i64, ClosureNode>,
+    /// `(dependent, dependency)` module id pairs of the closure.
+    pub edges: Vec<(i64, i64)>,
+}
+
+impl FullDependencyInfo {
+    /// License review of `roots` (module ids of this closure) against
+    /// everything they depend on - see `oghutils::license`.
+    pub fn license_review(&self, roots: &[i64]) -> LicenseReport {
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|(id, node)| {
+                (
+                    *id,
+                    LicenseNode {
+                        technical_name: &node.technical_name,
+                        license: &node.license,
+                    },
+                )
+            })
+            .collect();
+        oghutils::license::review(&nodes, &self.edges, roots)
+    }
 }
 
 fn collect_full_dependency_info(
@@ -125,13 +160,23 @@ fn collect_full_dependency_info(
         if !repo_deps.contains(&dep.module_name) {
             repo_deps.push(dep.module_name.clone());
         }
+        info.edges.push((mod_.id, dep.module_id));
         // Recurse by module id, not by the (repo, name) grouping above: a
         // dependency cycle routes back to a module id already on the
-        // current path (the root's own id is pre-seeded below), so this
+        // current path (the roots' own ids are pre-seeded below), so this
         // must stop it even on the first repeat visit or it recurses forever.
         if visited.insert(dep.module_id) {
             let dep_module = module::get_by_id(conn, &dep.module_id)
                 .expect("dependency module referenced by dependency table not found");
+            info.nodes.insert(
+                dep.module_id,
+                ClosureNode {
+                    technical_name: dep.module_name,
+                    organization: dep.org,
+                    repository: dep.repo,
+                    license: dep_module.license_str().to_string(),
+                },
+            );
             collect_full_dependency_info(conn, &dep_module, info, visited);
         }
     }
@@ -141,9 +186,34 @@ pub fn get_full_dependency_info(
     conn: &mut SqliteConnection,
     mod_: &module::Model,
 ) -> FullDependencyInfo {
+    get_full_dependency_info_many(conn, std::slice::from_ref(mod_))
+}
+
+/// Union of the closures of several modules, each walked at its own Odoo
+/// version. A root that's also a dependency of another root shows up in
+/// `odoo` like any other dependency.
+pub fn get_full_dependency_info_many(
+    conn: &mut SqliteConnection,
+    roots: &[module::Model],
+) -> FullDependencyInfo {
     let mut info = FullDependencyInfo::default();
-    let mut visited = HashSet::from([mod_.id]);
-    collect_full_dependency_info(conn, mod_, &mut info, &mut visited);
+    let mut visited: HashSet<i64> = roots.iter().map(|m| m.id).collect();
+    for root in roots {
+        let repo = gh_repository::get_by_id(conn, &root.gh_repository_id);
+        let org = repo
+            .as_ref()
+            .and_then(|r| gh_organization::get_by_id(conn, &r.gh_organization_id));
+        info.nodes.insert(
+            root.id,
+            ClosureNode {
+                technical_name: root.technical_name.clone(),
+                organization: org.map(|o| o.name).unwrap_or_default(),
+                repository: repo.map(|r| r.name).unwrap_or_default(),
+                license: root.license_str().to_string(),
+            },
+        );
+        collect_full_dependency_info(conn, root, &mut info, &mut visited);
+    }
     let mut seen = HashSet::new();
     info.pip.retain(|x| seen.insert(x.clone()));
     seen.clear();
@@ -289,6 +359,17 @@ mod tests {
         git_repo: &str,
         version_odoo: u8,
     ) -> module::Model {
+        make_licensed_module(conn, tech_name, git_org, git_repo, version_odoo, "")
+    }
+
+    fn make_licensed_module(
+        conn: &mut SqliteConnection,
+        tech_name: &str,
+        git_org: &str,
+        git_repo: &str,
+        version_odoo: u8,
+        license: &str,
+    ) -> module::Model {
         module::add(
             conn,
             &module::ManifestInfo {
@@ -303,7 +384,7 @@ mod tests {
                 icon: String::new(),
                 author: String::new(),
                 website: String::new(),
-                license: String::new(),
+                license: license.to_string(),
                 category: String::new(),
                 auto_install: false,
                 application: false,
@@ -412,5 +493,33 @@ mod tests {
         assert!(info.odoo.is_empty());
         assert_eq!(info.pip, vec!["requests"]);
         assert!(info.bin.is_empty());
+    }
+
+    #[test]
+    fn test_full_dependency_info_many_collects_graph_for_license_review() {
+        let mut conn = setup_db();
+        let root = make_module(&mut conn, "root", "OrgA", "repo-root", 16); // LGPL-3 default
+        let mid = make_licensed_module(&mut conn, "mid", "OrgA", "repo-mid", 16, "AGPL-3");
+        let leaf = make_module(&mut conn, "leaf", "OrgB", "repo-leaf", 16);
+        let other = make_licensed_module(&mut conn, "other", "OrgB", "repo-o", 16, "AGPL-3");
+        link_module_dep(&mut conn, &root, &mid);
+        link_module_dep(&mut conn, &mid, &leaf);
+        link_module_dep(&mut conn, &other, &leaf);
+
+        let info = get_full_dependency_info_many(&mut conn, &[root.clone(), other.clone()]);
+        assert_eq!(info.nodes.len(), 4);
+        assert_eq!(info.nodes[&root.id].organization, "OrgA");
+        assert_eq!(info.nodes[&mid.id].license, "AGPL-3");
+        let mut edges = info.edges.clone();
+        edges.sort_unstable();
+        let mut expected = vec![(root.id, mid.id), (mid.id, leaf.id), (other.id, leaf.id)];
+        expected.sort_unstable();
+        assert_eq!(edges, expected);
+
+        let review = info.license_review(&[root.id]);
+        assert_eq!(review.effective_license.as_deref(), Some("AGPL-3"));
+        assert_eq!(review.findings.len(), 1);
+        assert_eq!(review.findings[0].code, "LICENSE_EFFECTIVE_UPGRADE");
+        assert_eq!(review.findings[0].module, "root");
     }
 }

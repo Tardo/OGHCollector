@@ -30,6 +30,80 @@ document
     fetchIntoPane(pane, url);
   });
 
+// "Embed badges" snippets (partials/module_version_content.html) are built
+// from the preview <img>s, so they always carry the URL this site was
+// actually reached at. Delegated, like the version select above, because
+// lazy-loaded tabs bring their own panel.
+function badgeSnippet(details, format) {
+  const module_url = new URL(details.dataset.modulePath, window.location.origin)
+    .href;
+  const images = [...details.querySelectorAll('.badge-embed-previews img')];
+  if (format === 'rst') {
+    return images
+      .map(
+        ({src, alt}) =>
+          `.. image:: ${src}\n   :target: ${module_url}\n   :alt: ${alt}`,
+      )
+      .join('\n\n');
+  }
+  if (format === 'html') {
+    return images
+      .map(
+        ({src, alt}) =>
+          `<a href="${module_url}"><img src="${src}" alt="${alt}"></a>`,
+      )
+      .join('\n');
+  }
+  return images
+    .map(({src, alt}) => `[![${alt}](${src})](${module_url})`)
+    .join(' ');
+}
+
+function refreshBadgeSnippet(details) {
+  const format = details.querySelector('.badge-embed-format').value;
+  details.querySelector('.badge-embed-code').value = badgeSnippet(
+    details,
+    format,
+  );
+}
+
+const versions_tab_content = document.getElementById('versions-tabContent');
+// `toggle` doesn't bubble: listen in the capture phase.
+versions_tab_content?.addEventListener(
+  'toggle',
+  ev => {
+    if (ev.target.matches?.('.badge-embed') && ev.target.open) {
+      refreshBadgeSnippet(ev.target);
+    }
+  },
+  true,
+);
+versions_tab_content?.addEventListener('change', ev => {
+  if (ev.target.matches('.badge-embed-format')) {
+    refreshBadgeSnippet(ev.target.closest('.badge-embed'));
+  }
+});
+versions_tab_content?.addEventListener('click', async ev => {
+  const button = ev.target.closest('.badge-embed-copy');
+  if (!button) {
+    return;
+  }
+  const code = button
+    .closest('.badge-embed')
+    .querySelector('.badge-embed-code');
+  try {
+    // Needs a secure context (https/localhost); select the text otherwise.
+    await navigator.clipboard.writeText(code.value);
+    button.textContent = 'Copied!';
+  } catch {
+    code.select();
+    button.textContent = 'Press Ctrl+C';
+  }
+  setTimeout(() => {
+    button.textContent = 'Copy';
+  }, 1500);
+});
+
 // Odoo-version tabs beyond the active one are rendered empty by the server;
 // fetch their content on first activation so a module tracked across many
 // versions doesn't ship every version's full code analysis on initial load.

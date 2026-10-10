@@ -11,9 +11,27 @@
 {% block content %}
 {{ super() }}
 
+{% set feeds = [
+    ("Highlights", "/feed.atom", "New and updated modules, migration PRs, vulnerabilities, issues"),
+    ("Modules", "/feed.atom?type=module", "New and updated modules"),
+    ("Migration PRs", "/feed.atom?type=migration_pr", "Migration PRs opened and closed"),
+    ("Vulnerabilities", "/feed.atom?type=vulnerability", "OSV advisories found in Python dependencies"),
+    ("Security notices", "/feed.atom?type=security", "Minor static-analysis findings"),
+    ("Everything", "/feed.atom?type=all", "Every logged event, including committers and dependencies"),
+] %}
 <header class="page-header">
     <h1>System logs</h1>
     <p class="page-header-desc">Collector activity: organization scans, migration PR/MR changes and new findings, newest first.</p>
+    <div class="page-header-actions dropdown">
+        <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span class="material-icons" aria-hidden="true">rss_feed</span> Subscribe</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            {% for label, href, desc in feeds %}
+            <li><a class="dropdown-item" href="{{ href }}" title="{{ desc }}"><span class="material-icons" aria-hidden="true">rss_feed</span> {{ label }}</a></li>
+            {% endfor %}
+            <li><hr class="dropdown-divider"></li>
+            <li><span class="dropdown-item-text small text-body-secondary">Atom feeds; add <code>odoo_version=18.0</code> or <code>q=</code> to filter (see <a href="/api">API</a>).</span></li>
+        </ul>
+    </div>
 </header>
 
 <template id="template-mirlo-logs-viewer">

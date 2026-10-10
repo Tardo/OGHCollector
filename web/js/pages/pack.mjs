@@ -8,6 +8,7 @@ import {
 } from '@app/utils/favorites-store';
 import {exportPackZip} from '@app/utils/pack-export';
 import {createModuleTileLink} from '@app/utils/module-tile';
+import {renderLicenseReview} from '@app/utils/license-review';
 
 function moduleKey(org, technical_name) {
   return `${org}/${technical_name}`;
@@ -55,6 +56,7 @@ function renderStats(shared, resolved) {
 
 async function fetchInfo(modules, odoo_version) {
   const info_by_key = new Map();
+  let license_review = null;
   try {
     const url = odoo_version
       ? `/pack/info?odoo_version=${encodeURIComponent(odoo_version)}`
@@ -65,14 +67,16 @@ async function fetchInfo(modules, odoo_version) {
       body: JSON.stringify(modules),
     });
     if (res.ok) {
-      for (const info of await res.json()) {
+      const data = await res.json();
+      for (const info of data.modules) {
         info_by_key.set(moduleKey(info.org, info.technical_name), info);
       }
+      license_review = data.license_review;
     }
   } catch (err) {
     console.error('Failed to resolve pack module info:', err);
   }
-  return info_by_key;
+  return {info_by_key, license_review};
 }
 
 // Re-resolves every module against `odoo_version` and re-renders - this is
@@ -82,8 +86,15 @@ async function refresh(shared, odoo_version) {
   document.getElementById('pack_subtitle').textContent =
     `Shared Odoo module pack — ${shared.modules.length} module${shared.modules.length === 1 ? '' : 's'}` +
     (odoo_version ? ` for Odoo ${odoo_version}` : '');
-  const info_by_key = await fetchInfo(shared.modules, odoo_version);
+  const {info_by_key, license_review} = await fetchInfo(
+    shared.modules,
+    odoo_version,
+  );
   renderModuleList(shared, info_by_key);
+  renderLicenseReview(
+    document.getElementById('pack_license_review'),
+    license_review,
+  );
   renderStats(
     shared,
     shared.modules.map(

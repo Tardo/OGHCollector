@@ -21,6 +21,7 @@
     {% endif %}
 
     <link rel="modulepreload" href="/static/auto/mirlo.mjs" />
+    <link rel="alternate" type="application/atom+xml" title="Odoo Module Metadata: activity" href="/feed.atom" />
 {% endblock %}
 {% block base_body_content %}
 {{ super() }}
@@ -54,7 +55,7 @@
 
 {% set nav_sections = {
     "dashboard": "Overview",
-    "modules": "Explore", "module": "Explore", "atlas": "Explore", "localization": "Explore",
+    "modules": "Explore", "module": "Explore", "module_compare": "Explore", "atlas": "Explore", "localization": "Explore",
     "committers": "Explore", "committer": "Explore",
     "osv": "Security", "scan": "Security",
     "favorites": "Workspace", "pack": "Workspace",
@@ -85,7 +86,7 @@
                 </ul>
                 <div class="app-nav-group">Explore</div>
                 <ul>
-                    {{ nav_item("/modules", "extension", "Modules", page_name in ['modules', 'module']) }}
+                    {{ nav_item("/modules", "extension", "Modules", page_name in ['modules', 'module', 'module_compare']) }}
                     {{ nav_item("/atlas", "hub", "Dependency atlas", page_name == 'atlas') }}
                     {{ nav_item("/committers", "groups", "Committers", page_name in ['committers', 'committer']) }}
                 </ul>
