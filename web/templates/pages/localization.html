@@ -10,19 +10,22 @@
 {% block content %}
 {{ super() }}
 <div class="localization-results" data-country="{{ country_code }}">
-    <a class="localization-back" href="/{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}#localization-title"><span class="material-icons" aria-hidden="true">arrow_back</span> Back to the globe</a>
     <header class="page-header">
-        <span class="section-kicker">02 / LOCALIZATION / {{ country_code }}</span>
         <h1>Localization: <span id="localization-country-name">{{ country_code }}</span></h1>
-        <p class="page-header-desc">{{ modules | length }} modules directly associated with {{ country_code }} {% if selected_version %}in Odoo {{ selected_version }}{% else %}across all indexed Odoo versions{% endif %} and organizations.</p>
+        <p class="page-header-desc">{{ modules | length }} module{{ modules | length != 1 and 's' or '' }} directly associated with {{ country_code }} {% if selected_version %}in Odoo {{ selected_version }}{% else %}across all indexed Odoo versions{% endif %} and organizations.</p>
+        <div class="page-header-actions">
+            <a class="btn btn-outline-secondary btn-sm" href="/{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}#localization-title"><span class="material-icons" aria-hidden="true">public</span> Back to the globe</a>
+        </div>
     </header>
-    <div class="localization-results-list">
+    <div class="panel localization-results-list">
         {% for module in modules %}
         <a class="localization-result" href="/module/{{ module.org_name | urlencode }}/{{ module.technical_name | urlencode }}">
             <span><strong>{{ module.technical_name }}</strong><small>{{ module.name }} · {{ module.org_name }}</small></span>
             <span class="localization-versions">{{ module.versions | join(', ') }}</span>
             <span class="material-icons" aria-hidden="true">arrow_forward</span>
         </a>
+        {% else %}
+        <p class="text-body-secondary p-3 mb-0">No modules found for this country.</p>
         {% endfor %}
     </div>
 </div>

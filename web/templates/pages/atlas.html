@@ -2,6 +2,7 @@
 {% extends "minimal_layout.html" %}
 {% set meta_title = "Atlas" %}
 {% set meta_description = "Interactive dependency graph explorer for Odoo modules." %}
+{% set content_class = "app-content-fill" %}
 {% block base_head_content %}
 {{ super() }}
 
@@ -18,15 +19,15 @@
         <select class="search_input" id="sigma_atlas_mod_dep_search_select_ver"></select>
         <button type="button" id="sigma_atlas_mod_dep_control" aria-label="Pause layout" title="Pause layout"><span class="material-icons" aria-hidden="true">stop</span></button>
     </div>
-    <span id="sigma_atlas_mod_dep_graph_loading_msg">LOADING...</span>
+    <span id="sigma_atlas_mod_dep_graph_loading_msg">Loading graph…</span>
     <div id="sigma_atlas_mod_dep_graph"></div>
 </template>
 
-<header class="page-header z-3 position-relative">
+<header class="page-header">
     <h1>Dependency atlas</h1>
-    <p class="page-header-desc">An interactive map of every tracked module and its dependencies. Pick an Odoo version, search a module, and drag to explore.</p>
+    <p class="page-header-desc">Every tracked module and its dependencies as a graph. Pick an Odoo version, search a dependency, then drag and zoom to explore.</p>
 </header>
-<div class="position-absolute start-0 top-0 h-100 w-100">
+<div class="atlas-stage">
     <mirlo-atlas id="sigma_atlas_mod_dep"></mirlo-atlas>
 </div>
 {% endblock %}

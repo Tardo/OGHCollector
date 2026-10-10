@@ -21,93 +21,158 @@
     {% endif %}
 
     <link rel="modulepreload" href="/static/auto/mirlo.mjs" />
-    <script type="module" src="/static/auto/main.mjs" async></script>
 {% endblock %}
 {% block base_body_content %}
 {{ super() }}
 
-<div class="d-flex flex-column h-100">
-    <nav class="navbar navbar-expand-xl sticky-top">
-        <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="/">
-                <img src="/static/favicon-32x32.png" alt="" width="32" height="32" class="brand-mark">
-                <span class="brand-name">OM<span class="brand-accent">//</span>MD</span>
-                <span class="brand-descriptor d-none d-sm-inline">Odoo Module Metadata</span>
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-        
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
-                <ul class="navbar-nav ms-auto align-items-xl-center">
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'dashboard' %}active{% endif %}" href="/" {% if page_name == 'dashboard' %}aria-current="page"{% endif %}>Overview</a></li>
-                    <li class="nav-item"><a class="nav-link {% if page_name in ['modules', 'module'] %}active{% endif %}" href="/modules">Modules</a></li>
-                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'osv' %}active{% endif %}" href="/osv">Vulnerabilities</a></li>
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'atlas' %}active{% endif %}" href="/atlas">Atlas</a></li>
-                    {% if SCAN_ENABLED %}
-                    <li class="nav-item"><a class="nav-link {% if page_name == 'scan' %}active{% endif %}" href="/scan">Scan</a></li>
-                    {% endif %}
-                    <li class="nav-item"><a class="nav-link {% if page_name in ['committers', 'committer'] %}active{% endif %}" href="/committers">Committers</a></li>
-                    <li class="nav-item dropdown dev-only">
-                        <a class="nav-link {% if page_name in ['doodba_converter', 'doodba_dep_resolver', 'doodba_migration_plan'] %}active{% endif %} dropdown-toggle" id="navbarDropdown" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Doodba Tools
-                        </a>
-                        <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
-                            <li><a class="dropdown-item {% if page_name in ['doodba_converter'] %}active{% endif %}" href="/doodba/converter">Converter</a></li>
-                            <li><a class="dropdown-item {% if page_name in ['doodba_dep_resolver'] %}active{% endif %}" href="/doodba/dependency-resolver">Dependency Resolver</a></li>
-                            <li><a class="dropdown-item {% if page_name in ['doodba_migration_plan'] %}active{% endif %}" href="/doodba/migration">Migration Plan</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'api' %}active{% endif %}" href="/api">API</a></li>
-                    {% if MCP_INFO_ENABLED %}
-                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'mcp_info' %}active{% endif %}" href="/mcp">MCP</a></li>
-                    {% endif %}
-                    <li class="nav-item dev-only"><a class="nav-link {% if page_name == 'logs' %}active{% endif %}" href="/logs">Logs</a></li>
-                    <li class="nav-item dropdown ms-xl-3 avatar-menu">
-                        <a class="nav-link p-0 avatar-menu-toggle {% if page_name == 'favorites' %}active{% endif %}" id="avatarMenuToggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="User menu">
-                            <span class="avatar-badge" aria-hidden="true">
-                                <span class="avatar-badge-face">
-                                     <span class="material-icons" aria-hidden="true">person</span>
-                                </span>
-                            </span>
-                            <span class="visually-hidden">Open user menu</span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end avatar-dropdown-menu" aria-labelledby="avatarMenuToggle">
-                             <li><a class="dropdown-item {% if page_name == 'favorites' %}active{% endif %}" href="/favorites"><span class="material-icons" aria-hidden="true">star</span> Favorites &amp; Packs</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <button type="button" class="dropdown-item theme-switch d-flex align-items-center gap-2" id="theme-toggle" title="Toggle light / dark theme">
-                                     <span class="theme-icon material-icons" aria-hidden="true">dark_mode</span> Toggle theme
-                                </button>
-                            </li>
-                            <li>
-                                <div class="dropdown-item-text">
-                                    <div class="form-check form-switch mode-switch mb-0" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
-                                        <label class="form-check-label" for="dev-mode-switch">Dev mode</label>
-                                    </div>
-                                </div>
-                            </li>
-                        </ul>
-                    </li>
+{# Shared by the search palette and the pages embedding a search inline
+   (/modules, /committers); mirlo looks templates up by id, so define once. #}
+<template id="template-mirlo-module-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
+    <div class="search-filters">
+        <select id="field" aria-label="Search field">
+            <option value="technical_name">Technical name</option>
+            <option value="name">Name</option>
+            <option value="description">Description</option>
+            <option value="category">Category</option>
+            {% if SEMANTIC_SEARCH_ENABLED %}
+            <option value="semantic">Semantic</option>
+            {% endif %}
+        </select>
+        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." aria-label="Search modules" />
+        <select id="version" aria-label="Odoo version">
+            <option value="">All versions</option>
+        </select>
+    </div>
+    <ul id="results"></ul>
+</template>
+<template id="template-mirlo-committer-search">
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/committer-search.css" as="style" />
+    <input type="text" id="search" autocomplete="off" placeholder="Search committer (name)..." aria-label="Search committers" />
+    <ul id="results"></ul>
+</template>
+
+{% set nav_sections = {
+    "dashboard": "Overview",
+    "modules": "Explore", "module": "Explore", "atlas": "Explore", "localization": "Explore",
+    "committers": "Explore", "committer": "Explore",
+    "osv": "Security", "scan": "Security",
+    "favorites": "Workspace", "pack": "Workspace",
+    "doodba_converter": "Doodba", "doodba_dep_resolver": "Doodba", "doodba_migration_plan": "Doodba",
+    "api": "Developer", "mcp_info": "Developer", "logs": "Developer"
+} %}
+{% set page_title = meta_title if meta_title is defined else "Overview" %}
+{% set nav_section = nav_sections[page_name] if page_name is defined else none %}
+
+{% macro nav_item(href, icon, label, active, extra_class="") -%}
+<li class="{{ extra_class }}"><a class="app-nav-link{{ active and ' active' or '' }}" href="{{ href }}" title="{{ label }}"{% if active %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">{{ icon }}</span><span class="app-nav-label">{{ label }}</span></a></li>
+{%- endmacro %}
+
+<a class="visually-hidden-focusable app-skip-link" href="#app-content">Skip to content</a>
+<div class="app-shell">
+    <aside class="app-sidebar offcanvas-lg offcanvas-start" id="app-sidebar" tabindex="-1" aria-label="Main navigation">
+        <div class="app-sidebar-inner">
+            <div class="app-sidebar-brand">
+                <a class="app-brand" href="/" title="Odoo Module Metadata">
+                    <img src="/static/favicon-32x32.png" alt="" width="28" height="28">
+                    <span class="app-nav-label"><span class="app-brand-name">OM<span class="app-brand-accent">//</span>MD</span><span class="app-brand-descriptor">Odoo Module Metadata</span></span>
+                </a>
+                <button type="button" class="btn-close d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#app-sidebar" aria-label="Close navigation"></button>
+            </div>
+            <nav class="app-nav">
+                <ul>
+                    {{ nav_item("/", "space_dashboard", "Overview", page_name is defined and page_name == 'dashboard') }}
                 </ul>
+                <div class="app-nav-group">Explore</div>
+                <ul>
+                    {{ nav_item("/modules", "extension", "Modules", page_name in ['modules', 'module']) }}
+                    {{ nav_item("/atlas", "hub", "Dependency atlas", page_name == 'atlas') }}
+                    {{ nav_item("/committers", "groups", "Committers", page_name in ['committers', 'committer']) }}
+                </ul>
+                <div class="app-nav-group{{ not SCAN_ENABLED and ' dev-only' or '' }}">Security</div>
+                <ul>
+                    {{ nav_item("/osv", "gpp_maybe", "Vulnerabilities", page_name == 'osv', "dev-only") }}
+                    {% if SCAN_ENABLED %}
+                    {{ nav_item("/scan", "radar", "Instance scan", page_name == 'scan') }}
+                    {% endif %}
+                </ul>
+                <div class="app-nav-group">Workspace</div>
+                <ul>
+                    {{ nav_item("/favorites", "star", "Favorites & packs", page_name in ['favorites', 'pack']) }}
+                </ul>
+                <div class="app-nav-group dev-only">Doodba</div>
+                <ul class="dev-only">
+                    {{ nav_item("/doodba/converter", "swap_horiz", "Converter", page_name == 'doodba_converter') }}
+                    {{ nav_item("/doodba/dependency-resolver", "account_tree", "Dependency resolver", page_name == 'doodba_dep_resolver') }}
+                    {{ nav_item("/doodba/migration", "upgrade", "Migration plan", page_name == 'doodba_migration_plan') }}
+                </ul>
+                <div class="app-nav-group dev-only">Developer</div>
+                <ul class="dev-only">
+                    {{ nav_item("/api", "api", "REST API", page_name == 'api') }}
+                    {% if MCP_INFO_ENABLED %}
+                    {{ nav_item("/mcp", "smart_toy", "MCP server", page_name == 'mcp_info') }}
+                    {% endif %}
+                    {{ nav_item("/logs", "receipt_long", "System logs", page_name == 'logs') }}
+                </ul>
+            </nav>
+            <div class="app-sidebar-footer">
+                <a class="app-nav-link" href="https://github.com/Tardo/OGHCollector" target="_blank" rel="noopener" title="Source code on GitHub">
+                    <svg class="app-github-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+                    </svg>
+                    <span class="app-nav-label">Source code</span>
+                </a>
+                <p class="app-disclaimer app-nav-label">Independent project. Not affiliated with Odoo S.A. or the Odoo Community Association.</p>
             </div>
         </div>
-    </nav>
-    <main class="container flex-grow-1 app-main">
-        {% block content %}{% endblock %}
-    </main>
-    <footer class="app-footer">
-        <div class="app-footer-inner d-flex flex-column flex-md-row align-items-center justify-content-between gap-2">
-            <span class="footer-signature"><span class="footer-status" aria-hidden="true"></span> Odoo Module Metadata <span class="footer-divider">/</span> Explore the open-source ecosystem</span>
-            <a class="footer-github d-flex align-items-center gap-1" href="https://github.com/Tardo/OGHCollector" target="_blank" rel="noopener">
-                <svg class="footer-github-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
-                </svg>
-                <span>Contribute on GitHub</span>
-            </a>
+    </aside>
+
+    <div class="app-main">
+        <header class="app-topbar">
+            <button type="button" class="app-icon-btn d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#app-sidebar" aria-controls="app-sidebar" aria-label="Open navigation"><span class="material-icons" aria-hidden="true">menu</span></button>
+            <button type="button" class="app-icon-btn d-none d-lg-inline-flex" id="sidebar-toggle" aria-label="Collapse sidebar" title="Collapse sidebar"><span class="material-icons" aria-hidden="true">menu_open</span></button>
+            <nav class="app-breadcrumb" aria-label="Breadcrumb">
+                {% if nav_section and nav_section != page_title %}<span class="app-breadcrumb-section">{{ nav_section }}</span><span class="app-breadcrumb-sep" aria-hidden="true">/</span>{% endif %}
+                <span class="app-breadcrumb-current" aria-current="page">{{ page_title }}</span>
+            </nav>
+            <div class="app-topbar-actions">
+                <button type="button" class="app-search-trigger" data-search-open aria-label="Search (Ctrl+K)">
+                    <span class="material-icons" aria-hidden="true">search</span>
+                    <span class="app-search-trigger-label">Search modules, committers…</span>
+                    <kbd>Ctrl K</kbd>
+                </button>
+                <button type="button" class="app-icon-btn" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
+                <div class="form-check form-switch mode-switch" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
+                    <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
+                    <label class="form-check-label" for="dev-mode-switch">Dev<span class="d-none d-xl-inline"> mode</span></label>
+                </div>
+            </div>
+        </header>
+        <main class="app-content {{ content_class if content_class is defined else '' }}" id="app-content" tabindex="-1">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+
+{# Global search: Ctrl/Cmd+K, "/" or just start typing (see main.mjs). No
+   `fade` on purpose - the dialog must be visible synchronously so the key
+   that opened it lands in the search input. #}
+{% set committer_scope = page_name is defined and page_name in ['committers', 'committer'] %}
+<div class="modal search-palette" id="search-palette" tabindex="-1" aria-label="Search">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="search-palette-head">
+                <ul class="nav search-palette-scopes" role="tablist">
+                    <li role="presentation"><button type="button" class="nav-link{{ not committer_scope and ' active' or '' }}" data-bs-toggle="tab" data-bs-target="#palette-modules" role="tab" aria-controls="palette-modules"><span class="material-icons" aria-hidden="true">extension</span> Modules</button></li>
+                    <li role="presentation"><button type="button" class="nav-link{{ committer_scope and ' active' or '' }}" data-bs-toggle="tab" data-bs-target="#palette-committers" role="tab" aria-controls="palette-committers"><span class="material-icons" aria-hidden="true">person</span> Committers</button></li>
+                </ul>
+                <span class="search-palette-hint"><kbd>↑</kbd><kbd>↓</kbd> navigate <kbd>Enter</kbd> open <kbd>Esc</kbd> close</span>
+            </div>
+            <div class="tab-content">
+                <div class="tab-pane{{ not committer_scope and ' active' or '' }}" id="palette-modules" role="tabpanel" data-search-tag="mirlo-module-search"></div>
+                <div class="tab-pane{{ committer_scope and ' active' or '' }}" id="palette-committers" role="tabpanel" data-search-tag="mirlo-committer-search"></div>
+            </div>
         </div>
-        <p class="app-footer-disclaimer">Independent project. Not affiliated with or endorsed by Odoo S.A. or the Odoo Community Association (OCA).</p>
-    </footer>
+    </div>
 </div>
 {% endblock %}

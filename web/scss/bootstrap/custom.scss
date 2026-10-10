@@ -1,12 +1,21 @@
 // Copyright 2025 Alexandre D. Díaz
 
+// ---- Tokens ----
+// CSS custom properties (not SCSS vars) so they also reach the mirlo
+// components' shadow DOM.
+
 :root {
+  --app-sidebar-w: 15.5rem;
+  --app-topbar-h: 3.5rem;
   --ommd-accent: #126d65;
   --ommd-accent-dim: #08554f;
-  --ommd-glow: rgba(23, 107, 102, 0.12);
+  --ommd-glow: rgba(23, 107, 102, 0.1);
   --ommd-panel: #ffffff;
+  --ommd-sidebar: #ffffff;
+  --ommd-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.05);
   --bs-font-sans-serif: 'DM Sans', system-ui, sans-serif;
   --bs-body-font-family: 'DM Sans', system-ui, sans-serif;
+  --bs-body-font-size: 0.9375rem;
 }
 
 [data-bs-theme="light"] {
@@ -16,8 +25,8 @@
   --bs-secondary-color: #52677a;
   --bs-tertiary-bg: #eaf0f2;
   --bs-tertiary-bg-rgb: 234, 240, 242;
-  --bs-border-color: #cbd9df;
-  --bs-border-color-translucent: rgba(37, 79, 97, 0.18);
+  --bs-border-color: #d3dfe4;
+  --bs-border-color-translucent: rgba(37, 79, 97, 0.15);
   --bs-link-color: #146f6c;
   --bs-link-hover-color: #094e4d;
 }
@@ -25,8 +34,10 @@
 [data-bs-theme="dark"] {
   --ommd-accent: #81efd2;
   --ommd-accent-dim: #5ec4b1;
-  --ommd-glow: rgba(80, 203, 189, 0.14);
+  --ommd-glow: rgba(80, 203, 189, 0.12);
   --ommd-panel: #101e30;
+  --ommd-sidebar: #0d1828;
+  --ommd-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   --bs-body-bg: #0b1422;
   --bs-body-bg-rgb: 11, 20, 34;
   --bs-body-color: #e5eff5;
@@ -34,45 +45,509 @@
   --bs-secondary-bg: #1c3041;
   --bs-tertiary-bg: #152638;
   --bs-tertiary-bg-rgb: 21, 38, 56;
-  --bs-border-color: #354c5b;
-  --bs-border-color-translucent: rgba(156, 199, 206, 0.19);
+  --bs-border-color: #2f4555;
+  --bs-border-color-translucent: rgba(156, 199, 206, 0.15);
   --bs-primary: #81efd2;
   --bs-primary-rgb: 129, 239, 210;
   --bs-link-color: #92decf;
   --bs-link-hover-color: #c2f9eb;
 }
 
+// ---- Base ----
+
 body {
-  background-image: radial-gradient(ellipse 75% 35% at 65% -12%, var(--ommd-glow), transparent);
-  background-attachment: fixed;
+  min-height: 100dvh;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Space Grotesk', 'DM Sans', system-ui, sans-serif;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.03em;
 }
 
 a {
   text-underline-offset: 0.18em;
 }
 
+// One heading scale for in-page sections, so pages read as one app instead
+// of each picking its own h2/h4 sizes. `fs-*` utilities still win.
+.app-content {
+  h2 { font-size: 1.2rem; }
+  h3 { font-size: 1.1rem; }
+  h4 { font-size: 1.05rem; }
+  h5 { font-size: 0.95rem; }
+}
+
 :focus-visible {
   outline: 2px solid var(--ommd-accent);
-  outline-offset: 3px;
+  outline-offset: 2px;
+}
+
+kbd {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.3rem;
+}
+
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.25em;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
+}
+
+// User/Developer mode: `data-mode` is set on <html> before first paint
+// (base_layout.html) and toggled by the top bar switch (main.mjs).
+html[data-mode='user'] .dev-only {
+  display: none !important;
+}
+
+// ---- App shell: sidebar + (top bar / content) ----
+// The window stays the scroll container (sticky sidebar/top bar), so
+// window-based scroll handlers, scroll restoration and #anchors keep working.
+
+.app-skip-link {
+  position: absolute;
+  z-index: 1100;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--ommd-panel);
+  border-radius: 0.5rem;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100dvh;
 }
 
 .app-main {
-  padding-top: clamp(2.5rem, 5vw, 4.5rem);
-  padding-bottom: 5rem;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
 }
+
+.app-sidebar {
+  --bs-offcanvas-width: 17rem;
+  --bs-offcanvas-bg: var(--ommd-sidebar);
+}
+
+.app-sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--ommd-sidebar);
+  border-right: 1px solid var(--bs-border-color-translucent);
+}
+
+.app-sidebar-brand {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  height: var(--app-topbar-h);
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  color: var(--bs-body-color);
+  text-decoration: none;
+
+  img { flex-shrink: 0; }
+
+  > .app-nav-label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.15;
+  }
+
+  &:hover { color: var(--ommd-accent); }
+}
+
+.app-brand-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.06em;
+}
+
+.app-brand-accent {
+  padding: 0 0.06em;
+  color: var(--ommd-accent);
+}
+
+.app-brand-descriptor {
+  overflow: hidden;
+  font-size: 0.7rem;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app-nav {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.75rem 0.75rem 1rem;
+
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+}
+
+.app-nav-group {
+  margin: 1.1rem 0.65rem 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--bs-secondary-color);
+}
+
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--bs-secondary-color);
+  text-decoration: none;
+
+  .material-icons {
+    flex-shrink: 0;
+    width: 1.25rem;
+    font-size: 1.25rem;
+  }
+
+  &:hover {
+    color: var(--bs-body-color);
+    background: var(--bs-tertiary-bg);
+  }
+
+  &.active {
+    font-weight: 600;
+    color: var(--ommd-accent);
+    background: var(--ommd-glow);
+    box-shadow: inset 2px 0 var(--ommd-accent);
+  }
+}
+
+.app-sidebar-footer {
+  flex-shrink: 0;
+  padding: 0.75rem;
+  border-top: 1px solid var(--bs-border-color-translucent);
+}
+
+.app-github-icon {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.app-disclaimer {
+  margin: 0.5rem 0.65rem 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  white-space: normal;
+  color: var(--bs-secondary-color);
+}
+
+@include media-breakpoint-up(lg) {
+  // Bootstrap's offcanvas-lg is a plain element from lg up.
+  .app-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+    flex: 0 0 var(--app-sidebar-w);
+    width: var(--app-sidebar-w);
+    height: 100dvh;
+    transition: flex-basis 0.2s ease, width 0.2s ease;
+  }
+
+  // Icon rail (toggled in the top bar, persisted as `ommd_sidebar`).
+  html[data-sidebar="collapsed"] {
+    --app-sidebar-w: 4.25rem;
+
+    .app-nav-label,
+    .app-disclaimer {
+      display: none;
+    }
+
+    .app-nav-group {
+      height: 1px;
+      margin: 0.75rem 0.4rem;
+      overflow: hidden;
+      color: transparent;
+      background: var(--bs-border-color-translucent);
+    }
+
+    .app-sidebar-brand { justify-content: center; padding: 0; }
+    .app-nav { padding-inline: 0.6rem; }
+    .app-nav-link { justify-content: center; padding-inline: 0; }
+  }
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--app-topbar-h);
+  padding: 0 clamp(0.75rem, 2vw, 1.5rem);
+  background: rgba(var(--bs-body-bg-rgb), 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+.app-icon-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  color: var(--bs-secondary-color);
+  background: transparent;
+  border: 0;
+  border-radius: 0.5rem;
+
+  &:hover {
+    color: var(--bs-body-color);
+    background: var(--bs-tertiary-bg);
+  }
+
+  .theme-icon.spin { animation: theme-icon-spin 0.4s ease; }
+}
+
+.app-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.app-breadcrumb-section { white-space: nowrap; color: var(--bs-secondary-color); }
+.app-breadcrumb-sep { color: var(--bs-border-color); }
+
+.app-breadcrumb-current {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.app-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: clamp(14rem, 26vw, 22rem);
+  height: 2.25rem;
+  padding: 0 0.45rem 0 0.65rem;
+  font-size: 0.85rem;
+  text-align: left;
+  color: var(--bs-secondary-color);
+  background: var(--ommd-panel);
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: 0.55rem;
+
+  .material-icons { font-size: 1.15rem; }
+
+  &:hover {
+    color: var(--bs-body-color);
+    border-color: var(--ommd-accent);
+  }
+}
+
+.app-search-trigger-label {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mode-switch {
+  margin: 0 0 0 0.25rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  color: var(--bs-secondary-color);
+
+  .form-check-input,
+  .form-check-label {
+    cursor: pointer;
+  }
+}
+
+@include media-breakpoint-down(md) {
+  .app-search-trigger {
+    justify-content: center;
+    width: 2.25rem;
+    padding: 0;
+
+    .app-search-trigger-label,
+    kbd {
+      display: none;
+    }
+  }
+}
+
+@include media-breakpoint-down(sm) {
+  .app-breadcrumb-section,
+  .app-breadcrumb-sep {
+    display: none;
+  }
+}
+
+.app-content {
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1rem, 3vw, 2.25rem) 4rem;
+  outline: none;
+}
+
+// Full-height workspace (e.g. the atlas canvas): the content fills the
+// viewport below the top bar instead of growing with the document.
+.app-content-fill {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  height: calc(100dvh - var(--app-topbar-h));
+  padding-bottom: 1rem;
+
+  .page-header { margin-bottom: 1rem; }
+}
+
+.atlas-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 420px;
+  overflow: hidden;
+  background: var(--ommd-panel);
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: var(--bs-border-radius-lg);
+
+  mirlo-atlas {
+    position: absolute;
+    inset: 0;
+  }
+}
+
+@keyframes theme-icon-spin {
+  from {
+    transform: rotate(-180deg) scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar { transition: none !important; }
+}
+
+// ---- Search palette (Ctrl/Cmd+K) ----
+
+.search-palette {
+  .modal-dialog { margin-top: min(12vh, 7rem); }
+
+  .modal-content {
+    padding: 0.75rem;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.search-palette-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.search-palette-scopes {
+  gap: 0.25rem;
+
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+    border-radius: 0.45rem;
+
+    .material-icons { font-size: 1rem; }
+
+    &:hover { color: var(--bs-body-color); }
+
+    &.active {
+      color: var(--ommd-accent);
+      background: var(--ommd-glow);
+    }
+  }
+}
+
+.search-palette-hint {
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+
+  kbd { margin: 0 0.15rem 0 0.35rem; }
+
+  @include media-breakpoint-down(md) { display: none; }
+}
+
+// ---- Bootstrap components, app flavour ----
 
 .btn {
   font-weight: 600;
   letter-spacing: -0.01em;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
-
-  &:hover { transform: translateY(-2px); }
-  &:active { transform: translateY(0); }
 }
 
 [data-bs-theme="dark"] .btn-primary {
@@ -108,21 +583,42 @@ a {
   box-shadow: 0 0 0 0.2rem var(--ommd-glow);
 }
 
+.card {
+  --bs-card-bg: var(--ommd-panel);
+  --bs-card-border-color: var(--bs-border-color-translucent);
+  --bs-card-border-radius: var(--bs-border-radius-lg);
+  --bs-card-inner-border-radius: var(--bs-border-radius-lg);
+  --bs-card-cap-bg: var(--bs-tertiary-bg);
+  box-shadow: var(--ommd-shadow);
+}
+
+// Segmented control look for the version/period tab strips.
 .nav-pills {
   flex-wrap: nowrap;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
   overflow-x: auto;
-  gap: 0.4rem;
-  padding-bottom: 0.4rem;
+  padding: 0.25rem;
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: 0.65rem;
 
   .nav-link {
-    white-space: nowrap;
-    border: 1px solid transparent;
-    border-radius: 0.65rem;
-    color: var(--bs-secondary-color);
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
     font-weight: 600;
+    white-space: nowrap;
+    color: var(--bs-secondary-color);
+    border-radius: 0.45rem;
 
-    &:hover { color: var(--bs-body-color); background: var(--bs-tertiary-bg); }
-    &.active { background: var(--ommd-panel); color: var(--ommd-accent); border-color: var(--bs-border-color); }
+    &:hover { color: var(--bs-body-color); }
+
+    &.active {
+      color: var(--ommd-accent);
+      background: var(--ommd-panel);
+      box-shadow: var(--ommd-shadow);
+    }
   }
 }
 
@@ -130,265 +626,172 @@ a {
   --bs-table-bg: transparent;
   --bs-table-striped-bg: var(--bs-tertiary-bg);
   --bs-table-hover-bg: var(--ommd-glow);
-  border-color: var(--bs-border-color-translucent);
   margin-bottom: 0;
+  font-size: 0.875rem;
+  border-color: var(--bs-border-color-translucent);
 
   th {
-    font-size: 0.72rem;
-    letter-spacing: 0.1em;
+    padding: 0.7rem 1rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--bs-secondary-color);
-    font-weight: 700;
-    padding: 1rem;
   }
 
-  td { padding: 0.95rem 1rem; vertical-align: middle; }
+  td {
+    padding: 0.65rem 1rem;
+    vertical-align: middle;
+  }
 }
 
 .tab-content { min-width: 0; }
-
-@media (prefers-reduced-motion: reduce) {
-  .btn { transition: none; }
-  .btn:hover { transform: none; }
-}
-
-.material-icons {
-  font-family: 'Material Icons';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 1.25em;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  white-space: nowrap;
-  direction: ltr;
-  font-feature-settings: 'liga';
-  -webkit-font-smoothing: antialiased;
-  vertical-align: middle;
-}
-
-// User/Developer mode: `data-mode` is set on <html> before first paint
-// (base_layout.html) and toggled by the navbar switch (main.mjs).
-html[data-mode='user'] .dev-only {
-  display: none !important;
-}
-
-// ---- Navbar / footer ----
-
-.navbar {
-  background-color: rgba(var(--bs-body-bg-rgb), 0.9);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border-bottom: 1px solid var(--bs-border-color-translucent);
-  padding: 0.75rem clamp(1rem, 3vw, 2.5rem);
-
-  .container-fluid { max-width: 1480px; }
-
-  .navbar-brand {
-    gap: 0.65rem;
-    color: var(--bs-body-color);
-
-    .brand-mark {
-      width: 2rem;
-      height: 2rem;
-      object-fit: contain;
-    }
-
-    .brand-name {
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 1.2rem;
-      font-weight: 700;
-      letter-spacing: -0.07em;
-    }
-
-    .brand-accent { color: var(--ommd-accent); padding: 0 0.08em; }
-    .brand-descriptor { border-left: 1px solid var(--bs-border-color); padding-left: 0.85rem; margin-left: 0.25rem; font-size: 0.7rem; letter-spacing: 0.02em; color: var(--bs-secondary-color); }
-
-    &:hover { color: var(--ommd-accent); }
-  }
-
-  .navbar-nav { gap: 0.15rem; }
-
-  .nav-link:not(.avatar-menu-toggle) {
-    border-radius: 0.55rem;
-    padding: 0.55rem 0.8rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-
-    &:hover, &.active { background: var(--ommd-glow); color: var(--ommd-accent); }
-  }
-
-  .navbar-toggler { border-color: var(--bs-border-color); }
-
-  .avatar-menu-toggle {
-    display: inline-flex;
-    box-shadow: none;
-
-    &:focus-visible {
-      outline: 2px solid var(--ommd-accent);
-      outline-offset: 2px;
-    }
-  }
-
-  .avatar-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.35rem;
-    height: 2.35rem;
-    border-radius: 0.7rem;
-    background-color: var(--ommd-glow);
-    border: 1px solid var(--bs-border-color-translucent);
-    transition:
-      background-color 0.15s ease,
-      transform 0.1s ease;
-  }
-
-  .avatar-menu-toggle:hover .avatar-badge,
-  .avatar-menu-toggle[aria-expanded="true"] .avatar-badge {
-    background-color: var(--bs-tertiary-bg);
-  }
-
-  .avatar-menu-toggle:active .avatar-badge {
-    transform: scale(0.93);
-  }
-
-  .avatar-menu-toggle.active .avatar-badge {
-    box-shadow: 0 0 0 2px var(--ommd-accent);
-  }
-
-  .avatar-badge-face {
-    display: inline-flex;
-    color: var(--ommd-accent);
-
-    .material-icons {
-      width: 1rem;
-      font-size: 1rem;
-    }
-  }
-}
-
-@media (max-width: 1199.98px) {
-  .navbar .navbar-collapse {
-    padding: 1rem 0 0.25rem;
-    max-height: calc(100dvh - 5rem);
-    overflow-y: auto;
-  }
-  .navbar .navbar-nav { align-items: stretch; }
-  .navbar .avatar-menu-toggle { padding: 0.5rem 0 !important; }
-  .navbar .avatar-dropdown-menu { position: static; width: 100%; }
-}
-
-// The avatar's dropdown now also hosts the theme toggle and dev-mode switch
-// (moved out of their own standalone nav items).
-.avatar-dropdown-menu {
-  min-width: 14rem;
-
-  .theme-switch {
-    .theme-icon {
-      display: inline-block;
-    }
-
-    .theme-icon.spin {
-      animation: theme-icon-spin 0.4s ease;
-    }
-  }
-
-  .mode-switch {
-    .form-check-input,
-    .form-check-label {
-      cursor: pointer;
-    }
-  }
-}
-
-// Bootstrap only auto-flips the navbar-toggler icon with the page theme;
-// everything else needs `.navbar-dark`/`.navbar[data-bs-theme]` set
-// directly on the element. We keep the theme on <html> instead, so mirror
-// those color vars here, scoped through the ancestor attribute.
-html[data-bs-theme="dark"] .navbar {
-  --bs-navbar-color: #{$navbar-dark-color};
-  --bs-navbar-hover-color: #{$navbar-dark-hover-color};
-  --bs-navbar-disabled-color: #{$navbar-dark-disabled-color};
-  --bs-navbar-active-color: #{$navbar-dark-active-color};
-  --bs-navbar-brand-color: #{$navbar-dark-brand-color};
-  --bs-navbar-brand-hover-color: #{$navbar-dark-brand-hover-color};
-  --bs-navbar-toggler-border-color: #{$navbar-dark-toggler-border-color};
-}
-
-@keyframes theme-icon-spin {
-  from {
-    transform: rotate(-180deg) scale(0.4);
-    opacity: 0;
-  }
-  to {
-    transform: rotate(0) scale(1);
-    opacity: 1;
-  }
-}
-
-.app-footer {
-  border-top: 1px solid var(--bs-border-color-translucent);
-  color: var(--bs-secondary-color);
-  font-size: 0.8rem;
-  padding: 1.65rem 1rem;
-  background: rgba(var(--bs-tertiary-bg-rgb), 0.35);
-
-  .app-footer-inner {
-    max-width: 1320px;
-    margin: 0 auto;
-  }
-
-  .app-footer-disclaimer {
-    max-width: 1320px;
-    margin: 0.85rem auto 0;
-    font-size: 0.78rem;
-  }
-
-  .footer-status { display: inline-block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--ommd-accent); margin-right: 0.4rem; box-shadow: 0 0 12px var(--ommd-accent); }
-  .footer-divider { padding: 0 0.55rem; color: var(--ommd-accent); }
-
-  .footer-github {
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 0.4rem !important;
-    color: var(--bs-secondary-color);
-    text-decoration: none;
-    white-space: nowrap;
-
-    .footer-github-icon {
-      width: 1.15rem;
-      height: 1.15rem;
-      display: inline-block;
-    }
-
-    &:hover,
-    &:focus-visible {
-      color: var(--bs-body-color);
-    }
-  }
-}
 
 // ---- Page scaffolding ----
 
 // Every page opens with: <header class="page-header"><h1>…</h1>
 // <p class="page-header-desc">…</p></header> — the one-liner tells a
-// first-time visitor what the page is for.
+// first-time visitor what the page is for. Optional
+// <div class="page-header-actions"> goes to the right.
 .page-header {
-  margin-bottom: 2.5rem;
-  padding-bottom: 1.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1.5rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
   border-bottom: 1px solid var(--bs-border-color-translucent);
 
+  > * { grid-column: 1; }
+
   h1 {
-    font-size: clamp(2rem, 4vw, 3rem);
+    margin-bottom: 0.25rem;
+    font-size: clamp(1.4rem, 2.2vw, 1.75rem);
     font-weight: 700;
-    margin-bottom: 0.4rem;
   }
 
   .page-header-desc {
-    color: var(--bs-secondary-color);
-    max-width: 75ch;
+    max-width: 80ch;
     margin-bottom: 0;
+    font-size: 0.9rem;
+    color: var(--bs-secondary-color);
+  }
+
+  .page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  @include media-breakpoint-down(md) {
+    grid-template-columns: minmax(0, 1fr);
+
+    .page-header-actions {
+      grid-row: auto;
+      grid-column: 1;
+      justify-content: flex-start;
+      margin-top: 0.85rem;
+    }
+  }
+}
+
+.section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin: 2.25rem 0 0.85rem;
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+  }
+
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+
+    .material-icons { font-size: 1rem; }
+  }
+}
+
+.subsection-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.25rem 0 0.6rem;
+  font-family: var(--bs-body-font-family);
+  font-size: 0.8rem !important;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+// Bordered surface for tables, lists and widgets.
+.panel {
+  overflow-x: auto;
+  background: var(--ommd-panel);
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: var(--bs-border-radius-lg);
+  box-shadow: var(--ommd-shadow);
+
+  .table { min-width: 400px; }
+  .table a { font-weight: 600; text-decoration: none; }
+  .table a:hover { text-decoration: underline; }
+  tbody tr:last-child td { border-bottom: 0; }
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1.15rem;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+}
+
+.panel-body {
+  padding: 1rem 1.15rem;
+}
+
+// Navigational links in data surfaces: colour is the cue, underline on hover.
+// Links inside running text keep the underline (not distinguishable by
+// colour alone).
+.table, .stat-card, .spec-sheet, .panel-header {
+  a:not(.btn) {
+    text-decoration: none;
+
+    &:hover { text-decoration: underline; }
   }
 }
 
@@ -396,49 +799,49 @@ html[data-bs-theme="dark"] .navbar {
 
 .stat-card {
   height: 100%;
-  padding: 1.4rem;
+  padding: 1rem 1.15rem;
+  background-color: var(--ommd-panel);
   border: 1px solid var(--bs-border-color-translucent);
   border-radius: var(--bs-border-radius-lg);
-  background-color: var(--ommd-panel);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.035);
+  box-shadow: var(--ommd-shadow);
 
   .stat-card-label {
-    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
     font-weight: 600;
-    text-transform: uppercase;
     letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: var(--bs-secondary-color);
-    margin-bottom: 0.25rem;
+
+    .material-icons {
+      font-size: 1rem;
+      color: var(--ommd-accent);
+    }
   }
 
   .stat-card-value {
-    font-size: clamp(1.15rem, 2vw, 1.4rem);
+    font-family: 'Space Grotesk', 'DM Sans', system-ui, sans-serif;
+    font-size: clamp(1.15rem, 2vw, 1.5rem);
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
     line-height: 1.25;
     overflow-wrap: anywhere;
   }
 
-  .stat-card-note {
+  .stat-card-value small {
+    font-family: var(--bs-body-font-family);
+    font-size: 0.75rem;
+    font-weight: 500;
     color: var(--bs-secondary-color);
-    font-size: 0.875rem;
-  }
-}
-
-// Each version's counter card gets its own top border color so the three
-// read as distinct versions at a glance, not a repeated widget.
-#modules_count mirlo-module-counter.stat-card {
-  border-top: 3px solid var(--bs-border-color-translucent);
-
-  &[version="18.0"] {
-    border-top-color: #c98a4b;
   }
 
-  &[version="19.0"] {
-    border-top-color: var(--ommd-accent);
-  }
-
-  &[version="20.0"] {
-    border-top-color: #5fb488;
+  .stat-card-note {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
   }
 }
 
@@ -448,12 +851,12 @@ html[data-bs-theme="dark"] .navbar {
   margin-bottom: 0;
 
   dt {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--bs-primary);
     margin-top: 0.85rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
 
     &:first-child {
       margin-top: 0;
@@ -467,8 +870,15 @@ html[data-bs-theme="dark"] .navbar {
     overflow-wrap: anywhere;
 
     &:last-of-type {
-      border-bottom: none;
       padding-bottom: 0;
+      border-bottom: none;
     }
   }
+}
+
+// Neutral badges (`text-bg-light border`) are used all over for metadata
+// chips; Bootstrap's white fill glares on the dark theme.
+[data-bs-theme="dark"] .text-bg-light {
+  color: var(--bs-body-color) !important;
+  background-color: var(--bs-tertiary-bg) !important;
 }

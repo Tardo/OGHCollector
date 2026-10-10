@@ -4,7 +4,38 @@
    lazily on first tab activation to avoid computing dependency trees /
    models / required_by (up to 500 rows) for versions nobody looks at. #}
 {% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.source_path) %}
-<p>Security findings <span class="security-indicator" role="img" aria-label="{{ module.security_warnings | length }} grave and {{ module.security_warning_count }} minor static-analysis findings; not a security audit"><span class="segment segment-errors{{ module.security_warnings and ' has-findings' or '' }}" title="Grave findings" aria-hidden="true">{{ module.security_warnings | length }}</span><span class="segment segment-warnings{{ module.security_warning_count and ' has-findings' or '' }}" title="Minor findings" aria-hidden="true">{{ module.security_warning_count }}</span></span></p>
+<div class="module-summary">
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">shield</span> Security findings</div>
+        <div class="stat-card-value"><span class="security-indicator" role="img" aria-label="{{ module.security_warnings | length }} grave and {{ module.security_warning_count }} minor static-analysis findings; not a security audit"><span class="segment segment-errors{{ module.security_warnings and ' has-findings' or '' }}" title="Grave findings" aria-hidden="true">{{ module.security_warnings | length }}</span><span class="segment segment-warnings{{ module.security_warning_count and ' has-findings' or '' }}" title="Minor findings" aria-hidden="true">{{ module.security_warning_count }}</span></span></div>
+        <div class="stat-card-note">Grave / minor (static analysis)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">call_merge</span> Required by</div>
+        <div class="stat-card-value">{{ module.required_by | length }}</div>
+        <div class="stat-card-note">Modules depending on it</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> External deps</div>
+        <div class="stat-card-value">{{ module.dependencies.pip | length }} <small>pip</small> &middot; {{ module.dependencies.bin | length }} <small>bin</small></div>
+        <div class="stat-card-note">Python packages / system binaries</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">folder</span> Folder size</div>
+        <div class="stat-card-value">{{ (module.folder_size / 1048576) | round(2) }} <small>MB</small></div>
+        <div class="stat-card-note">Module directory on disk</div>
+    </div>
+    <div class="stat-card dev-only">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">build</span> Migration notes</div>
+        <div class="stat-card-value">{{ module.migration_considerations | length }}</div>
+        <div class="stat-card-note">Review checklist items</div>
+    </div>
+    <div class="stat-card dev-only">
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">code</span> Code footprint</div>
+        <div class="stat-card-value">{{ module.models | length }} <small>models</small> &middot; {{ module.views | length }} <small>views</small></div>
+        <div class="stat-card-note">{{ module.controllers | length }} HTTP endpoint{{ module.controllers | length != 1 and 's' or '' }}</div>
+    </div>
+</div>
 {% if module.security_warnings %}
 <div class="dev-only alert alert-danger" role="alert">
     <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">warning</span> Security warnings</h5>
@@ -27,101 +58,69 @@
     <p class="mb-0 small">Migration review checklist, not a compatibility verdict. "Migrating to X.0" applies once you upgrade to that version; "Since X.0" means this version already ignores or rejects that code.</p>
 </div>
 {% endif %}
-<div class="row">
-    <dl class="spec-sheet col-lg-6">
-        <dt>Repository</dt>
-        <dd>
-            <a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a>
-            {% if module.organization == "OCA" %}
-            &middot; <a href="https://runboat.odoo-community.org/builds?repo=OCA/{{ module.repository | urlencode }}&target_branch={{ module.odoo_version | urlencode }}" target="_blank" rel="noopener">Try on Runboat</a>
-            {% endif %}
-        </dd>
-        <dt>Module version</dt>
-        <dd>
-            {% if history and history | length > 1 %}
-            <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="Select module version">
-                {% for v in history %}
-                <option value="{{ v.version_module }}" {{ (v.version_module == module.version) and 'selected' or '' }}>{{ v.version_module }}{{ v.is_latest and ' (latest)' or '' }}</option>
-                {% endfor %}
-            </select>
-            {% else %}
-            {{ module.version }}
-            {% endif %}
-        </dd>
-        <dt>Category</dt>
-        <dd>{{ module.category }}</dd>
-        <dt>Folder size</dt>
-        <dd>{{ (module.folder_size / 1048576) | round(2) }} MB</dd>
-        <dt>License</dt>
-        <dd>{{ module.license }}</dd>
-        <dt>Application</dt>
-        <dd>{{ module.application and "Yes" or "No" }}</dd>
-        <dt>Auto-installable</dt>
-        <dd>{{ module.auto_install and "Yes" or "No" }}</dd>
-        <dt>Website</dt>
-        <dd>{% if module.website %}<a href="{{ module.website }}">{{ module.website }}</a>{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
-        <dt>Last tracking update</dt>
-        <dd>{{ module.update_date }}</dd>
-        <dt>Authors</dt>
-        <dd>{{ module.authors | join(', ') }}</dd>
-        <dt>Maintainers</dt>
-        <dd>{% if module.maintainers %}{{ module.maintainers | join(', ') }}{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
-        <dt>Committers</dt>
-        <dd>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</dd>
-    </dl>
-    <dl class="spec-sheet col-lg-6">
-        <dt>Odoo dependencies</dt>
-        <dd>
-            {% if module.dependencies.odoo %}
-            <div class="module-dependencies-yaml">
-                {% for key, values in module.dependencies.odoo|items %}
-                {% set dep_org = key | split('/') | first %}
-                <div>{{ key }}:</div>
-                {% for value in values %}
-                <div class="module-dependencies-yaml-item">- <a href="/module/{{ dep_org | urlencode }}/{{ value | urlencode }}">{{ value }}</a></div>
-                {% endfor %}
-                {% endfor %}
+<div class="module-layout">
+    <div class="module-main">
+        <section class="panel">
+            <header class="panel-header"><h2>Description</h2></header>
+            <div class="panel-body"><pre class="module-description">{{ module.description }}</pre></div>
+        </section>
+        <section class="panel">
+            <header class="panel-header"><h2>Dependencies</h2></header>
+            <div class="panel-body">
+            <dl class="spec-sheet">
+                    <dt>Odoo dependencies</dt>
+                    <dd>
+                        {% if module.dependencies.odoo %}
+                        <div class="module-dependencies-yaml">
+                            {% for key, values in module.dependencies.odoo|items %}
+                            {% set dep_org = key | split('/') | first %}
+                            <div>{{ key }}:</div>
+                            {% for value in values %}
+                            <div class="module-dependencies-yaml-item">- <a href="/module/{{ dep_org | urlencode }}/{{ value | urlencode }}">{{ value }}</a></div>
+                            {% endfor %}
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <span class="text-body-secondary">None</span>
+                        {% endif %}
+                    </dd>
+                    <dt>Python dependencies</dt>
+                    <dd>
+                        {% if module.dependencies.pip %}
+                        {% for dep_name in module.dependencies.pip %}
+                        <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a>{{ not loop.last and ', ' or '' }}
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-body-secondary">None</span>
+                        {% endif %}
+                    </dd>
+                    <dt>System dependencies</dt>
+                    <dd>
+                        {% if module.dependencies.bin %}
+                        {{ module.dependencies.bin | join(', ') }}
+                        {% else %}
+                        <span class="text-body-secondary">None</span>
+                        {% endif %}
+                    </dd>
+                    <dt>Required by</dt>
+                    <dd>
+                        {% if module.required_by %}
+                        {% for req in module.required_by %}
+                        <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-body-secondary">None</span>
+                        {% endif %}
+                    </dd>
+                </dl>
             </div>
-            {% else %}
-            <span class="text-body-secondary">None</span>
-            {% endif %}
-        </dd>
-        <dt>Python dependencies</dt>
-        <dd>
-            {% if module.dependencies.pip %}
-            {% for dep_name in module.dependencies.pip %}
-            <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a>{{ not loop.last and ', ' or '' }}
-            {% endfor %}
-            {% else %}
-            <span class="text-body-secondary">None</span>
-            {% endif %}
-        </dd>
-        <dt>System dependencies</dt>
-        <dd>
-            {% if module.dependencies.bin %}
-            {{ module.dependencies.bin | join(', ') }}
-            {% else %}
-            <span class="text-body-secondary">None</span>
-            {% endif %}
-        </dd>
-        <dt>Required by</dt>
-        <dd>
-            {% if module.required_by %}
-            {% for req in module.required_by %}
-            <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
-            {% endfor %}
-            {% else %}
-            <span class="text-body-secondary">None</span>
-            {% endif %}
-        </dd>
-        <dt>Description</dt>
-        <dd><pre class="module-description">{{ module.description }}</pre></dd>
-    </dl>
-</div>
+        </section>
 
-<div class="dev-only">
-<h4 class="mt-4">Code Analysis <span class="text-body-secondary fs-6 material-icons" style="cursor: help;" title="Extracted automatically from the module's source code (best-effort static analysis, no code is executed): details may be incomplete or approximate." aria-label="About code analysis">info_outline</span></h4>
-<h5>Views touched ({{ module.views | length }})</h5>
+<div class="dev-only module-code-analysis">
+<div class="section-heading"><h2>Code analysis</h2><p>Extracted from the source by best-effort static analysis (no code is executed); details may be incomplete.</p></div>
+<section class="panel">
+<header class="panel-header"><h2>Views touched <span class="badge text-bg-light border">{{ module.views | length }}</span></h2></header>
+<div class="panel-body">
 {% if module.views %}
 <div class="table-responsive">
 <table class="table table-sm table-striped-columns">
@@ -149,7 +148,12 @@
 <p class="text-muted">No views found for this module.</p>
 {% endif %}
 
-<h5>HTTP endpoints ({{ module.controllers | length }})</h5>
+</div>
+</section>
+
+<section class="panel">
+<header class="panel-header"><h2>HTTP endpoints <span class="badge text-bg-light border">{{ module.controllers | length }}</span></h2></header>
+<div class="panel-body">
 {% if module.controllers %}
 <div class="table-responsive">
 <table class="table table-sm table-striped-columns">
@@ -180,9 +184,14 @@
 <p class="text-muted">No HTTP endpoints found for this module.</p>
 {% endif %}
 
-<h5>Models touched ({{ module.models | length }})</h5>
+</div>
+</section>
+
+<section class="panel">
+<header class="panel-header"><h2>Models touched <span class="badge text-bg-light border">{{ module.models | length }}</span></h2></header>
+<div class="panel-body">
 {% if module.models %}
-<div class="accordion module-model-accordion mb-3" id="models-accordion-{{ module.odoo_version }}">
+<div class="accordion module-model-accordion" id="models-accordion-{{ module.odoo_version }}">
     {% for mdl in module.models %}
     <div class="accordion-item">
         <h2 class="accordion-header" id="heading-model-{{ module.odoo_version }}-{{ loop.index }}">
@@ -252,4 +261,51 @@
 {% else %}
 <p class="text-muted">No models found for this module.</p>
 {% endif %}
+</div>
+</section>
+</div>
+    </div>
+    <aside class="module-facts panel" aria-label="Module facts">
+        <div class="panel-body">
+        <dl class="spec-sheet">
+                <dt>Repository</dt>
+                <dd>
+                    <a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a>
+                    {% if module.organization == "OCA" %}
+                    &middot; <a href="https://runboat.odoo-community.org/builds?repo=OCA/{{ module.repository | urlencode }}&target_branch={{ module.odoo_version | urlencode }}" target="_blank" rel="noopener">Try on Runboat</a>
+                    {% endif %}
+                </dd>
+                <dt>Module version</dt>
+                <dd>
+                    {% if history and history | length > 1 %}
+                    <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="Select module version">
+                        {% for v in history %}
+                        <option value="{{ v.version_module }}" {{ (v.version_module == module.version) and 'selected' or '' }}>{{ v.version_module }}{{ v.is_latest and ' (latest)' or '' }}</option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    {{ module.version }}
+                    {% endif %}
+                </dd>
+                <dt>Category</dt>
+                <dd>{{ module.category }}</dd>
+                <dt>License</dt>
+                <dd>{{ module.license }}</dd>
+                <dt>Application</dt>
+                <dd>{{ module.application and "Yes" or "No" }}</dd>
+                <dt>Auto-installable</dt>
+                <dd>{{ module.auto_install and "Yes" or "No" }}</dd>
+                <dt>Website</dt>
+                <dd>{% if module.website %}<a href="{{ module.website }}">{{ module.website }}</a>{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
+                <dt>Last tracking update</dt>
+                <dd>{{ module.update_date }}</dd>
+                <dt>Authors</dt>
+                <dd>{{ module.authors | join(', ') }}</dd>
+                <dt>Maintainers</dt>
+                <dd>{% if module.maintainers %}{{ module.maintainers | join(', ') }}{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
+                <dt>Committers</dt>
+                <dd>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</dd>
+            </dl>
+        </div>
+    </aside>
 </div>

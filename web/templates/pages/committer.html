@@ -13,18 +13,6 @@
 {{ super() }}
 
 
-<template id="template-mirlo-committer-search">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/committer-search.css" as="style" />
-    <input type="text" id="search" autocomplete="off" placeholder="Search committer (name)..." autofocus />
-    <ul id="results"></ul>
-</template>
-
-
-<div id="committer_search" class="position-fixed start-50 w-50 translate-middle-x d-none">
-    <mirlo-committer-search class="d-block" />
-</div>
-
-{% include "partials/search_tip.html" %}
 
 {% if not stats.versions %}
 <header class="page-header">

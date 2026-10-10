@@ -23,8 +23,13 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.6em;
-    top: 80px;
-    right: 15px;
+    top: 0.75rem;
+    right: 0.75rem;
+    padding: 0.4rem 0.5rem;
+    background: rgba(var(--bs-body-bg-rgb), 0.85);
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: 0.65rem;
+    backdrop-filter: blur(8px);
     position: absolute;
     z-index: 2;
 }
@@ -34,10 +39,15 @@
     top: 50%;
     left: 50%;
     z-index: 3;
-    background-color: red;
-    padding: 0.1em 0.3em;
-    border: 1px solid black;
-    font-size: x-large;
+    transform: translate(-50%, -50%);
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--bs-body-color);
+    background-color: var(--ommd-panel);
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: 2rem;
+    box-shadow: var(--ommd-shadow);
 }
 
 .search_input {

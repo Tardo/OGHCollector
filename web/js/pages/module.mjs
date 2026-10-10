@@ -1,8 +1,6 @@
 // Copyright Alexandre D. Díaz
-import '@app/components/module-search';
 import '@scss/pages/module.scss';
 import {fetchIntoPane, initLazyTabPanes} from '@app/utils/lazy-tab';
-import {bindSearchModal} from '@app/utils/search-modal';
 import {
   addToPack,
   createPack,
@@ -12,8 +10,6 @@ import {
   removeFromPack,
   toggleFavorite,
 } from '@app/utils/favorites-store';
-
-bindSearchModal('module_search', 'mirlo-module-search');
 
 // Delegated (not queried once at load) since lazy-loaded tabs inject their
 // own `.module-version-select` after this script has already run. Re-fetches

@@ -27,7 +27,8 @@ $offcanvas-box-shadow: 0 1rem 3rem rgba(0, 0, 0, .175);
 @import "../../node_modules/bootstrap/scss/containers";
 @import "../../node_modules/bootstrap/scss/grid";
 @import "../../node_modules/bootstrap/scss/tables";
-// forms: only the pieces actually used (mode switch + version select)
+// forms: only the pieces actually used
+@import "../../node_modules/bootstrap/scss/forms/labels";
 @import "../../node_modules/bootstrap/scss/forms/form-select";
 @import "../../node_modules/bootstrap/scss/forms/form-check";
 @import "../../node_modules/bootstrap/scss/forms/form-text";
@@ -39,7 +40,7 @@ $offcanvas-box-shadow: 0 1rem 3rem rgba(0, 0, 0, .175);
 // @import "../../node_modules/bootstrap/scss/button-group";
 @import "../../node_modules/bootstrap/scss/nav";
 @import "../../node_modules/bootstrap/scss/navbar";
-// @import "bootstrap/scss/card";
+@import "../../node_modules/bootstrap/scss/card";
 // @import "bootstrap/scss/breadcrumb";
 @import "../../node_modules/bootstrap/scss/accordion";
 // @import "bootstrap/scss/pagination";
@@ -53,7 +54,7 @@ $offcanvas-box-shadow: 0 1rem 3rem rgba(0, 0, 0, .175);
 // @import "bootstrap/scss/tooltip";
 @import "../../node_modules/bootstrap/scss/popover";
 // @import "bootstrap/scss/carousel";
-// @import "bootstrap/scss/spinners";
+@import "../../node_modules/bootstrap/scss/spinners";
 @import "../../node_modules/bootstrap/scss/offcanvas";
 // @import "bootstrap/scss/placeholders";
 

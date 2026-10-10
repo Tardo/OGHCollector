@@ -1,6 +1,6 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark" class="vh-100">
+<html lang="en" data-bs-theme="dark">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -39,19 +39,21 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons&amp;display=block">
-        {# Applied before first paint so dev-only UI / theme never flash wrong #}
+        {# Applied before first paint so dev-only UI / theme / sidebar never flash wrong #}
         <script>
             document.documentElement.dataset.mode = localStorage.getItem('ommd_mode') || 'user';
+            document.documentElement.dataset.sidebar = localStorage.getItem('ommd_sidebar') || 'expanded';
             const ommd_theme = localStorage.getItem('ommd_theme');
             if (ommd_theme) {
                 document.documentElement.dataset.bsTheme = ommd_theme;
             }
         </script>
+        {# Global sheet first so page sheets (inside the block) override it #}
+        <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css">
         {% block base_head_content %}{% endblock %}
-        <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css" as="style">
         <title>{{ meta_title }} - Odoo Module Metadata</title>
     </head>
-    <body class="vh-100">
+    <body>
         {% block base_body_content %}{% endblock %}
         <script type="module" src="/static/auto/main.mjs" async></script>
     </body>

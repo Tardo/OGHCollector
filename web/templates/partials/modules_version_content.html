@@ -36,7 +36,7 @@
 </div>
 {% endif %}
 
-<h4 class="mt-4">Active Pull Requests <span class="badge text-bg-secondary">{{ g.pull_requests | length }}</span></h4>
+<div class="section-heading"><h2>Active migration pull requests <span class="badge text-bg-light border">{{ g.pull_requests | length }}</span></h2><p>Open PRs/MRs porting a module to Odoo {{ g.odoo_version }}. Click a status to filter.</p></div>
 {% if g.pull_requests %}
 <p class="text-body-secondary pr-filter-group">
     <span class="badge text-bg-success pr-filter" data-filter="fresh">{{ g.pr_fresh }} fresh</span>
@@ -92,12 +92,9 @@
 {% endif %}
 
 <div class="dev-only">
-<h4 class="mt-5">Security Findings</h4>
-<div class="alert alert-info" role="alert">
-    Results are approximate: found by automated static analysis, not a full security audit. Treat them as a starting point for manual review, not confirmed issues.
-</div>
+<div class="section-heading"><h2>Security findings</h2><p>Automated static analysis, not an audit: a starting point for manual review, not confirmed issues.</p></div>
 
-<h5 class="mt-3">Errors <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h5>
+<h3 class="subsection-title">Grave <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h3>
 {% if not g.security_errors %}
 <p class="text-body-secondary">No grave findings.</p>
 {% else %}
@@ -123,7 +120,7 @@
 </div>
 {% endif %}
 
-<h5 class="mt-4">Warnings <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h5>
+<h3 class="subsection-title">Minor <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h3>
 {% if not g.security_warnings %}
 <p class="text-body-secondary">No minor findings.</p>
 {% else %}
@@ -149,12 +146,9 @@
 </div>
 {% endif %}
 
-<h4 class="mt-5">Migration Considerations</h4>
-<div class="alert alert-info" role="alert">
-    Found by automated static analysis, not a guarantee. Only notes that already apply to each module's own version are listed here; each module's page has its full checklist for upgrading to newer versions.
-</div>
+<div class="section-heading"><h2>Migration considerations</h2><p>Notes that already apply to each module's own version; each module page has the full upgrade checklist.</p></div>
 
-<h5 class="mt-3">Warnings <span class="badge text-bg-warning">{{ g.migration_warnings | length }}</span></h5>
+<h3 class="subsection-title">Likely need a code change <span class="badge text-bg-warning">{{ g.migration_warnings | length }}</span></h3>
 {% if not g.migration_warnings %}
 <p class="text-body-secondary">No findings that likely need a code change.</p>
 {% else %}
@@ -180,7 +174,7 @@
 </div>
 {% endif %}
 
-<h5 class="mt-4">Info <span class="badge text-bg-secondary">{{ g.migration_infos | length }}</span></h5>
+<h3 class="subsection-title">Worth a second look <span class="badge text-bg-secondary">{{ g.migration_infos | length }}</span></h3>
 {% if not g.migration_infos %}
 <p class="text-body-secondary">No informational findings.</p>
 {% else %}

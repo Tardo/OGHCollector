@@ -1,5 +1,7 @@
 // Copyright Alexandre D. Díaz
 import * as bootstrap from 'bootstrap/dist/js/bootstrap.bundle.js';
+import '@app/components/module-search';
+import '@app/components/committer-search';
 import '@scss/main.scss';
 
 window.bootstrap = bootstrap;
@@ -53,12 +55,113 @@ function initThemeSwitch() {
   });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    initModeSwitch();
-    initThemeSwitch();
+// Desktop sidebar: expanded <-> icon rail (data-sidebar is set pre-paint in
+// base_layout.html). Below lg the sidebar is a Bootstrap offcanvas instead.
+function initSidebarToggle() {
+  const toggle = document.getElementById('sidebar-toggle');
+  if (!toggle) {
+    return;
+  }
+  const sync = () => {
+    const collapsed = document.documentElement.dataset.sidebar === 'collapsed';
+    toggle.querySelector('.material-icons').textContent = collapsed
+      ? 'menu'
+      : 'menu_open';
+    toggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    toggle.setAttribute('aria-label', toggle.title);
+  };
+  sync();
+  toggle.addEventListener('click', () => {
+    const state =
+      document.documentElement.dataset.sidebar === 'collapsed'
+        ? 'expanded'
+        : 'collapsed';
+    document.documentElement.dataset.sidebar = state;
+    localStorage.setItem('ommd_sidebar', state);
+    sync();
   });
-} else {
+}
+
+// Keystrokes inside a field (or a mirlo component, whose closed shadow DOM
+// retargets the event to its host) belong to that field, not to the palette.
+function isTypingTarget(el) {
+  return (
+    el.isContentEditable ||
+    el.tagName.includes('-') ||
+    el.closest('input, textarea, select') !== null
+  );
+}
+
+// Global search palette. The search components are only created on first
+// open: each one fetches its full record list as soon as it's mounted.
+function initSearchPalette() {
+  const palette = document.getElementById('search-palette');
+  if (!palette) {
+    return;
+  }
+  const modal = bootstrap.Modal.getOrCreateInstance(palette);
+  const focusSearch = () => {
+    const pane = palette.querySelector('.tab-pane.active');
+    let search = pane.firstElementChild;
+    if (!search) {
+      search = document.createElement(pane.dataset.searchTag);
+      search.classList.add('d-block');
+      pane.appendChild(search);
+    }
+    search.query('#search').focus();
+  };
+  // The modal has no `fade`, so show() is synchronous and focus moves into
+  // the input before the key that opened it is inserted (type-to-search).
+  const open = () => {
+    modal.show();
+    focusSearch();
+  };
+  palette.addEventListener('shown.bs.tab', focusSearch);
+  for (const trigger of document.querySelectorAll('[data-search-open]')) {
+    trigger.addEventListener('click', open);
+  }
+  document.addEventListener('keydown', ev => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+      ev.preventDefault();
+      open();
+      return;
+    }
+    if (
+      ev.ctrlKey ||
+      ev.metaKey ||
+      ev.altKey ||
+      palette.classList.contains('show') ||
+      isTypingTarget(ev.target)
+    ) {
+      return;
+    }
+    if (ev.key === '/') {
+      ev.preventDefault();
+      open();
+    } else if (ev.key.length === 1 && ev.key.trim() !== '') {
+      // Pages with their own search (/modules, /committers) take the
+      // keystroke there instead of opening a second search box on top.
+      const inline = document.querySelector(
+        '#app-content :is(mirlo-module-search, mirlo-committer-search)',
+      );
+      if (inline) {
+        inline.query('#search').focus();
+      } else {
+        open();
+      }
+    }
+  });
+}
+
+function init() {
   initModeSwitch();
   initThemeSwitch();
+  initSidebarToggle();
+  initSearchPalette();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
 }

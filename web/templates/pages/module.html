@@ -14,32 +14,6 @@
 {{ super() }}
 
 
-<template id="template-mirlo-module-search">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
-    <div class="search-filters">
-        <select id="field">
-            <option value="technical_name">Technical name</option>
-            <option value="name">Name</option>
-            <option value="description">Description</option>
-            <option value="category">Category</option>
-            {% if SEMANTIC_SEARCH_ENABLED %}
-            <option value="semantic">Semantic</option>
-            {% endif %}
-        </select>
-        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
-        <select id="version">
-            <option value="">All versions</option>
-        </select>
-    </div>
-    <ul id="results"></ul>
-</template>
-
-
-<div id="module_search" class="position-fixed start-50 w-50 translate-middle-x d-none">
-    <mirlo-module-search class="d-block" />
-</div>
-
-{% include "partials/search_tip.html" %}
 
 {% if not modules and not pull_requests %}
 <header class="page-header">

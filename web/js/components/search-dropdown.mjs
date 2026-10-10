@@ -79,9 +79,15 @@ export default class SearchDropdown extends Component {
   onStart() {
     super.onStart();
     this.#el_search_results.style.display = 'none';
-    // No-op when the search lives in a d-none modal (dashboard/module/
-    // committer quick-search) - those focus explicitly once unhidden.
-    this.queryId('search').focus();
+    const el_search = this.queryId('search');
+    el_search.focus();
+    // The input exists (and takes keystrokes) from construction, but the
+    // input listener is only bound now, after the record list loaded: catch
+    // up on whatever was typed meanwhile (e.g. type-to-search on the first
+    // palette open).
+    if (el_search.value !== '') {
+      this.refreshResults();
+    }
   }
 
   normalizeQuery(query) {

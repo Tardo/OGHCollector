@@ -1,5 +1,6 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 {% extends "minimal_layout.html" %}
+{% set meta_title = "Overview" %}
 {% block base_head_content %}
 {{ super() }}
 
@@ -11,33 +12,12 @@
 {{ super() }}
 
 
-<template id="template-mirlo-module-search">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
-    <div class="search-filters">
-        <select id="field">
-            <option value="technical_name">Technical name</option>
-            <option value="name">Name</option>
-            <option value="description">Description</option>
-            <option value="category">Category</option>
-            {% if SEMANTIC_SEARCH_ENABLED %}
-            <option value="semantic">Semantic</option>
-            {% endif %}
-        </select>
-        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." aria-label="Search modules" />
-        <select id="version">
-            <option value="">All versions</option>
-        </select>
-    </div>
-    <ul id="results"></ul>
-</template>
-
-
 <template id="template-mirlo-module-counter">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-counter.css" as="style" />
     <div id="main_container">
         <table>
             <tbody>
-                <tr><td><select class="search_input" id="version"></select></td></tr>
+                <tr><td><select class="search_input" id="version" aria-label="Odoo version"></select></td></tr>
                 <tr><td><span id="counter">0</span> modules</td></tr>
                 <tr><td id="counter_org"></td></tr>
             </tbody>
@@ -59,62 +39,74 @@
     </div>
 </template>
 
+{% set latest_count = modules_count | last if modules_count else none %}
+<header class="page-header">
+    <h1>Overview</h1>
+    <p class="page-header-desc">Odoo modules indexed from {{ org_total }} organization{{ org_total != 1 and 's' or '' }}: metadata, dependencies, security findings and code analysis, kept up to date by the collector.</p>
+    <div class="page-header-actions">
+        <a class="btn btn-outline-secondary btn-sm" href="/atlas"><span class="material-icons" aria-hidden="true">hub</span> Dependency atlas</a>
+        <a class="btn btn-primary btn-sm" href="/modules"><span class="material-icons" aria-hidden="true">extension</span> Browse modules</a>
+    </div>
+</header>
 
-<section class="dashboard-hero" aria-labelledby="hero-title">
-    <div class="hero-copy">
-        <span class="hero-eyebrow"><span class="hero-pulse" aria-hidden="true"></span> THE OPEN ODOO INDEX <span class="hero-eyebrow-line"></span> LIVE DATA</span>
-        <h1 id="hero-title">The Odoo ecosystem,<br><span>in focus.</span></h1>
-        <p>Explore the modules shaping Odoo. Discover dependencies, security findings and code intelligence across the open-source ecosystem — all in one place.</p>
-        <div id="module_search" class="hero-search">
-            <mirlo-module-search class="d-block" />
+<div class="row g-3 kpi-row">
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> Modules</div>
+            <div class="stat-card-value">{{ modules_total }}</div>
+            <div class="stat-card-note">Distinct technical names</div>
         </div>
-        <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href="/modules">Explore modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a>
-            <a class="btn btn-outline-secondary btn-lg" href="/atlas">View dependency atlas <span class="material-icons" aria-hidden="true">north_east</span></a>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">corporate_fare</span> Organizations</div>
+            <div class="stat-card-value">{{ org_total }}</div>
+            <div class="stat-card-note">GitHub / GitLab sources</div>
         </div>
-        <p class="hero-disclaimer">Independent project · Not affiliated with Odoo S.A. or the Odoo Community Association (OCA).</p>
     </div>
-    <div class="hero-panel" aria-label="Index at a glance">
-        <div class="hero-panel-top"><span>ECOSYSTEM / OVERVIEW</span><span class="hero-panel-live"><span aria-hidden="true"></span> INDEXED</span></div>
-        <div class="hero-panel-main"><span class="hero-panel-label">Modules in the index</span><strong>{{ modules_total }}</strong><span class="hero-panel-caption">A growing map of open-source Odoo.</span></div>
-        <div class="hero-panel-bottom">
-            <div><span>ORGANIZATIONS</span><strong>{{ org_total }}</strong></div>
-            <div><span>ODOO VERSIONS</span><strong>{{ version_total }}</strong></div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">layers</span> Odoo versions</div>
+            <div class="stat-card-value">{{ version_total }}</div>
+            <div class="stat-card-note">{% if modules_count %}{{ modules_count[0].version_odoo }} &ndash; {{ latest_count.version_odoo }}{% else %}None indexed yet{% endif %}</div>
         </div>
-        <span class="hero-panel-corner" aria-hidden="true">OD / 001</span>
     </div>
-</section>
-
-<div class="section-heading"><div><span class="section-kicker">01 / DISCOVER</span><h2>Explore by version</h2></div><p>One ecosystem, many releases.</p></div>
-<div class="row mb-5 g-3 user-select-none" id="modules_count">
-    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="18.0"></mirlo-module-counter>
-    </div>
-    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="19.0"></mirlo-module-counter>
-    </div>
-    <div class="col-lg-4 col-12 pb-3 pb-lg-0">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="20.0"></mirlo-module-counter>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">new_releases</span> Latest version</div>
+            <div class="stat-card-value">{{ latest_count.count if latest_count else 0 }}</div>
+            <div class="stat-card-note">{% if latest_count %}Modules for Odoo {{ latest_count.version_odoo }}{% else %}Run the collector to index modules{% endif %}</div>
+        </div>
     </div>
 </div>
 
-<section class="localization-section" aria-labelledby="localization-title">
-    <div class="section-heading"><div><span class="section-kicker">02 / LOCALIZATION</span><h2 id="localization-title">Odoo around the world</h2></div><p>Explore modules built for each country.</p></div>
+{% if modules_count %}
+<div class="section-heading"><h2>By Odoo version</h2><p>Module counts, top authors and top committers. Each card can switch version.</p></div>
+<div class="row g-3 user-select-none" id="modules_count">
+    {% for c in modules_count[-3:] | reverse %}
+    <div class="col-lg-4 col-12">
+        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="{{ c.version_odoo }}"></mirlo-module-counter>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if localization_countries %}
+<section aria-labelledby="localization-title">
+    <div class="section-heading"><h2 id="localization-title">Localizations</h2><p>Countries with directly associated <code>l10n_XX</code> modules.</p></div>
     <div class="localization-panel">
         <div class="globe-stage">
-            <div class="globe-topline"><span>GLOBAL / LOCALIZATION</span><span class="globe-live">● LIVE INDEX</span></div>
             <canvas id="localization-globe" aria-hidden="true"></canvas>
             <div class="globe-caption" id="globe-caption" aria-live="polite">Hover to pause · Drag to rotate · Select a highlighted country</div>
         </div>
         <div class="localization-sidebar">
-            <span class="section-kicker">EXPLORE BY COUNTRY</span>
             <label for="localization-version">Odoo version</label>
-            <select id="localization-version" aria-label="Filter localization by Odoo version">
+            <select id="localization-version" class="form-select form-select-sm" aria-label="Filter localization by Odoo version">
                 {% for version in localization_versions %}
                 <option value="{{ version }}"{% if loop.first %} selected{% endif %}>{{ version }}</option>
                 {% endfor %}
             </select>
-            <p>Highlighted countries have directly associated <code>l10n_XX</code> modules in the selected Odoo version. Choose a country to see its modules.</p>
+            <p>Highlighted countries have localization modules in the selected version. Choose one to see its modules.</p>
             <div class="localization-countries" aria-label="Countries with localization modules">
                 {% for country in localization_countries %}
                 <a href="/localization/{{ country.code | lower }}?version={{ localization_versions[0] | urlencode }}" data-country="{{ country.code }}" data-version="{{ country.version_odoo }}"{% if country.version_odoo != localization_default_version %} hidden{% endif %}><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
@@ -123,30 +115,31 @@
         </div>
     </div>
 </section>
+{% endif %}
 
-<div class="section-heading"><div><span class="section-kicker">03 / RECENT ACTIVITY</span><h2>Latest modules tracked</h2></div><a href="/modules">Browse all modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a></div>
-<div class="row user-select-none" id="modules_latest">
-    <div class="col-12">
-        <div class="latest-table"><table class="table table-hover">
-            <thead>
-                <tr>
-                    <th class="col-8">Module</th>
-                    <th class="col-1 text-center">Version</th>
-                    <th class="col-1 d-none d-lg-table-cell text-center">Organization</th>
-                    <th class="col-2 d-none d-lg-table-cell text-center">Tracked</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for module in modules_latest %}
-                <tr>
-                    <td class="col-8"><span><a href="/module/{{ module.org_name }}/{{ module.technical_name }}">{{ module.technical_name }}</a></span></td>
-                    <td class="col-1 text-center">{{ module.version }}</td>
-                    <td class="col-1 d-none d-lg-table-cell text-center">{{ module.org_name }}</td>
-                    <td class="d-none d-lg-table-cell text-center col-2">{{ module.create_date }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table></div>
-    </div>
+<div class="section-heading"><h2>Recently tracked</h2><a href="/modules">All modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a></div>
+<div class="panel user-select-none" id="modules_latest">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th class="text-center">Version</th>
+                <th class="d-none d-lg-table-cell">Organization</th>
+                <th class="d-none d-lg-table-cell text-end">Tracked</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for module in modules_latest %}
+            <tr>
+                <td><a href="/module/{{ module.org_name | urlencode }}/{{ module.technical_name | urlencode }}">{{ module.technical_name }}</a></td>
+                <td class="text-center"><span class="badge text-bg-light border">{{ module.version }}</span></td>
+                <td class="d-none d-lg-table-cell">{{ module.org_name }}</td>
+                <td class="d-none d-lg-table-cell text-end text-body-secondary">{{ module.create_date }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-body-secondary">Nothing tracked yet &mdash; run the collector for an organization and Odoo version.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}

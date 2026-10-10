@@ -1,6 +1,6 @@
 // Copyright 2025 Alexandre D. Díaz
 @import "../components/security-indicator";
-.module-page-header {
+.page-header.module-page-header {
     display: flex;
     align-items: center;
     gap: 1rem;
@@ -41,24 +41,61 @@
     border: 1px solid var(--bs-border-color-translucent);
 }
 
-#module_search {
-    z-index: 3;
-    top: 25%;
+// At-a-glance strip above the per-version detail.
+.module-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
 
-    // 4.5rem clears the collapsed sticky-top navbar (~56-64px) - #module_search
-    // sits at a fixed viewport position, so it renders *under* the navbar
-    // (z-index 1020 vs. this element's 3) rather than pushed below it like
-    // normal document flow would.
-    @media (max-width: 767.98px) {
-        top: 4.5rem;
-        width: 94vw !important;
+// Main analysis column + facts sidebar (sticky so the facts stay in view
+// while scrolling long code-analysis tables).
+.module-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    align-items: start;
+    gap: 1.25rem;
+
+    @media (max-width: 1199.98px) {
+        grid-template-columns: minmax(0, 1fr);
+
+        .module-facts { order: -1; }
+    }
+}
+
+.module-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-width: 0;
+
+    .section-heading { margin: 0.75rem 0 0; }
+}
+
+.module-code-analysis {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.module-facts {
+    @media (min-width: 1200px) {
+        position: sticky;
+        top: calc(var(--app-topbar-h) + 1rem);
+        max-height: calc(100dvh - var(--app-topbar-h) - 2rem);
+        overflow-y: auto;
     }
 }
 
 .module-description {
-    max-height: 20rem;
+    max-height: 24rem;
     overflow: auto;
     margin-bottom: 0;
+    font-family: inherit;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
 }
 
 .module-dependencies-yaml {

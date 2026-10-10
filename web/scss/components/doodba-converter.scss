@@ -2,7 +2,5 @@
 @import "./doodba-drag-panel";
 
 #doodba_converter_result {
-    font-size: x-large;
-    width: 100%;
-    height: 100vh;
+    height: min(70vh, 40rem);
 }

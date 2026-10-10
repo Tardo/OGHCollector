@@ -1,23 +1,13 @@
 // Copyright 2025 Alexandre D. Díaz
 @import "./doodba-drag-panel";
 
+// addons.yaml / pip / apt side by side, stacked on narrow screens.
 #doodba_dep_resolver_result {
-    width: 100%;
-    height: 100vh;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
 
-    #doodba_dep_resolver_result_odoo {
-        width: 98%;
-        height: 100vh;
-        resize: none;
-    }
-    #doodba_dep_resolver_result_bin {
-        width: 98%;
-        height: 100vh;
-        resize: none;
-    }
-    #doodba_dep_resolver_result_pip {
-        width: 98%;
-        height: 100vh;
-        resize: none;
+    textarea {
+        height: min(70vh, 40rem);
     }
 }

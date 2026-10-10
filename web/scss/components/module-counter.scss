@@ -59,6 +59,14 @@ hr {
 
 #contrib_rank, #committer_rank {
     font-size: small;
+
+    a {
+        color: var(--bs-link-color, #92decf);
+        text-decoration: none;
+
+        &:hover { text-decoration: underline; }
+    }
+
     ol {
         margin-top: 0;
     }

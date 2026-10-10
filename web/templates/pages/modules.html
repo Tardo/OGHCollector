@@ -11,26 +11,6 @@
 {% block content %}
 {{ super() }}
 
-<template id="template-mirlo-module-search">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
-    <div class="search-filters">
-        <select id="field">
-            <option value="technical_name">Technical name</option>
-            <option value="name">Name</option>
-            <option value="description">Description</option>
-            <option value="category">Category</option>
-            {% if SEMANTIC_SEARCH_ENABLED %}
-            <option value="semantic">Semantic</option>
-            {% endif %}
-        </select>
-        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." autofocus />
-        <select id="version">
-            <option value="">All versions</option>
-        </select>
-    </div>
-    <ul id="results"></ul>
-</template>
-
 <header class="page-header">
     <h1>Modules</h1>
     <p class="page-header-desc">{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations.</p>
