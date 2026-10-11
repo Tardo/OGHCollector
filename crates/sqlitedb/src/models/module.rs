@@ -137,6 +137,8 @@ pub struct ModuleInfo {
     pub organization: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub repository_url: Option<String>,
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
@@ -636,7 +638,7 @@ pub fn search_by_criteria(
 pub fn get_info(conn: &mut SqliteConnection, technical_name: &str) -> Vec<ModuleInfo> {
     diesel::sql_query(
         "SELECT mod.technical_name, mod.name, mod.version_odoo, gh_org.name as organization, \
-         gh_rep.name as repository \
+         gh_rep.name as repository, gh_rep.url as repository_url \
          FROM module as mod \
          INNER JOIN gh_repository as gh_rep ON gh_rep.id = mod.gh_repository_id \
          INNER JOIN gh_organization as gh_org ON gh_org.id = gh_rep.gh_organization_id \

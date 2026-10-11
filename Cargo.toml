@@ -29,6 +29,7 @@ chrono = { version = "0.4" }
 cached = { version = "0.59" }
 minijinja = { version = "1", features = ["loader", "urlencode"] }
 minijinja-autoreload = "1"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 config = "0.15"
 url = "2"
 ipnet = "2"

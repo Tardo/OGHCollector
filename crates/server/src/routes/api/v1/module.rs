@@ -293,7 +293,7 @@ pub struct ModuleVersionHistoryResponse {
 fn get_module_git(conn: &mut SqliteConnection, module: &models::module::Model) -> String {
     let repo = models::gh_repository::get_by_id(conn, &module.gh_repository_id).unwrap();
     let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
-    format!("https://github.com/{}/{}.git", org.name, repo.name)
+    oghutils::git::clone_url(repo.url.as_deref(), &org.name, &repo.name)
 }
 
 fn get_module_views(
@@ -563,7 +563,9 @@ fn get_module_generic_info(
         .collect::<Vec<String>>();
     let repos = modules
         .iter()
-        .map(|x| format!("https://github.com/{}/{}.git", x.organization, x.repository))
+        .map(|x| {
+            oghutils::git::clone_url(x.repository_url.as_deref(), &x.organization, &x.repository)
+        })
         .collect::<Vec<String>>();
     Some(ModuleGenericInfoResponse {
         name: name.clone(),

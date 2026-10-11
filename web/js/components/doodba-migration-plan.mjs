@@ -146,12 +146,12 @@ class DoodbaMigrationPlan extends Component {
       if (!repos[pr.repository_name]) {
         repos[pr.repository_name] = {
           organization: pr.organization,
-          // prid -> technical_name, so each merge line can be commented with
-          // which module it brings in.
+          // prid -> PR, so each merge line can use its ref and be commented
+          // with which module it brings in.
           prs: new Map(),
         };
       }
-      repos[pr.repository_name].prs.set(pr.prid, pr.technical_name);
+      repos[pr.repository_name].prs.set(pr.prid, pr);
     }
     // Non-OCA/odoo repos need an explicit entry even with nothing to merge
     // yet (missing) or already merged (present in this step's addons.yaml) -
@@ -173,15 +173,13 @@ class DoodbaMigrationPlan extends Component {
       const {organization, prs} = repos[repo_name];
       lines.push(`${repo_name}:`);
       lines.push('  remotes:');
-      lines.push(
-        `    ${organization}: https://github.com/${organization}/${repo_name}.git`,
-      );
+      lines.push(`    ${organization}: ${step.repo_urls[repo_name]}`);
       lines.push(`  target: ${organization} ${step.version}`);
       lines.push('  merges:');
       lines.push(`    - ${organization} ${step.version}`);
       for (const prid of Array.from(prs.keys()).sort((a, b) => a - b)) {
         lines.push(
-          `    - ${organization} refs/pull/${prid}/head  # ${prs.get(prid)}`,
+          `    - ${organization} ${prs.get(prid).merge_ref}  # ${prs.get(prid).technical_name}`,
         );
       }
     }

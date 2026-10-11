@@ -49,7 +49,7 @@ export async function exportPackZip(pack, odoo_version) {
     for (const repo_name of repo_names) {
       const org = data.repos[repo_name];
       repos[repo_name] = {
-        remotes: {[org]: `https://github.com/${org}/${repo_name}.git`},
+        remotes: {[org]: data.repo_urls[repo_name]},
         target: `${org} ${odoo_version}`,
         merges: [`${org} ${odoo_version}`],
       };

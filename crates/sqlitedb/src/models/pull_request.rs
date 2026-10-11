@@ -50,6 +50,8 @@ pub struct PullRequestFullInfo {
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub repository_url: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub created_at: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub ci_status: Option<String>,
@@ -64,7 +66,7 @@ pub fn get_all(conn: &mut SqliteConnection) -> Vec<PullRequestFullInfo> {
     diesel::sql_query(
         "SELECT pr.name, pr.version_odoo, pr.module_technical_name, pr.prid, \
          gh_repo.name as repository_name, gh_org.name as org_name, \
-         pr.created_at, pr.ci_status, pr.last_message_at \
+         gh_repo.url as repository_url, pr.created_at, pr.ci_status, pr.last_message_at \
          FROM pull_request as pr \
          INNER JOIN gh_repository as gh_repo ON pr.gh_repository_id = gh_repo.id \
          INNER JOIN gh_organization as gh_org ON gh_repo.gh_organization_id = gh_org.id \

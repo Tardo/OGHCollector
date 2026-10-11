@@ -179,6 +179,7 @@ async fn main() {
         let gh_org = models::gh_organization::add(&mut conn, repo_info.get_org()).unwrap();
         let gh_repo =
             models::gh_repository::add(&mut conn, &gh_org.id, repo_info.get_name()).unwrap();
+        models::gh_repository::set_url(&mut conn, &gh_repo.id, repo_info.get_url()).unwrap();
         let migration_prs = git_client
             .get_open_migration_pull_requests(repo_info.get_full_path(), config.get_branch())
             .await;

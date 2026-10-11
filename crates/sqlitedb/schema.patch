@@ -1,7 +1,7 @@
 diff --git a/schema.rs b/schema.rs
 --- a/schema.rs
 +++ b/schema.rs
-@@ -1,82 +1,82 @@
+@@ -1,83 +1,83 @@
  // @generated automatically by Diesel CLI.
  
  diesel::table! {
@@ -73,6 +73,7 @@ diff --git a/schema.rs b/schema.rs
          gh_organization_id -> BigInt,
          create_date -> Text,
          update_date -> Text,
+         url -> Nullable<Text>,
      }
  }
  
@@ -94,7 +95,7 @@ diff --git a/schema.rs b/schema.rs
          version_module -> Text,
          description -> Nullable<Text>,
          website -> Nullable<Text>,
-@@ -85,13 +85,13 @@
+@@ -86,13 +86,13 @@
          auto_install -> Bool,
          application -> Bool,
          installable -> Bool,
@@ -109,7 +110,7 @@ diff --git a/schema.rs b/schema.rs
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-@@ -101,43 +101,43 @@
+@@ -102,43 +102,43 @@
          analysis_version -> Integer,
      }
  }
@@ -157,7 +158,7 @@ diff --git a/schema.rs b/schema.rs
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -150,32 +150,32 @@
+@@ -151,32 +151,32 @@
          module_version_id -> BigInt,
      }
  }
@@ -193,7 +194,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          context -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -183,13 +183,13 @@
+@@ -184,13 +184,13 @@
          line -> Nullable<Integer>,
      }
  }
@@ -208,7 +209,7 @@ diff --git a/schema.rs b/schema.rs
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -197,47 +197,47 @@
+@@ -198,47 +198,47 @@
          module_version_id -> BigInt,
      }
  }
@@ -260,7 +261,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          xml_id -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -245,73 +245,73 @@
+@@ -246,73 +246,73 @@
          line -> Nullable<Integer>,
      }
  }

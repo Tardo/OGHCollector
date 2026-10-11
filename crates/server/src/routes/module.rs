@@ -58,9 +58,9 @@ fn get_module_pull_requests(
             let org_model =
                 models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
             ModulePullRequestInfo {
-                url: format!(
-                    "https://github.com/{}/{}/pull/{}",
-                    org_model.name, repo.name, pr.prid
+                url: oghutils::git::pull_request_url(
+                    &oghutils::git::clone_url(repo.url.as_deref(), &org_model.name, &repo.name),
+                    pr.prid,
                 ),
                 age_days: models::pull_request::days_since(pr.created_at.as_deref()),
                 last_message_days: models::pull_request::days_since(pr.last_message_at.as_deref()),
@@ -347,6 +347,8 @@ mod template_tests {
     #[test]
     fn module_source_links_follow_the_scanned_directory() {
         let mut env = Environment::new();
+        env.add_filter("markdown", crate::utils::markdown);
+        env.add_filter("repo_files", |git: String| oghutils::git::files_url(&git));
         env.add_template(
             "module",
             include_str!("../../../../web/templates/partials/module_version_content.html"),
@@ -368,6 +370,7 @@ mod template_tests {
                 "repository": repo,
                 "odoo_version": "18.0",
                 "source_path": path,
+                "description": "## Usage\n\n<b>x</b>\n\n![s](../static/description/s.png)",
                 "folder_size": 0,
                 "security_warnings": [{"file": "models/test.py", "line": 42, "code": "TEST"}],
                 "security_warning_count": 0,
@@ -395,8 +398,14 @@ mod template_tests {
                 .unwrap()
                 .render(context!(module => module, history => Vec::<String>::new(), HEALTH_SCORE_ENABLED => true))
                 .unwrap();
-            assert!(html.contains(">62</span>") && html.contains("Security n/a"));
-            assert!(html.contains(r#"title="Last human commit 8 months ago">Activity 20"#));
+            assert!(html.contains("<h2>Usage</h2>") && html.contains("&lt;b&gt;x"));
+            assert!(html.contains(&format!(
+                "https://github.com/{org}/{repo}/raw/18.0/{path}/static/description/s.png"
+            )));
+            assert!(html.contains(">62</span>"));
+            assert!(html.contains("<span>Security</span><span>n/a</span>"));
+            assert!(html.contains("<span>Activity</span><span>20<small>/25</small>"));
+            assert!(html.contains("Last human commit 8 months ago"));
             assert!(html.contains(&format!("https://github.com/{org}/{repo}/tree/18.0/{path}")));
             assert!(html.contains(&format!(
                 "https://github.com/{org}/{repo}/blob/18.0/{path}/models/test.py#L42"
@@ -410,6 +419,7 @@ mod template_tests {
                     "repository": repo,
                     "technical_name": "web",
                     "source_path": path,
+                    "files_url": format!("https://github.com/{org}/{repo}"),
                     "file": "models/test.py",
                     "line": 42,
                     "code": "TEST",
@@ -428,5 +438,45 @@ mod template_tests {
                 "https://github.com/{org}/{repo}/blob/18.0/{path}/models/test.py#L42"
             )));
         }
+    }
+
+    #[test]
+    fn module_links_use_gitlab_routes_for_gitlab_repos() {
+        let mut env = Environment::new();
+        env.add_filter("markdown", crate::utils::markdown);
+        env.add_filter("repo_files", |git: String| oghutils::git::files_url(&git));
+        env.add_template(
+            "module",
+            include_str!("../../../../web/templates/partials/module_version_content.html"),
+        )
+        .unwrap();
+        let module = json!({
+            "git": "https://gitlab.com/acme/erp/sales.git",
+            "organization": "acme",
+            "repository": "sales",
+            "odoo_version": "18.0",
+            "source_path": "sale_x",
+            "description": "![s](../static/description/s.png)",
+            "security_warnings": [{"file": "models/a.py", "line": 7, "code": "TEST"}],
+            "security_warning_count": 0,
+            "migration_considerations": [],
+            "dependencies": {"odoo": {}, "pip": [], "bin": []},
+            "required_by": [],
+            "views": [],
+            "controllers": [],
+            "models": [],
+            "folder_size": 0,
+            "license_review": {"licenses": {}, "proprietary": [], "findings": []},
+        });
+        let html = env
+            .get_template("module")
+            .unwrap()
+            .render(context!(module => module, history => Vec::<String>::new()))
+            .unwrap();
+        let base = "https://gitlab.com/acme/erp/sales/-";
+        assert!(html.contains(&format!("{base}/raw/18.0/sale_x/static/description/s.png")));
+        assert!(html.contains(&format!("{base}/tree/18.0/sale_x")));
+        assert!(html.contains(&format!("{base}/blob/18.0/sale_x/models/a.py#L7")));
+        assert!(!html.contains("github.com"));
     }
 }

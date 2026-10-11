@@ -347,8 +347,8 @@ pub fn register_update_module(
         module_info.last_commit_author,
         module_info.last_commit_date,
     );
-    // Not linkified: the commit/PR URL scheme depends on whether the repo is
-    // hosted on GitHub or GitLab, which gh_repository doesn't track today.
+    // Not linkified: events are plain text (no repo URL at hand here; links
+    // are built from gh_repository.url via oghutils::git where shown).
     if !module_info.last_commit_partof.is_empty() {
         msg += &format!(" (PR {})", module_info.last_commit_partof);
     }

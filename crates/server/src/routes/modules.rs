@@ -40,6 +40,8 @@ pub struct ModuleSecurityFindingInfo {
     pub technical_name: String,
     pub repository: String,
     pub source_path: String,
+    /// `oghutils::git::files_url` of the repo (GitHub or GitLab routes).
+    pub files_url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -53,6 +55,8 @@ pub struct ModuleMigrationFindingInfo {
     pub technical_name: String,
     pub repository: String,
     pub source_path: String,
+    /// `oghutils::git::files_url` of the repo (GitHub or GitLab routes).
+    pub files_url: String,
 }
 
 // One Odoo-version tab's worth of content, so the template only has to loop
@@ -131,6 +135,11 @@ fn get_group(
 )]
 fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVersionGroup>) {
     let modules_total = models::module::count_distinct(conn);
+    let repo_urls = models::gh_repository::clone_urls(conn);
+    let files_url = |org: &str, repo: &str| {
+        let stored = repo_urls.get(&format!("{org}/{repo}")).map(String::as_str);
+        oghutils::git::files_url(&oghutils::git::clone_url(stored, org, repo))
+    };
     let mut by_version: BTreeMap<i32, ModulesVersionGroup> = BTreeMap::new();
 
     // Computed first: PR freshness below is scaled to each version's
@@ -150,9 +159,13 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             avg_days_open_by_version.get(&pr.version_odoo).copied(),
         );
         let entry = ActivePullRequestInfo {
-            url: format!(
-                "https://github.com/{}/{}/pull/{}",
-                pr.org_name, pr.repository_name, pr.prid
+            url: oghutils::git::pull_request_url(
+                &oghutils::git::clone_url(
+                    pr.repository_url.as_deref(),
+                    &pr.org_name,
+                    &pr.repository_name,
+                ),
+                pr.prid,
             ),
             age_days: models::pull_request::days_since(pr.created_at.as_deref()),
             last_message_days,
@@ -201,6 +214,7 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             xml_id: w.xml_id,
             file: w.file,
             line: w.line,
+            files_url: files_url(&w.org_name, &w.repository),
             organization: w.org_name,
             technical_name: w.technical_name,
             repository: w.repository,
@@ -233,6 +247,7 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
             context: n.context,
             file: n.file,
             line: n.line,
+            files_url: files_url(&n.org_name, &n.repository),
             organization: n.org_name,
             technical_name: n.technical_name,
             repository: n.repository,

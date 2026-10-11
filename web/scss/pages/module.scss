@@ -260,11 +260,28 @@
 .module-description {
     max-height: 24rem;
     overflow: auto;
-    margin-bottom: 0;
-    font-family: inherit;
     font-size: 0.875rem;
     line-height: 1.6;
-    white-space: pre-wrap;
+
+    h1, h2, h3, h4, h5, h6 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-top: 1rem;
+    }
+    > :first-child { margin-top: 0; }
+    > :last-child { margin-bottom: 0; }
+    img { max-width: 100%; }
+    pre {
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--bs-border-radius);
+        background: var(--bs-tertiary-bg);
+        white-space: pre-wrap; // indented RST manifest text lands here
+    }
+    table { margin-bottom: 1rem; }
+    th, td {
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--bs-border-color-translucent);
+    }
 }
 
 .module-dependencies-yaml {

@@ -170,7 +170,7 @@
                 {% for repo in stats.top_repos %}
                 <tr>
                     <td class="col-1 text-center">#{{ loop.index }}</td>
-                    <td class="col-8"><a href="https://github.com/{{ repo.organization }}/{{ repo.repository }}">{{ repo.organization }}/{{ repo.repository }}</a></td>
+                    <td class="col-8"><a href="{{ repo.url }}">{{ repo.organization }}/{{ repo.repository }}</a></td>
                     <td class="col-3 text-center">{{ repo.commits }} commit{{ repo.commits != 1 and 's' or '' }}</td>
                 </tr>
                 {% endfor %}

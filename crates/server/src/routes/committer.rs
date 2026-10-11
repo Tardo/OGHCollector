@@ -106,6 +106,8 @@ pub struct CommitterRepoStat {
     pub organization: String,
     pub repository: String,
     pub commits: i64,
+    /// Clone URL (GitHub or GitLab), links to the repo.
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -282,10 +284,20 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
             organization,
             repository,
             commits,
+            url: String::new(),
         })
         .collect();
     top_repos.sort_by_key(|r| std::cmp::Reverse(r.commits));
     top_repos.truncate(5);
+    let repo_urls = models::gh_repository::clone_urls(conn);
+    for repo in &mut top_repos {
+        let stored = repo_urls.get(&format!("{}/{}", repo.organization, repo.repository));
+        repo.url = oghutils::git::clone_url(
+            stored.map(String::as_str),
+            &repo.organization,
+            &repo.repository,
+        );
+    }
 
     let rank_info = models::committer::get_global_rank_by_name(conn, name);
     let periods = models::module_committer_period::get_activity_by_committer_name(conn, name);

@@ -73,6 +73,75 @@ pub fn xml_escape(s: &str) -> String {
     out
 }
 
+/// `markdown` template filter: renders a module description (OCA's
+/// `readme/DESCRIPTION.md`, else the manifest `description`) as HTML. The text
+/// comes from third-party repos, so raw HTML is shown as text and link/image
+/// URLs other than http(s)/mailto/relative ones become `#`. Relative images
+/// are resolved against `img_base`, the module folder's raw-file URL.
+// ponytail: manifest descriptions are often RST or hard-wrapped text and are
+// rendered as Markdown anyway (RST titles happen to be setext headings).
+pub fn markdown(text: Option<String>, img_base: Option<String>) -> Value {
+    use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag};
+    let safe_url = |url: CowStr<'static>| -> CowStr<'static> {
+        // Allowlist on the scheme: anything with a `:` before the first `/?#`
+        // must be one of these, so `java&#9;script:` & co. never get through.
+        let lower = url.to_ascii_lowercase();
+        match lower.find([':', '/', '?', '#']) {
+            Some(i) if lower[i..].starts_with(':') => {
+                if ["http", "https", "mailto"].contains(&&lower[..i]) {
+                    url
+                } else {
+                    CowStr::Borrowed("#")
+                }
+            }
+            _ => url,
+        }
+    };
+    // Images point into the module folder: `../static/..` from DESCRIPTION.md
+    // (it lives in `readme/`) or `static/..` written from the module root.
+    let img_base = img_base.and_then(|base| url::Url::parse(&base).ok());
+    let resolve_img = |url: CowStr<'static>| -> CowStr<'static> {
+        let url = safe_url(url);
+        match &img_base {
+            Some(base) if url::Url::parse(&url).is_err() && !url.starts_with(['/', '#']) => base
+                .join(url.strip_prefix("../").unwrap_or(&url))
+                .map_or(url, |resolved| resolved.to_string().into()),
+            _ => url,
+        }
+    };
+    let text = text.unwrap_or_default();
+    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
+    let events = Parser::new_ext(&text, options).map(|event| match event {
+        Event::Html(raw) | Event::InlineHtml(raw) => Event::Text(raw),
+        Event::Start(Tag::Link {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => Event::Start(Tag::Link {
+            link_type,
+            dest_url: safe_url(dest_url.into_static()),
+            title,
+            id,
+        }),
+        Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => Event::Start(Tag::Image {
+            link_type,
+            dest_url: resolve_img(dest_url.into_static()),
+            title,
+            id,
+        }),
+        event => event,
+    });
+    let mut out = String::new();
+    html::push_html(&mut out, events);
+    Value::from_safe_string(out)
+}
+
 pub fn get_base_url(req: &HttpRequest) -> String {
     let conn_info = req.connection_info();
     format!("{}://{}", conn_info.scheme(), conn_info.host())
@@ -96,7 +165,40 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::xml_escape;
+    use super::{markdown, xml_escape};
+
+    #[test]
+    fn test_markdown_is_sanitized() {
+        let html = markdown(
+            Some(
+                "# T\n\n- [ok](https://x.org) <b>raw</b>\n\n<script>alert(1)</script>\n\n\
+             [a](javascript:alert(1)) [b](JaVaScript:x) [c](java&#9;script:x) \
+             <javascript:alert(1)> <me@x.org> ![i](data:text/html,x) [r](../readme)"
+                    .into(),
+            ),
+            None,
+        )
+        .to_string();
+        assert!(html.contains("<h1>T</h1>") && html.contains("<li>"));
+        assert!(html.contains(r#"<a href="https://x.org">ok</a>"#));
+        assert!(html.contains("&lt;b&gt;raw") && html.contains("&lt;script&gt;"));
+        assert!(!html.contains("<script") && !html.contains("<b>"));
+        assert_eq!(html.matches(r##"href="#""##).count(), 4);
+        assert!(html.contains(r##"<img src="#""##));
+        assert!(html.contains(r#"href="mailto:me@x.org""#));
+        assert!(html.contains(r#"href="../readme""#));
+        assert_eq!(markdown(None, None).to_string(), "");
+        let html = markdown(
+            Some("![a](../static/description/a.png) ![b](./static/b.png) ![c](https://x.org/c.png) ![d](javascript:x)".into()),
+            Some("https://github.com/OCA/web/raw/18.0/web_x/".into()),
+        )
+        .to_string();
+        assert!(html.contains(
+            r#"src="https://github.com/OCA/web/raw/18.0/web_x/static/description/a.png""#
+        ));
+        assert!(html.contains(r#"src="https://github.com/OCA/web/raw/18.0/web_x/static/b.png""#));
+        assert!(html.contains(r#"src="https://x.org/c.png""#) && html.contains(r##"src="#""##));
+    }
 
     #[test]
     fn test_xml_escape() {

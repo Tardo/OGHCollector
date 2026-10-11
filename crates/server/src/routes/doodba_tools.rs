@@ -117,14 +117,15 @@ pub async fn route_doodba_dependency_resolver(
 }
 
 // Same shape as ModuleDependencyInfoResponse plus `repos` (repo name ->
-// organization), needed to emit a doodba repos.yaml (git remotes), and the
-// license review of the whole set.
+// organization) and `repo_urls` (repo name -> clone URL), needed to emit a
+// doodba repos.yaml (git remotes), and the license review of the whole set.
 #[derive(Debug, Serialize)]
 pub struct DoodbaAddonsResponse {
     pub odoo: HashMap<String, Vec<String>>,
     pub pip: Vec<String>,
     pub bin: Vec<String>,
     pub repos: HashMap<String, String>,
+    pub repo_urls: HashMap<String, String>,
     pub license_review: LicenseReport,
 }
 
@@ -155,8 +156,16 @@ fn get_doodba_addons_full(
         (org.to_string(), repo.to_string(), names.clone())
     });
     let mut odoo: HashMap<String, Vec<String>> = HashMap::new();
+    let stored_urls = models::gh_repository::clone_urls(conn);
     let mut repos: HashMap<String, String> = HashMap::new();
+    let mut repo_urls: HashMap<String, String> = HashMap::new();
     for (org, repo, names) in roots.chain(deps) {
+        repo_urls.entry(repo.clone()).or_insert_with(|| {
+            let stored = stored_urls
+                .get(&format!("{org}/{repo}"))
+                .map(String::as_str);
+            oghutils::git::clone_url(stored, &org, &repo)
+        });
         repos.entry(repo.clone()).or_insert(org);
         let group = odoo.entry(repo).or_default();
         for name in names {
@@ -177,6 +186,7 @@ fn get_doodba_addons_full(
             .unique(),
         bin: closure.bin.clone(),
         repos,
+        repo_urls,
         license_review: closure.license_review(&root_ids),
     }
 }
@@ -212,6 +222,9 @@ pub struct MigrationPendingModuleInfo {
     pub prid: i64,
     pub title: String,
     pub url: String,
+    /// Ref to fetch the PR/MR head from (`refs/pull/N/head` on GitHub,
+    /// `refs/merge-requests/N/head` on GitLab), for repos.yaml merges.
+    pub merge_ref: String,
     pub age_days: Option<i64>,
     pub ci_status: Option<String>,
 }
@@ -232,6 +245,8 @@ pub struct MigrationPlanStepResponse {
     pub merged: Vec<models::module::ModuleRepositoryInfo>,
     pub pending: Vec<MigrationPendingModuleInfo>,
     pub missing: Vec<MigrationMissingModuleInfo>,
+    // Repo name -> clone URL of every repo above, for repos.yaml remotes.
+    pub repo_urls: HashMap<String, String>,
     // Requested modules the system has never tracked anywhere (no merged row,
     // no PR/MR, in any version) - reported separately from `missing` since we
     // genuinely don't know whether they exist for this version or not.
@@ -271,11 +286,10 @@ fn get_pending_modules(
         .map(|pr| {
             let repo = models::gh_repository::get_by_id(conn, &pr.gh_repository_id).unwrap();
             let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
+            let git = oghutils::git::clone_url(repo.url.as_deref(), &org.name, &repo.name);
             MigrationPendingModuleInfo {
-                url: format!(
-                    "https://github.com/{}/{}/pull/{}",
-                    org.name, repo.name, pr.prid
-                ),
+                url: oghutils::git::pull_request_url(&git, pr.prid),
+                merge_ref: oghutils::git::pull_request_ref(&git, pr.prid),
                 age_days: models::pull_request::days_since(pr.created_at.as_deref()),
                 ci_status: pr.ci_status,
                 technical_name: pr.module_technical_name,
@@ -348,6 +362,7 @@ fn get_migration_plan(
     let module_dep_type_id = models::dependency_type::get_by_name(conn, "module")
         .unwrap()
         .id;
+    let stored_urls = models::gh_repository::clone_urls(conn);
 
     steps
         .into_iter()
@@ -465,11 +480,33 @@ fn get_migration_plan(
                 }
             }
 
+            let repo_urls = merged
+                .iter()
+                .map(|m| (&m.organization, &m.repository_name))
+                .chain(
+                    pending
+                        .iter()
+                        .map(|p| (&p.organization, &p.repository_name)),
+                )
+                .chain(
+                    missing
+                        .iter()
+                        .map(|m| (&m.organization, &m.repository_name)),
+                )
+                .map(|(org, repo)| {
+                    let stored = stored_urls
+                        .get(&format!("{org}/{repo}"))
+                        .map(String::as_str);
+                    (repo.clone(), oghutils::git::clone_url(stored, org, repo))
+                })
+                .collect();
+
             MigrationPlanStepResponse {
                 version: odoo_version_u8_to_string(&version_u8),
                 merged,
                 pending,
                 missing,
+                repo_urls,
                 unknown,
             }
         })
@@ -659,6 +696,21 @@ mod tests {
         assert_eq!(step.missing[0].repository_name, "repoB");
         assert_eq!(step.missing[0].organization, "OCA");
         assert_eq!(step.unknown, vec!["mod_never_seen".to_string()]);
+        // Remotes/merge refs follow the repo's host: GitHub by default...
+        assert_eq!(step.repo_urls["repoA"], "https://github.com/OCA/repoA.git");
+        assert_eq!(step.pending[0].merge_ref, "refs/pull/123/head");
+        // ...GitLab once the collector stored a GitLab clone URL.
+        let org = gh_organization::get_by_name(&mut conn, "OCA").unwrap();
+        let repo_c = gh_repository::get_by_name(&mut conn, &org.id, "repoC").unwrap();
+        let gl = "https://git.acme.io/oca/repoC.git";
+        gh_repository::set_url(&mut conn, &repo_c.id, gl).unwrap();
+        let step = &get_migration_plan(&mut conn, &modules, "17.0", Some("17.0"))[0];
+        assert_eq!(step.repo_urls["repoC"], gl);
+        assert_eq!(step.pending[0].merge_ref, "refs/merge-requests/123/head");
+        assert_eq!(
+            step.pending[0].url,
+            "https://git.acme.io/oca/repoC/-/merge_requests/123"
+        );
     }
 
     // Proves dependencies are re-resolved fresh per step, not accumulated

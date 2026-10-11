@@ -9,6 +9,8 @@ pub struct RepoInfo {
     pub org: String,
     pub clone_path: String,
     pub full_path: String,
+    /// Clone URL (GitHub or a GitLab host), stored so links point back to it.
+    pub url: String,
 }
 
 impl RepoInfo {
@@ -23,6 +25,9 @@ impl RepoInfo {
     }
     pub fn get_full_path(&self) -> &str {
         &self.full_path
+    }
+    pub fn get_url(&self) -> &str {
+        &self.url
     }
 }
 
@@ -295,6 +300,7 @@ pub trait GitClient {
             org: org_name.into(),
             clone_path,
             full_path: format!("{org_name}/{repo_name}"),
+            url: repo_url.into(),
         })
     }
 

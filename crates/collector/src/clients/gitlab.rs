@@ -242,6 +242,9 @@ impl GitlabClient {
     /// ponytail: same-named projects in different subgroups of one group share
     /// `<group>/<name>` (clone dir and DB repo); collect at most one of them
     /// until org/repo can hold a nested namespace.
+    /// The repo name is the project `path` (URL slug, like a GitHub repo name),
+    /// not its display `name` ("Sale Addons"): it keys the clone dir and
+    /// doodba's addons.yaml/repos.yaml.
     fn clone_project(
         &self,
         project: &serde_json::Value,
@@ -249,7 +252,7 @@ impl GitlabClient {
         branch: &str,
         dest: &str,
     ) -> Option<RepoInfo> {
-        let name = project["name"].as_str().unwrap_or("");
+        let name = project["path"].as_str().unwrap_or("");
         let path_with_namespace = project["path_with_namespace"].as_str().unwrap_or("");
         let http_url = project["http_url_to_repo"].as_str().unwrap_or("");
         if name.is_empty() || http_url.is_empty() {

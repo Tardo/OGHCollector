@@ -2948,6 +2948,7 @@ def helpers(data, cmd):
             org: "test_org".to_string(),
             clone_path: repos_dir.to_string_lossy().to_string(),
             full_path: repos_dir.to_string_lossy().to_string(),
+            url: String::new(),
         }];
         let read_paths = vec!["/odoo/addons".to_string()];
         let analyzer = OGHCollectorAnalyzer::new(&160u8);

@@ -61,6 +61,7 @@ diesel::table! {
         gh_organization_id -> BigInt,
         create_date -> Text,
         update_date -> Text,
+        url -> Nullable<Text>,
     }
 }
 

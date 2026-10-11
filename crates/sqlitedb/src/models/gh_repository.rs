@@ -1,6 +1,7 @@
 // Copyright Alexandre D. Díaz
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::schema::gh_repository;
 use crate::utils::date::get_sqlite_utc_now;
@@ -15,6 +16,8 @@ pub struct Model {
     pub gh_organization_id: i64,
     pub create_date: String,
     pub update_date: String,
+    /// Clone URL; `None` for rows collected before it was stored.
+    pub url: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -124,6 +127,37 @@ pub fn add(conn: &mut SqliteConnection, gh_org_id: &i64, name: &str) -> QueryRes
             gh_organization_id: *gh_org_id,
             create_date: create_date.clone(),
             update_date: create_date,
+            url: None,
         })
     }
+}
+
+/// Stored clone URL of every repository that has one, keyed `org/repo` (a few
+/// hundred rows), for pages listing many repos: pass `get(..)` to
+/// `oghutils::git::clone_url`, which falls back for the rest.
+pub fn clone_urls(conn: &mut SqliteConnection) -> HashMap<String, String> {
+    gh_repository::table
+        .inner_join(
+            crate::schema::gh_organization::table
+                .on(crate::schema::gh_organization::id.eq(gh_repository::gh_organization_id)),
+        )
+        .filter(gh_repository::url.is_not_null())
+        .select((
+            crate::schema::gh_organization::name,
+            gh_repository::name,
+            gh_repository::url.assume_not_null(),
+        ))
+        .load::<(String, String, String)>(conn)
+        .expect("DB error in gh_repository::clone_urls")
+        .into_iter()
+        .map(|(org, repo, url)| (format!("{org}/{repo}"), url))
+        .collect()
+}
+
+/// Stores the clone URL the collector used (refreshed every run, so a repo
+/// that moved host/namespace follows along).
+pub fn set_url(conn: &mut SqliteConnection, id: &i64, url: &str) -> QueryResult<usize> {
+    diesel::update(gh_repository::table.find(id))
+        .set(gh_repository::url.eq(url))
+        .execute(conn)
 }
