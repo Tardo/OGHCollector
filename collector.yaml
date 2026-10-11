@@ -1,0 +1,37 @@
+# What `oghcollector` collects when run without a source (the scheduled Ofelia
+# job does exactly that). Jobs run in the order listed, one per version, each
+# the same as `oghcollector <source>[:<paths>] <version> <git>`.
+# `oghcollector --check` validates this file and prints those jobs.
+#
+# templates: named lists of module folders, referenced by `template:`
+# sources:
+#   source:   organization/group (every repo directly in it) or `owner/repo`
+#             (GitLab: `group/project`, or `group/subgroup`; a group's
+#             subgroups aren't included, list each one as its own source)
+#   versions: Odoo versions (branches) to collect
+#   template: module folders from `templates` (optional)
+#   paths:    module folders, relative to each repo root, added after the
+#             template's (default with neither: the repo root; "" or "." is
+#             the root too)
+#   git:      GH (default) or GL
+#   base_url: GitLab API URL of a self-hosted instance (default: gitlab.com)
+#
+# Unknown keys are errors. JSON or TOML with the same keys also work
+# (`--config collector.json`).
+templates:
+  openerp: [addons, openerp/addons]
+  odoo: [addons, odoo/addons]
+
+sources:
+  - source: odoo/odoo
+    template: openerp
+    versions: [6.1, 7.0, 8.0, 9.0]
+  - source: odoo/odoo
+    template: odoo
+    versions: [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0]
+  - source: OCA
+    versions: [6.1, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0]
+  # - source: MyGroup
+  #   git: GL
+  #   base_url: https://mygitlabinstance.com/api/v4/
+  #   versions: [18.0]

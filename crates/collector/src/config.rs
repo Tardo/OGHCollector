@@ -1,8 +1,108 @@
 // Copyright Alexandre D. Díaz
+use config::Config;
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 
-use oghutils::version::odoo_version_string_to_u8;
+use oghutils::version::{odoo_version_string_to_u8, parse_odoo_version};
+
+// `deny_unknown_fields`: a typo (`path:`, `version:`) in a hand-written or
+// generated config must fail, not silently fall back to a default.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CollectorFile {
+    /// Named module-folder lists, so a layout shared by many sources is
+    /// written once and referenced by name (`template:`).
+    #[serde(default)]
+    templates: HashMap<String, Vec<String>>,
+    sources: Vec<CollectorSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CollectorSource {
+    source: String,
+    // f64, not String: YAML reads an unquoted `18.0` as a float, which the
+    // config crate would stringify as "18" (not a branch).
+    versions: Vec<f64>,
+    template: Option<String>,
+    #[serde(default)]
+    paths: Vec<String>,
+    #[serde(default = "default_git")]
+    git: String,
+    #[serde(default)]
+    base_url: String,
+}
+
+fn default_git() -> String {
+    "GH".to_string()
+}
+
+/// Expands a collector config (see the shipped `collector.yaml`) into the
+/// `<source>[:<paths>] <version> <git>` argument lists of the single-run CLI,
+/// in file order. Everything is validated here, before any job runs.
+pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
+    let CollectorFile { templates, sources } = Config::builder()
+        .add_source(config::File::with_name(path))
+        .build()
+        .and_then(|c| c.try_deserialize())
+        .map_err(|err| format!("Can't load the collector config '{path}': {err}"))?;
+    let mut jobs = Vec::new();
+    for (idx, src) in sources.into_iter().enumerate() {
+        let name = format!("sources[{idx}] ({})", src.source);
+        // ':' and ',' separate the source and its paths in the CLI argument.
+        if src.source.is_empty() || src.source.contains([':', ',']) {
+            return Err(format!("{name}: invalid source"));
+        }
+        let git = src.git.to_uppercase();
+        if git != "GH" && git != "GL" {
+            return Err(format!("{name}: unknown git '{}' (GH or GL)", src.git));
+        }
+        // The GitHub client always talks to github.com.
+        if git == "GH" && !src.base_url.is_empty() {
+            return Err(format!("{name}: base_url is only for GitLab (git: GL)"));
+        }
+        if src.versions.is_empty() {
+            return Err(format!("{name}: no versions"));
+        }
+        let mut paths = match &src.template {
+            Some(tmpl) => templates
+                .get(tmpl)
+                .cloned()
+                .ok_or_else(|| format!("{name}: unknown template '{tmpl}'"))?,
+            None => Vec::new(),
+        };
+        paths.extend(src.paths);
+        let mut origin = src.source.clone();
+        if !paths.is_empty() {
+            let mut normalized = Vec::with_capacity(paths.len());
+            for p in &paths {
+                if p.contains([':', ',']) {
+                    return Err(format!("{name}: invalid path '{p}'"));
+                }
+                normalized.push(match p.trim_matches('/') {
+                    "" | "." => String::new(),
+                    p => format!("/{p}"),
+                });
+            }
+            origin = format!("{origin}:{}", normalized.join(","));
+        }
+        let git = if src.base_url.is_empty() {
+            git
+        } else {
+            format!("{git}:{}", src.base_url)
+        };
+        for ver in &src.versions {
+            let ver = format!("{ver:.1}");
+            if parse_odoo_version(&ver).is_none() {
+                return Err(format!("{name}: invalid Odoo version '{ver}'"));
+            }
+            jobs.push(vec![origin.clone(), ver, git.clone()]);
+        }
+    }
+    Ok(jobs)
+}
 
 #[derive(Debug)]
 pub enum GitType {
@@ -12,7 +112,6 @@ pub enum GitType {
 
 #[derive(Debug)]
 pub struct OGHCollectorConfig {
-    mode: String,
     src: String,
     token: String,
     branch: String,
@@ -50,13 +149,8 @@ impl OGHCollectorConfig {
         } else {
             odoo_version_string_to_u8(&branch_parts[..2].join("."))
         };
-        let mut mode: String = "org".to_string();
-
         let raw_src_parts = raw_src.split(":").collect::<Vec<&str>>();
         let src = raw_src_parts[0];
-        if src.contains('/') {
-            mode = "repo".to_string();
-        }
 
         let mut read_paths: Vec<String>;
         if raw_src_parts.len() == 2 {
@@ -70,7 +164,6 @@ impl OGHCollectorConfig {
         }
 
         OGHCollectorConfig {
-            mode,
             src: src.to_string(),
             token,
             branch,
@@ -100,10 +193,6 @@ impl OGHCollectorConfig {
             panic!("Need the github api token!");
         }
         token
-    }
-
-    pub fn get_mode(&self) -> &String {
-        &self.mode
     }
 
     pub fn get_source(&self) -> &String {
@@ -136,5 +225,28 @@ impl OGHCollectorConfig {
 
     pub fn get_git_type(&self) -> &GitType {
         &self.git_type
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shipped_collector_yaml_matches_the_old_ofelia_loop() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../collector.yaml");
+        let job = |src: &str, ver: &str| vec![src.to_string(), ver.to_string(), "GH".to_string()];
+        let new_versions = [
+            "10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0",
+        ];
+        let old_versions = ["6.1", "7.0", "8.0", "9.0"];
+        let mut expected: Vec<Vec<String>> = Vec::new();
+        expected.extend(old_versions.map(|v| job("odoo/odoo:/addons,/openerp/addons", v)));
+        expected.extend(new_versions.map(|v| job("odoo/odoo:/addons,/odoo/addons", v)));
+        expected.extend(
+            old_versions
+                .iter()
+                .chain(&new_versions)
+                .map(|v| job("OCA", v)),
+        );
+        assert_eq!(super::load_jobs(path).unwrap(), expected);
     }
 }

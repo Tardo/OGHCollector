@@ -34,6 +34,12 @@ impl GitClient for GitlabClient {
         }
     }
 
+    // GitLab takes any non-blank user name with a personal/group/project
+    // access token, and `oauth2` with an OAuth one.
+    fn git_credentials(&self) -> (&str, &str) {
+        ("oauth2", &self.token)
+    }
+
     async fn request(&self, url: &str) -> Result<reqwest::Response, reqwest::Error> {
         let full_url = format!("{}{url}", self.base_url);
         let res = self
@@ -91,47 +97,25 @@ impl GitClient for GitlabClient {
                 }
             };
 
+            // Errors (unknown group, bad token, ...) come back as an object
+            // with a "message" field instead of the project array.
             let group_repos_items = match group_repos.as_array() {
                 Some(arr) => arr,
-                _ => break,
+                _ => {
+                    log::error!(
+                        "Unexpected GitLab response for '{org_name}': {}",
+                        group_repos["message"]
+                    );
+                    break;
+                }
             };
 
             if group_repos_items.is_empty() {
                 break;
             }
 
-            for repo_info in group_repos_items.iter() {
-                let repo_name = repo_info["name"].as_str().unwrap_or("");
-                let repo_path_with_namespace =
-                    repo_info["path_with_namespace"].as_str().unwrap_or("");
-                let repo_http_url = repo_info["http_url_to_repo"].as_str().unwrap_or("");
-
-                if repo_name.is_empty() || repo_http_url.is_empty() {
-                    continue;
-                }
-
-                let repo_owner_login = repo_path_with_namespace
-                    .split('/')
-                    .next()
-                    .unwrap_or(org_name);
-
-                let repo_info_opt = self.clone_or_update_repo(
-                    repo_owner_login,
-                    repo_name,
-                    repo_http_url,
-                    branch,
-                    dest,
-                );
-
-                match repo_info_opt {
-                    // `repo_owner_login` is only the first segment of `path_with_namespace`,
-                    // so it drops nested subgroups. Restore the real project path here.
-                    Some(mut info) => {
-                        info.full_path = repo_path_with_namespace.to_string();
-                        repos.push(info);
-                    }
-                    _ => log::info!("'{repo_http_url}' Is not a valid Odoo modules repository!"),
-                }
+            for project in group_repos_items.iter() {
+                repos.extend(self.clone_project(project, org_name, branch, dest));
             }
 
             if group_repos_items.len() < GITLAB_LIMIT_PER_PAGE {
@@ -142,6 +126,28 @@ impl GitClient for GitlabClient {
         }
 
         repos
+    }
+
+    /// GitLab nests groups, so `a/b` is either a project or a subgroup: the
+    /// project lookup decides, anything that isn't one is listed as a group.
+    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+        if source.contains('/') {
+            let url = format!("projects/{}", urlencoding::encode(source));
+            match self.request_json(&url).await {
+                Ok(project) if project["http_url_to_repo"].is_string() => {
+                    return self
+                        .clone_project(&project, source, branch, dest)
+                        .into_iter()
+                        .collect();
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Can't look up '{source}': {err}");
+                    return Vec::new();
+                }
+            }
+        }
+        self.clone_org_repos(source, branch, dest).await
     }
 
     async fn get_repo_pull_requests(
@@ -226,6 +232,38 @@ impl GitClient for GitlabClient {
             .await
             .ok()?;
         Some(mr["state"].as_str() == Some("merged"))
+    }
+}
+
+impl GitlabClient {
+    /// One project of a `projects`/`groups/:id/projects` response. The
+    /// organization is the first segment of `path_with_namespace` (the whole
+    /// path is kept as `full_path`, which the merge request API needs).
+    /// ponytail: same-named projects in different subgroups of one group share
+    /// `<group>/<name>` (clone dir and DB repo); collect at most one of them
+    /// until org/repo can hold a nested namespace.
+    fn clone_project(
+        &self,
+        project: &serde_json::Value,
+        org_name: &str,
+        branch: &str,
+        dest: &str,
+    ) -> Option<RepoInfo> {
+        let name = project["name"].as_str().unwrap_or("");
+        let path_with_namespace = project["path_with_namespace"].as_str().unwrap_or("");
+        let http_url = project["http_url_to_repo"].as_str().unwrap_or("");
+        if name.is_empty() || http_url.is_empty() {
+            return None;
+        }
+        let owner = path_with_namespace
+            .split_once('/')
+            .map_or(org_name, |(owner, _)| owner);
+        let Some(mut info) = self.clone_or_update_repo(owner, name, http_url, branch, dest) else {
+            log::info!("'{http_url}' Is not a valid Odoo modules repository!");
+            return None;
+        };
+        info.full_path = path_with_namespace.to_string();
+        Some(info)
     }
 }
 

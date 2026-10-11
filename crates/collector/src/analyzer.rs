@@ -2476,9 +2476,9 @@ class PartnerKindController(http.Controller):
             "migration_scripts_excluded"
         ));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir.join("migrations/16.0.1.0.0")).unwrap();
-        fs::create_dir_all(&dir.join("needs_upgrade")).unwrap();
-        fs::create_dir_all(&dir.join("models")).unwrap();
+        fs::create_dir_all(dir.join("migrations/16.0.1.0.0")).unwrap();
+        fs::create_dir_all(dir.join("needs_upgrade")).unwrap();
+        fs::create_dir_all(dir.join("models")).unwrap();
 
         // A normal model with the same old-API/raw-SQL/workflow patterns -
         // these MUST still be flagged.

@@ -30,6 +30,7 @@ cargo run --bin server
 
 ## Update Database
 ```sh
-cargo run --bin collector -- OCA 15.0
+cargo run --bin collector -- OCA 15.0   # one source/version
+cargo run --bin collector               # every source/version in ./collector.yaml
 ```
 ** set `OGHCOLLECTOR_TOKEN_GH` (or `OGHCOLLECTOR_TOKEN_GL` for GitLab) in the environment variables

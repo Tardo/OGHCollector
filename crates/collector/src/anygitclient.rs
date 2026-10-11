@@ -12,6 +12,13 @@ impl GitClient for AnyGitClient {
         unreachable!("Use AnyGitClient::Github(...) or AnyGitClient::Gitlab(...) directly")
     }
 
+    fn git_credentials(&self) -> (&str, &str) {
+        match self {
+            AnyGitClient::Github(c) => c.git_credentials(),
+            AnyGitClient::Gitlab(c) => c.git_credentials(),
+        }
+    }
+
     async fn request(&self, url: &str) -> Result<reqwest::Response, reqwest::Error> {
         match self {
             AnyGitClient::Github(c) => c.request(url).await,
@@ -42,6 +49,13 @@ impl GitClient for AnyGitClient {
         match self {
             AnyGitClient::Github(c) => c.clone_org_repos(org_name, branch, dest).await,
             AnyGitClient::Gitlab(c) => c.clone_org_repos(org_name, branch, dest).await,
+        }
+    }
+
+    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+        match self {
+            AnyGitClient::Github(c) => c.clone_source(source, branch, dest).await,
+            AnyGitClient::Gitlab(c) => c.clone_source(source, branch, dest).await,
         }
     }
 

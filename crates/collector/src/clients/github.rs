@@ -27,6 +27,12 @@ impl GitClient for GithubClient {
         }
     }
 
+    // Any user name works with a PAT; `x-access-token` is the documented one
+    // for app installation tokens, so it covers both.
+    fn git_credentials(&self) -> (&str, &str) {
+        ("x-access-token", &self.token)
+    }
+
     async fn request(&self, url: &str) -> Result<reqwest::Response, reqwest::Error> {
         let full_url = format!("{GITHUB_BASE_URL}{url}");
         let res = self
@@ -113,6 +119,18 @@ impl GitClient for GithubClient {
             page_count += 1;
         }
         repos
+    }
+
+    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+        let Some((owner, repo)) = source.split_once('/') else {
+            return self.clone_org_repos(source, branch, dest).await;
+        };
+        let repo_url = format!("https://github.com/{owner}/{repo}.git");
+        let info = self.clone_or_update_repo(owner, repo, &repo_url, branch, dest);
+        if info.is_none() {
+            log::info!("'{repo_url}' Is not a valid Odoo modules repository!");
+        }
+        info.into_iter().collect()
     }
 
     async fn get_repo_pull_requests(

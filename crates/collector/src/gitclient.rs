@@ -84,13 +84,24 @@ pub fn extract_migration_module_name(head_ref: &str) -> Option<String> {
 /// `safe.directory=*` avoids "dubious ownership" aborts on volumes owned by
 /// another uid; `GIT_TERMINAL_PROMPT=0` makes auth failures fail instead of hang.
 fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, String> {
+    git_run_env(dir, args, &[])
+}
+
+/// `git_run` with extra environment variables (see `git_auth_env`).
+fn git_run_env<S: AsRef<str>>(
+    dir: &str,
+    args: &[S],
+    env: &[(String, String)],
+) -> Result<String, String> {
     let args: Vec<&str> = ["-c", "safe.directory=*"]
         .into_iter()
         .chain(args.iter().map(|a| a.as_ref()))
         .collect();
-    let out = cmd("git", args)
-        .dir(dir)
-        .env("GIT_TERMINAL_PROMPT", "0")
+    let mut expr = cmd("git", args).dir(dir).env("GIT_TERMINAL_PROMPT", "0");
+    for (key, value) in env {
+        expr = expr.env(key, value);
+    }
+    let out = expr
         .stdin_null()
         .stderr_to_stdout()
         .stdout_capture()
@@ -105,8 +116,46 @@ fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, String> {
     }
 }
 
+/// Git credentials for `clone`/`fetch` (private repositories): a credential
+/// helper scoped to the repository's host, handed to git through `GIT_CONFIG_*`
+/// env vars, that answers with the token from its own env var. Git only asks
+/// after a 401, so public repositories are still fetched anonymously (a token
+/// without git scopes can't break them), and the token is never written to the
+/// clone's `.git/config` (on the shared data volume) nor shown by `ps`. The
+/// empty helper first drops any helper inherited from the user's git config.
+fn git_auth_env(repo_url: &str, user: &str, token: &str) -> Vec<(String, String)> {
+    let Ok(url) = reqwest::Url::parse(repo_url) else {
+        return Vec::new();
+    };
+    let Some(host) = url.host_str().filter(|_| !token.is_empty()) else {
+        return Vec::new();
+    };
+    let port = url.port().map_or(String::new(), |p| format!(":{p}"));
+    let key = format!("credential.{}://{host}{port}.helper", url.scheme());
+    let helper = format!(
+        r#"!f() {{ test "$1" = get || return 0; printf 'username={user}\npassword=%s\n' "${GIT_TOKEN_ENV}"; }}; f"#
+    );
+    [
+        ("GIT_CONFIG_COUNT", "2".to_string()),
+        ("GIT_CONFIG_KEY_0", key.clone()),
+        ("GIT_CONFIG_VALUE_0", String::new()),
+        ("GIT_CONFIG_KEY_1", key),
+        ("GIT_CONFIG_VALUE_1", helper),
+        (GIT_TOKEN_ENV, token.to_string()),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
+}
+
+const GIT_TOKEN_ENV: &str = "OGHCOLLECTOR_GIT_TOKEN";
+
 pub trait GitClient {
     fn new(token: &str, base_url: &str) -> Self;
+
+    /// `(user, token)` git authenticates with over HTTPS: the token is the
+    /// API one, the user whatever the provider expects alongside a token.
+    fn git_credentials(&self) -> (&str, &str);
 
     fn clone_or_update_repo(
         &self,
@@ -119,6 +168,8 @@ pub trait GitClient {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
         let base_dir = format!("{dest}/{org_name}");
         let origin_branch = format!("origin/{branch}");
+        let (git_user, git_token) = self.git_credentials();
+        let auth_env = git_auth_env(repo_url, git_user, git_token);
         // `.git` check (not just `exists()`): git run inside a non-repo dir
         // walks up to any parent repo and would act on that one instead.
         let mut needs_clone = !Path::new(&clone_path).join(".git").exists();
@@ -131,7 +182,12 @@ pub trait GitClient {
             // this code) only track their first branch, so a plain
             // `fetch origin` never brings in the requested one.
             let refspec = format!("+refs/heads/{branch}:refs/remotes/{origin_branch}");
-            if let Err(err) = git_run(&clone_path, &["fetch", "--prune", "origin", &refspec]) {
+            let fetched = git_run_env(
+                &clone_path,
+                &["fetch", "--prune", "origin", &refspec],
+                &auth_env,
+            );
+            if let Err(err) = fetched {
                 if err.contains("couldn't find remote ref") {
                     log::info!(
                         "'{repo_name}': branch '{branch}' doesn't exist upstream - skipping"
@@ -172,7 +228,7 @@ pub trait GitClient {
             let tmp_name = format!("{repo_name}.tmp");
             let tmp_path = format!("{base_dir}/{tmp_name}");
             let _ = fs::remove_dir_all(&tmp_path);
-            let cloned = git_run(
+            let cloned = git_run_env(
                 &base_dir,
                 &[
                     "clone",
@@ -182,6 +238,7 @@ pub trait GitClient {
                     repo_url,
                     &tmp_name,
                 ],
+                &auth_env,
             );
             if let Err(err) = cloned {
                 if err.contains("not found in upstream") {
@@ -257,6 +314,10 @@ pub trait GitClient {
 
     async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo>;
 
+    /// Clones/updates what a collector source names: one repository
+    /// (`owner/repo`) or every repository of an organization/group.
+    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo>;
+
     async fn get_repo_pull_requests(
         &self,
         full_path: &str,
@@ -281,7 +342,31 @@ pub trait GitClient {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_migration_module_name;
+    use super::{extract_migration_module_name, git_auth_env};
+
+    #[test]
+    fn test_git_auth_env_scopes_the_helper_to_the_repo_host() {
+        let env = git_auth_env(
+            "https://git.acme.dev:8443/grp/sub/repo.git",
+            "oauth2",
+            "tok",
+        );
+        let get = |k: &str| {
+            env.iter()
+                .find(|(key, _)| key == k)
+                .map(|(_, v)| v.as_str())
+        };
+        let key = Some("credential.https://git.acme.dev:8443.helper");
+        assert_eq!(get("GIT_CONFIG_COUNT"), Some("2"));
+        assert_eq!(
+            (get("GIT_CONFIG_KEY_0"), get("GIT_CONFIG_VALUE_0")),
+            (key, Some(""))
+        );
+        assert_eq!(get("GIT_CONFIG_KEY_1"), key);
+        assert!(get("GIT_CONFIG_VALUE_1").is_some_and(|h| !h.contains("tok")));
+        assert_eq!(get("OGHCOLLECTOR_GIT_TOKEN"), Some("tok"));
+        assert!(git_auth_env("https://github.com/OCA/web.git", "x", "").is_empty());
+    }
 
     #[test]
     fn test_extract_migration_module_name_matches_oca_convention() {

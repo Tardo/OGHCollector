@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::path::Path;
+use std::process::Command;
 use std::time::Instant;
 
 use analyzer::OGHCollectorAnalyzer;
@@ -59,10 +60,86 @@ fn try_lock(config: &OGHCollectorConfig) -> named_lock::NamedLockGuard {
     }
 }
 
+/// Set on the children of `run_config`, which runs the embeddings pass once
+/// after all of them instead of once per job.
+const SKIP_EMBEDDINGS_ENV: &str = "OGHCOLLECTOR_SKIP_EMBEDDINGS";
+
+fn open_db() -> sqlitedb::Pool {
+    let db_path = "data/data.db";
+    if let Some(parent) = Path::new(db_path).parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    if !Path::new(db_path).exists() {
+        File::create(db_path).unwrap();
+    }
+    let pool = sqlitedb::new_write_pool(db_path);
+    sqlitedb::run_migrations(&mut pool.get().unwrap()).expect("Can't run migrations");
+    pool
+}
+
+/// `oghcollector [--config <file>] [--check]`: runs every job of the
+/// collector config (default `./collector.yaml`) as its own single-run child
+/// process. The single-run path panics/exits freely (busy lock, missing token,
+/// DB unwraps), so a child keeps that to its own job and the rest of the batch
+/// still runs. `--check` only validates and prints the jobs, one per line.
+fn run_config(path: &str, check: bool) {
+    let jobs = config::load_jobs(path).unwrap_or_else(|err| {
+        eprintln!("{err}");
+        std::process::exit(2);
+    });
+    if check {
+        for args in &jobs {
+            println!("{}", args.join(" "));
+        }
+        return;
+    }
+    let exe = env::current_exe().expect("Can't locate the collector binary");
+    let mut failed = 0;
+    for args in &jobs {
+        log::info!("Running job: {}", args.join(" "));
+        let ok = Command::new(&exe)
+            .args(args)
+            .env(SKIP_EMBEDDINGS_ENV, "1")
+            .status()
+            .is_ok_and(|status| status.success());
+        if !ok {
+            log::error!("Job failed: {}", args.join(" "));
+            failed += 1;
+        }
+    }
+    embeddings::update_embeddings(&mut open_db().get().unwrap());
+    if failed > 0 {
+        log::error!("{failed} of {} jobs failed", jobs.len());
+        std::process::exit(1);
+    }
+    log::info!("All done. Bye!");
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     let args: Vec<String> = env::args().collect();
+    let usage = || -> ! {
+        eprintln!(
+            "Usage: oghcollector [--config <file>] [--check]\n       oghcollector <source>[:<paths>] <version> [<git>]"
+        );
+        std::process::exit(2);
+    };
+    if args.len() == 1 || args[1].starts_with("--") {
+        let (mut path, mut check) = ("collector", false);
+        let mut flags = args[1..].iter();
+        while let Some(flag) = flags.next() {
+            match flag.as_str() {
+                "--check" => check = true,
+                "--config" => path = flags.next().unwrap_or_else(|| usage()),
+                _ => usage(),
+            }
+        }
+        return run_config(path, check);
+    }
+    if args.len() < 3 {
+        usage();
+    }
     let config = OGHCollectorConfig::new(&args);
 
     let _lock_guard = try_lock(&config);
@@ -77,17 +154,8 @@ async fn main() {
     };
     let pypi_client = PypiClient::new();
 
-    let db_path = "data/data.db";
-    if let Some(parent) = Path::new(db_path).parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    if !Path::new(db_path).exists() {
-        File::create(db_path).unwrap();
-    }
-
-    let pool = sqlitedb::new_write_pool(db_path);
+    let pool = open_db();
     let mut conn = pool.get().unwrap();
-    sqlitedb::run_migrations(&mut conn).expect("Can't run migrations");
 
     let odoo_ver = config.get_version_odoo();
     let odoo_ver_str = odoo_version_u8_to_string(odoo_ver);
@@ -98,39 +166,13 @@ async fn main() {
         &odoo_ver_str,
     );
     log::info!("Cloning/Updating ({})...", odoo_ver_str);
-    let mut repo_infos: Vec<RepoInfo> = Vec::new();
-    if config.get_mode() == "org" {
-        repo_infos = git_client
-            .clone_org_repos(
-                config.get_source(),
-                config.get_branch(),
-                config.get_repos_path(),
-            )
-            .await;
-    } else if config.get_mode() == "repo" {
-        let Some((user_name, repo_name)) = config.get_source().split_once('/') else {
-            eprintln!(
-                "Invalid source '{}': repo mode expects '<user>/<repo>'",
-                config.get_source()
-            );
-            std::process::exit(1);
-        };
-        let user_name = user_name.to_string();
-        let repo_name = repo_name.to_string();
-        let repo_url = format!("https://github.com/{user_name}/{repo_name}.git");
-        let res_opt = git_client.clone_or_update_repo(
-            &user_name,
-            &repo_name,
-            &repo_url,
+    let repo_infos: Vec<RepoInfo> = git_client
+        .clone_source(
+            config.get_source(),
             config.get_branch(),
             config.get_repos_path(),
-        );
-        if let Some(res) = res_opt {
-            repo_infos.push(res);
-        } else {
-            log::info!("'{repo_url}' Is not a valid Odoo modules repository!");
-        }
-    }
+        )
+        .await;
 
     log::info!("Scanning '{}' repos for migration PRs...", repo_infos.len());
     for repo_info in &repo_infos {
@@ -561,7 +603,9 @@ async fn main() {
         log::info!("Nothing to do!");
     }
 
-    embeddings::update_embeddings(&mut conn);
+    if env::var_os(SKIP_EMBEDDINGS_ENV).is_none() {
+        embeddings::update_embeddings(&mut conn);
+    }
 
     log::info!("All done. Bye!");
 }

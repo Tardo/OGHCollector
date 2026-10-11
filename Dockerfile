@@ -117,6 +117,7 @@ COPY --from=build /out/static    /app/static
 COPY --from=build /out/templates /app/web/templates
 
 COPY files/pip_names.txt /app/files/pip_names.txt
+COPY collector.yaml /app/collector.yaml
 RUN chown -R appuser:appuser /app \
     && chmod 755 \
     /usr/local/bin/diesel \

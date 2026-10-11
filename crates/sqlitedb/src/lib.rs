@@ -22,17 +22,16 @@ pub fn run_migrations(
     Ok(())
 }
 
-// Customizes connections for write access (WAL mode, timeouts).
+// Customizes connections for write access (timeouts; WAL is set once by
+// `new_write_pool`).
 #[derive(Debug)]
 struct WriteCustomizer;
 
 impl CustomizeConnection<SqliteConnection, R2d2Error> for WriteCustomizer {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), R2d2Error> {
         use diesel::connection::SimpleConnection;
-        conn.batch_execute(
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
-        )
-        .map_err(R2d2Error::QueryError)
+        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;")
+            .map_err(R2d2Error::QueryError)
     }
 }
 
@@ -49,6 +48,18 @@ impl CustomizeConnection<SqliteConnection, R2d2Error> for ReadCustomizer {
 }
 
 pub fn new_write_pool(db_path: &str) -> Pool {
+    // WAL is persistent, so it's switched on once here, on a lone connection.
+    // Done per pooled connection (r2d2 opens them all at once), every switch
+    // but one hit "database is locked" on a new DB: SQLite fails a shared →
+    // exclusive lock upgrade at once, busy_timeout or not, to avoid deadlock.
+    {
+        use diesel::connection::SimpleConnection;
+        use diesel::Connection;
+        let mut conn = SqliteConnection::establish(db_path)
+            .unwrap_or_else(|e| panic!("Failed to open {db_path}: {e}"));
+        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;")
+            .unwrap_or_else(|e| panic!("Failed to enable WAL on {db_path}: {e}"));
+    }
     let manager = ConnectionManager::<SqliteConnection>::new(db_path);
     Pool::builder()
         .connection_customizer(Box::new(WriteCustomizer))

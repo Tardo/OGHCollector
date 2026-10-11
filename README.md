@@ -33,9 +33,16 @@ one-shot `migrate` service prepares their shared SQLite database. Ofelia schedul
 ## Requirements
 
 1. [Docker](https://docs.docker.com/get-docker/) and the Docker Compose plugin.
-2. A GitHub and/or GitLab personal access token so the collector can query the API:
-   - [Creating a GitHub personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
-   - A personal access token for your GitLab instance, if you also collect from GitLab.
+2. A GitHub and/or GitLab access token. The collector uses it for the API and, when a repository
+   asks for credentials, for `git clone`/`fetch`, so private repositories the token can read are
+   collected like public ones (public ones are still cloned anonymously):
+   - [GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens):
+     classic token (no scope for public repositories, `repo` for private ones), or a fine-grained
+     one with read access to *Contents*, *Pull requests*, *Commit statuses* and *Checks*.
+   - GitLab (personal, group or project access token): `read_api`, plus `read_repository` for
+     private projects.
+   - GitHub personal accounts can't be collected whole (only organizations are listed): use
+     `owner/repo` sources for their repositories.
 
 ---
 
@@ -139,16 +146,24 @@ services:
 ### Usage
 
 ```sh
-docker compose exec -T collector oghcollector <origin> <version> [git_type]
+docker compose exec -T collector oghcollector                      # every source in collector.yaml
+docker compose exec -T collector oghcollector --config <file>      # every source in another config file
+docker compose exec -T collector oghcollector --check              # validate the config, print its jobs
+docker compose exec -T collector oghcollector <origin> <version> [git_type]  # a single source/version
 ```
 
+Without a source, the collector runs every job declared in [`collector.yaml`](./collector.yaml)
+(see [Collector config](#collector-config)). The single-run form takes:
+
 - `<origin>`:
-  - The name of an organization — all its repositories are scanned, up to 12,700 GitHub repositories or 25,400 GitLab projects.
-  - The name of a repository, optionally followed by `:` and a comma-separated list of folders to scan. Each folder must start with `/` (it's appended directly to the clone path). To scan the repo root *as well as* subfolders, add a trailing comma (an empty entry means the root): `:/addons,` scans `/addons` plus the root.
+  - The name of an organization — all its repositories are scanned (on GitLab, only the projects directly in the group: list each subgroup as its own source), up to 12,700 GitHub repositories or 25,400 GitLab projects.
+  - The name of a repository (`owner/repo`; on GitLab also `group/subgroup/project`), optionally followed by `:` and a comma-separated list of folders to scan. On GitLab, `group/subgroup` that isn't a project is scanned as a group. Each folder must start with `/` (it's appended directly to the clone path). To scan the repo root *as well as* subfolders, add a trailing comma (an empty entry means the root): `:/addons,` scans `/addons` plus the root.
 - `<version>`: Odoo version to collect (e.g. `18.0`).
 - `[git_type]`: Optional git client to use: `GH` (GitHub, default), `GL` (gitlab.com), or `GL:<api_url>` (a GitLab API URL).
 
-> Repository mode currently clones GitHub URLs, so use organization mode for GitLab collections.
+> GitLab collections use the first segment of a project's path as the organization, so two projects
+> with the same name in different subgroups of one group are stored as the same repository: collect
+> only one of them.
 
 ### Examples
 
@@ -164,6 +179,59 @@ docker compose exec -T collector oghcollector OCA 18.0
 
 # All MyGroup modules, 18.0 (self-hosted GitLab)
 docker compose exec -T collector oghcollector MyGroup 18.0 GL:https://mygitlabinstance.com/api/v4/
+```
+
+### Collector config
+
+`collector.yaml` declares what to collect: organizations/groups or repositories, the Odoo versions
+of each and the folders that hold their modules. It's what the scheduled job runs.
+
+```yaml
+templates:                          # named module-folder layouts, written once
+  odoo: [addons, odoo/addons]
+  addons: [addons]
+
+sources:
+  - source: odoo/odoo               # organization/group, or owner/repo
+    template: odoo                  # module folders from `templates`
+    versions: [17.0, 18.0, 19.0]    # Odoo versions (branches) to collect
+  - source: OCA                     # no template/paths: modules at each repo's root
+    versions: [18.0]
+  - source: Acme/erp
+    template: addons
+    paths: [third_party]            # extra folders, added after the template's
+    versions: [18.0]
+  - source: MyGroup/odoo            # GitLab: a project, or a subgroup (its projects, not its subgroups')
+    git: GL                         # GH (default) or GL
+    base_url: https://mygitlabinstance.com/api/v4/  # self-hosted GitLab (default: gitlab.com)
+    template: addons
+    versions: [18.0]
+```
+
+Folders are relative to each repository root (a leading `/` is optional, `""` or `.` is the root).
+A repository whose layout changed between versions (OpenERP's `openerp/addons` vs Odoo's
+`odoo/addons`) is listed once per layout, each with its own `versions`.
+
+The schema is meant to be generated as well as hand-written: every value has a fixed type, the
+reuse is by name (`template`) rather than YAML anchors, unknown keys are errors (a typo never falls
+back silently to a default), and the same keys work as JSON or TOML (`--config collector.json`).
+`oghcollector --check` validates the file and prints its jobs, one per line, without running them
+(exit status `2` on an invalid file), so a pipeline can check a generated config before deploying it.
+
+The file is validated before anything runs. Jobs then run in order, one `oghcollector <source>[:<paths>] <version> <git>`
+child process per version: a failed job (a busy lock, a missing token, a crash) is logged and
+skipped, the rest still run, and the run exits non-zero at the end. The embedding pass runs once,
+after the last job.
+
+The image ships the repository's `collector.yaml` as `/app/collector.yaml`. To change it without
+rebuilding, mount your own; the next run picks it up:
+
+```yaml
+# docker-compose.override.yaml
+services:
+  collector:
+    volumes:
+      - ./collector.yaml:/app/collector.yaml:ro
 ```
 
 ### Authentication
@@ -187,6 +255,15 @@ secrets:
     file: ./gl_token.txt
 ```
 
+Git gets the token from a credential helper scoped to the repository's host, set up through
+`GIT_CONFIG_*` environment variables. It's only used when the server asks for credentials, it's never
+written to the clones' `.git/config` (in the data volume), and it never shows up in the process list.
+
+> Collected private repositories are as visible as public ones: module metadata, code analysis and
+> security findings show up on the dashboard, `/api/v1`, the MCP endpoint, feeds and badges. Keep an
+> instance that collects private code behind authentication or a private network (both `server`
+> and `mcp`).
+
 Secret contents are trimmed, so a trailing newline is fine. A nonempty secret takes precedence;
 an absent or empty secret falls back to the corresponding environment variable.
 
@@ -196,8 +273,9 @@ variables (used as a fallback when the corresponding secret file isn't found).
 ### Scheduling updates
 
 Ofelia runs the `refresh` job defined in the `collector` labels in [`docker-compose.yaml`](./docker-compose.yaml)
-at 00:00, 06:00, 12:00 and 18:00 UTC. It collects OpenERP (6.1–9.0), Odoo (10.0–19.0) and
-OCA (6.1–19.0) sequentially, as before. Change `ofelia.job-exec.refresh.schedule` to adjust
+at 00:00, 06:00, 12:00 and 18:00 UTC. It runs `oghcollector`, which collects every source in
+[`collector.yaml`](#collector-config). By default that's OpenERP (6.1–9.0), Odoo (10.0–20.0) and
+OCA (6.1–20.0), sequentially. Change the sources there, and change `ofelia.job-exec.refresh.schedule` to adjust
 the schedule (this Ofelia version uses a six-field cron expression, starting with seconds), then
 run `docker compose up -d` to recreate the collector and Ofelia. `no-overlap` skips a scheduled
 run if the previous batch is still running. See execution status with `docker compose logs ofelia`.
@@ -322,6 +400,7 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_MCP_CACHE_TTL` | mcp | Overrides `cache_ttl` from `mcp.yaml` (default `3600`) |
 | `OGHCOLLECTOR_EMBED_CACHE_DIR` | collector, server, mcp | Directory for the embedding model cache (default `data/.fastembed_cache`) |
 | `OGHCOLLECTOR_FORCE_REANALYZE` | collector | Reanalyze module sources even when their latest commit has not changed |
+| `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass (set on the per-job children of a `collector.yaml` run, which runs it once at the end) |
 | `RUST_LOG` | all three binaries | Log level (default: `info`) |
 
 ---
