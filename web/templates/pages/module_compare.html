@@ -59,7 +59,7 @@
 </form>
 
 {% if diff %}
-<div class="module-summary">
+<div class="compare-summary">
     <div class="stat-card">
         <div class="stat-card-label"><span class="material-icons" aria-hidden="true">account_tree</span> Dependencies</div>
         <div class="stat-card-value">+{{ diff.depends.added | length }} <small>/</small> &minus;{{ diff.depends.removed | length }}</div>

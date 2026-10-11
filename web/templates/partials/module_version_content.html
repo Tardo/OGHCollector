@@ -4,14 +4,28 @@
    lazily on first tab activation to avoid computing dependency trees /
    models / required_by (up to 500 rows) for versions nobody looks at. #}
 {% set git_folder_url = module.git | replace('.git', '/tree/' + module.odoo_version + '/' + module.source_path) %}
-<div class="module-summary">
+<section class="module-summary" aria-label="Summary">
 {% if HEALTH_SCORE_ENABLED and module.health %}{% set h = module.health %}
-    <div class="stat-card">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">monitor_heart</span> Health</div>
-        <div class="stat-card-value"><span class="{{ h.grade == 'good' and 'text-success' or (h.grade == 'fair' and 'text-warning' or 'text-danger') }}">{{ h.score }}</span> <small>/ 100 &middot; {{ h.grade }}</small></div>
-        <div class="stat-card-note">{% for f in h.factors %}<span title="{{ f.detail }}">{{ f.name }} {{ f.points is none and 'n/a' or f.points }}</span>{{ not loop.last and ' · ' or '' }}{% endfor %}<br><span class="small text-body-secondary">Heuristic over the facts below (each out of 25), not an audit &middot; <a href="/about#health">how it's computed</a></span></div>
+    <div class="stat-card module-health">
+        <div class="module-health-score">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">monitor_heart</span> Health</div>
+            <div class="stat-card-value"><span class="{{ h.grade == 'good' and 'text-success' or (h.grade == 'fair' and 'text-warning-emphasis' or 'text-danger') }}">{{ h.score }}</span><small>/100</small></div>
+            <span class="badge module-health-grade grade-{{ h.grade }}">{{ h.grade }}</span>
+        </div>
+        <ul class="module-health-factors">
+            {% for f in h.factors %}
+            <li>
+                <div class="module-health-factor-head"><span>{{ f.name }}</span><span>{% if f.points is none %}n/a{% else %}{{ f.points }}<small>/25</small>{% endif %}</span></div>
+                <div class="module-health-bar" aria-hidden="true"><span style="width: {{ (f.points or 0) * 4 }}%"></span></div>
+                <div class="stat-card-note">{{ f.detail }}</div>
+            </li>
+            {% endfor %}
+        </ul>
+        <p class="stat-card-note module-health-disclaimer">Heuristic over the facts below, not an audit &middot; <a href="/about#health">How it's computed</a></p>
     </div>
-{% endif %}    <div class="stat-card">
+{% endif %}
+    <div class="module-metrics">
+    <div class="stat-card">
         <div class="stat-card-label"><span class="material-icons" aria-hidden="true">shield</span> Security findings</div>
         <div class="stat-card-value"><span class="security-indicator" role="img" aria-label="{{ module.security_warnings | length }} grave and {{ module.security_warning_count }} minor static-analysis findings; not a security audit"><span class="segment segment-errors{{ module.security_warnings and ' has-findings' or '' }}" title="Grave findings" aria-hidden="true">{{ module.security_warnings | length }}</span><span class="segment segment-warnings{{ module.security_warning_count and ' has-findings' or '' }}" title="Minor findings" aria-hidden="true">{{ module.security_warning_count }}</span></span></div>
         <div class="stat-card-note">Grave / minor (<a href="/about#security">static analysis</a>)</div>
@@ -23,7 +37,7 @@
     </div>
     <div class="stat-card">
         <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> External deps</div>
-        <div class="stat-card-value">{{ module.dependencies.pip | length }} <small>pip</small> &middot; {{ module.dependencies.bin | length }} <small>bin</small></div>
+        <div class="stat-card-value"><span class="text-nowrap">{{ module.dependencies.pip | length }} <small>pip</small></span> &middot; <span class="text-nowrap">{{ module.dependencies.bin | length }} <small>bin</small></span></div>
         <div class="stat-card-note">Python packages / system binaries</div>
     </div>
     {% set lr = module.license_review %}
@@ -40,17 +54,17 @@
         <div class="stat-card-value">{{ (module.folder_size / 1048576) | round(2) }} <small>MB</small></div>
         <div class="stat-card-note">Module directory on disk</div>
     </div>
-    <div class="stat-card dev-only">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">build</span> Migration notes</div>
-        <div class="stat-card-value">{{ module.migration_considerations | length }}</div>
-        <div class="stat-card-note">Review checklist items</div>
     </div>
-    <div class="stat-card dev-only">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">code</span> Code footprint</div>
-        <div class="stat-card-value">{{ module.models | length }} <small>models</small> &middot; {{ module.views | length }} <small>views</small></div>
-        <div class="stat-card-note">{{ module.controllers | length }} HTTP endpoint{{ module.controllers | length != 1 and 's' or '' }}</div>
+    {# One inline row, not more cells: dev-only cells left the overview grid
+       with ragged rows. #}
+    <div class="stat-card module-dev-metrics dev-only">
+        <span class="stat-card-label"><span class="material-icons" aria-hidden="true">code</span> Code analysis</span>
+        <span><b>{{ module.migration_considerations | length }}</b> migration note{{ module.migration_considerations | length != 1 and 's' or '' }}</span>
+        <span><b>{{ module.models | length }}</b> model{{ module.models | length != 1 and 's' or '' }}</span>
+        <span><b>{{ module.views | length }}</b> view{{ module.views | length != 1 and 's' or '' }}</span>
+        <span><b>{{ module.controllers | length }}</b> HTTP endpoint{{ module.controllers | length != 1 and 's' or '' }}</span>
     </div>
-</div>
+</section>
 {% if module.security_warnings %}
 <div class="dev-only alert alert-danger" role="alert">
     <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">warning</span> Security warnings</h5>
