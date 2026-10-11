@@ -41,6 +41,9 @@ services:
     <<: *app
     command: [sleep, infinity]
     restart: unless-stopped
+    volumes:
+      - app_data:/app/data
+      - ./collector.yaml:/app/collector.yaml:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

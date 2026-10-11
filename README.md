@@ -223,16 +223,10 @@ child process per version: a failed job (a busy lock, a missing token, a crash) 
 skipped, the rest still run, and the run exits non-zero at the end. The embedding pass runs once,
 after the last job.
 
-The image ships the repository's `collector.yaml` as `/app/collector.yaml`. To change it without
-rebuilding, mount your own; the next run picks it up:
-
-```yaml
-# docker-compose.override.yaml
-services:
-  collector:
-    volumes:
-      - ./collector.yaml:/app/collector.yaml:ro
-```
+`docker-compose.yaml` bind-mounts `./collector.yaml` read-only at `/app/collector.yaml`, so edits
+apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
+IDEs), the container keeps seeing the old copy until `docker compose restart collector`. The image
+also ships the repository's copy as a fallback for plain `docker run`.
 
 ### Authentication
 
