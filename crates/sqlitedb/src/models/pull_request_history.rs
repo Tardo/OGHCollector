@@ -86,6 +86,7 @@ pub fn average_days_open_by_version(conn: &mut SqliteConnection) -> Vec<Acceptan
          AVG(julianday(closed_at) - julianday(created_at)) as avg_days, \
          COUNT(*) as closed_count \
          FROM pull_request_history \
+         WHERE gh_repository_id IN (SELECT id FROM gh_repository) \
          GROUP BY version_odoo",
     )
     .load::<AcceptanceStatsInfo>(conn)

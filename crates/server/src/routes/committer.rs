@@ -11,7 +11,9 @@ use crate::utils::get_minijinja_context;
 
 use chrono::Month;
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 fn month_year_label(year: i32, month: i32) -> String {
     let month_name = u8::try_from(month)
@@ -330,7 +332,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
 pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     path: web::Path<String>,
 ) -> Result<impl Responder> {
     let name = path.into_inner();

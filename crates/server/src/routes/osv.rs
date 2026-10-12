@@ -9,7 +9,9 @@ use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OSVModuleRef {
@@ -92,7 +94,7 @@ fn compute_osv_groups(conn: &mut SqliteConnection) -> Vec<OSVVersionGroup> {
 
 #[get("/osv")]
 pub async fn route(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
@@ -120,7 +122,7 @@ pub async fn route(
 #[get("/osv/tab/{odoo_version}")]
 pub async fn route_tab(
     tmpl_env: MiniJinjaRenderer,
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let odoo_version = path.into_inner();

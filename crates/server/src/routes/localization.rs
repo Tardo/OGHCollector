@@ -3,7 +3,9 @@ use actix_web::{get, web, HttpRequest, HttpResponse, Result};
 use minijinja::context;
 use oghutils::version::odoo_version_u8_to_string;
 use serde::Deserialize;
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
@@ -15,7 +17,7 @@ pub struct LocalizationQuery {
 
 #[get("/localization/{code}")]
 pub async fn route(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
     path: web::Path<String>,

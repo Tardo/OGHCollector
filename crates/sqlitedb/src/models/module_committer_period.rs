@@ -136,6 +136,7 @@ pub fn rank_by_period(
                     COUNT(DISTINCT mcp.module_id) as modules_touched \
              FROM module_committer_period as mcp \
              INNER JOIN committer as com ON mcp.committer_id = com.id \
+             INNER JOIN module as mod ON mod.id = mcp.module_id \
              WHERE {HUMAN_COMMITTER} AND mcp.year = ? AND mcp.month = ? \
              GROUP BY com.id \
              ORDER BY total_commits DESC \
@@ -153,6 +154,7 @@ pub fn rank_by_period(
                     COUNT(DISTINCT mcp.module_id) as modules_touched \
              FROM module_committer_period as mcp \
              INNER JOIN committer as com ON mcp.committer_id = com.id \
+             INNER JOIN module as mod ON mod.id = mcp.module_id \
              WHERE {HUMAN_COMMITTER} AND mcp.year = ? \
              GROUP BY com.id \
              ORDER BY total_commits DESC \

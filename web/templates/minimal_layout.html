@@ -143,6 +143,12 @@
                     <span class="app-search-trigger-label">Search modules, committers…</span>
                     <kbd>Ctrl K</kbd>
                 </button>
+                {% if WORKSPACES %}
+                <select class="form-select form-select-sm w-auto" id="workspace-select" aria-label="Workspace" title="Workspace: only list its repositories">
+                    <option value="">All workspaces</option>
+                    {% for ws in WORKSPACES %}<option value="{{ ws }}"{% if ws == WORKSPACE %} selected{% endif %}>{{ ws }}</option>{% endfor %}
+                </select>
+                {% endif %}
                 <button type="button" class="app-icon-btn" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
                 <div class="form-check form-switch mode-switch" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
                     <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>

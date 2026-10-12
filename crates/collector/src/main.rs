@@ -121,7 +121,7 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let usage = || -> ! {
         eprintln!(
-            "Usage: oghcollector [--config <file>] [--check]\n       oghcollector <source>[:<paths>] <version> [<git>]"
+            "Usage: oghcollector [--config <file>] [--check]\n       oghcollector <source>[:<paths>] <version> [<git> [<workspaces>|all]]"
         );
         std::process::exit(2);
     };
@@ -180,6 +180,9 @@ async fn main() {
         let gh_repo =
             models::gh_repository::add(&mut conn, &gh_org.id, repo_info.get_name()).unwrap();
         models::gh_repository::set_url(&mut conn, &gh_repo.id, repo_info.get_url()).unwrap();
+        if let Some(workspaces) = config.get_workspaces() {
+            models::gh_repository_workspace::set(&mut conn, &gh_repo.id, workspaces).unwrap();
+        }
         let migration_prs = git_client
             .get_open_migration_pull_requests(repo_info.get_full_path(), config.get_branch())
             .await;

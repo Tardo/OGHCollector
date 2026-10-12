@@ -15,6 +15,10 @@
 #             the root too)
 #   git:      GH (default) or GL
 #   base_url: GitLab API URL of a self-hosted instance (default: gitlab.com)
+#   workspaces: portal workspaces its repos are shown in (default: all of
+#             them). Letters, digits, '-' and '_'. Entries with the same
+#             `source` share the union. Dependencies on modules of other
+#             workspaces are still resolved and their pages still open.
 #
 # Unknown keys are errors. JSON or TOML with the same keys also work
 # (`--config collector.json`).
@@ -35,3 +39,4 @@ sources:
   #   git: GL
   #   base_url: https://mygitlabinstance.com/api/v4/
   #   versions: [18.0]
+  #   workspaces: [mycompany]

@@ -1,7 +1,7 @@
 diff --git a/schema.rs b/schema.rs
 --- a/schema.rs
 +++ b/schema.rs
-@@ -1,83 +1,83 @@
+@@ -1,65 +1,65 @@
  // @generated automatically by Diesel CLI.
  
  diesel::table! {
@@ -75,6 +75,9 @@ diff --git a/schema.rs b/schema.rs
          update_date -> Text,
          url -> Nullable<Text>,
      }
+@@ -71,20 +71,20 @@ diesel::table! {
+         workspace -> Text,
+     }
  }
  
  diesel::table! {
@@ -95,7 +98,7 @@ diff --git a/schema.rs b/schema.rs
          version_module -> Text,
          description -> Nullable<Text>,
          website -> Nullable<Text>,
-@@ -86,13 +86,13 @@
+@@ -93,13 +93,13 @@ diesel::table! {
          auto_install -> Bool,
          application -> Bool,
          installable -> Bool,
@@ -110,7 +113,7 @@ diff --git a/schema.rs b/schema.rs
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-@@ -102,43 +102,43 @@
+@@ -109,43 +109,43 @@ diesel::table! {
          analysis_version -> Integer,
      }
  }
@@ -158,7 +161,7 @@ diff --git a/schema.rs b/schema.rs
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -151,32 +151,32 @@
+@@ -158,32 +158,32 @@ diesel::table! {
          module_version_id -> BigInt,
      }
  }
@@ -194,7 +197,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          context -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -184,13 +184,13 @@
+@@ -191,13 +191,13 @@ diesel::table! {
          line -> Nullable<Integer>,
      }
  }
@@ -209,7 +212,7 @@ diff --git a/schema.rs b/schema.rs
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -198,47 +198,47 @@
+@@ -205,47 +205,47 @@ diesel::table! {
          module_version_id -> BigInt,
      }
  }
@@ -261,7 +264,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          xml_id -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -246,73 +246,73 @@
+@@ -253,73 +253,73 @@ diesel::table! {
          line -> Nullable<Integer>,
      }
  }
@@ -341,5 +344,5 @@ diff --git a/schema.rs b/schema.rs
      }
  }
  
+ diesel::joinable!(gh_repository_workspace -> gh_repository (gh_repository_id));
  diesel::joinable!(module_controller -> module_version (module_version_id));
- diesel::joinable!(module_embedding -> module (module_id));

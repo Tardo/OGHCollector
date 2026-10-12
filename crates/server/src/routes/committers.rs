@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 const TOP_LIMIT: i64 = 20;
 
@@ -31,7 +33,7 @@ pub struct CommittersPeriodGroup {
 pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
-    pool: web::Data<Pool>,
+    pool: AreaPool,
 ) -> Result<impl Responder> {
     let now = Utc::now();
     let year = now.year();

@@ -12,7 +12,9 @@ use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ActivePullRequestInfo {
@@ -118,22 +120,25 @@ fn get_group(
         })
 }
 
-// The whole page is the same for every visitor (no query params), so it's
-// cached whole instead of per-query-param like `atlas::get_graph_data` -
-// `convert` ignores `conn` and always returns the same key, making this a
-// single-entry cache refreshed every `cache_ttl` seconds.
+// The whole page is the same for every visitor of a workspace (no query
+// params), so it's cached whole instead of per-query-param like
+// `atlas::get_graph_data` - one entry per workspace, refreshed every
+// `cache_ttl` seconds.
 #[cached(
-    ty = "TimedSizedCache<u8, (i64, Vec<ModulesVersionGroup>)>",
-    key = "u8",
+    ty = "TimedSizedCache<String, (i64, Vec<ModulesVersionGroup>)>",
+    key = "String",
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(1, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(16, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ 0u8 }"#
+    convert = r#"{ _workspace.to_string() }"#
 )]
-fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVersionGroup>) {
+fn compute_modules_page_data(
+    conn: &mut SqliteConnection,
+    _workspace: &str, // cache key only
+) -> (i64, Vec<ModulesVersionGroup>) {
     let modules_total = models::module::count_distinct(conn);
     let repo_urls = models::gh_repository::clone_urls(conn);
     let files_url = |org: &str, repo: &str| {
@@ -278,13 +283,13 @@ fn compute_modules_page_data(conn: &mut SqliteConnection) -> (i64, Vec<ModulesVe
 
 #[get("/modules")]
 pub async fn route(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
     let (modules_total, version_groups) = web::block(move || {
         let mut conn = pool.get().unwrap();
-        compute_modules_page_data(&mut conn)
+        compute_modules_page_data(&mut conn, pool.key())
     })
     .await?;
 
@@ -308,13 +313,13 @@ pub async fn route(
 #[get("/modules/tab/{odoo_version}")]
 pub async fn route_tab(
     tmpl_env: MiniJinjaRenderer,
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let odoo_version = path.into_inner();
     let group = web::block(move || {
         let mut conn = pool.get().unwrap();
-        let (_, version_groups) = compute_modules_page_data(&mut conn);
+        let (_, version_groups) = compute_modules_page_data(&mut conn, pool.key());
         version_groups
             .into_iter()
             .find(|g| g.odoo_version == odoo_version)

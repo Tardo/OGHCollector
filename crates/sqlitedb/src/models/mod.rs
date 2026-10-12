@@ -7,6 +7,7 @@ pub mod dependency_osv;
 pub mod dependency_type;
 pub mod gh_organization;
 pub mod gh_repository;
+pub mod gh_repository_workspace;
 pub mod maintainer;
 pub mod module;
 pub mod module_author;

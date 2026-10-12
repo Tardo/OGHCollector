@@ -4,6 +4,7 @@ mod middlewares;
 mod minijinja_renderer;
 mod routes;
 mod utils;
+mod workspace;
 
 use actix_cors::Cors;
 use actix_files as afs;
@@ -146,6 +147,10 @@ async fn main() -> std::io::Result<()> {
         &db_path.to_string_lossy(),
         *SERVER_CONFIG.get_db_pool_max_size(),
     );
+    let workspaces = web::Data::new(workspace::Workspaces::new(
+        db_path.to_string_lossy().into_owned(),
+        pool.clone(),
+    ));
 
     log::info!(
         "starting HTTP server at http://{}:{}",
@@ -178,6 +183,7 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .app_data(web::Data::new(pool.clone()))
+            .app_data(workspaces.clone())
             .app_data(tmpl_reloader.clone())
             .app_data(MultipartFormConfig::default().total_limit(*SERVER_CONFIG.get_upload_limit()))
             .service(
@@ -251,10 +257,15 @@ async fn main() -> std::io::Result<()> {
                 }
             })
             .configure(|cfg| configure_v1(cfg, SERVER_CONFIG.get_semantic_search_enabled()))
-            .wrap(DefaultHeaders::new().add((
-                "Cache-Control",
-                format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),
-            )))
+            .wrap(
+                DefaultHeaders::new()
+                    .add((
+                        "Cache-Control",
+                        format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),
+                    ))
+                    // Pages differ per `workspace` cookie.
+                    .add(("Vary", "Cookie")),
+            )
             .wrap(SessionMiddleware::new(
                 CookieSessionStore::default(),
                 cookie_secret_key.clone(),

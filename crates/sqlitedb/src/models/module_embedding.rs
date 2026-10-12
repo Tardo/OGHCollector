@@ -75,9 +75,12 @@ pub fn get_vectors(
         .bind::<diesel::sql_types::Integer, _>(*v as i32)
         .load::<EmbeddingVectorRow>(conn)
         .expect("DB error in module_embedding::get_vectors"),
-        None => diesel::sql_query("SELECT module_id, embedding FROM module_embedding")
-            .load::<EmbeddingVectorRow>(conn)
-            .expect("DB error in module_embedding::get_vectors"),
+        None => diesel::sql_query(
+            "SELECT me.module_id, me.embedding FROM module_embedding as me \
+             INNER JOIN module as mod ON mod.id = me.module_id",
+        )
+        .load::<EmbeddingVectorRow>(conn)
+        .expect("DB error in module_embedding::get_vectors"),
     }
 }
 

@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
 use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SearchGenericInfoResponse {
@@ -126,7 +128,7 @@ fn get_modules_by_installable(
 /// collide with the /search/{module_name} dynamic segment.
 #[get("/semantic-search")]
 pub async fn route_semantic(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     info: web::Query<RouteSemanticSearchRequest>,
 ) -> Result<HttpResponse, AWError> {
     let params = info.into_inner();
@@ -178,7 +180,7 @@ pub async fn route_semantic(
 /// as the MCP `list_modules_by_criteria` tool.
 #[get("/search")]
 pub async fn route_criteria(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     info: web::Query<RouteSearchCriteriaRequest>,
 ) -> Result<HttpResponse, AWError> {
     let params = info.into_inner();
@@ -201,7 +203,7 @@ pub async fn route_criteria(
 
 #[get("/search/{module_name}")]
 pub async fn route(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     path: web::Path<String>,
     info: web::Query<RouteSearchRequest>,
 ) -> Result<HttpResponse, AWError> {

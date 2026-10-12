@@ -1,7 +1,7 @@
 // Copyright Alexandre D. Díaz
 use config::Config;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
 
@@ -33,6 +33,22 @@ struct CollectorSource {
     git: String,
     #[serde(default)]
     base_url: String,
+    /// Portal workspaces its repos are shown in (default: all of them).
+    #[serde(default)]
+    workspaces: Vec<String>,
+}
+
+/// The 4th job argument meaning "shown in every workspace" (it can't be a
+/// workspace name). Without a 4th argument a job leaves workspaces untouched.
+pub const ALL_WORKSPACES: &str = "all";
+
+fn is_valid_workspace(ws: &str) -> bool {
+    // Goes into a cookie and a SQL literal on the portal side.
+    ws != ALL_WORKSPACES
+        && !ws.is_empty()
+        && ws
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn default_git() -> String {
@@ -40,14 +56,47 @@ fn default_git() -> String {
 }
 
 /// Expands a collector config (see the shipped `collector.yaml`) into the
-/// `<source>[:<paths>] <version> <git>` argument lists of the single-run CLI,
-/// in file order. Everything is validated here, before any job runs.
+/// `<source>[:<paths>] <version> <git> <workspaces>` argument lists of the
+/// single-run CLI, in file order. Everything is validated here, before any
+/// job runs.
 pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
     let CollectorFile { templates, sources } = Config::builder()
         .add_source(config::File::with_name(path))
         .build()
         .and_then(|c| c.try_deserialize())
         .map_err(|err| format!("Can't load the collector config '{path}': {err}"))?;
+    // Each job rewrites the workspaces of the repos it collects, so entries
+    // with the same `source` (e.g. odoo/odoo per template) get the union, or
+    // they'd overwrite each other; any entry without `workspaces` = all.
+    // ponytail: an org and one of its repos (`OCA` + `OCA/web`) are different
+    // sources, the last job to collect the repo wins; merge by repo if needed.
+    let mut source_workspaces: HashMap<&str, Option<BTreeSet<&str>>> = HashMap::new();
+    for (idx, src) in sources.iter().enumerate() {
+        if let Some(ws) = src.workspaces.iter().find(|ws| !is_valid_workspace(ws)) {
+            return Err(format!(
+                "sources[{idx}] ({}): invalid workspace '{ws}' (letters, digits, '-' or '_'; \
+                 not '{ALL_WORKSPACES}')",
+                src.source
+            ));
+        }
+        let entry = source_workspaces
+            .entry(&src.source)
+            .or_insert_with(|| Some(BTreeSet::new()));
+        match (entry.as_mut(), src.workspaces.is_empty()) {
+            (Some(_), true) => *entry = None,
+            (Some(set), false) => set.extend(src.workspaces.iter().map(String::as_str)),
+            (None, _) => {}
+        }
+    }
+    let source_workspaces: HashMap<String, String> = source_workspaces
+        .into_iter()
+        .map(|(src, ws)| {
+            let ws = ws.map_or(ALL_WORKSPACES.to_string(), |ws| {
+                ws.into_iter().collect::<Vec<_>>().join(",")
+            });
+            (src.to_string(), ws)
+        })
+        .collect();
     let mut jobs = Vec::new();
     for (idx, src) in sources.into_iter().enumerate() {
         let name = format!("sources[{idx}] ({})", src.source);
@@ -98,7 +147,12 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
             if parse_odoo_version(&ver).is_none() {
                 return Err(format!("{name}: invalid Odoo version '{ver}'"));
             }
-            jobs.push(vec![origin.clone(), ver, git.clone()]);
+            jobs.push(vec![
+                origin.clone(),
+                ver,
+                git.clone(),
+                source_workspaces[&src.source].clone(),
+            ]);
         }
     }
     Ok(jobs)
@@ -120,6 +174,7 @@ pub struct OGHCollectorConfig {
     git_type: GitType,
     version_odoo: u8,
     read_paths: Vec<String>,
+    workspaces: Option<Vec<String>>,
 }
 
 impl OGHCollectorConfig {
@@ -163,6 +218,18 @@ impl OGHCollectorConfig {
             read_paths = vec!["".to_string()];
         }
 
+        // `None`: no 4th argument, leave the repos' workspaces as they are.
+        let workspaces = args.get(4).map(|arg| match arg.as_str() {
+            ALL_WORKSPACES => Vec::new(),
+            arg => {
+                let ws: Vec<String> = arg.split(',').map(str::to_string).collect();
+                if let Some(bad) = ws.iter().find(|ws| !is_valid_workspace(ws)) {
+                    panic!("Invalid workspace '{bad}'");
+                }
+                ws
+            }
+        });
+
         OGHCollectorConfig {
             src: src.to_string(),
             token,
@@ -172,6 +239,7 @@ impl OGHCollectorConfig {
             git_type,
             version_odoo,
             read_paths,
+            workspaces,
         }
     }
 
@@ -226,6 +294,10 @@ impl OGHCollectorConfig {
     pub fn get_git_type(&self) -> &GitType {
         &self.git_type
     }
+
+    pub fn get_workspaces(&self) -> Option<&Vec<String>> {
+        self.workspaces.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -233,7 +305,14 @@ mod tests {
     #[test]
     fn shipped_collector_yaml_matches_the_old_ofelia_loop() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../collector.yaml");
-        let job = |src: &str, ver: &str| vec![src.to_string(), ver.to_string(), "GH".to_string()];
+        let job = |src: &str, ver: &str| {
+            vec![
+                src.to_string(),
+                ver.to_string(),
+                "GH".to_string(),
+                "all".to_string(),
+            ]
+        };
         let new_versions = [
             "10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0",
         ];
@@ -248,5 +327,32 @@ mod tests {
                 .map(|v| job("OCA", v)),
         );
         assert_eq!(super::load_jobs(path).unwrap(), expected);
+    }
+
+    #[test]
+    fn workspaces_are_merged_per_source() {
+        let dir = std::env::temp_dir().join(format!("ogh-ws-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("collector.yaml");
+        let load = |yaml: &str| {
+            std::fs::write(&path, yaml).unwrap();
+            super::load_jobs(path.to_str().unwrap())
+        };
+        let ws_of =
+            |jobs: Vec<Vec<String>>| jobs.into_iter().map(|j| j[3].clone()).collect::<Vec<_>>();
+        let jobs = load(
+            "sources:\n\
+             - {source: A, versions: [18.0], workspaces: [y, x]}\n\
+             - {source: A, versions: [17.0], workspaces: [z]}\n\
+             - {source: B, versions: [18.0], workspaces: [x]}\n\
+             - {source: B, versions: [17.0]}\n",
+        );
+        assert_eq!(ws_of(jobs.unwrap()), ["x,y,z", "x,y,z", "all", "all"]);
+        for bad in ["all", "a b", "a'b", "''"] {
+            let yaml =
+                format!("sources:\n- {{source: A, versions: [18.0], workspaces: [{bad}]}}\n");
+            assert!(load(&yaml).is_err(), "{bad}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

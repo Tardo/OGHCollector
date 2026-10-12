@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use sqlitedb::{models, Pool};
 
+use crate::workspace::AreaPool;
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OdooVersionInfo {
     pub key: i32,
@@ -128,7 +130,7 @@ fn get_odoo_committer_list(conn: &mut SqliteConnection) -> Vec<CommitterListInfo
 }
 
 #[get("/common/odoo/versions")]
-pub async fn route_odoo_versions(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+pub async fn route_odoo_versions(pool: AreaPool) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_versions(&mut conn)
@@ -138,7 +140,7 @@ pub async fn route_odoo_versions(pool: web::Data<Pool>) -> Result<HttpResponse, 
 }
 
 #[get("/common/odoo/module/list")]
-pub async fn route_odoo_module_list(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+pub async fn route_odoo_module_list(pool: AreaPool) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_module_list(&mut conn)
@@ -170,7 +172,7 @@ pub async fn route_odoo_module_icon(
 }
 
 #[get("/common/odoo/module/count")]
-pub async fn route_odoo_module_count(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+pub async fn route_odoo_module_count(pool: AreaPool) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_module_count(&mut conn)
@@ -180,7 +182,7 @@ pub async fn route_odoo_module_count(pool: web::Data<Pool>) -> Result<HttpRespon
 }
 
 #[get("/common/odoo/contributor/rank")]
-pub async fn route_odoo_contributor_rank(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+pub async fn route_odoo_contributor_rank(pool: AreaPool) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_contributor_rank(&mut conn)
@@ -190,7 +192,7 @@ pub async fn route_odoo_contributor_rank(pool: web::Data<Pool>) -> Result<HttpRe
 }
 
 #[get("/common/odoo/committer/rank")]
-pub async fn route_odoo_committer_rank(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+pub async fn route_odoo_committer_rank(pool: AreaPool) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_committer_rank(&mut conn)
@@ -200,7 +202,7 @@ pub async fn route_odoo_committer_rank(pool: web::Data<Pool>) -> Result<HttpResp
 }
 
 #[get("/common/odoo/committer/list")]
-pub async fn route_odoo_committer_list(pool: web::Data<Pool>) -> Result<HttpResponse, AWError> {
+pub async fn route_odoo_committer_list(pool: AreaPool) -> Result<HttpResponse, AWError> {
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         get_odoo_committer_list(&mut conn)

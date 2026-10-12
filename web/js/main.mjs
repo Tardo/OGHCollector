@@ -55,6 +55,20 @@ function initThemeSwitch() {
   });
 }
 
+// Workspace selector: listings are filtered server-side by this cookie.
+function initWorkspaceSelect() {
+  const select = document.getElementById('workspace-select');
+  if (!select) {
+    return;
+  }
+  select.addEventListener('change', () => {
+    const value = encodeURIComponent(select.value);
+    const max_age = select.value ? 31536000 : 0;
+    document.cookie = `workspace=${value}; path=/; max-age=${max_age}; SameSite=Lax`;
+    location.reload();
+  });
+}
+
 // Desktop sidebar: expanded <-> icon rail (data-sidebar is set pre-paint in
 // base_layout.html). Below lg the sidebar is a Bootstrap offcanvas instead.
 function initSidebarToggle() {
@@ -156,6 +170,7 @@ function initSearchPalette() {
 function init() {
   initModeSwitch();
   initThemeSwitch();
+  initWorkspaceSelect();
   initSidebarToggle();
   initSearchPalette();
 }

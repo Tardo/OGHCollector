@@ -66,6 +66,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    gh_repository_workspace (gh_repository_id, workspace) {
+        gh_repository_id -> BigInt,
+        workspace -> Text,
+    }
+}
+
+diesel::table! {
     maintainer (id) {
         id -> BigInt,
         name -> Text,
@@ -314,6 +321,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(gh_repository_workspace -> gh_repository (gh_repository_id));
 diesel::joinable!(module_controller -> module_version (module_version_id));
 diesel::joinable!(module_embedding -> module (module_id));
 diesel::joinable!(module_migration_note -> module_version (module_version_id));
@@ -331,6 +339,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     dependency_type,
     gh_organization,
     gh_repository,
+    gh_repository_workspace,
     maintainer,
     module,
     module_author,

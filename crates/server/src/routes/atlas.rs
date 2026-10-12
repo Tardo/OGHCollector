@@ -11,7 +11,9 @@ use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GraphNodeInfo {
@@ -74,9 +76,9 @@ fn set_main_node_attributes(
             TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{}", odoo_version) }"#
+    convert = r#"{ format!("{_workspace}:{odoo_version}") }"#
 )]
-fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
+fn get_graph_data(conn: &mut SqliteConnection, _workspace: &str, odoo_version: &u8) -> GraphInfo {
     let mut graph_info = GraphInfo {
         attributes: HashMap::new(),
         nodes: Vec::new(),
@@ -227,13 +229,17 @@ fn get_graph_data(conn: &mut SqliteConnection, odoo_version: &u8) -> GraphInfo {
 
 #[get("/atlas/data/{odoo_version}")]
 pub async fn route_atlas_data(
-    pool: web::Data<Pool>,
+    pool: AreaPool,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AWError> {
     let odoo_version = path.into_inner();
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
-        get_graph_data(&mut conn, &odoo_version_string_to_u8(&odoo_version))
+        get_graph_data(
+            &mut conn,
+            pool.key(),
+            &odoo_version_string_to_u8(&odoo_version),
+        )
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))

@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::{models, Pool};
+use sqlitedb::models;
+
+use crate::workspace::AreaPool;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RepositoryGenericInfoResponse {
@@ -37,10 +39,7 @@ fn get_repository_generic_info(
 }
 
 #[get("/repo/{repo_name}")]
-pub async fn route(
-    pool: web::Data<Pool>,
-    path: web::Path<String>,
-) -> Result<HttpResponse, AWError> {
+pub async fn route(pool: AreaPool, path: web::Path<String>) -> Result<HttpResponse, AWError> {
     let repo_name = path.into_inner();
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();

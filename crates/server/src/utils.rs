@@ -160,6 +160,11 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
         SEO_ENABLED => SERVER_CONFIG.get_seo_enabled(),
         SEMANTIC_SEARCH_ENABLED => SERVER_CONFIG.get_semantic_search_enabled(),
         HEALTH_SCORE_ENABLED => SERVER_CONFIG.get_health_score_enabled(),
+        WORKSPACES => req
+            .app_data::<actix_web::web::Data<crate::workspace::Workspaces>>()
+            .map(|ws| ws.names())
+            .unwrap_or_default(),
+        WORKSPACE => crate::workspace::current(req),
     )
 }
 

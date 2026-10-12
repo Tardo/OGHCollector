@@ -206,7 +206,15 @@ sources:
     base_url: https://mygitlabinstance.com/api/v4/  # self-hosted GitLab (default: gitlab.com)
     template: addons
     versions: [18.0]
+    workspaces: [mygroup]           # portal workspaces it's listed in (default: all)
 ```
+
+`workspaces` adds a selector to the portal's top bar: picking one limits listings (dashboard,
+modules, search, atlas, committers, OSV) to the repositories in it plus those without
+`workspaces`. Module pages, dependency trees and Doodba tools still see everything, so a dependency
+on another workspace's module resolves and its page opens. A manual
+`oghcollector <source> <version> <git>` leaves a repository's workspaces as they are; append
+`a,b` or `all` to change them.
 
 Folders are relative to each repository root (a leading `/` is optional, `""` or `.` is the root).
 A repository whose layout changed between versions (OpenERP's `openerp/addons` vs Odoo's
