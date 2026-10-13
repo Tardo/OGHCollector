@@ -1,11 +1,9 @@
 // Copyright Alexandre D. Díaz
-use crate::gitclient::{
-    extract_migration_module_name, parse_created_at, GitClient, PullRequestInfo, RepoInfo,
-};
+use crate::gitclient::{parse_created_at, GitClient, PullRequestInfo, RepoInfo};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_BASE_URL: &str = "https://api.github.com/";
-const GITHUB_LIMIT_PER_PAGE: usize = 50;
+const GITHUB_LIMIT_PER_PAGE: usize = 100;
 const GITHUB_LIMIT_PAGES: usize = 255;
 
 #[derive(Debug)]
@@ -140,16 +138,15 @@ impl GitClient for GithubClient {
         .await
     }
 
-    async fn get_open_migration_pull_requests(
+    async fn get_open_pull_requests(
         &self,
         full_path: &str,
         branch: &str,
     ) -> Option<Vec<PullRequestInfo>> {
-        let mut page_count: usize = 1;
         let mut prs: Vec<PullRequestInfo> = Vec::new();
-        while page_count < GITHUB_LIMIT_PAGES {
+        for page in 1..=GITHUB_LIMIT_PAGES {
             let pulls = match self
-                .get_repo_pull_requests(full_path, branch, &GITHUB_LIMIT_PER_PAGE, &page_count)
+                .get_repo_pull_requests(full_path, branch, &GITHUB_LIMIT_PER_PAGE, &page)
                 .await
             {
                 Ok(res) => res,
@@ -162,32 +159,36 @@ impl GitClient for GithubClient {
                 log::error!("Unexpected GitHub response for the pull requests of '{full_path}'");
                 return None;
             };
-            if pull_items.is_empty() {
-                break;
-            }
             for pull in pull_items {
-                let head_ref = pull["head"]["ref"].as_str().unwrap_or("");
-                if let Some(module_technical_name) = extract_migration_module_name(head_ref) {
-                    let created_at = pull["created_at"].as_str().and_then(parse_created_at);
-                    let last_message_at = pull["updated_at"].as_str().and_then(parse_created_at);
-                    let head_sha = pull["head"]["sha"].as_str().unwrap_or("");
-                    let ci_status = self.get_commit_ci_status(full_path, head_sha).await;
-                    prs.push(PullRequestInfo {
-                        number: pull["number"].as_i64().unwrap_or(0),
-                        title: pull["title"].as_str().unwrap_or("").to_string(),
-                        module_technical_name,
-                        created_at,
-                        last_message_at,
-                        ci_status,
-                    });
-                }
+                prs.push(PullRequestInfo {
+                    number: pull["number"].as_i64().unwrap_or(0),
+                    title: pull["title"].as_str().unwrap_or("").to_string(),
+                    head_ref: pull["head"]["ref"].as_str().unwrap_or("").to_string(),
+                    head_sha: pull["head"]["sha"].as_str().unwrap_or("").to_string(),
+                    author: pull["user"]["login"].as_str().map(str::to_string),
+                    is_draft: pull["draft"].as_bool().unwrap_or(false),
+                    labels: pull["labels"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|l| l["name"].as_str().map(str::to_string))
+                        .collect(),
+                    created_at: pull["created_at"].as_str().and_then(parse_created_at),
+                    last_message_at: pull["updated_at"].as_str().and_then(parse_created_at),
+                    ci_status: None,
+                });
             }
             if pull_items.len() < GITHUB_LIMIT_PER_PAGE {
-                break;
+                return Some(prs);
             }
-            page_count += 1;
         }
-        Some(prs)
+        // A partial list would close every PR past the cap.
+        log::error!("'{full_path}' has more open pull requests than the page cap");
+        None
+    }
+
+    async fn get_ci_status(&self, full_path: &str, sha: &str) -> Option<String> {
+        self.get_commit_ci_status(full_path, sha).await
     }
 
     async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {

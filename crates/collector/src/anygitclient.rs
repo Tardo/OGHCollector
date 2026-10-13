@@ -78,14 +78,21 @@ impl GitClient for AnyGitClient {
         }
     }
 
-    async fn get_open_migration_pull_requests(
+    async fn get_open_pull_requests(
         &self,
         full_path: &str,
         branch: &str,
     ) -> Option<Vec<PullRequestInfo>> {
         match self {
-            AnyGitClient::Github(c) => c.get_open_migration_pull_requests(full_path, branch).await,
-            AnyGitClient::Gitlab(c) => c.get_open_migration_pull_requests(full_path, branch).await,
+            AnyGitClient::Github(c) => c.get_open_pull_requests(full_path, branch).await,
+            AnyGitClient::Gitlab(c) => c.get_open_pull_requests(full_path, branch).await,
+        }
+    }
+
+    async fn get_ci_status(&self, full_path: &str, sha: &str) -> Option<String> {
+        match self {
+            AnyGitClient::Github(c) => c.get_ci_status(full_path, sha).await,
+            AnyGitClient::Gitlab(c) => c.get_ci_status(full_path, sha).await,
         }
     }
 

@@ -36,6 +36,17 @@ struct CollectorSource {
     /// Portal workspaces its repos are shown in (default: all of them).
     #[serde(default)]
     workspaces: Vec<String>,
+    /// `migration` (default): only OCA-named port branches, no analysis.
+    /// `full`: every PR/MR, mapped to its modules and analyzed.
+    #[serde(default = "default_pull_requests")]
+    pull_requests: String,
+}
+
+/// Values of a source's `pull_requests` (the 5th job argument).
+pub const PULL_REQUEST_MODES: [&str; 2] = ["migration", "full"];
+
+fn default_pull_requests() -> String {
+    PULL_REQUEST_MODES[0].to_string()
 }
 
 /// The 4th job argument meaning "shown in every workspace" (it can't be a
@@ -56,7 +67,7 @@ fn default_git() -> String {
 }
 
 /// Expands a collector config (see the shipped `collector.yaml`) into the
-/// `<source>[:<paths>] <version> <git> <workspaces>` argument lists of the
+/// `<source>[:<paths>] <version> <git> <workspaces> <pull_requests>` argument lists of the
 /// single-run CLI, in file order. Everything is validated here, before any
 /// job runs.
 pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
@@ -115,6 +126,13 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
         if src.versions.is_empty() {
             return Err(format!("{name}: no versions"));
         }
+        if !PULL_REQUEST_MODES.contains(&src.pull_requests.as_str()) {
+            return Err(format!(
+                "{name}: unknown pull_requests '{}' ({})",
+                src.pull_requests,
+                PULL_REQUEST_MODES.join(" or ")
+            ));
+        }
         let mut paths = match &src.template {
             Some(tmpl) => templates
                 .get(tmpl)
@@ -152,10 +170,21 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
                 ver,
                 git.clone(),
                 source_workspaces[&src.source].clone(),
+                src.pull_requests.clone(),
             ]);
         }
     }
     Ok(jobs)
+}
+
+/// A nonempty Docker secret `/run/secrets/<file>`, else the env var, trimmed.
+pub fn read_secret(file: &str, env_var: &str) -> Option<String> {
+    let secret = fs::read_to_string(format!("/run/secrets/{file}")).unwrap_or_default();
+    let secret = match secret.trim() {
+        "" => env::var(env_var).unwrap_or_default().trim().to_string(),
+        secret => secret.to_string(),
+    };
+    (!secret.is_empty()).then_some(secret)
 }
 
 #[derive(Debug)]
@@ -175,6 +204,7 @@ pub struct OGHCollectorConfig {
     version_odoo: u8,
     read_paths: Vec<String>,
     workspaces: Option<Vec<String>>,
+    full_pull_requests: bool,
 }
 
 impl OGHCollectorConfig {
@@ -230,6 +260,13 @@ impl OGHCollectorConfig {
             }
         });
 
+        // No 5th argument: `migration`, the cheap one.
+        let full_pull_requests = match args.get(5).map(String::as_str) {
+            None | Some("migration") => false,
+            Some("full") => true,
+            Some(bad) => panic!("Invalid pull_requests '{bad}' (migration or full)"),
+        };
+
         OGHCollectorConfig {
             src: src.to_string(),
             token,
@@ -240,27 +277,15 @@ impl OGHCollectorConfig {
             version_odoo,
             read_paths,
             workspaces,
+            full_pull_requests,
         }
     }
 
     fn read_token(git_orig: &str) -> String {
-        let git_orig_lower = git_orig.to_lowercase();
-        let secret_path = format!("/run/secrets/{git_orig_lower}_token");
-
-        if let Ok(content) = fs::read_to_string(&secret_path) {
-            let token = content.trim().to_string();
-            if !token.is_empty() {
-                return token;
-            }
-        }
-
+        let file = format!("{}_token", git_orig.to_lowercase());
         let env_var = format!("OGHCOLLECTOR_TOKEN_{git_orig}");
-        let token = env::var(&env_var).unwrap_or_default().trim().to_string();
-
-        if token.is_empty() {
-            panic!("No API token: set {secret_path} or {env_var}");
-        }
-        token
+        read_secret(&file, &env_var)
+            .unwrap_or_else(|| panic!("No API token: set /run/secrets/{file} or {env_var}"))
     }
 
     pub fn get_source(&self) -> &String {
@@ -298,6 +323,11 @@ impl OGHCollectorConfig {
     pub fn get_workspaces(&self) -> Option<&Vec<String>> {
         self.workspaces.as_ref()
     }
+
+    /// Every PR/MR analyzed (`full`), not only migration branches tracked.
+    pub fn get_full_pull_requests(&self) -> bool {
+        self.full_pull_requests
+    }
 }
 
 #[cfg(test)]
@@ -311,6 +341,7 @@ mod tests {
                 ver.to_string(),
                 "GH".to_string(),
                 "all".to_string(),
+                "migration".to_string(),
             ]
         };
         let new_versions = [
@@ -348,6 +379,9 @@ mod tests {
              - {source: B, versions: [17.0]}\n",
         );
         assert_eq!(ws_of(jobs.unwrap()), ["x,y,z", "x,y,z", "all", "all"]);
+        let jobs = load("sources:\n- {source: A, versions: [18.0], pull_requests: full}\n");
+        assert_eq!(jobs.unwrap()[0][4], "full");
+        assert!(load("sources:\n- {source: A, versions: [18.0], pull_requests: deep}\n").is_err());
         for bad in ["all", "a b", "a'b", "''"] {
             let yaml =
                 format!("sources:\n- {{source: A, versions: [18.0], workspaces: [{bad}]}}\n");

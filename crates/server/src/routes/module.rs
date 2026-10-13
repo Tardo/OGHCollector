@@ -29,9 +29,10 @@ pub struct ModuleVersionHistoryInfo {
     pub is_latest: bool,
 }
 
-// A migration PR/MR still open for this module: the module isn't merged yet for
-// that Odoo version, but work towards it is already visible upstream.
-#[derive(Debug, Deserialize, Serialize)]
+// An open PR/MR that changes this module, in any Odoo version: a port (the
+// module isn't on that branch yet) or a change to it, with what the collector
+// found in the module at the PR head.
+#[derive(Debug, Serialize)]
 pub struct ModulePullRequestInfo {
     pub title: String,
     pub prid: i64,
@@ -39,37 +40,100 @@ pub struct ModulePullRequestInfo {
     pub repository: String,
     pub organization: String,
     pub url: String,
+    pub author: Option<String>,
     pub age_days: Option<i64>,
     pub last_message_days: Option<i64>,
     pub ci_status: Option<String>,
+    pub is_draft: bool,
+    pub labels: Vec<String>,
+    pub is_migration: bool,
+    /// The one to pick among its version's PRs (`preference_key`), when it
+    /// has several.
+    pub preferred: bool,
+    /// Module version (manifest) at the PR head.
+    pub version: Option<String>,
+    /// Grave security findings at the head / of those, not in the merged
+    /// module (or, for a port, its previous version).
+    pub grave: usize,
+    pub grave_new: usize,
+    pub minor: usize,
+    pub notes: usize,
+    /// `security`/`migration_notes` lists; `None` when the PR changes no code
+    /// of the module or it isn't analyzed yet.
+    pub analysis: Option<serde_json::Value>,
 }
 
 fn get_module_pull_requests(
     conn: &mut SqliteConnection,
     org: &str,
     module_technical_name: &str,
-    merged_versions: &HashSet<i32>,
 ) -> Vec<ModulePullRequestInfo> {
-    models::pull_request::get_by_technical_name_organization_name(conn, module_technical_name, org)
-        .into_iter()
-        .filter(|pr| !merged_versions.contains(&pr.version_odoo))
-        .map(|pr| {
-            let repo = models::gh_repository::get_by_id(conn, &pr.gh_repository_id).unwrap();
-            let org_model =
-                models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
+    let mut rows = models::pull_request::get_by_technical_name_organization_name(
+        conn,
+        module_technical_name,
+        org,
+    );
+    // Newest version first, then the PR most likely to merge.
+    rows.sort_by_key(|(pr, _)| (std::cmp::Reverse(pr.version_odoo), pr.preference_key()));
+    let mut repos: HashMap<i64, (String, String, String)> = HashMap::new();
+    let mut per_version: HashMap<i32, usize> = HashMap::new();
+    for (pr, _) in &rows {
+        *per_version.entry(pr.version_odoo).or_default() += 1;
+    }
+    let mut seen_versions = HashSet::new();
+    rows.into_iter()
+        .map(|(pr, module)| {
+            let (repository, organization, git) = repos
+                .entry(pr.gh_repository_id)
+                .or_insert_with(|| {
+                    let repo =
+                        models::gh_repository::get_by_id(conn, &pr.gh_repository_id).unwrap();
+                    let org =
+                        models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
+                    let git = oghutils::git::clone_url(repo.url.as_deref(), &org.name, &repo.name);
+                    (repo.name, org.name, git)
+                })
+                .clone();
+            let analysis: Option<serde_json::Value> = module
+                .analysis
+                .as_deref()
+                .and_then(|a| serde_json::from_str(a).ok());
+            let security = analysis
+                .as_ref()
+                .and_then(|a| a["security"].as_array().cloned())
+                .unwrap_or_default();
+            let grave: Vec<&serde_json::Value> = security
+                .iter()
+                .filter(|w| w["severity"] == "error")
+                .collect();
             ModulePullRequestInfo {
-                url: oghutils::git::pull_request_url(
-                    &oghutils::git::clone_url(repo.url.as_deref(), &org_model.name, &repo.name),
-                    pr.prid,
-                ),
+                url: oghutils::git::pull_request_url(&git, pr.prid),
                 age_days: models::pull_request::days_since(pr.created_at.as_deref()),
                 last_message_days: models::pull_request::days_since(pr.last_message_at.as_deref()),
+                // Only worth pointing out among alternatives.
+                preferred: seen_versions.insert(pr.version_odoo)
+                    && per_version[&pr.version_odoo] > 1,
+                labels: pr.label_names(),
+                version: analysis
+                    .as_ref()
+                    .and_then(|a| a["version"].as_str().map(str::to_string)),
+                grave_new: grave.iter().filter(|w| w["new"] == true).count(),
+                grave: grave.len(),
+                minor: security.len() - grave.len(),
+                notes: analysis
+                    .as_ref()
+                    .and_then(|a| a["migration_notes"].as_array().map(Vec::len))
+                    .unwrap_or_default(),
+                analysis,
+                is_migration: module.is_new,
+                is_draft: pr.is_draft,
+                author: pr.author,
                 ci_status: pr.ci_status,
                 title: pr.name,
                 prid: pr.prid,
                 odoo_version: odoo_version_u8_to_string(&(pr.version_odoo as u8)),
-                repository: repo.name,
-                organization: org_model.name,
+                repository,
+                organization,
             }
         })
         .collect()
@@ -119,43 +183,58 @@ pub async fn route(
     let org_ctx = org.clone();
     let technical_name_ctx = technical_name.clone();
     let version_module = info.version.clone();
-    let (module_infos, module_versions, pull_requests, odoo_versions) = web::block(move || {
-        let mut conn = pool.get().unwrap();
-        let modules = models::module::get_by_technical_name_organization_name(
-            &mut conn,
-            &technical_name,
-            &org,
-        );
-        let merged_versions: HashSet<i32> = modules.iter().map(|m| m.version_odoo).collect();
+    let (module_infos, module_versions, (pull_request_count, pull_requests), odoo_versions) =
+        web::block(move || {
+            let mut conn = pool.get().unwrap();
+            let modules = models::module::get_by_technical_name_organization_name(
+                &mut conn,
+                &technical_name,
+                &org,
+            );
+            let merged_versions: HashSet<i32> = modules.iter().map(|m| m.version_odoo).collect();
 
-        let mut distinct_versions: Vec<i32> = merged_versions.iter().copied().collect();
-        distinct_versions.sort_unstable();
-        let odoo_versions: Vec<String> = distinct_versions
-            .iter()
-            .rev() // newest first, matches the tab order
-            .map(|v| odoo_version_u8_to_string(&(*v as u8)))
-            .collect();
-
-        // Only the newest Odoo version is rendered eagerly here - the rest
-        // are fetched lazily by the client on first tab activation (see
-        // route_tab below), to avoid computing dependency trees, code
-        // analysis and required_by (up to 500 rows) for versions nobody
-        // may ever look at.
-        let active_modules: Vec<models::module::Model> = match distinct_versions.last() {
-            Some(&newest) => modules
+            let mut distinct_versions: Vec<i32> = merged_versions.iter().copied().collect();
+            distinct_versions.sort_unstable();
+            let odoo_versions: Vec<String> = distinct_versions
                 .iter()
-                .filter(|m| m.version_odoo == newest)
-                .cloned()
-                .collect(),
-            None => Vec::new(),
-        };
-        let (module_infos, module_versions) =
-            build_module_context(&mut conn, &active_modules, version_module.as_deref());
-        let pull_requests =
-            get_module_pull_requests(&mut conn, &org, &technical_name, &merged_versions);
-        (module_infos, module_versions, pull_requests, odoo_versions)
-    })
-    .await?;
+                .rev() // newest first, matches the tab order
+                .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+                .collect();
+
+            // Only the newest Odoo version is rendered eagerly here - the rest
+            // are fetched lazily by the client on first tab activation (see
+            // route_tab below), to avoid computing dependency trees, code
+            // analysis and required_by (up to 500 rows) for versions nobody
+            // may ever look at.
+            let active_modules: Vec<models::module::Model> = match distinct_versions.last() {
+                Some(&newest) => modules
+                    .iter()
+                    .filter(|m| m.version_odoo == newest)
+                    .cloned()
+                    .collect(),
+                None => Vec::new(),
+            };
+            let (module_infos, module_versions) =
+                build_module_context(&mut conn, &active_modules, version_module.as_deref());
+            let pull_request_count =
+                models::pull_request::count_by_technical_name_organization_name(
+                    &mut conn,
+                    &technical_name,
+                    &org,
+                );
+            // Lazy (route_pull_requests) unless it's the only tab.
+            let pull_requests = match modules.is_empty() {
+                true => get_module_pull_requests(&mut conn, &org, &technical_name),
+                false => Vec::new(),
+            };
+            (
+                module_infos,
+                module_versions,
+                (pull_request_count, pull_requests),
+                odoo_versions,
+            )
+        })
+        .await?;
 
     tmpl_env.render(
         "pages/module.html",
@@ -167,11 +246,38 @@ pub async fn route(
                 technical_name => technical_name_ctx,
                 module_infos => module_infos,
                 module_versions => module_versions,
+                pull_request_count => pull_request_count,
                 pull_requests => pull_requests,
                 odoo_versions => odoo_versions,
             )
         ),
     )
+}
+
+// The "Pull requests" tab (`partials/module_pull_requests.html`), fetched by
+// module.mjs on first activation: see `route`.
+#[get("/module/{org}/{technical_name}/pull-requests")]
+pub async fn route_pull_requests(
+    tmpl_env: MiniJinjaRenderer,
+    req: HttpRequest,
+    pool: web::Data<Pool>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse> {
+    let (org, technical_name) = path.into_inner();
+    let pull_requests = web::block(move || {
+        get_module_pull_requests(&mut pool.get().unwrap(), &org, &technical_name)
+    })
+    .await?;
+    let html = tmpl_env.render(
+        "partials/module_pull_requests.html",
+        context!(
+            ..get_minijinja_context(&req),
+            ..context!(pull_requests => pull_requests)
+        ),
+    )?;
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html.0))
 }
 
 // Renders the content of a single Odoo-version tab (`partials/module_version_content.html`)
@@ -438,6 +544,36 @@ mod template_tests {
                 "https://github.com/{org}/{repo}/blob/18.0/{path}/models/test.py#L42"
             )));
         }
+    }
+
+    #[test]
+    fn pull_requests_escape_what_prs_bring() {
+        let mut env = Environment::new();
+        env.add_template(
+            "prs.html",
+            include_str!("../../../../web/templates/partials/module_pull_requests.html"),
+        )
+        .unwrap();
+        let xss = "<script>x</script>";
+        let pr = json!({
+            "title": xss, "prid": 7, "odoo_version": "18.0", "repository": "web",
+            "organization": "OCA", "url": "https://github.com/OCA/web/pull/7",
+            "author": xss, "age_days": 1, "last_message_days": 0, "ci_status": "success",
+            "is_draft": false, "labels": [xss], "is_migration": true, "preferred": true,
+            "version": "18.0.1.0.0", "grave": 1, "grave_new": 1, "minor": 0, "notes": 0,
+            "analysis": {"security": [{"severity": "error", "new": true, "message": xss,
+                                       "file": "a.py", "line": 3}],
+                         "migration_notes": []},
+        });
+        let html = env
+            .get_template("prs.html")
+            .unwrap()
+            .render(context!(pull_requests => vec![pr]))
+            .unwrap();
+        assert!(!html.contains("<script>"));
+        assert!(html.contains("best for 18.0") && html.contains("1 of 1"));
+        assert!(html.contains("1 grave finding (1 new)"));
+        assert!(html.contains(r#"data-ci="success" data-kind="migration""#));
     }
 
     #[test]

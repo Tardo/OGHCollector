@@ -104,6 +104,31 @@ versions_tab_content?.addEventListener('click', async ev => {
   }, 1500);
 });
 
+// Pull requests tab: filters on the items' data attributes. The server
+// already orders them (newest version, then the best candidate first) and
+// renders the initial count; delegated, the pane's content loads lazily.
+const pr_pane = document.getElementById('pull-requests');
+function filterPullRequests() {
+  const filters = [...pr_pane.querySelectorAll('[data-pr-filter]')];
+  let shown = 0;
+  const items = pr_pane.querySelectorAll('.pr-item');
+  for (const item of items) {
+    const match = filters.every(
+      f => !f.value || item.dataset[f.dataset.prFilter] === f.value,
+    );
+    item.hidden = !match;
+    shown += match ? 1 : 0;
+  }
+  pr_pane.querySelector('.pr-filter-count').textContent =
+    `${shown} of ${items.length}`;
+  pr_pane.querySelector('.pr-empty').hidden = shown > 0;
+}
+pr_pane?.addEventListener('change', ev => {
+  if (ev.target.matches('[data-pr-filter]')) {
+    filterPullRequests();
+  }
+});
+
 // Odoo-version tabs beyond the active one are rendered empty by the server;
 // fetch their content on first activation so a module tracked across many
 // versions doesn't ship every version's full code analysis on initial load.
@@ -111,16 +136,16 @@ initLazyTabPanes('versions-tab');
 
 // Packs are built for one Odoo version (see favorites-store.mjs), so a new
 // one needs a version at creation time - use whichever version tab is
-// currently active on this page. Returns null on the PR tabs (id="pr-N",
-// not "version-X"), which don't correspond to a released version.
+// currently active on this page. Returns null on the pull requests tab
+// (id="pull-requests", not "version-X"), which isn't a released version.
 function getActiveOdooVersion() {
   const pane = document.querySelector('#versions-tabContent .tab-pane.active');
   return pane?.id.match(/^version-(.+)$/)?.[1] ?? null;
 }
 
 // Odoo versions this module actually has data for, read off the version
-// tabs the server already rendered (id="version-X", PR tabs use "pr-N" and
-// are excluded) - same source getActiveOdooVersion() trusts.
+// tabs the server already rendered (id="version-X"; the pull requests tab
+// is excluded) - same source getActiveOdooVersion() trusts.
 function getAvailableOdooVersions() {
   return new Set(
     [...document.querySelectorAll('#versions-tabContent .tab-pane')]

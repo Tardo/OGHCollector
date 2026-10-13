@@ -275,15 +275,17 @@ fn get_pending_modules(
     technical_names: &[String],
     version_odoo: &u8,
 ) -> Vec<MigrationPendingModuleInfo> {
-    let prs = models::pull_request::get_by_technical_names_odoo_version(
+    let mut prs = models::pull_request::get_by_technical_names_odoo_version(
         conn,
         technical_names,
         version_odoo,
     );
+    // Several open ports of one module: offer the one most likely to merge.
+    prs.sort_by_key(|(_, pr)| pr.preference_key());
     let mut seen = HashSet::new();
     prs.into_iter()
-        .filter(|pr| seen.insert(pr.module_technical_name.clone()))
-        .map(|pr| {
+        .filter(|(module, _)| seen.insert(module.clone()))
+        .map(|(module, pr)| {
             let repo = models::gh_repository::get_by_id(conn, &pr.gh_repository_id).unwrap();
             let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
             let git = oghutils::git::clone_url(repo.url.as_deref(), &org.name, &repo.name);
@@ -292,7 +294,7 @@ fn get_pending_modules(
                 merge_ref: oghutils::git::pull_request_ref(&git, pr.prid),
                 age_days: models::pull_request::days_since(pr.created_at.as_deref()),
                 ci_status: pr.ci_status,
-                technical_name: pr.module_technical_name,
+                technical_name: module,
                 repository_name: repo.name,
                 organization: org.name,
                 prid: pr.prid,
@@ -543,6 +545,7 @@ mod tests {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use sqlitedb::models::{
         dependency_module, dependency_type, gh_organization, gh_repository, module, pull_request,
+        pull_request_module,
     };
 
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
@@ -639,16 +642,33 @@ mod tests {
     ) {
         let org = gh_organization::add(conn, git_org).unwrap();
         let repo = gh_repository::add(conn, &org.id, git_repo).unwrap();
-        pull_request::add(
+        let name = format!("[{version_odoo}.0] {tech_name}: migration");
+        let (_, pr) = pull_request::add(
             conn,
-            &format!("[{version_odoo}.0] {tech_name}: migration"),
-            tech_name,
-            &prid,
-            &version_odoo,
-            &repo.id,
-            None,
-            None,
-            None,
+            &pull_request::NewPullRequest {
+                name: &name,
+                version_odoo: version_odoo as i32,
+                prid,
+                gh_repository_id: repo.id,
+                created_at: None,
+                ci_status: None,
+                last_message_at: None,
+                head_sha: None,
+                author: None,
+                is_draft: false,
+                labels: None,
+            },
+        )
+        .unwrap();
+        pull_request_module::replace_for_pull_request(
+            conn,
+            pr.id,
+            &[pull_request_module::NewPullRequestModule {
+                pull_request_id: pr.id,
+                module_technical_name: tech_name,
+                is_new: true,
+                analysis: None,
+            }],
         )
         .unwrap();
     }

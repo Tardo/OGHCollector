@@ -454,3 +454,88 @@
     &.diff-added { color: var(--bs-success); }
     &.diff-removed { color: var(--bs-danger); }
 }
+
+// Pull requests tab: one list for every version, filtered client-side.
+.pr-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+
+  .form-select {
+    width: auto;
+  }
+}
+
+.pr-filter-count {
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+}
+
+.pr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+}
+
+.pr-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid transparent;
+
+  & + & {
+    border-top: 1px solid var(--bs-border-color);
+  }
+
+  &.pr-preferred {
+    border-left-color: var(--bs-success);
+  }
+}
+
+.pr-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.pr-item-title {
+  overflow-wrap: anywhere;
+}
+
+.pr-item-meta {
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+
+  .badge {
+    margin-left: 0.25rem;
+    font-weight: normal;
+  }
+}
+
+.pr-item-analysis {
+  font-size: 0.875rem;
+
+  > summary {
+    cursor: pointer;
+  }
+
+  .section-heading {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+  }
+}
+
+.pr-findings {
+  margin-bottom: 0;
+  padding-left: 1.25rem;
+
+  code {
+    overflow-wrap: anywhere;
+  }
+}

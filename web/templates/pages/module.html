@@ -16,7 +16,7 @@
 
 
 
-{% if not modules and not pull_requests %}
+{% if not modules and not pull_request_count %}
 <header class="page-header">
     <h1>{{ technical_name }}</h1>
     <p class="page-header-desc">No data found for this module.</p>
@@ -54,11 +54,11 @@
         <button class="nav-link {{ loop.first and 'active' or '' }}" id="version-{{ v }}-tab" data-bs-toggle="pill" data-bs-target="#version-{{ v }}" type="button" role="tab" aria-controls="version-{{ v }}">{{ v }}</button>
     </li>
     {% endfor %}
-    {% for pr in pull_requests %}
+    {% if pull_request_count %}
     <li class="nav-item" role="presentation">
-        <button class="nav-link {{ (not modules and loop.first) and 'active' or '' }}" id="pr-{{ loop.index }}-tab" data-bs-toggle="pill" data-bs-target="#pr-{{ loop.index }}" type="button" role="tab" aria-controls="pr-{{ loop.index }}">{{ pr.odoo_version }} <span class="badge text-bg-warning">PR</span></button>
+        <button class="nav-link {{ not modules and 'active' or '' }}" id="pull-requests-tab" data-bs-toggle="pill" data-bs-target="#pull-requests" type="button" role="tab" aria-controls="pull-requests">Pull requests <span class="badge text-bg-warning" title="Open pull requests changing this module">{{ pull_request_count }}</span></button>
     </li>
-    {% endfor %}
+    {% endif %}
 </ul>
 <div class="tab-content" id="versions-tabContent">
     {% for v in odoo_versions %}
@@ -77,29 +77,13 @@
     </div>
     {% endif %}
     {% endfor %}
-    {% for pr in pull_requests %}
-    <div class="tab-pane fade {{ (not modules and loop.first) and 'show active' or '' }}" id="pr-{{ loop.index }}" role="tabpanel" aria-labelledby="pr-{{ loop.index }}-tab" tabindex="0">
-        <dl class="row spec-sheet">
-            <dt class="col-lg-3">Status</dt>
-            <dd class="col-lg-9"><span class="badge text-bg-warning">Open migration PR</span> &mdash; not merged yet for this version</dd>
-            <dt class="col-lg-3">CI status</dt>
-            <dd class="col-lg-9">
-                {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green &mdash; ready to merge</span>
-                {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">checks running</span>
-                {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">checks failing</span>
-                {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
-            </dd>
-            <dt class="col-lg-3">Open since</dt>
-            <dd class="col-lg-9">{% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</dd>
-            <dt class="col-lg-3">Last activity</dt>
-            <dd class="col-lg-9">{% if pr.last_message_days is not none %}{{ pr.last_message_days }} day{{ pr.last_message_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}</dd>
-            <dt class="col-lg-3">Repository</dt>
-            <dd class="col-lg-9">{{ pr.organization }}/{{ pr.repository }}</dd>
-            <dt class="col-lg-3">Pull request</dt>
-            <dd class="col-lg-9"><a href="{{ pr.url }}">{{ pr.title }} (#{{ pr.prid }})</a></dd>
-        </dl>
+    {% if pull_request_count %}
+    {# Fetched with the tab (module.mjs, lazy-tab) unless it's the only tab:
+       a core module can have hundreds of open PRs. #}
+    <div class="tab-pane fade {{ not modules and 'show active' or '' }}" id="pull-requests" role="tabpanel" aria-labelledby="pull-requests-tab" tabindex="0"{% if modules %} data-lazy-tab-url="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/pull-requests"{% endif %}>
+        {% if modules %}<p class="text-body-secondary">Loading&hellip;</p>{% else %}{% include "partials/module_pull_requests.html" %}{% endif %}
     </div>
-    {% endfor %}
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

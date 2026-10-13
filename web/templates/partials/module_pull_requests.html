@@ -1,0 +1,75 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{# The module page's "Pull requests" tab (pages/module.html); filtered by module.mjs. #}
+<div class="pr-filters">
+    <select class="form-select form-select-sm" data-pr-filter="version" aria-label="Odoo version">
+        <option value="">All versions</option>
+        {% for pr in pull_requests %}{% if loop.first or loop.previtem.odoo_version != pr.odoo_version %}
+        <option value="{{ pr.odoo_version }}">{{ pr.odoo_version }}</option>
+        {% endif %}{% endfor %}
+    </select>
+    <select class="form-select form-select-sm" data-pr-filter="ci" aria-label="CI status">
+        <option value="">Any checks</option>
+        <option value="success">Green</option>
+        <option value="pending">Running</option>
+        <option value="failure">Failing</option>
+        <option value="none">No CI data</option>
+    </select>
+    <select class="form-select form-select-sm" data-pr-filter="kind" aria-label="Kind">
+        <option value="">Ports and changes</option>
+        <option value="migration">Ports (not merged in that version)</option>
+        <option value="change">Changes</option>
+    </select>
+    <span class="pr-filter-count" aria-live="polite">{{ pull_requests | length }} of {{ pull_requests | length }}</span>
+</div>
+<ul class="pr-list">
+    {% for pr in pull_requests %}
+    <li class="pr-item{{ pr.preferred and ' pr-preferred' or '' }}" data-version="{{ pr.odoo_version }}" data-ci="{{ pr.ci_status or 'none' }}" data-kind="{{ pr.is_migration and 'migration' or 'change' }}">
+        <div class="pr-item-head">
+            <span class="badge text-bg-light border">{{ pr.odoo_version }}</span>
+            {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
+            {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">checks running</span>
+            {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">checks failing</span>
+            {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+            {% if pr.is_migration %}<span class="badge text-bg-info" title="The module isn't merged in {{ pr.odoo_version }} yet">port</span>{% endif %}
+            {% if pr.is_draft %}<span class="badge text-bg-secondary">draft</span>{% endif %}
+            {% if pr.preferred %}<span class="badge text-bg-primary" title="Best candidate for {{ pr.odoo_version }}: green checks, approval, not a draft, recent activity">best for {{ pr.odoo_version }}</span>{% endif %}
+            <a class="pr-item-title" href="{{ pr.url }}">{{ pr.title }} (#{{ pr.prid }})</a>
+        </div>
+        <div class="pr-item-meta">
+            {{ pr.organization }}/{{ pr.repository }}{% if pr.author %} &middot; by {{ pr.author }}{% endif %}
+            &middot; opened {% if pr.age_days is not none %}{{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}
+            &middot; last activity {% if pr.last_message_days is not none %}{{ pr.last_message_days }} day{{ pr.last_message_days != 1 and 's' or '' }} ago{% else %}<span class="text-body-secondary">unknown</span>{% endif %}
+            {% for label in pr.labels %}<span class="badge rounded-pill text-bg-light border">{{ label }}</span>{% endfor %}
+        </div>
+        {% if pr.analysis %}
+        <details class="pr-item-analysis">
+            <summary>
+                {% if pr.version %}<code>{{ pr.version }}</code> &middot; {% endif %}
+                {% if pr.grave %}<span class="text-danger">{{ pr.grave }} grave finding{{ pr.grave != 1 and 's' or '' }}{% if pr.grave_new %} ({{ pr.grave_new }} new){% endif %}</span>{% else %}no grave findings{% endif %}
+                &middot; {{ pr.minor }} notice{{ pr.minor != 1 and 's' or '' }}
+                &middot; {{ pr.notes }} migration note{{ pr.notes != 1 and 's' or '' }}
+            </summary>
+            {% if pr.analysis.security %}
+            <h3 class="section-heading">Security <a href="/about#security" class="small">(how)</a></h3>
+            <ul class="pr-findings">
+                {% for w in pr.analysis.security %}
+                <li><span class="badge {{ w.severity == 'error' and 'text-bg-danger' or 'text-bg-warning' }}">{{ w.severity == 'error' and 'grave' or 'notice' }}</span>{% if w.new %} <span class="badge text-bg-light border" title="Not in the merged module (for a port: its previous version)">new</span>{% endif %} {{ w.message }}{% if w.file %} <code>{{ w.file }}{% if w.line %}:{{ w.line }}{% endif %}</code>{% endif %}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if pr.analysis.migration_notes %}
+            <h3 class="section-heading">Migration notes</h3>
+            <ul class="pr-findings">
+                {% for n in pr.analysis.migration_notes %}
+                <li>{{ n.message }}{% if n.file %} <code>{{ n.file }}{% if n.line %}:{{ n.line }}{% endif %}</code>{% endif %}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </details>
+        {% else %}
+        <div class="pr-item-meta text-body-secondary">Not analyzed: no code of this module changed, it's not its turn yet, or its source only tracks ports.</div>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+<p class="pr-empty text-body-secondary" hidden>No pull requests match these filters.</p>

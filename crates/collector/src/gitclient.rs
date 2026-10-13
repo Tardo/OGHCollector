@@ -1,6 +1,5 @@
 // Copyright Alexandre D. Díaz
 use duct::cmd;
-use regex::Regex;
 use reqwest::StatusCode;
 use std::fs;
 use std::path::Path;
@@ -37,7 +36,13 @@ impl RepoInfo {
 pub struct PullRequestInfo {
     pub number: i64,
     pub title: String,
-    pub module_technical_name: String,
+    /// Source branch (OCA migration convention, see
+    /// `pull_requests::extract_migration_module_name`).
+    pub head_ref: String,
+    pub head_sha: String,
+    pub author: Option<String>,
+    pub is_draft: bool,
+    pub labels: Vec<String>,
     /// PR/MR creation date, in sqlite text format (`%Y-%m-%d %H:%M:%S`),
     /// `None` if the provider's `created_at` was missing/unparseable.
     pub created_at: Option<String>,
@@ -48,8 +53,8 @@ pub struct PullRequestInfo {
     /// this is used as the closest available proxy for "last message".
     pub last_message_at: Option<String>,
     /// Normalized CI signal: `Some("success")`, `Some("pending")`,
-    /// `Some("failure")`, or `None` when no CI is configured for the head
-    /// commit / the provider reported nothing usable.
+    /// `Some("failure")`, or `None` when the listing doesn't carry it
+    /// (GitHub: see `GitClient::get_ci_status`) or nothing usable came back.
     pub ci_status: Option<String>,
 }
 
@@ -61,38 +66,12 @@ pub fn parse_created_at(raw: &str) -> Option<String> {
         .map(|dt| sqlitedb::utils::date::to_sqlite_datetime(dt.with_timezone(&chrono::Utc)))
 }
 
-/// OCA migration convention: head branch `{version}-mig-{module_technical_name}`,
-/// optionally followed by a `-{discard}` suffix (e.g. `16.0-mig-sale_commission-wip`).
-/// Returns the module technical name if it matches.
-///
-/// Odoo technical names never contain `-`, only `_`. So if the captured tail
-/// already has an `_` in it, it's a real name with one discard segment tacked
-/// on the end - drop everything after the last `-`. If it has no `_` at all,
-/// the whole thing was typed with `-` instead of `_` and there's no way to
-/// tell a discard suffix apart from the name - just normalize every `-` to `_`.
-/// ponytail: ambiguous when both a hyphenated name AND a discard suffix are
-/// present (e.g. `sale-order-line-wip`) - the discard ends up folded into the
-/// name. Add a real module-name lookup if this proves common in practice.
-pub fn extract_migration_module_name(head_ref: &str) -> Option<String> {
-    let re = Regex::new(r"^[0-9]+\.[0-9]+-mig-(.+)$").unwrap();
-    re.captures(head_ref).and_then(|caps| caps.get(1)).map(|m| {
-        let raw = m.as_str();
-        if raw.contains('_') {
-            raw.rsplit_once('-')
-                .map_or(raw, |(name, _discard)| name)
-                .to_string()
-        } else {
-            raw.replace('-', "_")
-        }
-    })
-}
-
 /// Runs git in `dir`, returning trimmed stdout, or stdout+stderr as the error.
 /// `safe.directory=*` avoids "dubious ownership" aborts on volumes owned by
 /// another uid; `GIT_TERMINAL_PROMPT=0` makes auth failures fail instead of hang,
 /// and the low-speed limit a stalled clone/fetch (git has no timeout of its
 /// own); 5 minutes, so a slow but moving `odoo/odoo` clone isn't cut.
-fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, String> {
+pub(crate) fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, String> {
     git_run_env(dir, args, &[])
 }
 
@@ -167,8 +146,8 @@ fn git_auth_env(repo_url: &str, user: &str, token: &str) -> Vec<(String, String)
 const GIT_TOKEN_ENV: &str = "OGHCOLLECTOR_GIT_TOKEN";
 
 /// The collector's HTTP client. reqwest never times out by default: one
-/// stalled connection would hang the job, and with it the scheduled batch
-/// (and every later one, skipped by Ofelia's `no-overlap`). A timeout is a
+/// stalled connection would hang the job, and with it every later one (the
+/// `--listen` daemon runs them one at a time). A timeout is a
 /// network error, retried by `request_json`.
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -409,13 +388,40 @@ pub trait GitClient {
         page: &usize,
     ) -> Result<serde_json::Value, reqwest::Error>;
 
-    /// `None` when (part of) the listing failed: unknown, not "none open", so
-    /// the caller must not close the PRs it has stored.
-    async fn get_open_migration_pull_requests(
+    /// Every open PR/MR against `branch`. `None` when (part of) the listing
+    /// failed or hit the page cap: unknown, not "none open", so the caller
+    /// must not close the PRs it has stored.
+    async fn get_open_pull_requests(
         &self,
         full_path: &str,
         branch: &str,
     ) -> Option<Vec<PullRequestInfo>>;
+
+    /// CI of a commit, for providers whose PR listing doesn't carry it
+    /// (requests per call, so only asked for heads that changed or were
+    /// still pending).
+    async fn get_ci_status(&self, _full_path: &str, _sha: &str) -> Option<String> {
+        None
+    }
+
+    /// Fetches a PR/MR head into the clone: objects only, no ref is kept (the
+    /// caller knows the head sha from the listing), so the shared checkout and
+    /// its branches are never touched.
+    fn fetch_pull_request(
+        &self,
+        clone_path: &str,
+        repo_url: &str,
+        number: i64,
+    ) -> Result<(), String> {
+        let (git_user, git_token) = self.git_credentials();
+        let refspec = oghutils::git::pull_request_ref(repo_url, number);
+        git_run_env(
+            clone_path,
+            &["fetch", "--no-tags", "origin", &refspec],
+            &git_auth_env(repo_url, git_user, git_token),
+        )
+        .map(|_| ())
+    }
 
     /// Whether a PR/MR that's no longer open was actually merged - one extra
     /// GET per newly-closed PR, called right before `delete_outdated` so the
@@ -427,7 +433,7 @@ pub trait GitClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_migration_module_name, git_auth_env};
+    use super::git_auth_env;
 
     #[test]
     fn test_git_auth_env_scopes_the_helper_to_the_repo_host() {
@@ -451,49 +457,5 @@ mod tests {
         assert!(get("GIT_CONFIG_VALUE_1").is_some_and(|h| !h.contains("tok")));
         assert_eq!(get("OGHCOLLECTOR_GIT_TOKEN"), Some("tok"));
         assert!(git_auth_env("https://github.com/OCA/web.git", "x", "").is_empty());
-    }
-
-    #[test]
-    fn test_extract_migration_module_name_matches_oca_convention() {
-        assert_eq!(
-            extract_migration_module_name("16.0-mig-sale_commission"),
-            Some("sale_commission".to_string())
-        );
-        assert_eq!(
-            extract_migration_module_name("17.0-mig-account_analytic_tag_taxonomies"),
-            Some("account_analytic_tag_taxonomies".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_migration_module_name_rejects_non_migration_branches() {
-        assert_eq!(extract_migration_module_name("16.0-fix-foo"), None);
-        assert_eq!(extract_migration_module_name("master"), None);
-        assert_eq!(extract_migration_module_name("16.0-mig-"), None);
-        assert_eq!(extract_migration_module_name("mig-sale_commission"), None);
-    }
-
-    #[test]
-    fn test_extract_migration_module_name_drops_discard_suffix() {
-        assert_eq!(
-            extract_migration_module_name("16.0-mig-nombre_modulo_algo-BAD"),
-            Some("nombre_modulo_algo".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_migration_module_name_normalizes_hyphenated_name() {
-        assert_eq!(
-            extract_migration_module_name("16.0-mig-nombre-modulo-algo"),
-            Some("nombre_modulo_algo".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_migration_module_name_ambiguous_hyphenated_with_discard() {
-        assert_eq!(
-            extract_migration_module_name("16.0-mig-nombre-modulo-algo-BAD"),
-            Some("nombre_modulo_algo_BAD".to_string())
-        );
     }
 }

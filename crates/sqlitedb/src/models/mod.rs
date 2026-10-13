@@ -28,6 +28,7 @@ pub mod module_version;
 pub mod module_view;
 pub mod pull_request;
 pub mod pull_request_history;
+pub mod pull_request_module;
 pub mod system_event;
 pub mod system_event_type;
 
@@ -703,69 +704,103 @@ mod tests {
         assert!(super::module::get_by_id(&mut conn, &m3.id).is_none());
     }
 
+    fn new_pr<'a>(
+        name: &'a str,
+        prid: i64,
+        repo_id: i64,
+        created_at: Option<&'a str>,
+        ci_status: Option<&'a str>,
+    ) -> super::pull_request::NewPullRequest<'a> {
+        super::pull_request::NewPullRequest {
+            name,
+            version_odoo: 16,
+            prid,
+            gh_repository_id: repo_id,
+            created_at,
+            ci_status,
+            last_message_at: None,
+            head_sha: None,
+            author: None,
+            is_draft: false,
+            labels: None,
+        }
+    }
+
+    /// A PR porting `module` (new to the version), like the collector stores it.
+    fn add_migration_pr(
+        conn: &mut SqliteConnection,
+        pr: &super::pull_request::NewPullRequest,
+        module: &str,
+    ) -> super::pull_request::Model {
+        let (_, pr) = super::pull_request::add(conn, pr).unwrap();
+        super::pull_request_module::replace_for_pull_request(
+            conn,
+            pr.id,
+            &[super::pull_request_module::NewPullRequestModule {
+                pull_request_id: pr.id,
+                module_technical_name: module,
+                is_new: true,
+                analysis: None,
+            }],
+        )
+        .unwrap();
+        pr
+    }
+
     #[test]
     fn test_pull_request_add_and_upsert() {
         let mut conn = setup_db();
         let org = super::gh_organization::add(&mut conn, "PrOrg").unwrap();
         let repo = super::gh_repository::add(&mut conn, &org.id, "pr-repo").unwrap();
 
-        let pr1 = super::pull_request::add(
-            &mut conn,
+        let pr = new_pr(
             "[16.0][MIG] sale_commission",
-            "sale_commission",
-            &42,
-            &16u8,
-            &repo.id,
-            Some("2024-01-01 00:00:00"),
+            42,
+            repo.id,
+            None,
             Some("pending"),
-            Some("2024-01-02 00:00:00"),
-        )
-        .unwrap();
+        );
+        let (before, pr1) = super::pull_request::add(&mut conn, &pr).unwrap();
+        assert!(before.is_none());
         assert_eq!(pr1.prid, 42);
-        assert_eq!(pr1.module_technical_name, "sale_commission");
         assert_eq!(pr1.ci_status.as_deref(), Some("pending"));
 
         // Same (repo, prid) must update in place, not duplicate - and refresh
         // ci_status, which changes across collector runs as checks complete.
-        let pr1_updated = super::pull_request::add(
-            &mut conn,
-            "[16.0][MIG] sale_commission (renamed)",
-            "sale_commission",
-            &42,
-            &16u8,
-            &repo.id,
-            Some("2024-01-01 00:00:00"),
-            Some("success"),
-            Some("2024-01-03 00:00:00"),
-        )
-        .unwrap();
+        let pr = new_pr("[16.0][MIG] renamed", 42, repo.id, None, Some("success"));
+        let (before, pr1_updated) = super::pull_request::add(&mut conn, &pr).unwrap();
+        assert_eq!(before.unwrap().ci_status.as_deref(), Some("pending"));
         assert_eq!(pr1_updated.id, pr1.id);
-        assert_eq!(pr1_updated.name, "[16.0][MIG] sale_commission (renamed)");
+        assert_eq!(pr1_updated.name, "[16.0][MIG] renamed");
         assert_eq!(pr1_updated.ci_status.as_deref(), Some("success"));
+        // A value the provider stopped reporting is cleared, not kept.
+        let pr = new_pr("[16.0][MIG] renamed", 42, repo.id, None, None);
+        let (_, pr1_no_ci) = super::pull_request::add(&mut conn, &pr).unwrap();
+        assert_eq!(pr1_no_ci.ci_status, None);
 
         // A PR number in a different repo must not collide with repo A's #42.
         let other_repo = super::gh_repository::add(&mut conn, &org.id, "other-repo").unwrap();
-        let pr_other_repo = super::pull_request::add(
+        let pr_other_repo = add_migration_pr(
             &mut conn,
-            "[16.0][MIG] other_module",
-            "other_module",
-            &42,
-            &16u8,
-            &other_repo.id,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+            &new_pr("other", 42, other_repo.id, None, None),
+            "x",
+        );
         assert_ne!(pr_other_repo.id, pr1.id);
 
+        // Only PRs with a row for the module are found, with that row.
+        add_migration_pr(
+            &mut conn,
+            &new_pr("mig", 42, repo.id, None, None),
+            "sale_commission",
+        );
         let found = super::pull_request::get_by_technical_name_organization_name(
             &mut conn,
             "sale_commission",
             "PrOrg",
         );
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].id, pr1.id);
+        assert_eq!(found[0].0.id, pr1.id);
+        assert!(found[0].1.is_new);
     }
 
     #[test]
@@ -773,47 +808,23 @@ mod tests {
         let mut conn = setup_db();
         let org = super::gh_organization::add(&mut conn, "PrOrg2").unwrap();
         let repo = super::gh_repository::add(&mut conn, &org.id, "pr-repo-2").unwrap();
+        let date = Some("2024-01-01 00:00:00");
 
-        let pr1 = super::pull_request::add(
-            &mut conn, "mig 1", "mod_1", &1, &16u8, &repo.id, None, None, None,
-        )
-        .unwrap();
-        let _pr2 = super::pull_request::add(
-            &mut conn, "mig 2", "mod_2", &2, &16u8, &repo.id, None, None, None,
-        )
-        .unwrap();
+        let pr1 = add_migration_pr(&mut conn, &new_pr("mig 1", 1, repo.id, None, None), "mod_1");
+        let pr2 = add_migration_pr(&mut conn, &new_pr("mig 2", 2, repo.id, None, None), "mod_2");
         // Both have a known created_at, unlike pr1/pr2 - but only #3 (merged)
         // should leave a pull_request_history trace once closed; #4 (closed
         // without merge) must not, even though it has a created_at too.
-        let _pr3 = super::pull_request::add(
-            &mut conn,
-            "mig 3",
-            "mod_3",
-            &3,
-            &16u8,
-            &repo.id,
-            Some("2024-01-01 00:00:00"),
-            None,
-            None,
-        )
-        .unwrap();
-        let _pr4 = super::pull_request::add(
-            &mut conn,
-            "mig 4",
-            "mod_4",
-            &4,
-            &16u8,
-            &repo.id,
-            Some("2024-01-01 00:00:00"),
-            None,
-            None,
-        )
-        .unwrap();
+        add_migration_pr(&mut conn, &new_pr("mig 3", 3, repo.id, date, None), "mod_3");
+        add_migration_pr(&mut conn, &new_pr("mig 4", 4, repo.id, date, None), "mod_4");
 
         // Keep only #1, #2 must be removed since it's not in the "still open" list.
         super::pull_request::delete_outdated(&mut conn, &repo.id, &16u8, &[1, 3, 4], &[]).unwrap();
         assert!(super::pull_request::get_by_id(&mut conn, &pr1.id).is_some());
-        assert!(super::pull_request::get_by_id(&mut conn, &_pr2.id).is_none());
+        assert!(super::pull_request::get_by_id(&mut conn, &pr2.id).is_none());
+        // Its module rows go with it (no FK cascade on these connections).
+        let rows = super::pull_request_module::get_by_pull_request_ids(&mut conn, &[pr2.id]);
+        assert!(rows.unwrap().is_empty());
 
         // Unlike module::delete_outdated, an empty list must clear everything left
         // (all migration PRs for this repo/version got merged or closed). #3 is

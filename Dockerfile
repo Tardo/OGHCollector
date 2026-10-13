@@ -128,5 +128,5 @@ RUN chown -R appuser:appuser /app \
 
 USER appuser
 WORKDIR /app
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8082
 CMD ["oghserver"]

@@ -39,7 +39,13 @@ services:
 
   collector:
     <<: *app
-    command: [sleep, infinity]
+    # Collects every source in collector.yaml every 6 hours, and a pushed
+    # repository as soon as its webhook arrives (see README, "Scheduling updates").
+    command: [oghcollector, --listen]
+    # PID 1 that reaps the git processes a killed job leaves behind.
+    init: true
+    # On stop it TERMs the running job and waits for it, so git drops its locks.
+    stop_grace_period: 30s
     restart: unless-stopped
     volumes:
       - app_data:/app/data
@@ -47,26 +53,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    labels:
-      ofelia.enabled: "true"
-      ofelia.job-exec.refresh.schedule: "0 0 */6 * * *"
-      ofelia.job-exec.refresh.no-overlap: "true"
-      ofelia.job-exec.refresh.user: appuser
-      # Collects every source in collector.yaml (see README, "Scheduling updates").
-      ofelia.job-exec.refresh.command: oghcollector
-
-  ofelia:
-    image: mcuadros/ofelia:0.3.22
-    command: [daemon, --docker, -f, "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}"]
-    restart: unless-stopped
-    depends_on:
-      collector:
-        condition: service_started
-        # Ofelia reads the job labels only on start: restart it whenever
-        # `up` recreates the collector, or it keeps running the old command.
-        restart: true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - 8082:8082
 
 volumes:
   app_data:

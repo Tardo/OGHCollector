@@ -222,6 +222,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::modules::route_tab)
             .service(routes::module::route)
             .service(routes::module::route_tab)
+            .service(routes::module::route_pull_requests)
             .service(routes::module::route_compare)
             .service(routes::favorites::route)
             .service(routes::committer::route)

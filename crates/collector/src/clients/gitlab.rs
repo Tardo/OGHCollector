@@ -1,8 +1,6 @@
 // Copyright Alexandre D. Díaz
 // Adapted for GitLab
-use crate::gitclient::{
-    extract_migration_module_name, parse_created_at, GitClient, PullRequestInfo, RepoInfo,
-};
+use crate::gitclient::{parse_created_at, GitClient, PullRequestInfo, RepoInfo};
 
 const GITLAB_BASE_URL: &str = "https://gitlab.com/api/v4/";
 const GITLAB_LIMIT_PER_PAGE: usize = 100; // GitLab permite hasta 100
@@ -166,16 +164,15 @@ impl GitClient for GitlabClient {
         .await
     }
 
-    async fn get_open_migration_pull_requests(
+    async fn get_open_pull_requests(
         &self,
         full_path: &str,
         branch: &str,
     ) -> Option<Vec<PullRequestInfo>> {
-        let mut page_count: usize = 1;
         let mut prs: Vec<PullRequestInfo> = Vec::new();
-        while page_count < GITLAB_LIMIT_PAGES {
+        for page in 1..=GITLAB_LIMIT_PAGES {
             let merge_requests = match self
-                .get_repo_pull_requests(full_path, branch, &GITLAB_LIMIT_PER_PAGE, &page_count)
+                .get_repo_pull_requests(full_path, branch, &GITLAB_LIMIT_PER_PAGE, &page)
                 .await
             {
                 Ok(res) => res,
@@ -188,32 +185,34 @@ impl GitClient for GitlabClient {
                 log::error!("Unexpected GitLab response for the merge requests of '{full_path}'");
                 return None;
             };
-            if mr_items.is_empty() {
-                break;
-            }
             for mr in mr_items {
-                let source_branch = mr["source_branch"].as_str().unwrap_or("");
-                if let Some(module_technical_name) = extract_migration_module_name(source_branch) {
-                    let created_at = mr["created_at"].as_str().and_then(parse_created_at);
-                    let last_message_at = mr["updated_at"].as_str().and_then(parse_created_at);
-                    let ci_status =
-                        detailed_merge_status_to_ci_status(mr["detailed_merge_status"].as_str());
-                    prs.push(PullRequestInfo {
-                        number: mr["iid"].as_i64().unwrap_or(0),
-                        title: mr["title"].as_str().unwrap_or("").to_string(),
-                        module_technical_name,
-                        created_at,
-                        last_message_at,
-                        ci_status,
-                    });
-                }
+                prs.push(PullRequestInfo {
+                    number: mr["iid"].as_i64().unwrap_or(0),
+                    title: mr["title"].as_str().unwrap_or("").to_string(),
+                    head_ref: mr["source_branch"].as_str().unwrap_or("").to_string(),
+                    head_sha: mr["sha"].as_str().unwrap_or("").to_string(),
+                    author: mr["author"]["username"].as_str().map(str::to_string),
+                    is_draft: mr["draft"].as_bool().unwrap_or(false),
+                    labels: mr["labels"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|l| l.as_str().map(str::to_string))
+                        .collect(),
+                    created_at: mr["created_at"].as_str().and_then(parse_created_at),
+                    last_message_at: mr["updated_at"].as_str().and_then(parse_created_at),
+                    ci_status: detailed_merge_status_to_ci_status(
+                        mr["detailed_merge_status"].as_str(),
+                    ),
+                });
             }
             if mr_items.len() < GITLAB_LIMIT_PER_PAGE {
-                break;
+                return Some(prs);
             }
-            page_count += 1;
         }
-        Some(prs)
+        // A partial list would close every MR past the cap.
+        log::error!("'{full_path}' has more open merge requests than the page cap");
+        None
     }
 
     async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {

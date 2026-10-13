@@ -45,3 +45,6 @@ diesel = { version = "2.3", features = ["sqlite", "r2d2"] }
 diesel_migrations = "2"
 rmcp = { version = "2.1.0", features = ["transport-streamable-http-server"] }
 axum = "0.8"
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2"

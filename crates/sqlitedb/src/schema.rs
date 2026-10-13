@@ -282,12 +282,17 @@ diesel::table! {
         id -> BigInt,
         name -> Text,
         version_odoo -> Integer,
-        module_technical_name -> Text,
         prid -> BigInt,
         gh_repository_id -> BigInt,
         created_at -> Nullable<Text>,
         ci_status -> Nullable<Text>,
         last_message_at -> Nullable<Text>,
+        head_sha -> Nullable<Text>,
+        author -> Nullable<Text>,
+        is_draft -> Bool,
+        labels -> Nullable<Text>,
+        analyzed_sha -> Nullable<Text>,
+        analysis_version -> Integer,
     }
 }
 
@@ -300,6 +305,16 @@ diesel::table! {
         prid -> BigInt,
         created_at -> Text,
         closed_at -> Text,
+    }
+}
+
+diesel::table! {
+    pull_request_module (id) {
+        id -> BigInt,
+        pull_request_id -> BigInt,
+        module_technical_name -> Text,
+        is_new -> Bool,
+        analysis -> Nullable<Text>,
     }
 }
 
@@ -329,6 +344,7 @@ diesel::joinable!(module_model -> module_version (module_version_id));
 diesel::joinable!(module_record -> module_version (module_version_id));
 diesel::joinable!(module_security_warning -> module_version (module_version_id));
 diesel::joinable!(module_view -> module_version (module_version_id));
+diesel::joinable!(pull_request_module -> pull_request (pull_request_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     author,
@@ -358,6 +374,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_view,
     pull_request,
     pull_request_history,
+    pull_request_module,
     system_event,
     system_event_type,
 );

@@ -127,7 +127,7 @@ fn badge_content(
                 org,
             )
             .iter()
-            .any(|pr| pr.version_odoo == target);
+            .any(|(pr, module)| module.is_new && pr.version_odoo == target);
             if pr_open {
                 (label, "migration PR open".to_string(), YELLOW)
             } else if modules.is_empty() {

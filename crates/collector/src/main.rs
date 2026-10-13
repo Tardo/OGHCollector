@@ -5,7 +5,9 @@ mod clients;
 mod config;
 mod embeddings;
 mod gitclient;
+mod listen;
 mod migration;
+mod pull_requests;
 mod pypi;
 mod security;
 
@@ -16,9 +18,9 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -37,13 +39,13 @@ use sqlitedb::models;
 // which is why this returns it instead of letting it die inside the function.
 //
 // `NamedLock::create()` locks a file under `$TMPDIR`/`/tmp`, which is private
-// to each container - in Docker (separate one-off invocations or Ofelia's
-// scheduled exec) a lock under `/tmp` would not serialize across containers,
+// to each container - in Docker (separate one-off invocations or a
+// `docker compose exec`) a lock under `/tmp` would not serialize across containers,
 // so this never actually serialized concurrent runs for the same org despite
 // looking like it does. Locking inside `data/` (the volume every invocation
 // shares) instead makes it a real cross-process/cross-container lock. Without
 // it, two overlapping runs for the same org (e.g. a manual run overlapping
-// with Ofelia's refresh) race on the same `data/repos/<org>/<repo>` checkout:
+// with the daemon's job) race on the same `data/repos/<org>/<repo>` checkout:
 // one run's `git reset --hard` to its branch can land mid-scan of another
 // run's analyzer, which still stamps
 // every module with its own run's requested Odoo version - so one version's
@@ -68,8 +70,8 @@ fn try_lock(config: &OGHCollectorConfig) -> named_lock::NamedLockGuard {
 /// Errors logged by this crate so far. Every failure path (source listing,
 /// API, clone/fetch, panics via the hook in `main`) already ends in a
 /// `log::error!`, so a run that logged any is a failed run: it exits non-zero
-/// instead of "All done", which is what makes it visible (Ofelia only prints a
-/// job's output when it ends) and recorded (`run_config`).
+/// instead of "All done", which is what makes it visible and recorded
+/// (`run_and_record`).
 static LOGGED_ERRORS: AtomicUsize = AtomicUsize::new(0);
 
 struct ErrorCountingLogger(env_logger::Logger);
@@ -106,6 +108,13 @@ fn init_logging() {
     }));
 }
 
+/// Pid (= process group) of the job `run_job` is running, 0 when none: what
+/// `listen` stops on SIGTERM.
+static RUNNING_JOB: AtomicI32 = AtomicI32::new(0);
+
+/// Set by `listen` when it stops: the job it interrupts isn't a failed scan.
+static STOPPING: AtomicBool = AtomicBool::new(false);
+
 /// Runs one `collector.yaml` job as a child process, passing its log (stderr)
 /// through as it comes. `Err` = why it failed: its first logged error plus
 /// how it ended.
@@ -119,6 +128,7 @@ fn run_job(exe: &Path, args: &[String], timeout: Duration) -> Result<(), String>
         .process_group(0)
         .spawn()
         .map_err(|err| format!("can't start it: {err}"))?;
+    RUNNING_JOB.store(child.id() as i32, Ordering::SeqCst);
     let stderr = child.stderr.take().expect("stderr is piped");
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
@@ -154,9 +164,10 @@ fn run_job(exe: &Path, args: &[String], timeout: Duration) -> Result<(), String>
         read = rx.recv_timeout(Duration::from_secs(30));
     }
     let (first_error, errors) = read.unwrap_or_default();
-    let status = child
-        .wait()
-        .map_err(|err| format!("can't wait for it: {err}"))?;
+    let status = child.wait();
+    RUNNING_JOB.store(0, Ordering::SeqCst);
+    let _ = fs::remove_dir_all(job_workdir(child.id()));
+    let status = status.map_err(|err| format!("can't wait for it: {err}"))?;
     if status.success() && !killed {
         return Ok(());
     }
@@ -173,11 +184,27 @@ fn run_job(exe: &Path, args: &[String], timeout: Duration) -> Result<(), String>
 }
 
 /// A job running longer is killed and recorded as failed, so a hang (none of
-/// git/HTTP used to time out) can't stall the batch and, through Ofelia's
-/// `no-overlap`, every later scheduled run. Longer than the worst rate-limit
+/// git/HTTP used to time out) can't stall the batch and, the `--listen` daemon
+/// running one job at a time, every later one. Longer than the worst rate-limit
 /// wait of a request (2 x 1h, see `gitclient::retry_delay`); a whole batch
 /// normally takes ~1.5h.
 const JOB_TIMEOUT: Duration = Duration::from_secs(4 * 3600);
+
+/// A job's own work area for PR code (`pull_requests`), never the shared
+/// clones. `run_job` removes a child's when it ends, killed ones included.
+fn job_workdir(pid: u32) -> PathBuf {
+    env::temp_dir().join(format!("oghcollector-{pid}"))
+}
+
+/// PRs analyzed per job at most (`OGHCOLLECTOR_PR_ANALYSIS_LIMIT`), so a first
+/// run over every open PR can't hold the daemon's queue for hours: the rest
+/// are analyzed by later runs, most recently active first.
+fn pr_analysis_limit() -> usize {
+    env::var("OGHCOLLECTOR_PR_ANALYSIS_LIMIT")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(100)
+}
 
 /// Set on the children of `run_config`, which runs the embeddings pass once
 /// after all of them instead of once per job.
@@ -194,6 +221,34 @@ fn open_db() -> sqlitedb::Pool {
     let pool = sqlitedb::new_write_pool(db_path);
     sqlitedb::run_migrations(&mut pool.get().unwrap()).expect("Can't run migrations");
     pool
+}
+
+/// Runs a job (`run_job`) and records its failure in the event log. `false`
+/// when it failed.
+fn run_and_record(exe: &Path, args: &[String], pool: &sqlitedb::Pool) -> bool {
+    log::info!("Running job: {}", args.join(" "));
+    let Err(reason) = run_job(exe, args, JOB_TIMEOUT) else {
+        return true;
+    };
+    if STOPPING.load(Ordering::SeqCst) {
+        log::info!("Job interrupted: {}", args.join(" "));
+        return false;
+    }
+    log::error!("Job failed: {}: {reason}", args.join(" "));
+    let source = args[0].split(':').next().unwrap_or_default();
+    let recorded = pool
+        .get()
+        .map_err(|err| err.to_string())
+        .and_then(|mut conn| {
+            models::system_event::register_failed_task_collector(
+                &mut conn, source, &args[1], &reason,
+            )
+            .map_err(|err| err.to_string())
+        });
+    if let Err(err) = recorded {
+        log::error!("Can't record the failure in the event log: {err}");
+    }
+    false
 }
 
 /// `oghcollector [--config <file>] [--check]`: runs every job of the
@@ -216,29 +271,12 @@ fn run_config(path: &str, check: bool) {
     let pool = open_db();
     let mut failed: Vec<String> = Vec::new();
     for args in &jobs {
-        log::info!("Running job: {}", args.join(" "));
-        let Err(reason) = run_job(&exe, args, JOB_TIMEOUT) else {
-            continue;
-        };
-        log::error!("Job failed: {}: {reason}", args.join(" "));
-        failed.push(args[..2].join(" "));
-        let source = args[0].split(':').next().unwrap_or_default();
-        let recorded = pool
-            .get()
-            .map_err(|err| err.to_string())
-            .and_then(|mut conn| {
-                models::system_event::register_failed_task_collector(
-                    &mut conn, source, &args[1], &reason,
-                )
-                .map_err(|err| err.to_string())
-            });
-        if let Err(err) = recorded {
-            log::error!("Can't record the failure in the event log: {err}");
+        if !run_and_record(&exe, args, &pool) {
+            failed.push(args[..2].join(" "));
         }
     }
     embeddings::update_embeddings(&mut pool.get().unwrap());
-    // The failed jobs again in the last line: Ofelia keeps a bounded tail of
-    // a long run's output.
+    // The failed jobs again in the last line, where a long log is read.
     if !failed.is_empty() {
         log::error!(
             "{} of {} jobs failed: {}",
@@ -257,19 +295,27 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let usage = || -> ! {
         eprintln!(
-            "Usage: oghcollector [--config <file>] [--check]\n       oghcollector <source>[:<paths>] <version> [<git> [<workspaces>|all]]"
+            "Usage: oghcollector [--config <file>] [--check|--listen]\n       oghcollector --embeddings\n       oghcollector <source>[:<paths>] <version> [<git> [<workspaces>|all [migration|full]]]"
         );
         std::process::exit(2);
     };
     if args.len() == 1 || args[1].starts_with("--") {
-        let (mut path, mut check) = ("collector", false);
+        let (mut path, mut check, mut listen) = ("collector", false, false);
         let mut flags = args[1..].iter();
         while let Some(flag) = flags.next() {
             match flag.as_str() {
                 "--check" => check = true,
+                "--listen" => listen = true,
                 "--config" => path = flags.next().unwrap_or_else(|| usage()),
+                // Only the embeddings pass: what `listen` runs after its jobs.
+                "--embeddings" => {
+                    return embeddings::update_embeddings(&mut open_db().get().unwrap())
+                }
                 _ => usage(),
             }
+        }
+        if listen {
+            return listen::run(path).await;
         }
         return run_config(path, check);
     }
@@ -310,7 +356,7 @@ async fn main() {
         )
         .await;
 
-    log::info!("Scanning '{}' repos for migration PRs...", repo_infos.len());
+    let mut gh_repo_ids: Vec<i64> = Vec::with_capacity(repo_infos.len());
     for repo_info in &repo_infos {
         let gh_org = models::gh_organization::add(&mut conn, repo_info.get_org()).unwrap();
         let gh_repo =
@@ -319,49 +365,7 @@ async fn main() {
         if let Some(workspaces) = config.get_workspaces() {
             models::gh_repository_workspace::set(&mut conn, &gh_repo.id, workspaces).unwrap();
         }
-        let Some(migration_prs) = git_client
-            .get_open_migration_pull_requests(repo_info.get_full_path(), config.get_branch())
-            .await
-        else {
-            // Unknown (already logged as an error), not "all closed": keep
-            // the stored PRs instead of closing every one of them.
-            continue;
-        };
-        let mut prids: Vec<i64> = Vec::with_capacity(migration_prs.len());
-        for pr in &migration_prs {
-            prids.push(pr.number);
-            models::pull_request::add(
-                &mut conn,
-                &pr.title,
-                &pr.module_technical_name,
-                &pr.number,
-                odoo_ver,
-                &gh_repo.id,
-                pr.created_at.as_deref(),
-                pr.ci_status.as_deref(),
-                pr.last_message_at.as_deref(),
-            )
-            .unwrap();
-        }
-        let outdated =
-            models::pull_request::find_outdated(&mut conn, &gh_repo.id, odoo_ver, &prids)
-                .unwrap_or_default();
-        let mut merged_prids: Vec<i64> = Vec::with_capacity(outdated.len());
-        for pr in &outdated {
-            if let Some(true) = git_client
-                .is_pull_request_merged(repo_info.get_full_path(), &pr.prid)
-                .await
-            {
-                merged_prids.push(pr.prid);
-            }
-        }
-        let _ = models::pull_request::delete_outdated(
-            &mut conn,
-            &gh_repo.id,
-            odoo_ver,
-            &prids,
-            &merged_prids,
-        );
+        gh_repo_ids.push(gh_repo.id);
     }
 
     log::info!("Analyzing '{}' repos...", repo_infos.len());
@@ -740,6 +744,28 @@ async fn main() {
     } else {
         log::info!("Nothing to do!");
     }
+
+    log::info!("Scanning '{}' repos for pull requests...", repo_infos.len());
+    let workdir = job_workdir(std::process::id());
+    let mut budget = pull_requests::Budget {
+        analyses: pr_analysis_limit(),
+        ci_lookups: pull_requests::CI_LOOKUPS_PER_JOB,
+    };
+    for (repo_info, gh_repo_id) in repo_infos.iter().zip(gh_repo_ids) {
+        let prs = pull_requests::RepoPrs {
+            git: &git_client,
+            repo: repo_info,
+            gh_repo_id,
+            branch: config.get_branch(),
+            version_odoo: *odoo_ver,
+            read_paths: config.get_read_paths(),
+            analyzer: &analyzer,
+            workdir: &workdir,
+            full: config.get_full_pull_requests(),
+        };
+        pull_requests::collect(&prs, &mut conn, &mut budget).await;
+    }
+    let _ = fs::remove_dir_all(&workdir);
 
     // What was collected stays saved either way; a failed run is recorded by
     // `run_config` (with its first error) instead of as finished.

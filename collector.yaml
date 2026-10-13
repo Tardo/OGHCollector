@@ -1,5 +1,5 @@
-# What `oghcollector` collects when run without a source (the scheduled Ofelia
-# job does exactly that). Jobs run in the order listed, one per version, each
+# What `oghcollector` collects when run without a source (the `--listen`
+# daemon's schedule does exactly that). Jobs run in the order listed, one per version, each
 # the same as `oghcollector <source>[:<paths>] <version> <git>`.
 # `oghcollector --check` validates this file and prints those jobs.
 #
@@ -19,6 +19,10 @@
 #             them). Letters, digits, '-' and '_'. Entries with the same
 #             `source` share the union. Dependencies on modules of other
 #             workspaces are still resolved and their pages still open.
+#   pull_requests: migration (default) tracks only OCA port branches
+#             (`18.0-mig-<module>`), nothing analyzed; full tracks every open
+#             PR/MR, maps it to the modules it changes and analyzes them at
+#             its head. Meant for your own repos (pair it with webhooks).
 #
 # Unknown keys are errors. JSON or TOML with the same keys also work
 # (`--config collector.json`).
@@ -40,3 +44,4 @@ sources:
   #   base_url: https://mygitlabinstance.com/api/v4/
   #   versions: [18.0]
   #   workspaces: [mycompany]
+  #   pull_requests: full

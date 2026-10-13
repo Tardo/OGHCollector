@@ -1248,6 +1248,28 @@ def analyze_module(module_path):
     )
 "##;
 
+/// A manifest parsed with `ast.literal_eval`, like Odoo's own loader: nothing
+/// in it runs. For PR heads, which come from anyone's fork (`read_manifest`
+/// evals the merged code's manifests).
+pub(crate) fn literal_manifest(path: &std::path::Path) -> Result<serde_json::Value, String> {
+    const SRC: &std::ffi::CStr = c"import ast, json
+def load(path):
+    with open(path, encoding='utf-8', errors='replace') as fh:
+        return json.dumps(ast.literal_eval(fh.read()), default=str)
+";
+    let json: String = Python::attach(|py| -> PyResult<String> {
+        let module = PyModule::from_code(py, SRC, c"ogh_manifest.py", c"ogh_manifest")?;
+        let path = path.to_string_lossy().to_string();
+        module.getattr("load")?.call1((path,))?.extract()
+    })
+    .map_err(|err| err.to_string())?;
+    match serde_json::from_str(&json) {
+        Ok(manifest @ serde_json::Value::Object(_)) => Ok(manifest),
+        Ok(_) => Err("not a dict".to_string()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 /// Version of the analysis rules: ANALYZER_PY_SRC plus the judging in
 /// collector::security and collector::migration. Stored per module, so a
 /// module is re-analyzed when this changes even if its branch never gets
@@ -1694,7 +1716,10 @@ impl OGHCollectorAnalyzer {
     /// code) to record which views it touches and which models it defines or
     /// extends, along with their public methods and `fields.X(...)`
     /// assignments. Best-effort: any failure just yields an empty analysis.
-    fn analyze_module_source(&self, module_path: &std::path::Path) -> ModuleAnalysisInfo {
+    pub(crate) fn analyze_module_source(
+        &self,
+        module_path: &std::path::Path,
+    ) -> ModuleAnalysisInfo {
         let result = Python::attach(|py| -> PyResult<String> {
             let src = CString::new(ANALYZER_PY_SRC)
                 .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
@@ -1839,6 +1864,29 @@ impl OGHCollectorAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_literal_manifest_never_runs_code() {
+        let dir = std::env::temp_dir().join(format!("ogh-manifest-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (manifest, pwned) = (dir.join("__manifest__.py"), dir.join("pwned"));
+        let attack = format!(
+            "{{'name': __import__('os').system('touch {}')}}",
+            pwned.display()
+        );
+        fs::write(&manifest, attack).unwrap();
+        assert!(literal_manifest(&manifest).is_err());
+        assert!(!pwned.exists());
+        fs::write(
+            &manifest,
+            "# comment\n{'name': 'X', 'depends': ('base',), 'installable': True}",
+        )
+        .unwrap();
+        let parsed = literal_manifest(&manifest).unwrap();
+        assert_eq!(parsed["depends"][0], "base");
+        assert_eq!(parsed["installable"], true);
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn test_read_readme_fragment() {

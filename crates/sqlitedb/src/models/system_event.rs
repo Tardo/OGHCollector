@@ -414,12 +414,71 @@ pub fn register_closed_migration_pr(
     prid: &i64,
     repo_name: &str,
     version_odoo: &u8,
+    merged: bool,
+) -> QueryResult<Model> {
+    let version_odoo_str = odoo_version_u8_to_string(version_odoo);
+    let how = if merged { "merged" } else { "closed" };
+    let msg = format!(
+        "Migration PR #{prid} \"{pr_name}\" for '{module_technical_name}' in '{repo_name}' [{version_odoo_str}] {how}"
+    );
+    add(conn, "migration_pr", SEVERITY_INFO, &msg)
+}
+
+// `pull_request` events: changes of any tracked PR/MR (not only migrations),
+// recorded only against a previously known state so a backfill stays quiet.
+// Not in the feed's default types.
+
+pub fn register_closed_pull_request(
+    conn: &mut SqliteConnection,
+    pr_name: &str,
+    prid: &i64,
+    repo_name: &str,
+    version_odoo: &u8,
+    merged: bool,
+) -> QueryResult<Model> {
+    let version_odoo_str = odoo_version_u8_to_string(version_odoo);
+    let (how, severity) = if merged {
+        ("merged", SEVERITY_SUCCESS)
+    } else {
+        ("closed", SEVERITY_INFO)
+    };
+    let msg = format!("PR #{prid} \"{pr_name}\" in '{repo_name}' [{version_odoo_str}] {how}");
+    add(conn, "pull_request", severity, &msg)
+}
+
+/// CI of a PR/MR head reached a final state (`success`/`failure`).
+pub fn register_pull_request_ci(
+    conn: &mut SqliteConnection,
+    pr_name: &str,
+    prid: &i64,
+    repo_name: &str,
+    version_odoo: &u8,
+    ci_status: &str,
+) -> QueryResult<Model> {
+    let version_odoo_str = odoo_version_u8_to_string(version_odoo);
+    let (what, severity) = match ci_status {
+        "success" => ("checks passed", SEVERITY_SUCCESS),
+        _ => ("checks failing", SEVERITY_WARNING),
+    };
+    let msg = format!("PR #{prid} \"{pr_name}\" in '{repo_name}' [{version_odoo_str}]: {what}");
+    add(conn, "pull_request", severity, &msg)
+}
+
+/// A grave security finding the PR/MR head has and its base branch doesn't.
+pub fn register_pull_request_security(
+    conn: &mut SqliteConnection,
+    pr_name: &str,
+    prid: &i64,
+    repo_name: &str,
+    version_odoo: &u8,
+    module_technical_name: &str,
+    warning_message: &str,
 ) -> QueryResult<Model> {
     let version_odoo_str = odoo_version_u8_to_string(version_odoo);
     let msg = format!(
-        "Migration PR #{prid} \"{pr_name}\" for '{module_technical_name}' in '{repo_name}' [{version_odoo_str}] is no longer open (merged/closed)"
+        "PR #{prid} \"{pr_name}\" in '{repo_name}' [{version_odoo_str}] introduces a security issue in '{module_technical_name}': {warning_message}"
     );
-    add(conn, "migration_pr", SEVERITY_INFO, &msg)
+    add(conn, "pull_request", SEVERITY_WARNING, &msg)
 }
 
 /// Non-grave security finding from the collector's static analysis (grave

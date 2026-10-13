@@ -936,12 +936,14 @@ dependencies = [
 name = "collector"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64 0.22.1",
  "chrono",
  "config",
  "duct",
  "env_logger",
  "fs_extra",
+ "hmac",
  "libc",
  "log",
  "named-lock",
@@ -952,7 +954,9 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+ "sha2",
  "sqlitedb",
+ "subtle",
  "tokio",
  "urlencoding",
 ]

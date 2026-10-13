@@ -236,11 +236,15 @@
 </section>
 
 <section class="panel" id="pull-requests">
-    <header class="panel-header"><h2>Migration pull requests</h2></header>
+    <header class="panel-header"><h2>Pull requests</h2></header>
     <div class="panel-body">
         <ul class="mb-0">
-            <li>An open pull/merge request counts as a migration of a module when its branch follows the OCA convention <code>{version}-mig-{module}</code> (e.g. <code>18.0-mig-sale_commission</code>). It's listed on the module page while it's open and the module doesn't exist yet for that version.</li>
-            <li>The average time a migration stays open counts merged requests only. The opening date comes from GitHub/GitLab; the closing one is when the collector noticed the request was gone, so it's only as precise as the refresh interval.</li>
+            <li>Public sources (OCA, Odoo) only track requests on an OCA port branch (<code>{version}-mig-{module}</code>, e.g. <code>18.0-mig-sale_commission</code>): the module comes from the branch name and nothing is analyzed. Sources set to full analysis track every open pull/merge request against a collected version branch; the rest of this section is about those.</li>
+            <li>The modules a request changes come from its diff against that branch: a folder under one of the source's module folders that is a module (has a manifest) at the request's head. Translation- or docs-only changes list the module without analyzing it.</li>
+            <li>With full analysis, a request is a <em>port</em> (a migration) of a module when that module doesn't exist on the branch yet, whatever the branch is called.</li>
+            <li>Each changed module is analyzed at the request's head with the same rules as merged code (<a href="#security">security</a>, <a href="#migration">migration notes</a>). A finding is <em>new</em> when the merged module on that branch (for a port: its previous version) doesn't have it. Requests are re-analyzed when their head changes; a run analyzes a bounded number of them (per repository, the most recently active first), so after a repository is first collected its backlog takes a few runs.</li>
+            <li>The <em>best</em> request of a version is picked by green checks first (then running, none, failing), then an approval label ("approved", "ready to merge"), then not being a draft, then the most recent activity.</li>
+            <li>The average time a port stays open counts merged requests only. The opening date comes from GitHub/GitLab; the closing one is when the collector noticed the request was gone, so it's only as precise as the refresh interval (or the webhook).</li>
         </ul>
     </div>
 </section>

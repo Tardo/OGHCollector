@@ -26,7 +26,8 @@ The project is a Rust workspace made of three services that share a single SQLit
 | **OGHMcp** | `oghmcp` | Read-only [MCP](https://modelcontextprotocol.io/) server exposing module, repository, dependency, code-analysis, and maintenance data as tools over a Streamable HTTP endpoint (`/mcp`), so any LLM client can reach it by URL. |
 
 All three ship in the same Docker image, but run as separate Docker Compose services. A fourth,
-one-shot `migrate` service prepares their shared SQLite database. Ofelia schedules collector updates.
+one-shot `migrate` service prepares their shared SQLite database. The collector service stays up:
+it collects on a schedule and, for repositories you can add webhooks to, as soon as they're pushed.
 
 ---
 
@@ -55,11 +56,11 @@ cd OGHCollector
 # 1. Build the shared image
 docker compose build
 
-# 2. Start the dashboard (:8080), MCP (:8081), collector and Ofelia.
+# 2. Start the dashboard (:8080), MCP (:8081) and the collector (webhooks on :8082).
 #    Compose applies migrations first.
 docker compose up -d
 
-# 3. Populate the database now; otherwise Ofelia will do it on its next scheduled run
+# 3. Populate the database now; otherwise the collector does it on its next scheduled run
 docker compose exec -T collector oghcollector OCA 18.0
 ```
 
@@ -67,7 +68,8 @@ The dashboard is now available at `http://localhost:8080` and the MCP endpoint a
 
 > `server` and `mcp` open the database **read-only**. Compose completes `migrate` before starting
 > them or `collector`; they will not serve collected module data until `collector` has run at
-> least once. `server`, `mcp`, `collector` and `ofelia` restart with `unless-stopped`.
+> least once. `server`, `mcp` and `collector` restart with `unless-stopped`. Upgrading from a
+> version that used Ofelia: `docker compose up -d --remove-orphans` removes its container.
 
 ---
 
@@ -207,14 +209,10 @@ sources:
     template: addons
     versions: [18.0]
     workspaces: [mygroup]           # portal workspaces it's listed in (default: all)
+    pull_requests: full             # every PR/MR analyzed (default: migration, see below)
 ```
 
-`workspaces` adds a selector to the portal's top bar: picking one limits listings (dashboard,
-modules, search, atlas, committers, OSV) to the repositories in it plus those without
-`workspaces`. Module pages, dependency trees and Doodba tools still see everything, so a dependency
-on another workspace's module resolves and its page opens. A manual
-`oghcollector <source> <version> <git>` leaves a repository's workspaces as they are; append
-`a,b` or `all` to change them.
+`workspaces` groups repositories in the portal, see [Workspaces](#workspaces).
 
 Folders are relative to each repository root (a leading `/` is optional, `""` or `.` is the root).
 A repository whose layout changed between versions (OpenERP's `openerp/addons` vs Odoo's
@@ -243,6 +241,29 @@ error in the portal's event log (`/logs`, and its Atom feed). API rate limits ar
 apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
 IDEs), the container keeps seeing the old copy until `docker compose restart collector`. The image
 also ships the repository's copy as a fallback for plain `docker run`.
+
+### Workspaces
+
+A workspace is a named view of the portal over some sources, e.g. your company's repositories next
+to OCA and Odoo. Give a source `workspaces: [mycompany]` in `collector.yaml` (several names are
+fine; entries with the same `source` share the union). Names are letters, digits, `-` and `_`.
+
+- As soon as one repository has a workspace, the portal's top bar shows a selector (*All
+  workspaces* by default). The choice is kept in a `workspace` cookie, per browser.
+- Picking one limits the listings to that workspace's repositories **plus every repository without
+  `workspaces`** (OCA, Odoo...): dashboard, modules, search (including semantic search), atlas,
+  committers and committer pages, OSV, localization and the `/v1/search*` and `/v1/repository` API.
+- Module pages, dependency trees, license review, Doodba tools, badges, feeds, `/logs` and the
+  sitemap always see everything, so a dependency on another workspace's module still resolves and
+  its page opens. The MCP endpoint isn't filtered either.
+- The workspaces are rewritten by every collector run of the source; a new one shows up in the
+  selector after `cache_ttl`. A manual `oghcollector <source> <version> <git>` leaves them as
+  they are; append `a,b` to change them, or `all` to show it in every workspace (same as a source
+  without `workspaces`).
+
+> A workspace is a filter, not access control: anyone can pick any workspace or open any module
+> page. Keep an instance that collects private code behind authentication or a private network
+> (see [Authentication](#authentication)).
 
 ### Authentication
 
@@ -282,17 +303,82 @@ variables (used as a fallback when the corresponding secret file isn't found).
 
 ### Scheduling updates
 
-Ofelia runs the `refresh` job defined in the `collector` labels in [`docker-compose.yaml`](./docker-compose.yaml)
-at 00:00, 06:00, 12:00 and 18:00 UTC. It runs `oghcollector`, which collects every source in
-[`collector.yaml`](#collector-config). By default that's OpenERP (6.1–9.0), Odoo (10.0–20.0) and
-OCA (6.1–20.0), sequentially. Change the sources there, and change `ofelia.job-exec.refresh.schedule` to adjust
-the schedule (this Ofelia version uses a six-field cron expression, starting with seconds), then
-run `docker compose up -d`: it recreates the collector, and Ofelia (which only reads the labels
-when it starts) restarts with it. `no-overlap` skips a scheduled run if the previous batch is still
-running. See execution status with `docker compose logs ofelia`: it prints a run's output when
-the run ends (`failed: true` if any job failed), so a run still in progress shows only `Started`.
-Ofelia needs the Docker socket to execute jobs in the running collector container; the collector
-retains the same database volume, environment and Docker secrets as manual executions.
+The `collector` service runs `oghcollector --listen`, which stays up and runs collection jobs one
+at a time, each as its own child process (so a failed or hung job is recorded and skipped exactly
+as in a [`collector.yaml`](#collector-config) run):
+
+- **Schedule**: every source in `collector.yaml` at 00:00, 06:00, 12:00 and 18:00 UTC (every
+  multiple of `OGHCOLLECTOR_SCHEDULE_HOURS`, default `6`; `0` turns it off). By default that's
+  OpenERP (6.1–9.0), Odoo (10.0–20.0) and OCA (6.1–20.0). Nothing runs at startup, so a redeploy
+  doesn't start a batch. A job still waiting from the previous batch isn't queued twice.
+- **Webhooks**: a push to a version branch (`18.0`, ...) of a repository some source collects, a
+  pull/merge request against one, or its CI finishing, queues that repository and version alone,
+  ahead of any scheduled job still waiting, so it starts as soon as the running job ends. Several
+  deliveries for the same repository and version while it waits are one job. The embedding pass
+  runs whenever the queue empties.
+
+Each job also refreshes the open pull/merge requests of its repositories and version, as the
+source's `pull_requests` says:
+
+- `migration` (default, meant for public sources like OCA and Odoo): only requests on an OCA port
+  branch (`18.0-mig-<module>`), with their CI. Nothing is fetched nor analyzed.
+- `full` (meant for your own repositories): every request. It's mapped to the modules it changes
+  (from its diff, no extra API calls) and each module is analyzed at the request's head with the
+  same rules as merged code; its code is never checked out in the shared clone, only extracted into
+  the job's own temporary directory, and its manifest is parsed, not executed.
+
+Requests whose head didn't change aren't analyzed again, and a job analyzes at most `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` (default `100`; repository
+by repository, each one's most recently active first) and looks up at most 500 GitHub CI states (2
+requests each, a share of the token's hourly limit): on the first run the backlog is spread over the
+next ones, so the first runs after upgrading are slower and a request only shows its analysis once
+its turn comes. The module
+page lists them in its *Pull requests* tab. For `full` sources, CI turning green or red,
+merges/closes and grave findings a request introduces are logged as `pull_request` events (`/logs`, the feed with
+`type=pull_request`), only against a state seen before, so the first run over thousands of open
+requests stays quiet.
+
+`collector.yaml` is read again for every scheduled run and webhook, so editing it needs no restart.
+Follow it with `docker compose logs -f collector`; failed jobs are also in the portal's event log.
+A manual `docker compose exec -T collector oghcollector ...` still works, but it fails on the org
+lock while the daemon is collecting the same org.
+
+#### Webhooks
+
+You can only add webhooks to repositories or organizations/groups you administer, so OCA and Odoo
+stay on the schedule. Expose port `8082` (behind your HTTPS reverse proxy), set a secret per
+provider, and add a hook with the same secret and these events:
+
+- GitHub: *Pushes*, *Pull requests*, *Check suites* and *Statuses*.
+- GitLab: *Push events*, *Merge request events* and *Pipeline events*.
+
+
+| | Hook URL | Secret | Where |
+| --- | --- | --- | --- |
+| GitHub | `https://<host>/hooks/github`, content type `application/json` | `gh_webhook_secret` Docker secret or `OGHCOLLECTOR_WEBHOOK_SECRET_GH` | Repository or organization → *Settings → Webhooks* |
+| GitLab | `https://<host>/hooks/gitlab` | `gl_webhook_secret` Docker secret or `OGHCOLLECTOR_WEBHOOK_SECRET_GL` (*Secret token*) | Project or group → *Settings → Webhooks* (group hooks need Premium) |
+
+```yaml
+# docker-compose.override.yaml
+services:
+  collector:
+    secrets:
+      - gh_webhook_secret
+
+secrets:
+  gh_webhook_secret:
+    file: ./gh_webhook_secret.txt   # e.g. `openssl rand -hex 32`
+```
+
+A provider without a secret has no endpoint (and with neither, nothing listens): a valid delivery
+starts clones, so unsigned ones are never accepted. GitHub deliveries are checked against their
+`X-Hub-Signature-256` HMAC, GitLab ones against `X-Gitlab-Token`. A CI event only names a commit,
+so it's mapped through the stored head of an open request (unknown commits are ignored). Other
+events, other branches, deleted branches, unfinished CI and repositories no source collects get a
+`200` and are ignored; a queued one gets a `202` listing its jobs (visible under the hook's *Recent
+deliveries*).
+
+The queue lives in memory: deliveries still waiting when the collector restarts are dropped, and
+the next scheduled run catches up.
 
 ---
 
@@ -412,6 +498,10 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_MCP_CACHE_TTL` | mcp | Overrides `cache_ttl` from `mcp.yaml` (default `3600`) |
 | `OGHCOLLECTOR_EMBED_CACHE_DIR` | collector, server, mcp | Directory for the embedding model cache (default `data/.fastembed_cache`) |
 | `OGHCOLLECTOR_FORCE_REANALYZE` | collector | Reanalyze module sources even when their latest commit has not changed |
+| `OGHCOLLECTOR_SCHEDULE_HOURS` | collector | `--listen`: collect every source in `collector.yaml` every this many hours, at multiples of it since 00:00 UTC (default `6`, `0` = off) |
+| `OGHCOLLECTOR_WEBHOOK_SECRET_GH` / `_GL` | collector | `--listen`: GitHub/GitLab webhook secret (fallback if the `gh_webhook_secret`/`gl_webhook_secret` Docker secret isn't set); no secret = no endpoint |
+| `OGHCOLLECTOR_WEBHOOK_BIND_ADDR` | collector | `--listen`: webhook bind address (default `0.0.0.0:8082`) |
+| `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` | collector | Pull/merge requests analyzed per job at most, most recently active first (default `100`) |
 | `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass (set on the per-job children of a `collector.yaml` run, which runs it once at the end) |
 | `RUST_LOG` | all three binaries | Log level (default: `info`) |
 

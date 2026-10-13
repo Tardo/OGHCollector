@@ -75,7 +75,7 @@ diff --git a/schema.rs b/schema.rs
          update_date -> Text,
          url -> Nullable<Text>,
      }
-@@ -71,20 +71,20 @@ diesel::table! {
+@@ -71,20 +71,20 @@
          workspace -> Text,
      }
  }
@@ -98,7 +98,7 @@ diff --git a/schema.rs b/schema.rs
          version_module -> Text,
          description -> Nullable<Text>,
          website -> Nullable<Text>,
-@@ -93,13 +93,13 @@ diesel::table! {
+@@ -93,13 +93,13 @@
          auto_install -> Bool,
          application -> Bool,
          installable -> Bool,
@@ -113,7 +113,7 @@ diff --git a/schema.rs b/schema.rs
          last_commit_date -> Text,
          last_commit_partof -> Nullable<Text>,
          installation -> Nullable<Text>,
-@@ -109,43 +109,43 @@ diesel::table! {
+@@ -109,43 +109,43 @@
          analysis_version -> Integer,
      }
  }
@@ -161,7 +161,7 @@ diff --git a/schema.rs b/schema.rs
          routes -> Text,
          auth -> Nullable<Text>,
          http_type -> Text,
-@@ -158,32 +158,32 @@ diesel::table! {
+@@ -158,32 +158,32 @@
          module_version_id -> BigInt,
      }
  }
@@ -197,7 +197,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          context -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -191,13 +191,13 @@ diesel::table! {
+@@ -191,13 +191,13 @@
          line -> Nullable<Integer>,
      }
  }
@@ -212,7 +212,7 @@ diff --git a/schema.rs b/schema.rs
          inherit_from -> Nullable<Text>,
          is_new_model -> Bool,
          docstring -> Nullable<Text>,
-@@ -205,47 +205,47 @@ diesel::table! {
+@@ -205,47 +205,47 @@
          module_version_id -> BigInt,
      }
  }
@@ -264,7 +264,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          xml_id -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -253,73 +253,73 @@ diesel::table! {
+@@ -253,39 +253,39 @@
          line -> Nullable<Integer>,
      }
  }
@@ -300,13 +300,16 @@ diff --git a/schema.rs b/schema.rs
 +        id -> BigInt,
          name -> Text,
          version_odoo -> Integer,
-         module_technical_name -> Text,
 -        prid -> Integer,
 +        prid -> BigInt,
          gh_repository_id -> BigInt,
          created_at -> Nullable<Text>,
          ci_status -> Nullable<Text>,
          last_message_at -> Nullable<Text>,
+         head_sha -> Nullable<Text>,
+         author -> Nullable<Text>,
+@@ -295,46 +295,46 @@
+         analysis_version -> Integer,
      }
  }
  
@@ -321,6 +324,17 @@ diff --git a/schema.rs b/schema.rs
 +        prid -> BigInt,
          created_at -> Text,
          closed_at -> Text,
+     }
+ }
+ 
+ diesel::table! {
+     pull_request_module (id) {
+-        id -> Nullable<BigInt>,
++        id -> BigInt,
+         pull_request_id -> BigInt,
+         module_technical_name -> Text,
+         is_new -> Bool,
+         analysis -> Nullable<Text>,
      }
  }
  
