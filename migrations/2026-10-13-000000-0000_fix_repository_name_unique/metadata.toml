@@ -1,0 +1,2 @@
+# PRAGMA foreign_keys is a no-op inside a transaction (see up.sql).
+run_in_transaction = false

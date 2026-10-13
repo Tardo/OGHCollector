@@ -1,8 +1,10 @@
 // Copyright Alexandre D. Díaz
 use duct::cmd;
 use regex::Regex;
+use reqwest::StatusCode;
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct RepoInfo {
     pub name: String,
@@ -87,7 +89,9 @@ pub fn extract_migration_module_name(head_ref: &str) -> Option<String> {
 
 /// Runs git in `dir`, returning trimmed stdout, or stdout+stderr as the error.
 /// `safe.directory=*` avoids "dubious ownership" aborts on volumes owned by
-/// another uid; `GIT_TERMINAL_PROMPT=0` makes auth failures fail instead of hang.
+/// another uid; `GIT_TERMINAL_PROMPT=0` makes auth failures fail instead of hang,
+/// and the low-speed limit a stalled clone/fetch (git has no timeout of its
+/// own); 5 minutes, so a slow but moving `odoo/odoo` clone isn't cut.
 fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, String> {
     git_run_env(dir, args, &[])
 }
@@ -98,10 +102,17 @@ fn git_run_env<S: AsRef<str>>(
     args: &[S],
     env: &[(String, String)],
 ) -> Result<String, String> {
-    let args: Vec<&str> = ["-c", "safe.directory=*"]
-        .into_iter()
-        .chain(args.iter().map(|a| a.as_ref()))
-        .collect();
+    let args: Vec<&str> = [
+        "-c",
+        "safe.directory=*",
+        "-c",
+        "http.lowSpeedLimit=1000",
+        "-c",
+        "http.lowSpeedTime=300",
+    ]
+    .into_iter()
+    .chain(args.iter().map(|a| a.as_ref()))
+    .collect();
     let mut expr = cmd("git", args).dir(dir).env("GIT_TERMINAL_PROMPT", "0");
     for (key, value) in env {
         expr = expr.env(key, value);
@@ -154,6 +165,50 @@ fn git_auth_env(repo_url: &str, user: &str, token: &str) -> Vec<(String, String)
 }
 
 const GIT_TOKEN_ENV: &str = "OGHCOLLECTOR_GIT_TOKEN";
+
+/// The collector's HTTP client. reqwest never times out by default: one
+/// stalled connection would hang the job, and with it the scheduled batch
+/// (and every later one, skipped by Ofelia's `no-overlap`). A timeout is a
+/// network error, retried by `request_json`.
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(120))
+        .build()
+        .unwrap_or_else(|e| panic!("Problem creating the client: {e:?}"))
+}
+
+const API_ATTEMPTS: u32 = 3;
+
+/// How long to wait before retrying an API answer, `None` = don't. Rate
+/// limits (GitHub: 403/429 with `x-ratelimit-remaining: 0`, GitLab: 429; both
+/// may send `retry-after`) wait for their reset, capped at GitHub's 1h window.
+/// A 403 without those headers is a real "no access".
+fn retry_delay(res: &reqwest::Response) -> Option<Duration> {
+    let status = res.status();
+    if status.is_server_error() {
+        return Some(Duration::from_secs(10));
+    }
+    if status != StatusCode::TOO_MANY_REQUESTS && status != StatusCode::FORBIDDEN {
+        return None;
+    }
+    let header =
+        |name: &str| -> Option<u64> { res.headers().get(name)?.to_str().ok()?.parse().ok() };
+    let secs = if let Some(secs) = header("retry-after") {
+        secs
+    } else if let (Some(0), Some(reset)) = (
+        header("x-ratelimit-remaining").or_else(|| header("ratelimit-remaining")),
+        header("x-ratelimit-reset").or_else(|| header("ratelimit-reset")),
+    ) {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+        reset.saturating_sub(now) + 1
+    } else if status == StatusCode::TOO_MANY_REQUESTS {
+        60
+    } else {
+        return None;
+    };
+    Some(Duration::from_secs(secs.min(3600)))
+}
 
 pub trait GitClient {
     fn new(token: &str, base_url: &str) -> Self;
@@ -306,9 +361,31 @@ pub trait GitClient {
 
     async fn request(&self, url: &str) -> Result<reqwest::Response, reqwest::Error>;
 
+    /// A non-2xx answer is an `Err` (it used to parse as an "error object"
+    /// JSON that callers read as "no repos"/"no PRs", so a bad token or a
+    /// rate limit collected nothing without failing). Rate limits, server
+    /// errors and network errors are retried first (see `retry_delay`).
     async fn request_json(&self, url: &str) -> Result<serde_json::Value, reqwest::Error> {
-        let req = self.request(url).await?;
-        req.json().await
+        let mut attempt = 1;
+        loop {
+            let res = self.request(url).await;
+            let (wait, what) = match &res {
+                Ok(r) => (retry_delay(r), r.status().to_string()),
+                Err(err) if err.is_timeout() => (Some(Duration::from_secs(10)), "timed out".into()),
+                Err(err) => (Some(Duration::from_secs(10)), err.to_string()),
+            };
+            match wait {
+                Some(wait) if attempt < API_ATTEMPTS => {
+                    log::warn!(
+                        "API request '{url}' failed ({what}), retrying in {}s...",
+                        wait.as_secs()
+                    );
+                    tokio::time::sleep(wait).await;
+                    attempt += 1;
+                }
+                _ => return res?.error_for_status()?.json().await,
+            }
+        }
     }
 
     async fn get_org_repos(
@@ -332,11 +409,13 @@ pub trait GitClient {
         page: &usize,
     ) -> Result<serde_json::Value, reqwest::Error>;
 
+    /// `None` when (part of) the listing failed: unknown, not "none open", so
+    /// the caller must not close the PRs it has stored.
     async fn get_open_migration_pull_requests(
         &self,
         full_path: &str,
         branch: &str,
-    ) -> Vec<PullRequestInfo>;
+    ) -> Option<Vec<PullRequestInfo>>;
 
     /// Whether a PR/MR that's no longer open was actually merged - one extra
     /// GET per newly-closed PR, called right before `delete_outdated` so the

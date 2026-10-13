@@ -255,10 +255,10 @@ impl OGHCollectorConfig {
         }
 
         let env_var = format!("OGHCOLLECTOR_TOKEN_{git_orig}");
-        let token = env::var(env_var).unwrap_or_default().trim().to_string();
+        let token = env::var(&env_var).unwrap_or_default().trim().to_string();
 
         if token.is_empty() {
-            panic!("Need the github api token!");
+            panic!("No API token: set {secret_path} or {env_var}");
         }
         token
     }

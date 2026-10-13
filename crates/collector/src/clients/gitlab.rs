@@ -17,11 +17,7 @@ pub struct GitlabClient {
 
 impl GitClient for GitlabClient {
     fn new(token: &str, base_url: &str) -> Self {
-        let client_result = reqwest::Client::builder().build();
-        let client = match client_result {
-            Ok(cl) => cl,
-            Err(e) => panic!("Problem creating the client: {e:?}"),
-        };
+        let client = crate::gitclient::http_client();
         let base_url_san = if base_url.is_empty() {
             GITLAB_BASE_URL
         } else {
@@ -54,11 +50,6 @@ impl GitClient for GitlabClient {
             .send()
             .await?;
         Ok(res)
-    }
-
-    async fn request_json(&self, url: &str) -> Result<serde_json::Value, reqwest::Error> {
-        let req = self.request(url).await?;
-        req.json().await
     }
 
     async fn get_org_repos(
@@ -97,8 +88,8 @@ impl GitClient for GitlabClient {
                 }
             };
 
-            // Errors (unknown group, bad token, ...) come back as an object
-            // with a "message" field instead of the project array.
+            // API errors are `Err` (see `GitClient::request_json`); this is a
+            // 2xx that isn't the project array.
             let group_repos_items = match group_repos.as_array() {
                 Some(arr) => arr,
                 _ => {
@@ -140,7 +131,9 @@ impl GitClient for GitlabClient {
                         .into_iter()
                         .collect();
                 }
+                // Not a project: listed as a (sub)group below.
                 Ok(_) => {}
+                Err(err) if err.status() == Some(reqwest::StatusCode::NOT_FOUND) => {}
                 Err(err) => {
                     log::error!("Can't look up '{source}': {err}");
                     return Vec::new();
@@ -177,7 +170,7 @@ impl GitClient for GitlabClient {
         &self,
         full_path: &str,
         branch: &str,
-    ) -> Vec<PullRequestInfo> {
+    ) -> Option<Vec<PullRequestInfo>> {
         let mut page_count: usize = 1;
         let mut prs: Vec<PullRequestInfo> = Vec::new();
         while page_count < GITLAB_LIMIT_PAGES {
@@ -188,12 +181,12 @@ impl GitClient for GitlabClient {
                 Ok(res) => res,
                 Err(err) => {
                     log::error!("Can't fetch merge requests of '{full_path}': {err}");
-                    break;
+                    return None;
                 }
             };
-            let mr_items = match merge_requests.as_array() {
-                Some(arr) => arr,
-                _ => break,
+            let Some(mr_items) = merge_requests.as_array() else {
+                log::error!("Unexpected GitLab response for the merge requests of '{full_path}'");
+                return None;
             };
             if mr_items.is_empty() {
                 break;
@@ -220,7 +213,7 @@ impl GitClient for GitlabClient {
             }
             page_count += 1;
         }
-        prs
+        Some(prs)
     }
 
     async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {

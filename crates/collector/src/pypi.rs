@@ -6,11 +6,7 @@ pub struct PypiClient {
 
 impl PypiClient {
     pub fn new() -> Self {
-        let client_result = reqwest::Client::builder().build();
-        let client = match client_result {
-            Ok(cl) => cl,
-            Err(e) => panic!("Problem creating the client: {e:?}"),
-        };
+        let client = crate::gitclient::http_client();
         Self { client }
     }
 

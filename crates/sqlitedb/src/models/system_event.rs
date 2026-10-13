@@ -368,6 +368,16 @@ pub fn register_finished_task_collector(
     add(conn, "collector", SEVERITY_SUCCESS, &msg)
 }
 
+pub fn register_failed_task_collector(
+    conn: &mut SqliteConnection,
+    source: &str,
+    odoo_version: &str,
+    reason: &str,
+) -> QueryResult<Model> {
+    let msg = format!("Scan failed for '{source}' [{odoo_version}]: {reason}");
+    add(conn, "collector", SEVERITY_ERROR, &msg)
+}
+
 pub fn register_problem_module_version(
     conn: &mut SqliteConnection,
     module_technical_name: &str,

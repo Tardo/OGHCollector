@@ -14,9 +14,14 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
+use std::io::{self, BufRead, BufReader, Write};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
-use std::process::Command;
-use std::time::Instant;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use analyzer::OGHCollectorAnalyzer;
 use anygitclient::AnyGitClient;
@@ -52,13 +57,127 @@ fn try_lock(config: &OGHCollectorConfig) -> named_lock::NamedLockGuard {
     match lock.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
-            eprintln!(
+            log::error!(
                 "There is already an instance of OGHCollector working with '{org}'. Exiting..."
             );
             std::process::exit(1);
         }
     }
 }
+
+/// Errors logged by this crate so far. Every failure path (source listing,
+/// API, clone/fetch, panics via the hook in `main`) already ends in a
+/// `log::error!`, so a run that logged any is a failed run: it exits non-zero
+/// instead of "All done", which is what makes it visible (Ofelia only prints a
+/// job's output when it ends) and recorded (`run_config`).
+static LOGGED_ERRORS: AtomicUsize = AtomicUsize::new(0);
+
+struct ErrorCountingLogger(env_logger::Logger);
+
+impl log::Log for ErrorCountingLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() == log::Level::Error || self.0.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        if record.level() == log::Level::Error && record.target().starts_with("collector") {
+            LOGGED_ERRORS.fetch_add(1, Ordering::Relaxed);
+        }
+        self.0.log(record);
+    }
+
+    fn flush(&self) {
+        self.0.flush();
+    }
+}
+
+fn init_logging() {
+    let logger =
+        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).build();
+    // Errors always reach `log()` to be counted, even when RUST_LOG hides them.
+    log::set_max_level(logger.filter().max(log::LevelFilter::Error));
+    log::set_boxed_logger(Box::new(ErrorCountingLogger(logger))).expect("Logger already set");
+    std::panic::set_hook(Box::new(|info| {
+        let location = info
+            .location()
+            .map_or(String::new(), |l| format!(" at {l}"));
+        let msg = info.payload_as_str().unwrap_or("unknown panic");
+        log::error!("Crashed{location}: {msg}");
+    }));
+}
+
+/// Runs one `collector.yaml` job as a child process, passing its log (stderr)
+/// through as it comes. `Err` = why it failed: its first logged error plus
+/// how it ended.
+fn run_job(exe: &Path, args: &[String], timeout: Duration) -> Result<(), String> {
+    let mut child = Command::new(exe)
+        .args(args)
+        .env(SKIP_EMBEDDINGS_ENV, "1")
+        .stderr(Stdio::piped())
+        // Its own process group, so a timeout kills its git subprocesses too.
+        // ponytail: a terminal Ctrl+C then stops the batch but not the running job.
+        .process_group(0)
+        .spawn()
+        .map_err(|err| format!("can't start it: {err}"))?;
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let (mut first_error, mut errors) = (None, 0);
+        // Split on bytes, not `lines()`: git output isn't always UTF-8, and
+        // stopping to read would leave the child blocked on a full pipe.
+        for line in BufReader::new(stderr).split(b'\n').map_while(Result::ok) {
+            let line = String::from_utf8_lossy(&line);
+            let _ = writeln!(io::stderr(), "{line}");
+            // Same errors `LOGGED_ERRORS` counts (env_logger: "[<time> ERROR <target>] ").
+            if line.contains(" ERROR collector") {
+                errors += 1;
+                first_error.get_or_insert_with(|| {
+                    line.split_once("] ")
+                        .map_or(line.to_string(), |(_, m)| m.to_string())
+                });
+            }
+        }
+        let _ = tx.send((first_error, errors));
+    });
+    // stderr closes when the job (and every subprocess) is gone.
+    let mut read = rx.recv_timeout(timeout);
+    let mut killed = false;
+    // TERM first: git removes its lock files on it.
+    for signal in [libc::SIGTERM, libc::SIGKILL] {
+        if !matches!(read, Err(RecvTimeoutError::Timeout)) {
+            break;
+        }
+        killed = true;
+        // SAFETY: plain kill(2) on the group `process_group(0)` created; the
+        // child isn't reaped yet, so its pid (= group id) can't be reused.
+        unsafe { libc::kill(-(child.id() as i32), signal) };
+        read = rx.recv_timeout(Duration::from_secs(30));
+    }
+    let (first_error, errors) = read.unwrap_or_default();
+    let status = child
+        .wait()
+        .map_err(|err| format!("can't wait for it: {err}"))?;
+    if status.success() && !killed {
+        return Ok(());
+    }
+    let ended = match (status.code(), status.signal()) {
+        _ if killed => format!("timed out after {}s, killed", timeout.as_secs()),
+        (Some(code), _) => format!("exit code {code}"),
+        (_, Some(9)) => "killed by signal 9 (out of memory?)".to_string(),
+        (_, signal) => format!("killed by signal {}", signal.unwrap_or_default()),
+    };
+    Err(match first_error {
+        Some(err) => format!("{err} ({errors} error(s), {ended})"),
+        None => format!("{ended}, see the collector log"),
+    })
+}
+
+/// A job running longer is killed and recorded as failed, so a hang (none of
+/// git/HTTP used to time out) can't stall the batch and, through Ofelia's
+/// `no-overlap`, every later scheduled run. Longer than the worst rate-limit
+/// wait of a request (2 x 1h, see `gitclient::retry_delay`); a whole batch
+/// normally takes ~1.5h.
+const JOB_TIMEOUT: Duration = Duration::from_secs(4 * 3600);
 
 /// Set on the children of `run_config`, which runs the embeddings pass once
 /// after all of them instead of once per job.
@@ -94,22 +213,39 @@ fn run_config(path: &str, check: bool) {
         return;
     }
     let exe = env::current_exe().expect("Can't locate the collector binary");
-    let mut failed = 0;
+    let pool = open_db();
+    let mut failed: Vec<String> = Vec::new();
     for args in &jobs {
         log::info!("Running job: {}", args.join(" "));
-        let ok = Command::new(&exe)
-            .args(args)
-            .env(SKIP_EMBEDDINGS_ENV, "1")
-            .status()
-            .is_ok_and(|status| status.success());
-        if !ok {
-            log::error!("Job failed: {}", args.join(" "));
-            failed += 1;
+        let Err(reason) = run_job(&exe, args, JOB_TIMEOUT) else {
+            continue;
+        };
+        log::error!("Job failed: {}: {reason}", args.join(" "));
+        failed.push(args[..2].join(" "));
+        let source = args[0].split(':').next().unwrap_or_default();
+        let recorded = pool
+            .get()
+            .map_err(|err| err.to_string())
+            .and_then(|mut conn| {
+                models::system_event::register_failed_task_collector(
+                    &mut conn, source, &args[1], &reason,
+                )
+                .map_err(|err| err.to_string())
+            });
+        if let Err(err) = recorded {
+            log::error!("Can't record the failure in the event log: {err}");
         }
     }
-    embeddings::update_embeddings(&mut open_db().get().unwrap());
-    if failed > 0 {
-        log::error!("{failed} of {} jobs failed", jobs.len());
+    embeddings::update_embeddings(&mut pool.get().unwrap());
+    // The failed jobs again in the last line: Ofelia keeps a bounded tail of
+    // a long run's output.
+    if !failed.is_empty() {
+        log::error!(
+            "{} of {} jobs failed: {}",
+            failed.len(),
+            jobs.len(),
+            failed.join(", ")
+        );
         std::process::exit(1);
     }
     log::info!("All done. Bye!");
@@ -117,7 +253,7 @@ fn run_config(path: &str, check: bool) {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    init_logging();
     let args: Vec<String> = env::args().collect();
     let usage = || -> ! {
         eprintln!(
@@ -183,9 +319,14 @@ async fn main() {
         if let Some(workspaces) = config.get_workspaces() {
             models::gh_repository_workspace::set(&mut conn, &gh_repo.id, workspaces).unwrap();
         }
-        let migration_prs = git_client
+        let Some(migration_prs) = git_client
             .get_open_migration_pull_requests(repo_info.get_full_path(), config.get_branch())
-            .await;
+            .await
+        else {
+            // Unknown (already logged as an error), not "all closed": keep
+            // the stored PRs instead of closing every one of them.
+            continue;
+        };
         let mut prids: Vec<i64> = Vec::with_capacity(migration_prs.len());
         for pr in &migration_prs {
             prids.push(pr.number);
@@ -596,20 +737,47 @@ async fn main() {
                     .unwrap();
             }
         }
+    } else {
+        log::info!("Nothing to do!");
+    }
+
+    // What was collected stays saved either way; a failed run is recorded by
+    // `run_config` (with its first error) instead of as finished.
+    let errors = LOGGED_ERRORS.load(Ordering::Relaxed);
+    if errors == 0 {
         let _ = models::system_event::register_finished_task_collector(
             &mut conn,
             &start_time.elapsed().as_secs().to_string(),
             &manifest_count.to_string(),
-            repo_infos[0].get_org(),
-            odoo_version_u8_to_string(config.get_version_odoo()).as_str(),
+            config.get_source(),
+            &odoo_ver_str,
         );
-    } else {
-        log::info!("Nothing to do!");
     }
 
     if env::var_os(SKIP_EMBEDDINGS_ENV).is_none() {
         embeddings::update_embeddings(&mut conn);
     }
 
+    if errors > 0 {
+        // warn: `run_job` counts the error lines, this one only sums them up.
+        log::warn!("Finished with {errors} error(s), see above");
+        std::process::exit(1);
+    }
     log::info!("All done. Bye!");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_job_kills_a_hung_job_and_its_subprocesses() {
+        let started = Instant::now();
+        // The background sleep holds stderr open too: only killing the whole
+        // group ends the job before the 30s grace periods.
+        let args = ["-c".to_string(), "sleep 60 & sleep 60".to_string()];
+        let err = run_job(Path::new("sh"), &args, Duration::from_secs(1)).unwrap_err();
+        assert!(err.starts_with("timed out after 1s"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
 }

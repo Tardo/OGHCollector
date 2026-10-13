@@ -82,7 +82,7 @@ impl GitClient for AnyGitClient {
         &self,
         full_path: &str,
         branch: &str,
-    ) -> Vec<PullRequestInfo> {
+    ) -> Option<Vec<PullRequestInfo>> {
         match self {
             AnyGitClient::Github(c) => c.get_open_migration_pull_requests(full_path, branch).await,
             AnyGitClient::Gitlab(c) => c.get_open_migration_pull_requests(full_path, branch).await,

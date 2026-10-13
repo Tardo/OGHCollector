@@ -62,6 +62,9 @@ services:
     depends_on:
       collector:
         condition: service_started
+        # Ofelia reads the job labels only on start: restart it whenever
+        # `up` recreates the collector, or it keeps running the old command.
+        restart: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 

@@ -16,11 +16,7 @@ pub struct GithubClient {
 
 impl GitClient for GithubClient {
     fn new(token: &str, _base_url: &str) -> Self {
-        let client_result = reqwest::Client::builder().build();
-        let client = match client_result {
-            Ok(cl) => cl,
-            Err(e) => panic!("Problem creating the client: {e:?}"),
-        };
+        let client = crate::gitclient::http_client();
         Self {
             token: token.into(),
             client,
@@ -48,11 +44,6 @@ impl GitClient for GithubClient {
             .send()
             .await?;
         Ok(res)
-    }
-
-    async fn request_json(&self, url: &str) -> Result<serde_json::Value, reqwest::Error> {
-        let req = self.request(url).await?;
-        req.json().await
     }
 
     async fn get_org_repos(
@@ -84,8 +75,8 @@ impl GitClient for GithubClient {
                     break;
                 }
             };
-            // Errors (rate limit, bad token, ...) come back as an object with
-            // a "message" field instead of the repo array.
+            // API errors are `Err` (see `GitClient::request_json`); this is a
+            // 2xx that isn't the repo array.
             let org_repos_items = match org_repos.as_array() {
                 Some(arr) => arr,
                 _ => {
@@ -153,7 +144,7 @@ impl GitClient for GithubClient {
         &self,
         full_path: &str,
         branch: &str,
-    ) -> Vec<PullRequestInfo> {
+    ) -> Option<Vec<PullRequestInfo>> {
         let mut page_count: usize = 1;
         let mut prs: Vec<PullRequestInfo> = Vec::new();
         while page_count < GITHUB_LIMIT_PAGES {
@@ -164,12 +155,12 @@ impl GitClient for GithubClient {
                 Ok(res) => res,
                 Err(err) => {
                     log::error!("Can't fetch pull requests of '{full_path}': {err}");
-                    break;
+                    return None;
                 }
             };
-            let pull_items = match pulls.as_array() {
-                Some(arr) => arr,
-                _ => break,
+            let Some(pull_items) = pulls.as_array() else {
+                log::error!("Unexpected GitHub response for the pull requests of '{full_path}'");
+                return None;
             };
             if pull_items.is_empty() {
                 break;
@@ -196,7 +187,7 @@ impl GitClient for GithubClient {
             }
             page_count += 1;
         }
-        prs
+        Some(prs)
     }
 
     async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {

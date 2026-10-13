@@ -227,9 +227,17 @@ back silently to a default), and the same keys work as JSON or TOML (`--config c
 (exit status `2` on an invalid file), so a pipeline can check a generated config before deploying it.
 
 The file is validated before anything runs. Jobs then run in order, one `oghcollector <source>[:<paths>] <version> <git>`
-child process per version: a failed job (a busy lock, a missing token, a crash) is logged and
-skipped, the rest still run, and the run exits non-zero at the end. The embedding pass runs once,
-after the last job.
+child process per version: a failed job is logged and skipped, the rest still run, and the run
+exits non-zero at the end. The embedding pass runs once, after the last job.
+
+A job fails when anything goes wrong in it, not only when it crashes: an API error (a bad or
+expired token, a rate limit that outlasts the retries), a repository that can't be cloned or
+fetched, a busy lock, a missing token, a crash, an out-of-memory kill or a hang (a job still
+running after 4 hours is killed; stalled HTTP requests and git transfers time out on their own
+well before that). What it did collect is
+kept. Each failed job is also recorded as a `Scan failed for '<source>' [<version>]: <first error>`
+error in the portal's event log (`/logs`, and its Atom feed). API rate limits are waited out
+(up to an hour) and server/network errors retried before giving up.
 
 `docker-compose.yaml` bind-mounts `./collector.yaml` read-only at `/app/collector.yaml`, so edits
 apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
@@ -279,8 +287,10 @@ at 00:00, 06:00, 12:00 and 18:00 UTC. It runs `oghcollector`, which collects eve
 [`collector.yaml`](#collector-config). By default that's OpenERP (6.1–9.0), Odoo (10.0–20.0) and
 OCA (6.1–20.0), sequentially. Change the sources there, and change `ofelia.job-exec.refresh.schedule` to adjust
 the schedule (this Ofelia version uses a six-field cron expression, starting with seconds), then
-run `docker compose up -d` to recreate the collector and Ofelia. `no-overlap` skips a scheduled
-run if the previous batch is still running. See execution status with `docker compose logs ofelia`.
+run `docker compose up -d`: it recreates the collector, and Ofelia (which only reads the labels
+when it starts) restarts with it. `no-overlap` skips a scheduled run if the previous batch is still
+running. See execution status with `docker compose logs ofelia`: it prints a run's output when
+the run ends (`failed: true` if any job failed), so a run still in progress shows only `Started`.
 Ofelia needs the Docker socket to execute jobs in the running collector container; the collector
 retains the same database volume, environment and Docker secrets as manual executions.
 
