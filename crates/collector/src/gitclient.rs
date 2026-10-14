@@ -73,6 +73,10 @@ pub fn parse_created_at(raw: &str) -> Option<String> {
 /// another uid; `GIT_TERMINAL_PROMPT=0` makes auth failures fail instead of hang,
 /// and the low-speed limit a stalled clone/fetch (git has no timeout of its
 /// own); 5 minutes, so a slow but moving `odoo/odoo` clone isn't cut.
+/// Auto-gc runs in the foreground: `fetch` otherwise starts a detached
+/// (setsid) `maintenance run --auto` per repo, outside the job's process group
+/// and timeout, so a batch over hundreds of repos can pile them up until
+/// spawning a thread/process fails with EAGAIN.
 pub(crate) fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, String> {
     git_run_env(dir, args, &[])
 }
@@ -90,6 +94,10 @@ pub(crate) fn git_run_env<S: AsRef<str>>(
         "http.lowSpeedLimit=1000",
         "-c",
         "http.lowSpeedTime=300",
+        "-c",
+        "gc.autoDetach=false",
+        "-c",
+        "maintenance.autoDetach=false",
     ]
     .into_iter()
     .chain(args.iter().map(|a| a.as_ref()))
