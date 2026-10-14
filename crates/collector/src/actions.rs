@@ -9,8 +9,8 @@ use reqwest::header::{ACCEPT, USER_AGENT};
 use reqwest::Method;
 use serde_json::{json, Value};
 
-use crate::config;
 use crate::gitclient::{git_auth_env, git_run, git_run_env};
+use crate::{config, review};
 
 /// The forge's write API, with its own token (never the read one): set
 /// `OGHCOLLECTOR_WRITE_TOKEN_GH`/`_GL` (or the `gh_write_token`/
@@ -60,6 +60,20 @@ impl Forge {
     }
 
     async fn send(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+        let (status, value) = self.request(method, path, body).await?;
+        if !status.is_success() {
+            return Err(self.refused(status, &value));
+        }
+        Ok(value)
+    }
+
+    /// `send`, keeping the status of an answer that isn't a success.
+    async fn request(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<(reqwest::StatusCode, Value), String> {
         let (_, token) = self.git_credentials()?;
         let mut req = self
             .client
@@ -75,12 +89,12 @@ impl Forge {
         // `without_url`: a URL could carry credentials into the log.
         let res = req.send().await.map_err(|e| e.without_url().to_string())?;
         let status = res.status();
-        let value: Value = res.json().await.unwrap_or(Value::Null);
-        if !status.is_success() {
-            let why = value["message"].as_str().unwrap_or_default();
-            return Err(format!("{} answered {status} {why}", self.api_host()));
-        }
-        Ok(value)
+        Ok((status, res.json().await.unwrap_or(Value::Null)))
+    }
+
+    fn refused(&self, status: reqwest::StatusCode, value: &Value) -> String {
+        let why = value["message"].as_str().unwrap_or_default();
+        format!("{} answered {status} {why}", self.api_host())
     }
 
     fn api_host(&self) -> String {
@@ -136,6 +150,106 @@ impl Forge {
             }
         };
         Ok(())
+    }
+
+    /// Reviews a PR/MR at `head` (comments only: never approves or asks for
+    /// changes): `plan`'s suggestions on their lines, `body` and what can't
+    /// be suggested as its text. Once anything is written it doesn't fail
+    /// (the ledger records successes only: a retry would post it again):
+    /// what didn't go through is folded into the text. GitHub: one review
+    /// (one line it won't take sinks it all: then sent again as text only).
+    /// GitLab: a thread per suggestion, then a note with the text.
+    pub async fn review(
+        &self,
+        full_path: &str,
+        number: i64,
+        head: &str,
+        body: &str,
+        plan: &review::Plan,
+    ) -> Result<String, String> {
+        let project = self.project(full_path);
+        let count = plan.suggestions.len();
+        if !self.gitlab {
+            let path = format!("{project}/pulls/{number}/reviews");
+            let post = |text: String, comments: Vec<Value>| {
+                let text = match text.is_empty() {
+                    true => format!("{count} suggestion(s)"),
+                    false => text,
+                };
+                let payload = json!({"commit_id": head, "event": "COMMENT", "body": text, "comments": comments});
+                self.request(Method::POST, &path, Some(payload))
+            };
+            let comments: Vec<Value> = plan
+                .suggestions
+                .iter()
+                .map(|s| {
+                    let mut comment = json!({"path": s.path, "line": s.end, "side": "RIGHT", "body": s.body(false)});
+                    if s.start < s.end {
+                        comment["start_line"] = json!(s.start);
+                        comment["start_side"] = json!("RIGHT");
+                    }
+                    comment
+                })
+                .collect();
+            let (mut status, mut value) = post(plan.text(body, &[]), comments).await?;
+            let mut note = "";
+            if status == reqwest::StatusCode::UNPROCESSABLE_ENTITY && count > 0 {
+                let all: Vec<String> = plan.suggestions.iter().map(|s| s.text.clone()).collect();
+                (status, value) = post(plan.text(body, &all), Vec::new()).await?;
+                note = " (its lines refused: suggestions sent as text)";
+            }
+            if !status.is_success() {
+                return Err(self.refused(status, &value));
+            }
+            let url = value["html_url"].as_str().unwrap_or_default();
+            return Ok(format!("{url}{note}"));
+        }
+        let mr = format!("{project}/merge_requests/{number}");
+        let refs = self.send(Method::GET, &mr, None).await?["diff_refs"].clone();
+        if refs["head_sha"].as_str() != Some(head) {
+            return Err(format!(
+                "the MR moved on to {}: its new head gets reviewed instead",
+                refs["head_sha"]
+            ));
+        }
+        let mut refused = Vec::new();
+        for s in &plan.suggestions {
+            let mut position = json!({
+                "position_type": "text",
+                "base_sha": refs["base_sha"],
+                "start_sha": refs["start_sha"],
+                "head_sha": refs["head_sha"],
+                "old_path": s.path,
+                "new_path": s.path,
+                "new_line": s.end,
+            });
+            if let Some(old) = s.old_end {
+                position["old_line"] = json!(old);
+            }
+            let thread = json!({"body": s.body(true), "position": position});
+            if let Err(err) = self
+                .send(Method::POST, &format!("{mr}/discussions"), Some(thread))
+                .await
+            {
+                log::debug!("A suggestion on {}:{} went as text: {err}", s.path, s.end);
+                refused.push(s.text.clone());
+            }
+        }
+        let posted = count - refused.len();
+        let text = plan.text(body, &refused);
+        let mut outcome = format!("{posted} suggestion(s) on !{number}");
+        if !refused.is_empty() {
+            outcome.push_str(&format!(", {} sent as text", refused.len()));
+        }
+        if !text.is_empty() {
+            match self.comment(full_path, number, &text).await {
+                Ok(_) => {}
+                // Nothing written: the next run tries again.
+                Err(err) if posted == 0 => return Err(err),
+                Err(err) => outcome.push_str(&format!(" (its note failed: {err})")),
+            }
+        }
+        Ok(outcome)
     }
 
     /// The open PR/MR from `branch`, if any (its URL).
@@ -294,16 +408,28 @@ pub async fn ask(req: &AiRequest<'_>) -> Result<String, String> {
     }
 }
 
-/// The unified diff in a text: its first ```diff (or ```patch) block, else
-/// the whole text (an AI usually fences it).
+/// The unified diff in a text: its ```diff (or ```patch) blocks, joined (an
+/// AI often writes one per file), else the whole text.
 pub fn extract_patch(text: &str) -> String {
-    for fence in ["```diff", "```patch"] {
-        if let Some((_, rest)) = text.split_once(fence) {
-            let rest = rest.split_once('\n').map_or("", |(_, r)| r);
-            return rest.split("```").next().unwrap_or_default().to_string();
+    let mut blocks = String::new();
+    let mut rest = text;
+    while let Some((at, fence)) = ["```diff", "```patch"]
+        .iter()
+        .filter_map(|fence| rest.find(fence).map(|at| (at, fence.len())))
+        .min()
+    {
+        let body = rest[at + fence..].split_once('\n').map_or("", |(_, r)| r);
+        let (block, after) = body.split_once("```").unwrap_or((body, ""));
+        blocks.push_str(block);
+        if !block.ends_with('\n') {
+            blocks.push('\n');
         }
+        rest = after;
     }
-    text.to_string()
+    match blocks.is_empty() {
+        true => text.to_string(),
+        false => blocks,
+    }
 }
 
 /// The files a patch changes, if it only edits, adds or deletes regular
@@ -462,5 +588,8 @@ mod tests {
             "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
         );
         assert_eq!(extract_patch("--- a/x\n"), "--- a/x\n");
+        // One block per file, as an AI often writes them: all of them.
+        let two = "a:\n```diff\n--- a/x\n+++ b/x\n```\nb:\n```patch\n--- a/y\n+++ b/y\n```";
+        assert_eq!(extract_patch(two), "--- a/x\n+++ b/x\n--- a/y\n+++ b/y\n");
     }
 }

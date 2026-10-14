@@ -1,0 +1,95 @@
+# Workflows: what the collector does with each module or PR it finds (see
+# README, "Workflows"). This file sits next to collector.yaml (in Docker both
+# are mounted from here, so editing needs no rebuild): edit it, or build one
+# at /workflows (`workflow_editor_enabled`) and paste it here. The binary
+# also carries the copy it was built with, used only when there's no
+# workflows.yaml next to the collector config.
+#
+# A source runs the ones it names in its `workflows:`, `default` when it names
+# none. `enabled: false` keeps one from running even where a source names it.
+workflows:
+  # What the collector always did with each module it finds (a test pins its
+  # output: change it here and that test says so).
+  default:
+    on: module
+    nodes:
+      # Unchanged since the last run (same last commit, same rules): store the
+      # manifest only, keep the stored analysis.
+      - id: changed
+        type: if
+        when: not unchanged
+        then: stats
+        else: store
+      - id: stats
+        type: git_stats
+        next: analyze
+      - id: analyze
+        type: analyze_code
+        next: security
+      - id: security
+        type: security
+        next: migration
+      - id: migration
+        type: migration_notes
+        next: store
+      - id: store
+        type: store_module
+        next: osv
+      - id: osv
+        type: osv
+
+  # Demo: an AI reviews the PRs that bring grave security findings or
+  # migration notes, answering with one-click suggestions. To try it, set
+  # `enabled: true` and name it in a `pull_requests: full` source
+  # (`workflows: [default, ai_pr_review]`): it only logs what it would ask
+  # and post until that source also lists `ai` and `pr_review` in `actions`.
+  # Needs ANTHROPIC_API_KEY (or the anthropic_api_key Docker secret) and a
+  # write token.
+  ai_pr_review:
+    on: pull_request
+    enabled: false
+    nodes:
+      - id: theirs
+        type: if
+        when: not pr.is_ours
+        then: problems
+      - id: problems
+        type: if
+        when: security.grave > 0 or migration.count > 0
+        then: ask
+      - id: ask
+        type: ai
+        provider: anthropic
+        model: claude-opus-5-5
+        api_key_env: ANTHROPIC_API_KEY
+        system: >-
+          You are a senior Odoo developer reviewing a pull request. Fix only what
+          the findings point at, keep the PR's style, and never invent APIs.
+        prompt: |
+          Odoo {{ odoo_version }} pull request #{{ pr.number }} "{{ pr.title }}" in {{ org }}/{{ repo }}.
+
+          Grave security findings it brings:
+          {% for f in security.findings if f.severity == 'error' %}- {{ f.module }}: {{ f.code }} in {{ f.file or f.xml_id }}: {{ f.message }}
+          {% else %}- none
+          {% endfor %}
+          Migration notes for {{ odoo_version }}:
+          {% for n in migration.notes %}- {{ n.module }}: {{ n.code }} in {{ n.file }}{% if n.line %}:{{ n.line }}{% endif %}: {{ n.message }}
+          {% else %}- none
+          {% endfor %}
+          Its changes:
+          {{ diff() }}
+
+          Reply with only a unified diff against the PR's head, paths from the
+          repository root as above, that fixes these problems by changing only
+          lines the changes above show. Reply with nothing if they can't be fixed
+          that way.
+        next: review
+      - id: review
+        type: pr_review
+        body: |
+          OGHCollector's checks on this PR found:
+          {% for f in security.findings if f.severity == 'error' %}- **{{ f.code }}** in `{{ f.module }}` {{ f.file or f.xml_id }}: {{ f.message }}
+          {% endfor %}{% for n in migration.notes %}- migration: `{{ n.module }}` {{ n.file }}{% if n.line %}:{{ n.line }}{% endif %}: {{ n.message }}
+          {% endfor %}{% if ai.ask %}
+          The suggestions on its lines were written by an AI: check them before applying.{% endif %}
+        patch: "{{ ai.ask }}"

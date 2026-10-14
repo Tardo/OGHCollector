@@ -23,9 +23,10 @@ services:
     restart: unless-stopped
     volumes:
       - app_data:/app/data
-      # Only read with `workflow_editor_enabled`: its `workflows:` (never its
+      # Only read with `workflow_editor_enabled`: the workflows (never the
       # sources) are shown on /workflows.
       - ./collector.yaml:/app/collector.yaml:ro
+      - ./workflows.yaml:/app/workflows.yaml:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -55,6 +56,8 @@ services:
     volumes:
       - app_data:/app/data
       - ./collector.yaml:/app/collector.yaml:ro
+      # The workflows its sources name: edit it here, the next job reads it.
+      - ./workflows.yaml:/app/workflows.yaml:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

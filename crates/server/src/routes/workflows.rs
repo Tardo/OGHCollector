@@ -26,21 +26,35 @@ pub async fn route(tmpl_env: MiniJinjaRenderer, req: HttpRequest) -> Result<impl
 }
 
 /// What the editor starts from: the node types and fields (the rules), and
-/// the existing workflows with where each comes from. The config file is
-/// read on every request; a broken one is reported, the built-ins still load.
+/// the existing workflows with where each comes from: the workflows file
+/// next to the collector config (none there: the copy built in), then the
+/// config's own, which replace any of the same name. Both files are read on
+/// every request; a broken one is reported and left out, the rest still load.
 fn data(collector_config: &str) -> serde_json::Value {
-    let (file, file_error) = match oghworkflow::file_workflows(collector_config) {
-        Ok(file) => (file, None),
-        Err(err) => (Default::default(), Some(err)),
+    let mut errors = Vec::new();
+    let (shipped, from_file) = oghworkflow::shipped(collector_config).unwrap_or_else(|err| {
+        errors.push(err);
+        Default::default()
+    });
+    let own = oghworkflow::file_workflows(collector_config).unwrap_or_else(|err| {
+        errors.push(err);
+        Default::default()
+    });
+    let mut all: BTreeMap<_, _> = shipped.into_iter().collect();
+    all.extend(own.clone());
+    let file_error = (!errors.is_empty()).then(|| errors.join("\n"));
+    let base = if from_file {
+        "workflows.yaml"
+    } else {
+        "built-in"
     };
-    let all: BTreeMap<_, _> = oghworkflow::with_built_in(&file).into_iter().collect();
     let workflows: Vec<serde_json::Value> = all
         .into_iter()
         .map(|(name, wf)| {
-            let origin = if file.contains_key(&name) {
+            let origin = if own.contains_key(&name) {
                 "collector config"
             } else {
-                "built-in"
+                base
             };
             let error = oghworkflow::validate(&name, &wf).err();
             json!({"name": name, "origin": origin, "workflow": wf, "error": error})
@@ -75,7 +89,7 @@ fn parse(yaml: &str) -> serde_json::Value {
             let found: BTreeMap<_, _> = found.into_iter().collect();
             let errors: Vec<String> = found
                 .iter()
-                .filter_map(|(name, wf)| oghworkflow::validate(name, wf).err())
+                .flat_map(|(name, wf)| oghworkflow::problems(name, wf))
                 .collect();
             json!({"workflows": found, "errors": errors})
         }
@@ -146,6 +160,11 @@ mod tests {
              workflows:\n  mine: {on: module, nodes: [{id: l, type: log, message: hi}]}\n",
         )
         .unwrap();
+        std::fs::write(
+            dir.join("workflows.yaml"),
+            "workflows:\n  shared: {on: module, enabled: false, nodes: [{id: o, type: osv}]}\n",
+        )
+        .unwrap();
         let got = data(dir.join("collector").to_str().unwrap());
         let names: Vec<(&str, &str)> = got["workflows"]
             .as_array()
@@ -155,9 +174,19 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            [("default", "built-in"), ("mine", "collector config")]
+            [("mine", "collector config"), ("shared", "workflows.yaml")]
         );
         assert!(!got.to_string().contains("Secret"), "sources stay out");
+        // No workflows file there: the copy built in.
+        std::fs::remove_file(dir.join("workflows.yaml")).unwrap();
+        let built_in = data(dir.join("collector").to_str().unwrap());
+        assert_eq!(built_in["workflows"][0]["name"], "default");
+        assert_eq!(built_in["workflows"][0]["origin"], "built-in");
+        std::fs::write(
+            dir.join("workflows.yaml"),
+            "workflows:\n  shared: {on: module, enabled: false, nodes: [{id: o, type: osv}]}\n",
+        )
+        .unwrap();
         assert!(got["meta"]["node_types"].as_array().unwrap().len() > 10);
         std::fs::write(&file, "workflows: [").unwrap();
         let data = data(dir.join("collector").to_str().unwrap());
@@ -165,7 +194,7 @@ mod tests {
         assert_eq!(
             data["workflows"].as_array().unwrap().len(),
             1,
-            "the built-ins still load"
+            "the workflows file still loads"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

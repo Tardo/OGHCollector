@@ -18,12 +18,14 @@ use crate::gitclient::GitClient;
 use crate::golden::{snapshot, Fixture};
 use crate::pull_requests::{self, Budget, RepoPrs};
 use crate::pypi::PypiClient;
+use crate::review;
 use crate::workflow::{self, Deps, Engine, Workflow};
 
 type Calls = Arc<Mutex<Vec<(String, String, Value)>>>;
 
 /// A local HTTP server answering `respond(method, path)`, recording every
-/// request (method, path, JSON body). Its base URL ends with `/`.
+/// request (method, path, JSON body). Its base URL ends with `/`. An answer
+/// with `"__status": N` goes out with that status.
 async fn serve(respond: impl Fn(&str, &str) -> Value + Send + Sync + 'static) -> (String, Calls) {
     let calls: Calls = Arc::default();
     let (recorded, respond) = (calls.clone(), Arc::new(respond));
@@ -37,7 +39,12 @@ async fn serve(respond: impl Fn(&str, &str) -> Value + Send + Sync + 'static) ->
                     .lock()
                     .unwrap()
                     .push((method.to_string(), path.to_string(), body));
-                axum::Json(respond(method.as_str(), uri.path()))
+                let value = respond(method.as_str(), uri.path());
+                let status = value["__status"]
+                    .as_u64()
+                    .and_then(|s| axum::http::StatusCode::from_u16(s as u16).ok())
+                    .unwrap_or(axum::http::StatusCode::OK);
+                (status, axum::Json(value))
             }
         },
     );
@@ -444,4 +451,155 @@ async fn pr_open_finishes_an_earlier_attempt_on_github() {
         (&calls[1].2["head"], &calls[1].2["base"]),
         (&json!("ogh/w/m-18.0"), &json!("18.0"))
     );
+}
+
+/// A plan with a two-line suggestion (its last line the PR's own), a
+/// one-line one on a line the PR leaves alone, and a change outside the diff.
+fn review_plan() -> review::Plan {
+    let suggestion = |start, end, old_end, text: &str| review::Suggestion {
+        path: "m/x.py".to_string(),
+        start,
+        end,
+        lines: vec!["fixed".to_string()],
+        old_end,
+        text: text.to_string(),
+    };
+    review::Plan {
+        suggestions: vec![
+            suggestion(4, 5, None, "@@ first\n"),
+            suggestion(7, 7, Some(6), "@@ second\n"),
+        ],
+        leftovers: vec!["@@ outside\n".to_string()],
+    }
+}
+
+#[tokio::test]
+async fn reviews_suggest_on_github_and_fall_back_to_text() {
+    let posts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = posts.clone();
+    let (base, calls) = serve(move |_, _| {
+        // The first review is refused (a line outside the diff), the second
+        // (text only) goes through.
+        match seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+            0 => json!({"__status": 422, "message": "Unprocessable Entity"}),
+            _ => json!({"html_url": "https://github.com/org/repo/pull/5#review-1"}),
+        }
+    })
+    .await;
+    let forge = Forge::with(false, &base, Some("write".to_string()));
+    let plan = review_plan();
+    let outcome = forge
+        .review("org/repo", 5, "abc123", "Two fixes.", &plan)
+        .await
+        .unwrap();
+    assert!(outcome.ends_with("#review-1 (its lines refused: suggestions sent as text)"));
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[0].1, "/repos/org/repo/pulls/5/reviews");
+    let first = &calls[0].2;
+    assert_eq!(
+        (&first["event"], &first["commit_id"]),
+        (&json!("COMMENT"), &json!("abc123"))
+    );
+    assert_eq!(
+        first["comments"][0],
+        json!({"path": "m/x.py", "start_line": 4, "start_side": "RIGHT", "line": 5, "side": "RIGHT",
+               "body": "```suggestion\nfixed\n```"})
+    );
+    assert_eq!(first["comments"][1]["line"], 7);
+    assert!(first["comments"][1].get("start_line").is_none());
+    assert!(first["body"].as_str().unwrap().contains("@@ outside"));
+    // Then all of it as text, no line comments.
+    let second = &calls[1].2;
+    assert_eq!(second["comments"], json!([]));
+    let text = second["body"].as_str().unwrap();
+    assert!(text.starts_with("Two fixes."), "{text}");
+    assert!(text.contains("@@ outside\n@@ first\n@@ second\n"), "{text}");
+}
+
+#[tokio::test]
+async fn reviews_suggest_on_gitlab_one_thread_each() {
+    let threads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = threads.clone();
+    let (base, calls) = serve(move |method, path| match (method, path) {
+        ("GET", _) => {
+            json!({"diff_refs": {"base_sha": "b", "start_sha": "s", "head_sha": "abc123"}})
+        }
+        // The second thread is refused: it goes in the note.
+        ("POST", p) if p.ends_with("/discussions") => {
+            match seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+                1 => json!({"__status": 400, "message": "line_code can't be blank"}),
+                _ => json!({"id": "t"}),
+            }
+        }
+        _ => json!({"id": 9}),
+    })
+    .await;
+    let forge = Forge::with(true, &base, Some("write".to_string()));
+    let plan = review_plan();
+    let outcome = forge
+        .review("org/repo", 5, "abc123", "Two fixes.", &plan)
+        .await
+        .unwrap();
+    assert_eq!(outcome, "1 suggestion(s) on !5, 1 sent as text");
+    let calls = calls.lock().unwrap();
+    let paths: Vec<&str> = calls.iter().map(|c| c.1.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/projects/org%2Frepo/merge_requests/5",
+            "/projects/org%2Frepo/merge_requests/5/discussions",
+            "/projects/org%2Frepo/merge_requests/5/discussions",
+            "/projects/org%2Frepo/merge_requests/5/notes",
+        ]
+    );
+    let first = &calls[1].2;
+    assert_eq!(first["body"], "```suggestion:-1+0\nfixed\n```");
+    assert_eq!(
+        first["position"],
+        json!({"position_type": "text", "base_sha": "b", "start_sha": "s", "head_sha": "abc123",
+               "old_path": "m/x.py", "new_path": "m/x.py", "new_line": 5})
+    );
+    // A line the PR leaves alone: anchored by its old number too.
+    assert_eq!(calls[2].2["position"]["old_line"], 6);
+    let note = calls[3].2["body"].as_str().unwrap();
+    assert!(note.contains("@@ outside\n@@ second\n"), "{note}");
+    assert!(!note.contains("@@ first"), "{note}");
+}
+
+#[tokio::test]
+async fn reviews_wait_for_a_gitlab_mr_that_moved_on() {
+    let (base, calls) = serve(|_, _| json!({"diff_refs": {"head_sha": "newer"}})).await;
+    let forge = Forge::with(true, &base, Some("write".to_string()));
+    let err = forge
+        .review("org/repo", 5, "abc123", "Fix.", &review_plan())
+        .await
+        .unwrap_err();
+    assert!(err.contains("moved on"), "{err}");
+    // Nothing written: the next run reviews its new head.
+    assert!(calls.lock().unwrap().iter().all(|c| c.0 == "GET"));
+}
+
+#[test]
+fn review_plans_anchor_on_the_pr_head() {
+    let f = Fixture::new("review-plan");
+    f.write("m/x.py", "a\nb\nc\nd\ne\nf\ng\n");
+    f.commit("base");
+    f.git(&["checkout", "-q", "-b", "pr"]);
+    f.write("m/x.py", "a\nb\nc\nD\ne\nf\ng\n");
+    f.git(&["add", "-A"]);
+    f.git(&["commit", "-q", "-m", "pr"]);
+    let head = git(&f.repo, &["rev-parse", "HEAD"]);
+    let clone = f.repo.to_string_lossy();
+    // An AI's diff: bad numbers, against what the PR wrote (D → DD).
+    let patch = "--- a/m/x.py\n+++ b/m/x.py\n@@ -40,3 +40,3 @@\n c\n-D\n+DD\n e\n";
+    let plan = review::plan_on(&clone, "18.0", &head, patch).unwrap();
+    assert!(plan.leftovers.is_empty(), "{plan:?}");
+    let s = &plan.suggestions[0];
+    assert_eq!(
+        (s.path.as_str(), s.start, s.end, s.lines.clone()),
+        ("m/x.py", 4, 4, vec!["DD".to_string()])
+    );
+    let missing = review::plan_on(&clone, "18.0", &"0".repeat(40), patch);
+    assert!(missing.unwrap_err().contains("isn't in the clone"));
 }

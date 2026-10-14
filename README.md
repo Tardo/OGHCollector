@@ -239,8 +239,8 @@ kept. Each failed job is also recorded as a `Scan failed for '<source>' [<versio
 error in the portal's event log (`/logs`, and its Atom feed). API rate limits are waited out
 (up to an hour) and server/network errors retried before giving up.
 
-`docker-compose.yaml` bind-mounts `./collector.yaml` read-only at `/app/collector.yaml`, so edits
-apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
+`docker-compose.yaml` bind-mounts `./collector.yaml` and `./workflows.yaml` read-only into `/app`,
+so edits apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
 IDEs), the container keeps seeing the old copy until `docker compose restart collector`. The image
 also ships the repository's copy as a fallback for plain `docker run`.
 
@@ -248,12 +248,20 @@ also ships the repository's copy as a fallback for plain `docker run`.
 
 The collector itself only walks the sources: it clones them and finds every module folder. What
 happens to each module is a *workflow*, a graph of nodes, and a source runs the ones it names. The
-built-in `default` workflow is what the collector always did (a test checks it leaves exactly the
-same data and events), so a source without `workflows:` behaves as before; `workflows: []` only
-walks.
+`default` workflow is what the collector always did (a test checks it leaves exactly the same data
+and events), so a source without `workflows:` behaves as before; `workflows: []` only walks.
+
+Workflows live in `workflows.yaml` at the repository root, next to `collector.yaml` (in Docker both
+are mounted from there, so editing them needs no rebuild). The binary also carries the copy it was
+built with, used only when there's no `workflows.yaml` next to the collector config: when there is
+one, it's the whole list (a workflow taken out of it is gone). `collector.yaml` may have a
+`workflows:` too; its definitions replace any of the same name. A workflow with `enabled: false`
+doesn't run even where a source names it (the job logs a warning); it's still checked. The shipped
+`workflows.yaml` has `default` and one more, off: `demo_pr_review`, an AI reviewing the PRs that
+bring grave security findings or migration notes (see [Actions](#actions)).
 
 ```yaml
-# default (built in): unchanged modules only get their manifest stored
+# default (in workflows.yaml): unchanged modules only get their manifest stored
 default:
   on: module
   nodes:
@@ -268,11 +276,14 @@ default:
 
 A workflow starts at its first node and follows `next` (or, for `if`, `then`/`else`) until a node
 has none. The portal can show them as a graph and build them visually: with
-`workflow_editor_enabled` (server config), `/workflows` lists the built-in workflows and those of
-the collector config, lets you change them or draw new ones (drag nodes, link their outputs, fill
-in their fields) and gives the YAML to paste into `collector.yaml`, checked as you go by the same
-rules as `oghcollector --check`. Nothing is saved there. Workflows go under `workflows:` in `collector.yaml` (one with a built-in's name replaces
-it) and sources pick them by name:
+`workflow_editor_enabled` (server config), `/workflows` lists those of `workflows.yaml` (or the
+built-in copy) and the collector config, lets you change them or draw new ones (drag nodes, link
+their outputs, fill in their fields, switch them on or off) and gives the YAML to paste into
+`workflows.yaml`, checked as you go by the same
+rules as `oghcollector --check`. Nothing is saved there. Each node's place in the editor goes in
+the YAML as `pos: [x, y]` (the collector ignores it), so a shared workflow opens laid out as it was
+left; one without positions is laid out for you. Sources pick workflows by name (here
+`workflows.yaml` and `collector.yaml` in one listing):
 
 ```yaml
 workflows:
@@ -319,6 +330,7 @@ after it's stored and analyzed. Besides `if`, `log` and `ai`, they have:
 | --- | --- | --- |
 | `pr_comment` | Comments on the PR/MR (`body` template). Outward | `next`, `body` |
 | `pr_edit` | Replaces its description (`body` template; `pr.description` is the current one). Outward | `next`, `body` |
+| `pr_review` | Reviews it: the `patch` template's changes (a unified diff against the PR's head, e.g. `{{ ai.review }}`) as suggestions its author applies in one click, `body` as the review's text. Comments only, never approves or asks for changes. Needs `pull_requests: full`. Outward | `next`, `body`, `patch` |
 
 A node computes what it needs that no earlier node computed (`security` analyzes the code,
 `store_module` reads the manifest). Conditions and messages are
@@ -335,7 +347,9 @@ In `pull_request` workflows: `org`, `repo`, `odoo_version`,
 `pr.number|title|author|labels|draft|ci_status|head_sha|head_ref|url|description`, `pr.is_new`
 (first seen), `pr.head_changed`, `pr.ci_changed` (checks just turned green or red), `pr.is_ours`
 (opened by `pr_open`), and `modules`, one `{name, port, analysis}` per module it changes
-(`analysis` with `pull_requests: full`). `diff()` returns its changes (up to 200,000 characters;
+(`analysis` with `pull_requests: full`). Over those, like a module workflow's own:
+`security.grave|minor|findings` (only the findings the PR brings, not those of the merged module)
+and `migration.count|notes`, each item with its `module` (empty without the analysis). `diff()` returns its changes (up to 200,000 characters;
 `full` sources only, the others never fetch the PR head). Both kinds see `ai.<node id>`.
 
 - `oghcollector --check` validates every workflow (types, fields, node references, cycles,
@@ -350,7 +364,7 @@ In `pull_request` workflows: `org`, `repo`, `odoo_version`,
 
 #### Actions
 
-`ai`, `pr_comment`, `pr_edit` and `pr_open` reach outside the collector, so they only **log what
+`ai`, `pr_comment`, `pr_edit`, `pr_review` and `pr_open` reach outside the collector, so they only **log what
 they would do** (`[dry-run] ...` events in `/logs`, with what they'd send) until the source lists
 them:
 
@@ -368,6 +382,22 @@ workflows:
         prompt: "Review this Odoo {{ odoo_version }} change:\n{{ diff() }}"
         next: comment
       - {id: comment, type: pr_comment, body: "{{ ai.ask }}"}
+  suggest:
+    on: pull_request
+    nodes:
+      - {id: ours, type: if, when: "not pr.is_ours", then: ask}
+      - id: ask
+        type: ai
+        provider: anthropic
+        model: claude-opus-5-5
+        api_key_env: ANTHROPIC_API_KEY
+        prompt: |
+          Odoo {{ odoo_version }} PR. Reply with a unified diff against its head that fixes
+          migration problems, changing only lines this diff shows, or nothing if all is fine:
+          {{ diff() }}
+          Migration notes: {{ modules | map(attribute='analysis') | list | tojson }}
+        next: review
+      - {id: review, type: pr_review, body: "AI suggestions: check them before applying.", patch: "{{ ai.ask }}"}
   fix_views:
     on: module
     nodes:
@@ -388,8 +418,8 @@ sources:
     git: GL
     versions: [18.0]
     pull_requests: full
-    workflows: [default, fix_views, review]
-    actions: [ai, pr_comment]            # pr_open stays dry-run
+    workflows: [default, fix_views, review, suggest]
+    actions: [ai, pr_comment, pr_review] # pr_open stays dry-run
 ```
 
 - **Once per item.** A ledger (`workflow_action`) records every action: a comment or description
@@ -412,6 +442,24 @@ sources:
   without the gate it analyzes every module on every run (its AI answers and PRs are still once).
 - **Bot PRs.** A PR opened or edited by these nodes comes back through the webhooks; gate PR
   workflows on `not pr.is_ours` so they don't review their own work.
+- **The demo, `demo_pr_review`** (in `workflows.yaml`): on PRs that aren't its own and bring a
+  grave security finding or a migration note, it asks `claude-opus-5-5` for a fix as a diff of the
+  PR's lines and posts a review listing the findings, with the fix as suggestions. It ships with
+  `enabled: false`: to try it, set `enabled: true` and name it in a `pull_requests: full` source
+  (`workflows: [default, demo_pr_review]`), which only logs what it would ask and post; then add
+  `actions: [ai]` to have it ask (`/logs` then says how many suggestions it would post, on which
+  files), and `pr_review` to post them. Set
+  `ANTHROPIC_API_KEY` (or the `anthropic_api_key` Docker secret) and the write token. Change it
+  in `workflows.yaml` itself, or build a copy at `/workflows`.
+- **`pr_review` suggestions.** Each hunk of the diff is found by its text in the file at the PR's
+  head (an AI's line numbers are often off), trimmed to the lines it changes, and posted as a
+  one-click suggestion (GitHub: one review, `event: COMMENT`; GitLab: a thread each, then a note).
+  The forges only take them on lines the PR's own diff shows: whatever falls outside, isn't found,
+  or adds or deletes whole files goes in the review's text as a diff to apply by hand, and so does
+  a review GitHub refuses (one bad line sinks it: it's sent again as text) or a GitLab thread it
+  refuses. A GitLab MR pushed to since the PR step waits for the next run (its new head). Dry-run
+  logs how many suggestions it would make and on which files; it only has something to say when
+  `ai` is live (a dry-run `ai` answers "").
 - **`pr_edit` replaces** the description. A `body` that appends to `pr.description` grows on every
   new head unless it checks for its own text: `{% if 'Reviewed' not in pr.description %}...`.
 - **Dry-run reports** are capped at 20 per job; the rest are reported by later runs (a line says how

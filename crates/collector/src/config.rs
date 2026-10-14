@@ -127,7 +127,7 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
             (src.to_string(), ws)
         })
         .collect();
-    let workflows = workflow::with_built_in(&workflows);
+    let workflows = oghworkflow::layered(path, &workflows)?;
     let mut names: Vec<&String> = workflows.keys().collect();
     names.sort();
     for name in names {
@@ -242,7 +242,7 @@ pub fn read_secret(file: &str, env_var: &str) -> Option<String> {
 /// (an absent file is fine: manual runs only need the built-in `default`).
 /// `load_jobs` already validated the file; a job re-reads it when it starts.
 pub fn load_workflows(path: &str) -> Result<HashMap<String, Workflow>, String> {
-    Ok(workflow::with_built_in(&oghworkflow::file_workflows(path)?))
+    oghworkflow::layered(path, &oghworkflow::file_workflows(path)?)
 }
 
 #[derive(Debug)]
@@ -483,8 +483,11 @@ mod tests {
         // only those without a file (a manual run elsewhere).
         let defs = super::load_workflows(dir.join("collector").to_str().unwrap()).unwrap();
         assert!(defs.contains_key("logged") && defs.contains_key("default"));
+        // No workflows.yaml next to it: the copy built in (the repository's).
         let defs = super::load_workflows(dir.join("absent").to_str().unwrap()).unwrap();
-        assert_eq!(defs.keys().collect::<Vec<_>>(), ["default"]);
+        let mut built_in: Vec<_> = defs.keys().collect();
+        built_in.sort();
+        assert_eq!(built_in, ["default", "demo_pr_review"]);
         for bad in ["[nope]", "[default, default]"] {
             let yaml = format!("sources:\n- {{source: A, versions: [18.0], workflows: {bad}}}\n");
             assert!(load(&yaml).is_err(), "{bad}");

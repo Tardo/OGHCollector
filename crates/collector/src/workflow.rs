@@ -2,8 +2,8 @@
 //! Workflows: the collector itself only walks the sources (clones them, finds
 //! every module folder, lists the tracked PRs/MRs); what happens to each
 //! module (`on: module`) or PR (`on: pull_request`) is a graph of nodes, per
-//! source (`collector.yaml` `workflows:`, built-in ones in
-//! `default_workflows.yaml`). Each node gets the item (its folder or PR and
+//! source (defined in `workflows.yaml` next to the collector config, see
+//! `oghworkflow::layered`). Each node gets the item (its folder or PR and
 //! what earlier nodes computed) and, for `if`, picks the next node.
 //!
 //! Conditions and templates are minijinja over `Ctx::view`. Node failures
@@ -36,9 +36,13 @@ use crate::actions::{self, AiRequest, Forge, NewPr};
 use crate::analyzer::{self, GitInfo, OGHCollectorAnalyzer};
 use crate::gitclient::{git_run, PullRequestInfo, RepoInfo};
 use crate::pypi::PypiClient;
-use crate::{migration, security};
+use crate::{migration, review, security};
 
-pub use oghworkflow::{validate, with_built_in, Node, Workflow, ACTIONS, DEFAULT};
+pub use oghworkflow::{validate, Node, Workflow, ACTIONS, DEFAULT};
+// Jobs load workflows in layers (`config::load_workflows`); tests start from
+// the built-ins.
+#[cfg(test)]
+pub use oghworkflow::with_built_in;
 
 /// The analysis stamp stored on the modules a workflow analyzes
 /// (`module.analysis_version`): the rules version, plus which analyses it
@@ -71,6 +75,10 @@ impl Engine {
             validate(name, wf)?;
             if workflows.iter().any(|(n, _)| n == name) {
                 return Err(format!("workflow '{name}' listed twice"));
+            }
+            if !wf.is_enabled() {
+                log::warn!("Workflow '{name}' is disabled (enabled: false): skipped");
+                continue;
             }
             workflows.push((name.clone(), wf.clone()));
         }
@@ -269,6 +277,34 @@ impl Engine {
                                 .map(|()| String::new()),
                         }
                     },
+                )
+                .await?;
+            }
+            "pr_review" => {
+                let patch = actions::extract_patch(&render(ctx, &node.patch)?);
+                let body = render(ctx, &node.body)?;
+                if patch.trim().is_empty() && body.trim().is_empty() {
+                    // Nothing to say (an AI found nothing): not recorded, a
+                    // later head may have something.
+                    return Ok(node.next.as_deref());
+                }
+                let found = ctx.pr().found;
+                let head = found.pr.head_sha.as_deref().ok_or("the PR has no head")?;
+                let plan =
+                    review::plan_on(found.repo.get_clone_path(), found.branch, head, &patch)?;
+                let (full_path, number) = (found.repo.get_full_path(), found.pr.prid);
+                act(
+                    conn,
+                    deps,
+                    &node.kind,
+                    &format!("{}:{workflow}/{}", ctx.item(), node.id),
+                    &format!(
+                        "Workflow '{workflow}' ({}): review {}",
+                        node.id,
+                        ctx.label()
+                    ),
+                    &plan.describe(&body),
+                    deps.forge.review(full_path, number, head, &body, &plan),
                 )
                 .await?;
             }
@@ -670,14 +706,23 @@ impl PrCtx<'_, '_> {
             .as_ref()
             .is_some_and(|b| b.ci_status != pr.ci_status)
             && matches!(pr.ci_status.as_deref(), Some("success" | "failure"));
-        let modules: Vec<Value> = f
+        let analyses: Vec<(&str, Option<Value>)> = f
             .modules
             .iter()
             .map(|m| {
-                let analysis: Option<Value> = m
+                let analysis = m
                     .analysis
                     .as_deref()
                     .and_then(|a| serde_json::from_str(a).ok());
+                (m.module_technical_name.as_str(), analysis)
+            })
+            .collect();
+        let (security, migration) = pr_problems(&analyses);
+        let modules: Vec<Value> = f
+            .modules
+            .iter()
+            .zip(&analyses)
+            .map(|(m, (_, analysis))| {
                 json!({"name": m.module_technical_name, "port": m.is_new, "analysis": analysis})
             })
             .collect();
@@ -703,8 +748,39 @@ impl PrCtx<'_, '_> {
                 "is_ours": info.head_ref.starts_with("ogh/"),
             },
             "modules": modules,
+            "security": security,
+            "migration": migration,
         })
     }
+}
+
+/// A PR's problems over its analyzed modules, as a module workflow sees its
+/// own (`security.grave|minor|findings`, `migration.count|notes`): the
+/// findings it brings (not in the merged module) and its modules' migration
+/// notes, each tagged with its `module`.
+fn pr_problems(analyses: &[(&str, Option<Value>)]) -> (Value, Value) {
+    let (mut findings, mut notes) = (Vec::new(), Vec::new());
+    for (module, analysis) in analyses {
+        let Some(analysis) = analysis else { continue };
+        let tagged = |item: &Value| {
+            let mut item = item.clone();
+            item["module"] = json!(module);
+            item
+        };
+        let list = |key: &str| analysis[key].as_array().cloned().unwrap_or_default();
+        findings.extend(
+            list("security")
+                .iter()
+                .filter(|w| w["new"] == true)
+                .map(tagged),
+        );
+        notes.extend(list("migration_notes").iter().map(tagged));
+    }
+    let grave = findings.iter().filter(|w| w["severity"] == "error").count();
+    (
+        json!({"grave": grave, "minor": findings.len() - grave, "findings": findings}),
+        json!({"count": notes.len(), "notes": notes}),
+    )
 }
 
 /// What a workflow runs over.
@@ -1266,6 +1342,93 @@ mod tests {
         f.commit("two");
         probe_run(&f, conn, &defs, &["new_only"]).await;
         assert_eq!(count(conn), 0);
+    }
+
+    /// The demo PR review: what it reacts to (a PR's own grave findings or
+    /// its modules' migration notes), and what it asks and writes.
+    #[test]
+    fn the_demo_reviews_prs_with_grave_findings_or_migration_notes() {
+        let finding = |code: &str, severity: &str, new: bool| {
+            json!({"code": code, "severity": severity, "new": new, "file": "models/m.py",
+                   "xml_id": null, "message": format!("{code} here")})
+        };
+        let note = json!({"severity": "warning", "code": "NAME_GET", "message": "name_get is gone",
+                          "context": null, "file": "models/m.py", "line": 12});
+        let (security, migration) = pr_problems(&[
+            (
+                "m",
+                Some(
+                    json!({"security": [finding("SQL", "error", true), finding("EVAL", "error", false),
+                                         finding("ACL", "warning", true)],
+                            "migration_notes": [note]}),
+                ),
+            ),
+            ("other", None),
+        ]);
+        // Only what the PR brings: EVAL was already merged.
+        assert_eq!(
+            (&security["grave"], &security["minor"]),
+            (&json!(1), &json!(1))
+        );
+        assert_eq!(security["findings"][0]["module"], "m");
+        assert_eq!(migration["count"], 1);
+        // The shipped workflows file (repo root, mounted in Docker): off.
+        let shipped = concat!(env!("CARGO_MANIFEST_DIR"), "/../../workflows");
+        let demo = &oghworkflow::file_workflows(shipped).unwrap()["demo_pr_review"];
+        assert!(!demo.is_enabled());
+        assert_eq!(validate("demo_pr_review", demo), Ok(()));
+        // Named by a source, it still doesn't run.
+        let defs = HashMap::from([("demo_pr_review".to_string(), demo.clone())]);
+        let engine = Engine::new(&["demo_pr_review".to_string()], &defs).unwrap();
+        assert!(!engine.runs("pull_request"));
+        let mut env = Environment::new();
+        env.add_function("diff", || "--- a/m/models/m.py".to_string());
+        let view = |security: &Value, migration: &Value, answer: &str| {
+            minijinja::Value::from_serialize(json!({
+                "org": "org", "repo": "repo", "odoo_version": "18.0",
+                "pr": {"number": 5, "title": "[18.0][MIG] m", "is_ours": false},
+                "security": security, "migration": migration, "ai": {"ask": answer},
+            }))
+        };
+        let holds = |view: &minijinja::Value| {
+            let when = demo.nodes[1].when.as_deref().unwrap();
+            env.compile_expression(when)
+                .unwrap()
+                .eval(view.clone())
+                .unwrap()
+                .is_true()
+        };
+        let none = json!({"grave": 0, "minor": 0, "findings": []});
+        let no_notes = json!({"count": 0, "notes": []});
+        assert!(holds(&view(&security, &no_notes, "")));
+        assert!(holds(&view(&none, &migration, "")));
+        assert!(!holds(&view(&none, &no_notes, "")));
+        let full = view(&security, &migration, "--- a/m/models/m.py");
+        let render = |src: &Option<String>| {
+            env.render_str(src.as_deref().unwrap(), full.clone())
+                .unwrap()
+        };
+        let prompt = render(&demo.nodes[2].prompt);
+        assert!(
+            prompt.contains("- m: SQL in models/m.py: SQL here\n"),
+            "{prompt}"
+        );
+        assert!(!prompt.contains("ACL"), "{prompt}");
+        assert!(
+            prompt.contains("- m: NAME_GET in models/m.py:12: name_get is gone"),
+            "{prompt}"
+        );
+        assert!(prompt.contains("--- a/m/models/m.py"), "{prompt}");
+        let body = render(&demo.nodes[3].body);
+        assert!(
+            body.contains("- **SQL** in `m` models/m.py: SQL here"),
+            "{body}"
+        );
+        assert!(
+            body.contains("- migration: `m` models/m.py:12: name_get is gone"),
+            "{body}"
+        );
+        assert!(body.contains("written by an AI"), "{body}");
     }
 
     #[test]

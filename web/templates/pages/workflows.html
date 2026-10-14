@@ -14,7 +14,7 @@
 
 <header class="page-header">
     <h1>Workflows</h1>
-    <p class="page-header-desc">What the collector does with each module or pull request it finds. Open one, change it or build a new one, then copy its YAML into the <code>workflows:</code> of <code>collector.yaml</code>: nothing is saved here. It's checked against the collector's own rules as you go.</p>
+    <p class="page-header-desc">What the collector does with each module or pull request it finds. Open one, change it or build a new one, then copy its YAML into <code>workflows.yaml</code> (next to <code>collector.yaml</code>): nothing is saved here. It's checked against the collector's own rules as you go.</p>
     <div class="page-header-actions">
         <button type="button" class="btn btn-outline-secondary" id="wf-new"><span class="material-icons" aria-hidden="true">add</span> New</button>
         <button type="button" class="btn btn-outline-secondary" id="wf-import-open"><span class="material-icons" aria-hidden="true">upload</span> Import YAML</button>
@@ -27,6 +27,10 @@
             <select class="form-select form-select-sm" id="wf-list" aria-label="Open a workflow"><option>Loading…</option></select>
             <label class="wf-field-inline">Name <input type="text" class="form-control form-control-sm" id="wf-name" spellcheck="false" autocomplete="off"></label>
             <label class="wf-field-inline">On <select class="form-select form-select-sm" id="wf-trigger"></select></label>
+            <div class="form-check form-switch wf-field-inline" title="Off: it doesn't run, even where a source names it">
+                <input class="form-check-input" type="checkbox" role="switch" id="wf-enabled" checked>
+                <label class="form-check-label" for="wf-enabled">Enabled</label>
+            </div>
             <span class="wf-toolbar-sep"></span>
             <select class="form-select form-select-sm" id="wf-palette" aria-label="Node type to add"></select>
             <button type="button" class="btn btn-sm btn-primary" id="wf-add"><span class="material-icons" aria-hidden="true">add_box</span> Add node</button>
@@ -36,38 +40,33 @@
         </div>
         <p class="wf-file-error text-danger small" id="wf-file-error" hidden></p>
         <div class="wf-canvas" id="wf-canvas" tabindex="0" aria-label="Workflow graph"></div>
-        <p class="wf-hint small text-body-secondary">Drag from a node's right dot to another node's left dot to connect them (an <code>if</code> has <em>then</em> and <em>else</em>). Delete a link by clicking it, then <kbd>Del</kbd>.</p>
+        <div class="wf-balloon small" id="wf-balloon" role="tooltip" hidden></div>
+        <p class="wf-hint small text-body-secondary">Each card holds its settings: <span class="material-icons" aria-hidden="true">expand_less</span> folds it, <span class="material-icons" aria-hidden="true">info</span> or resting the pointer on a field explains it. Drag from a node's right dot to another node's left dot to connect them (an <code>if</code> has <em>then</em> and <em>else</em>). Delete a link by clicking it, then <kbd>Del</kbd>. <span class="material-icons" aria-hidden="true">auto_fix_high</span> lays the cards out again.</p>
     </section>
 
-    <aside class="wf-side" aria-label="Node and YAML">
-        <section class="panel wf-props">
-            <div class="panel-header"><h2>Node</h2></div>
-            <div id="wf-props"><p class="text-body-secondary small">Select a node to edit it.</p></div>
-        </section>
-        <section class="panel wf-yaml">
-            <div class="panel-header">
-                <h2>YAML</h2>
+    <section class="panel wf-dock" aria-label="YAML">
+        <div class="panel-header">
+            <h2>
+                <button type="button" class="wf-dock-toggle" id="wf-yaml-toggle" aria-expanded="false" aria-controls="wf-yaml-body"><span class="material-icons" aria-hidden="true">expand_less</span> YAML</button>
                 <span class="wf-status" id="wf-status" aria-live="polite"></span>
-            </div>
-            <ul class="wf-errors small" id="wf-errors"></ul>
-            <pre class="wf-yaml-text" id="wf-yaml"></pre>
+            </h2>
             <div class="wf-yaml-actions">
-                <button type="button" class="btn btn-sm btn-primary" id="wf-copy" disabled><span class="material-icons" aria-hidden="true">content_copy</span> Copy</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-download" disabled><span class="material-icons" aria-hidden="true">download</span> Download</button>
+                <button type="button" class="btn btn-sm btn-primary" id="wf-copy" disabled title="Just this workflow, indented to paste under the workflows: of workflows.yaml"><span class="material-icons" aria-hidden="true">content_copy</span> Copy</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-download" disabled title="The whole file"><span class="material-icons" aria-hidden="true">download</span> Download</button>
             </div>
-            <p class="small text-body-secondary">Copy gives just this workflow, indented to paste under the <code>workflows:</code> of your <code>collector.yaml</code>; Download gives the whole file above.</p>
-            <details class="wf-vars small">
-                <summary>Variables for conditions and templates</summary>
-                <ul id="wf-vars"></ul>
-            </details>
-        </section>
-    </aside>
+        </div>
+        <ul class="wf-errors small" id="wf-errors"></ul>
+        <div class="wf-yaml-body" id="wf-yaml-body" hidden>
+            <pre class="wf-yaml-text" id="wf-yaml"></pre>
+            <p class="small text-body-secondary">Copy gives just this workflow, indented to paste under the <code>workflows:</code> of <code>workflows.yaml</code>; Download gives the whole file above.</p>
+        </div>
+    </section>
 </div>
 
 <dialog class="wf-import" id="wf-import">
     <form method="dialog">
         <h2 class="h5">Import YAML</h2>
-        <p class="small text-body-secondary">A whole <code>collector.yaml</code> or just its <code>workflows:</code> section.</p>
+        <p class="small text-body-secondary">A whole <code>workflows.yaml</code> (or <code>collector.yaml</code>) or just its <code>workflows:</code> section.</p>
         <textarea class="form-control font-monospace" id="wf-import-text" rows="14" spellcheck="false"></textarea>
         <p class="text-danger small" id="wf-import-error" hidden></p>
         <div class="wf-import-actions">

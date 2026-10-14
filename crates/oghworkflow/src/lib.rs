@@ -7,7 +7,9 @@ use std::collections::{HashMap, HashSet};
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
 
-const BUILT_IN: &str = include_str!("default_workflows.yaml");
+/// The repository's `workflows.yaml`, as built: what runs when there's none
+/// next to the collector config (see `shipped`).
+const BUILT_IN: &str = include_str!("../../../workflows.yaml");
 /// What a source without `workflows:` runs.
 pub const DEFAULT: &str = "default";
 
@@ -17,8 +19,18 @@ pub struct Workflow {
     /// What runs it: `module` (each module folder a job walks) or
     /// `pull_request` (each PR/MR it tracks).
     pub on: String,
+    /// `false`: it doesn't run, even where a source names it (a demo, a
+    /// draft). It's still checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// The first node is where it starts.
     pub nodes: Vec<Node>,
+}
+
+impl Workflow {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled != Some(false)
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -71,6 +83,10 @@ pub struct Node {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patch: Option<String>,
+    /// Where the editor draws it, `[x, y]`, so a shared workflow keeps its
+    /// layout. Any node may have it; the collector ignores it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos: Option<[f64; 2]>,
 }
 
 impl Node {
@@ -123,7 +139,7 @@ const AI_FIELDS: &[&str] = &[
 
 /// Node types, the fields each takes besides `id`/`type`, and the triggers
 /// it can run on.
-const NODE_TYPES: [(&str, &[&str], &[&str]); 13] = [
+const NODE_TYPES: [(&str, &[&str], &[&str]); 14] = [
     ("if", &["when", "then", "else"], ANY),
     ("read_manifest", &["next"], MODULE),
     ("git_stats", &["next"], MODULE),
@@ -136,11 +152,12 @@ const NODE_TYPES: [(&str, &[&str], &[&str]); 13] = [
     ("ai", AI_FIELDS, ANY),
     ("pr_comment", &["next", "body"], PULL_REQUEST),
     ("pr_edit", &["next", "body"], PULL_REQUEST),
+    ("pr_review", &["next", "body", "patch"], PULL_REQUEST),
     ("pr_open", &["next", "title", "body", "patch"], MODULE),
 ];
 
 /// The outward node types a source can let act for real (`actions`).
-pub const ACTIONS: [&str; 4] = ["ai", "pr_comment", "pr_edit", "pr_open"];
+pub const ACTIONS: [&str; 5] = ["ai", "pr_comment", "pr_edit", "pr_review", "pr_open"];
 const PROVIDERS: [&str; 2] = ["openai", "anthropic"];
 /// `ai.timeout` at most: with `OGHCOLLECTOR_AI_LIMIT` calls per job it must
 /// stay well within the job timeout.
@@ -149,10 +166,10 @@ const MAX_AI_TIMEOUT: u64 = 600;
 const SEVERITIES: [&str; 4] = ["info", "success", "warning", "error"];
 
 /// What each node type does, for people (the editor's palette).
-const NODE_DOCS: [(&str, &str); 13] = [
+const NODE_DOCS: [(&str, &str); 14] = [
     (
         "if",
-        "Goes to `then` when the condition holds, else to `else`",
+        "Goes to `then` when the condition holds, else to `else` (none: the flow stops there, a filter)",
     ),
     ("read_manifest", "Reads the module's manifest"),
     ("git_stats", "Committers and folder size, from git"),
@@ -174,6 +191,10 @@ const NODE_DOCS: [(&str, &str); 13] = [
     ("ai", "Asks an AI; the answer is ai.<node id> (outward)"),
     ("pr_comment", "Comments on the PR/MR (outward)"),
     ("pr_edit", "Replaces the PR/MR description (outward)"),
+    (
+        "pr_review",
+        "Reviews the PR/MR: a diff's changes as suggestions its author applies in one click (outward)",
+    ),
     (
         "pr_open",
         "Opens a PR/MR with a patch on the module (outward)",
@@ -227,17 +248,18 @@ const FIELDS: [(&str, &str, &str); 18] = [
     (
         "patch",
         "template",
-        "Unified diff to commit, e.g. {{ ai.fix }}",
+        "Unified diff, e.g. {{ ai.fix }}: committed (pr_open) or suggested on the PR's head (pr_review)",
     ),
 ];
 
 /// The fields `validate` requires, per node type.
-const REQUIRED: [(&str, &[&str]); 6] = [
+const REQUIRED: [(&str, &[&str]); 7] = [
     ("if", &["when", "then"]),
     ("log", &["message"]),
     ("ai", &["provider", "model", "prompt"]),
     ("pr_comment", &["body"]),
     ("pr_edit", &["body"]),
+    ("pr_review", &["patch"]),
     ("pr_open", &["title", "patch"]),
 ];
 
@@ -300,7 +322,9 @@ pub fn metadata() -> serde_json::Value {
                 "org", "repo", "odoo_version", "pr.number", "pr.title", "pr.author", "pr.labels",
                 "pr.draft", "pr.ci_status", "pr.head_sha", "pr.head_ref", "pr.url",
                 "pr.description", "pr.is_new", "pr.head_changed", "pr.ci_changed", "pr.is_ours",
-                "modules[].name", "modules[].port", "modules[].analysis", "ai.<node id>", "diff()",
+                "modules[].name", "modules[].port", "modules[].analysis", "security.grave",
+                "security.minor", "security.findings", "migration.count", "migration.notes",
+                "ai.<node id>", "diff()",
             ],
         },
     })
@@ -349,8 +373,37 @@ pub fn parse_workflows(yaml: &str) -> Result<HashMap<String, Workflow>, String> 
         .map_err(|err| err.to_string())
 }
 
-/// The `workflows:` of a collector config file (`config` crate: `path` with
-/// or without its .yaml/.json/.toml extension). No file: none.
+/// The workflows file of a collector config: `workflows.yaml` in its folder.
+pub fn workflows_file(config: &str) -> std::path::PathBuf {
+    std::path::Path::new(config).with_file_name("workflows.yaml")
+}
+
+/// The workflows a collector config starts from: its `workflows_file`, or
+/// the copy built into the binary when there's none there (`false`). Never
+/// both: what the file leaves out is gone.
+pub fn shipped(config: &str) -> Result<(HashMap<String, Workflow>, bool), String> {
+    let path = workflows_file(config);
+    if !path.is_file() {
+        return Ok((built_in(), false));
+    }
+    let failed = |err: String| format!("Can't load '{}': {err}", path.display());
+    let text = std::fs::read_to_string(&path).map_err(|e| failed(e.to_string()))?;
+    Ok((parse_workflows(&text).map_err(failed)?, true))
+}
+
+/// What a collector config can run: `shipped`, then its own `workflows:`
+/// (`own`), which replace any of the same name.
+pub fn layered(
+    config: &str,
+    own: &HashMap<String, Workflow>,
+) -> Result<HashMap<String, Workflow>, String> {
+    let (mut all, _) = shipped(config)?;
+    all.extend(own.iter().map(|(name, wf)| (name.clone(), wf.clone())));
+    Ok(all)
+}
+
+/// The `workflows:` of a collector config (`config` crate: `path` with or
+/// without its .yaml/.json/.toml extension). No file: none.
 pub fn file_workflows(path: &str) -> Result<HashMap<String, Workflow>, String> {
     #[derive(Deserialize)]
     struct Doc {
@@ -388,27 +441,38 @@ fn is_collector_secret(name: &str) -> bool {
 
 /// Everything a workflow can get wrong, checked before any job runs.
 pub fn validate(name: &str, wf: &Workflow) -> Result<(), String> {
+    problems(name, wf).into_iter().next().map_or(Ok(()), Err)
+}
+
+/// Every problem of a workflow: the first of each node (the editor marks
+/// each one), then a cycle if there's nothing else. `validate` = the first.
+pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
     let fail = |msg: String| Err(format!("workflow '{name}': {msg}"));
+    let whole = |msg: String| vec![format!("workflow '{name}': {msg}")];
     if !is_valid_name(name) {
-        return fail("invalid name (lowercase letters, digits, '-' or '_')".to_string());
+        return whole("invalid name (lowercase letters, digits, '-' or '_')".to_string());
     }
     if !ANY.contains(&wf.on.as_str()) {
-        return fail(format!(
+        return whole(format!(
             "unknown trigger '{}' (module or pull_request)",
             wf.on
         ));
     }
     if wf.nodes.is_empty() {
-        return fail("no nodes".to_string());
+        return whole("no nodes".to_string());
     }
+    let mut found = Vec::new();
     let mut ids = HashSet::new();
     for node in &wf.nodes {
         if !is_valid_name(&node.id) || !ids.insert(node.id.as_str()) {
-            return fail(format!("invalid or repeated node id '{}'", node.id));
+            found.push(format!(
+                "workflow '{name}': invalid or repeated node id '{}'",
+                node.id
+            ));
         }
     }
     let env = Environment::new();
-    for node in &wf.nodes {
+    let check = |node: &Node| -> Result<(), String> {
         let at = format!("node '{}'", node.id);
         let Some((_, allowed, triggers)) = NODE_TYPES.iter().find(|(kind, ..)| *kind == node.kind)
         else {
@@ -493,6 +557,10 @@ pub fn validate(name: &str, wf: &Workflow) -> Result<(), String> {
                 template("system", &node.system, false).or_else(fail)?;
             }
             "pr_comment" | "pr_edit" => template("body", &node.body, true).or_else(fail)?,
+            "pr_review" => {
+                template("patch", &node.patch, true).or_else(fail)?;
+                template("body", &node.body, false).or_else(fail)?;
+            }
             "pr_open" => {
                 template("title", &node.title, true).or_else(fail)?;
                 template("patch", &node.patch, true).or_else(fail)?;
@@ -500,6 +568,12 @@ pub fn validate(name: &str, wf: &Workflow) -> Result<(), String> {
             }
             _ => {}
         }
+        Ok(())
+    };
+    found.extend(wf.nodes.iter().filter_map(|node| check(node).err()));
+    if !found.is_empty() {
+        // The walk below needs every link to exist.
+        return found;
     }
     // A cycle would run forever: every path must end.
     fn visit<'a>(
@@ -527,23 +601,23 @@ pub fn validate(name: &str, wf: &Workflow) -> Result<(), String> {
         Ok(())
     }
     let mut done = HashSet::new();
-    for node in &wf.nodes {
-        if let Err(err) = visit(wf, &node.id, &mut Vec::new(), &mut done) {
-            return fail(err);
-        }
-    }
-    Ok(())
+    wf.nodes
+        .iter()
+        .find_map(|node| visit(wf, &node.id, &mut Vec::new(), &mut done).err())
+        .map(whole)
+        .unwrap_or_default()
 }
 
 /// The built-in workflows, then the config file's (same name: the file's).
 pub fn with_built_in(file: &HashMap<String, Workflow>) -> HashMap<String, Workflow> {
-    let mut all: HashMap<String, Workflow> = config::Config::builder()
-        .add_source(config::File::from_str(BUILT_IN, config::FileFormat::Yaml))
-        .build()
-        .and_then(|c| c.try_deserialize())
-        .expect("the built-in workflows are valid");
+    let mut all = built_in();
     all.extend(file.iter().map(|(name, wf)| (name.clone(), wf.clone())));
     all
+}
+
+/// The copy of `workflows.yaml` built into the binary.
+pub fn built_in() -> HashMap<String, Workflow> {
+    parse_workflows(BUILT_IN).expect("the repository's workflows.yaml parses")
 }
 
 #[cfg(test)]
@@ -556,6 +630,60 @@ mod tests {
             .build()
             .and_then(|c| c.try_deserialize())
             .unwrap()
+    }
+
+    #[test]
+    fn every_bad_node_is_reported() {
+        let wf = parse(
+            "on: module\nnodes: [{id: a, type: log}, {id: b, type: pr_comment, body: x}, {id: c, type: osv}]",
+        );
+        let found = problems("w", &wf);
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(found[0].contains("node 'a'"), "{found:?}");
+        assert!(found[1].contains("node 'b'"), "{found:?}");
+        assert_eq!(validate("w", &wf), Err(found[0].clone()));
+    }
+
+    /// The editor's condition rules (`workflows.mjs` `ruleExpr`) write these
+    /// forms: they must mean the same to the collector's minijinja.
+    #[test]
+    fn the_editor_condition_rules_evaluate() {
+        let view = minijinja::Value::from_serialize(serde_json::json!({
+            "repo": "l10n-spain",
+            "technical_name": "l10n_es_account",
+            "odoo_version": "18.0",
+            "is_new": true,
+            "unchanged": false,
+            "manifest": {"depends": ["account", "base"]},
+            "pr": {"number": 12},
+            "title": r#"say "hi""#,
+        }));
+        let env = minijinja::Environment::new();
+        let eval = |expr: &str| {
+            env.compile_expression(expr)
+                .and_then(|e| e.eval(view.clone()))
+                .unwrap_or_else(|err| panic!("{expr}: {err}"))
+                .is_true()
+        };
+        for (expr, holds) in [
+            (r#"repo == "l10n-spain""#, true),
+            (r#"repo != "l10n-spain""#, false),
+            (r#"odoo_version == "18.0""#, true),
+            (r#""account" in technical_name"#, true),
+            (r#""test" not in technical_name"#, true),
+            (r#""account" in manifest.depends"#, true),
+            (r#""acc" in manifest.depends"#, false),
+            (r#"technical_name is startingwith("l10n_")"#, true),
+            (r#"technical_name is endingwith("_es")"#, false),
+            ("pr.number > 3", true),
+            ("pr.number == 12", true),
+            ("is_new and not unchanged", true),
+            (r#"repo == "x" or "es_" in technical_name"#, true),
+            // JSON.stringify's escapes, as minijinja reads them.
+            (r#""\"hi\"" in title"#, true),
+        ] {
+            assert_eq!(eval(expr), holds, "{expr}");
+        }
     }
 
     #[test]
@@ -619,12 +747,63 @@ mod tests {
         assert!(
             parse_workflows("workflows: {w: {on: module, nodes: [{id: l, typo: x}]}}").is_err()
         );
+        // Off, and said so when serialized; on is the default, left out.
+        let off = &parse_workflows(
+            "workflows: {w: {on: module, enabled: false, nodes: [{id: o, type: osv}]}}",
+        )
+        .unwrap()["w"];
+        assert!(!off.is_enabled());
+        assert_eq!(serde_json::to_value(off).unwrap()["enabled"], false);
+        assert!(parsed["w"].is_enabled());
+        assert!(serde_json::to_value(&parsed["w"])
+            .unwrap()
+            .get("enabled")
+            .is_none());
+        // The editor's layout travels with it, and doesn't count as a field.
+        let laid_out =
+            "workflows: {w: {on: module, nodes: [{id: l, type: osv, pos: [120, 40.5]}]}}";
+        let wf = &parse_workflows(laid_out).unwrap()["w"];
+        assert_eq!(wf.nodes[0].pos, Some([120.0, 40.5]));
+        assert_eq!(validate("w", wf), Ok(()));
+        let node = serde_json::to_value(&wf.nodes[0]).unwrap();
+        assert_eq!(node["pos"], serde_json::json!([120.0, 40.5]));
+    }
+
+    #[test]
+    fn the_workflows_file_sits_beside_the_config_and_its_own_win() {
+        let file = |config: &str| workflows_file(config).to_string_lossy().into_owned();
+        assert_eq!(file("collector"), "workflows.yaml");
+        assert_eq!(file("/app/collector.yaml"), "/app/workflows.yaml");
+        let dir = std::env::temp_dir().join(format!("ogh-layers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("workflows.yaml"),
+            "workflows:\n  a: {on: module, nodes: [{id: l, type: log, message: file}]}\n  b: {on: module, nodes: [{id: l, type: log, message: file}]}\n",
+        )
+        .unwrap();
+        let config = dir.join("collector");
+        let own = parse_workflows(
+            "workflows: {b: {on: module, nodes: [{id: l, type: log, message: own}]}}",
+        )
+        .unwrap();
+        let all = layered(config.to_str().unwrap(), &own).unwrap();
+        let message = |name: &str| all[name].nodes[0].message.clone().unwrap();
+        assert_eq!((message("a"), message("b")), ("file".into(), "own".into()));
+        // The file replaces the built-in copy entirely: no `default` here.
+        assert!(!all.contains_key(DEFAULT));
+        // No file there: the built-in copy.
+        std::fs::remove_file(dir.join("workflows.yaml")).unwrap();
+        let (none, from_file) = shipped(config.to_str().unwrap()).unwrap();
+        assert!(!from_file && none.contains_key(DEFAULT));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn workflows_are_validated_up_front() {
         let built_in = with_built_in(&HashMap::new());
-        assert!(validate(DEFAULT, &built_in[DEFAULT]).is_ok());
+        for (name, wf) in &built_in {
+            assert_eq!(validate(name, wf), Ok(()), "{name}");
+        }
         let bad = [
             (
                 "on: push\nnodes: [{id: a, type: log, message: x}]",

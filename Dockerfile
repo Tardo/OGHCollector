@@ -48,6 +48,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=crates,target=crates \
+    --mount=type=bind,source=workflows.yaml,target=workflows.yaml \
     --mount=type=bind,source=migrations,target=migrations \
     --mount=type=bind,source=package.json,target=package.json \
     --mount=type=bind,source=pnpm-lock.yaml,target=pnpm-lock.yaml \
@@ -117,7 +118,7 @@ COPY --from=build /out/static    /app/static
 COPY --from=build /out/templates /app/web/templates
 
 COPY files/pip_names.txt /app/files/pip_names.txt
-COPY collector.yaml /app/collector.yaml
+COPY collector.yaml workflows.yaml /app/
 RUN chown -R appuser:appuser /app \
     && chmod 755 \
     /usr/local/bin/diesel \
