@@ -414,7 +414,7 @@ mod tests {
     use super::*;
 
     fn job(origin: &str, ver: &str, git: &str) -> Vec<String> {
-        [origin, ver, git, "all", "migration"]
+        [origin, ver, git, "all", "migration", "default", "-"]
             .map(str::to_string)
             .to_vec()
     }

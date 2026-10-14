@@ -4,6 +4,9 @@
 # `oghcollector --check` validates this file and prints those jobs.
 #
 # templates: named lists of module folders, referenced by `template:`
+# workflows: named graphs of nodes run on each module a job finds (see the
+#           README, "Workflows"); the built-in `default` is what the
+#           collector always did
 # sources:
 #   source:   organization/group (every repo directly in it) or `owner/repo`
 #             (GitLab: `group/project`, or `group/subgroup`; a group's
@@ -23,6 +26,11 @@
 #             (`18.0-mig-<module>`), nothing analyzed; full tracks every open
 #             PR/MR, maps it to the modules it changes and analyzes them at
 #             its head. Meant for your own repos (pair it with webhooks).
+#   workflows: workflows run on each of its modules (default: [default];
+#             []: only the walk, nothing stored or analyzed) and PRs
+#   actions:  outward workflow nodes allowed to act for real here (ai,
+#             pr_comment, pr_edit, pr_open); the rest only log what they
+#             would do (default: none)
 #
 # Unknown keys are errors. JSON or TOML with the same keys also work
 # (`--config collector.json`).

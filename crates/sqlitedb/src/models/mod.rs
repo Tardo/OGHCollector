@@ -31,6 +31,7 @@ pub mod pull_request_history;
 pub mod pull_request_module;
 pub mod system_event;
 pub mod system_event_type;
+pub mod workflow_action;
 
 use diesel::r2d2::{ConnectionManager, PooledConnection};
 use diesel::sqlite::SqliteConnection;

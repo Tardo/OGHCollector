@@ -1,19 +1,23 @@
 // Copyright Alexandre D. Díaz
+mod actions;
+#[cfg(test)]
+mod actions_tests;
 mod analyzer;
 mod anygitclient;
 mod clients;
 mod config;
 mod embeddings;
 mod gitclient;
+#[cfg(test)]
+mod golden;
 mod listen;
 mod migration;
 mod pull_requests;
 mod pypi;
 mod security;
+mod workflow;
 
 use named_lock::NamedLock;
-use regex::Regex;
-use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
@@ -22,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -108,6 +113,15 @@ fn init_logging() {
     }));
 }
 
+/// The collector config of this run (`--config`), handed to every job it
+/// starts (`OGHCOLLECTOR_CONFIG`) for the workflow definitions.
+static CONFIG_PATH: OnceLock<String> = OnceLock::new();
+const CONFIG_ENV: &str = "OGHCOLLECTOR_CONFIG";
+
+fn config_path() -> &'static str {
+    CONFIG_PATH.get_or_init(|| env::var(CONFIG_ENV).unwrap_or_else(|_| "collector".to_string()))
+}
+
 /// Pid (= process group) of the job `run_job` is running, 0 when none: what
 /// `listen` stops on SIGTERM.
 static RUNNING_JOB: AtomicI32 = AtomicI32::new(0);
@@ -122,6 +136,7 @@ fn run_job(exe: &Path, args: &[String], timeout: Duration) -> Result<(), String>
     let mut child = Command::new(exe)
         .args(args)
         .env(SKIP_EMBEDDINGS_ENV, "1")
+        .env(CONFIG_ENV, config_path())
         .stderr(Stdio::piped())
         // Its own process group, so a timeout kills its git subprocesses too.
         // ponytail: a terminal Ctrl+C then stops the batch but not the running job.
@@ -204,6 +219,15 @@ fn pr_analysis_limit() -> usize {
         .ok()
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(100)
+}
+
+/// AI calls per job at most (`OGHCOLLECTOR_AI_LIMIT`): with `ai.timeout` at
+/// most 600s, the default stays well within `JOB_TIMEOUT`.
+fn ai_limit() -> usize {
+    env::var("OGHCOLLECTOR_AI_LIMIT")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(20)
 }
 
 /// Set on the children of `run_config`, which runs the embeddings pass once
@@ -295,7 +319,7 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let usage = || -> ! {
         eprintln!(
-            "Usage: oghcollector [--config <file>] [--check|--listen]\n       oghcollector --embeddings\n       oghcollector <source>[:<paths>] <version> [<git> [<workspaces>|all [migration|full]]]"
+            "Usage: oghcollector [--config <file>] [--check|--listen]\n       oghcollector --embeddings\n       oghcollector <source>[:<paths>] <version> [<git> [<workspaces>|all [migration|full [<workflows>|-]]]]"
         );
         std::process::exit(2);
     };
@@ -314,6 +338,7 @@ async fn main() {
                 _ => usage(),
             }
         }
+        let _ = CONFIG_PATH.set(path.to_string());
         if listen {
             return listen::run(path).await;
         }
@@ -325,6 +350,14 @@ async fn main() {
     let config = OGHCollectorConfig::new(&args);
 
     let _lock_guard = try_lock(&config);
+
+    // Before any work: a bad workflow fails the job right away.
+    let engine = config::load_workflows(config_path())
+        .and_then(|defs| workflow::Engine::new(config.get_workflows(), &defs))
+        .unwrap_or_else(|err| {
+            log::error!("{err}");
+            std::process::exit(1);
+        });
 
     let git_client = match config.get_git_type() {
         GitType::Github => {
@@ -368,385 +401,36 @@ async fn main() {
         gh_repo_ids.push(gh_repo.id);
     }
 
-    log::info!("Analyzing '{}' repos...", repo_infos.len());
     let analyzer = OGHCollectorAnalyzer::new(odoo_ver);
-    let manifest_infos = analyzer.get_module_info(&mut conn, config.get_read_paths(), &repo_infos);
-    let manifest_count = &manifest_infos.len();
-    if manifest_count.gt(&0) {
-        log::info!("Saving '{}' repos info...", manifest_infos.len());
-        let mut module_ids_by_repo: HashMap<i64, Vec<i64>> = HashMap::new();
-        let dep_type_module = models::dependency_type::get_by_name(&mut conn, "module")
-            .expect("Can't find the module dependency type");
-        let dep_type_python = models::dependency_type::get_by_name(&mut conn, "python")
-            .expect("Can't find the python dependency type");
-        let dep_type_bin = models::dependency_type::get_by_name(&mut conn, "bin")
-            .expect("Can't find the bin dependency type");
-        let re = Regex::new(r"^([^><=]+).+?([^><=]+)$").unwrap();
-        for manifest in manifest_infos {
-            let mut new_module_info = manifest.clone();
-            new_module_info.version_odoo = *odoo_ver; // It is forced because some modules do not have this data correctly.
-            let new_module = models::module::add(&mut conn, &new_module_info).unwrap();
-            let module_ids = module_ids_by_repo
-                .entry(new_module.gh_repository_id)
-                .or_default();
-            module_ids.push(new_module.id);
-
-            // The analyzer already skipped re-parsing this module's source
-            // (see OGHCollectorAnalyzer::get_module_info) when its last
-            // commit hash matched what's already stored, so `analysis` here
-            // is empty - replacing stored data with it would wipe it.
-            if !new_module_info.source_unchanged {
-                // Resolve (or start) the history entry for this manifest version,
-                // then replace the module's code analysis (views touched, models
-                // defined/extended with their fields and public methods, and
-                // every other record it touches - access groups, record rules,
-                // access rights, ...) scoped to that version, on every run,
-                // independent of whether any manifest field changed. A prior
-                // version's snapshot is left untouched - only its own
-                // module_version_id gets wiped/rebuilt.
-                let module_version = models::module_version::get_or_create(
-                    &mut conn,
-                    &new_module.id,
-                    &new_module_info.version_module,
-                )
-                .unwrap();
-                models::module_view::replace_for_module(
-                    &mut conn,
-                    &new_module.id,
-                    &module_version.id,
-                    &new_module_info.analysis.views,
-                )
-                .unwrap();
-                models::module_model::replace_for_module(
-                    &mut conn,
-                    &new_module.id,
-                    &module_version.id,
-                    &new_module_info.analysis.models,
-                )
-                .unwrap();
-                models::module_record::replace_for_module(
-                    &mut conn,
-                    &new_module.id,
-                    &module_version.id,
-                    &new_module_info.analysis.records,
-                )
-                .unwrap();
-                models::module_controller::replace_for_module(
-                    &mut conn,
-                    &new_module.id,
-                    &module_version.id,
-                    &new_module_info.analysis.controllers,
-                )
-                .unwrap();
-
-                // Static security checks (ACLs, record rules, controllers and
-                // code-level sinks, see collector::security). Every finding is
-                // stored; minor ones also leave a system_event log line, but
-                // only when new for this version snapshot, so re-analysis
-                // (a new commit, an ANALYSIS_VERSION bump) doesn't re-log
-                // findings already reported.
-                let sec_warnings = security::analyze_module(
-                    &new_module.technical_name,
-                    &new_module_info.category,
-                    &new_module_info.analysis,
-                );
-                let known: std::collections::HashSet<(String, Option<String>)> =
-                    models::module_security_warning::get_by_module_version_id(
-                        &mut conn,
-                        &module_version.id,
-                    )
-                    .into_iter()
-                    .map(|w| (w.code, w.xml_id))
-                    .collect();
-                for w in sec_warnings.iter().filter(|w| {
-                    w.severity != models::module_security_warning::SEVERITY_ERROR
-                        && !known.contains(&(w.code.clone(), w.xml_id.clone()))
-                }) {
-                    let _ = models::system_event::register_security_warning(
-                        &mut conn,
-                        &new_module.technical_name,
-                        &new_module.name,
-                        &odoo_ver_str,
-                        w.xml_id.as_deref(),
-                        &w.message,
-                    );
-                }
-                models::module_security_warning::replace_for_module(
-                    &mut conn,
-                    &new_module.id,
-                    &module_version.id,
-                    &sec_warnings,
-                )
-                .unwrap();
-
-                // "What to check before/after upgrading this module" findings
-                // over the same analysis pass (see collector::migration).
-                let mig_notes = migration::analyze_module(*odoo_ver, &new_module_info.analysis);
-                models::module_migration_note::replace_for_module(
-                    &mut conn,
-                    &new_module.id,
-                    &module_version.id,
-                    &mig_notes,
-                )
-                .unwrap();
-                let _ = models::module::set_analysis_version(
-                    &mut conn,
-                    &new_module.id,
-                    analyzer::ANALYSIS_VERSION,
-                );
-            }
-
-            // Check Odoo Version
-            if manifest.version_odoo.ne(odoo_ver) && manifest.installable {
-                let repo_name =
-                    models::gh_repository::get_by_id(&mut conn, &new_module.gh_repository_id)
-                        .map(|r| r.name)
-                        .unwrap_or_default();
-                let _ = models::system_event::register_problem_module_version(
-                    &mut conn,
-                    &new_module.technical_name,
-                    &new_module.name,
-                    &repo_name,
-                    odoo_version_u8_to_string(&manifest.version_odoo).as_str(),
-                    &odoo_ver_str,
-                );
-            }
-
-            // Add Odoo deps.
-            let module_depends = models::dependency_module::get_names(
-                &mut conn,
-                &new_module.id,
-                &dep_type_module.id,
-            );
-            let module_depends_to_remove: Vec<&String> = module_depends
-                .iter()
-                .filter(|item| !manifest.depends.contains(item))
-                .collect();
-            let module_depends_to_add: Vec<&String> = manifest
-                .depends
-                .iter()
-                .filter(|item| !module_depends.contains(&item.to_string()))
-                .collect();
-            for module_depend_name in module_depends_to_remove {
-                let module_depend_id_opt = models::dependency::get_by_name(
-                    &mut conn,
-                    &dep_type_module.id,
-                    module_depend_name,
-                );
-                if let Some(module_depend_id) = module_depend_id_opt {
-                    let _ = models::dependency_module::delete_by_module_id_dependency_id(
-                        &mut conn,
-                        &new_module.id,
-                        &module_depend_id.id,
-                    );
-                    let _ = models::system_event::register_delete_module_dependency(
-                        &mut conn,
-                        &module_depend_id.name,
-                        "Odoo",
-                        &new_module.technical_name,
-                        &new_module.name,
-                        odoo_version_u8_to_string(&(new_module.version_odoo as u8)).as_str(),
-                    );
-                }
-            }
-            for module_depend_name in module_depends_to_add {
-                models::dependency_module::add(
-                    &mut conn,
-                    &dep_type_module.id,
-                    module_depend_name,
-                    &new_module.id,
-                )
-                .unwrap();
-            }
-
-            // Add python deps.
-            let module_depends_python = models::dependency_module::get_names(
-                &mut conn,
-                &new_module.id,
-                &dep_type_python.id,
-            );
-            let module_depends_python_to_remove: Vec<&String> = module_depends_python
-                .iter()
-                .filter(|item| !manifest.external_depends_python.contains(item))
-                .collect();
-            let module_depends_python_to_add: Vec<&String> = manifest
-                .external_depends_python
-                .iter()
-                .filter(|item| !module_depends_python.contains(&item.to_string()))
-                .collect();
-            for module_depends_python_name in module_depends_python_to_remove {
-                let module_depend_python_id_opt = models::dependency::get_by_name(
-                    &mut conn,
-                    &dep_type_python.id,
-                    module_depends_python_name,
-                );
-                if let Some(module_depend_id) = module_depend_python_id_opt {
-                    let _ = models::dependency_module::delete_by_module_id_dependency_id(
-                        &mut conn,
-                        &new_module.id,
-                        &module_depend_id.id,
-                    );
-                    let _ = models::system_event::register_delete_module_dependency(
-                        &mut conn,
-                        &module_depend_id.name,
-                        "Python",
-                        &new_module.technical_name,
-                        &new_module.name,
-                        odoo_version_u8_to_string(&(new_module.version_odoo as u8)).as_str(),
-                    );
-                }
-            }
-            for module_depends_python_name in module_depends_python_to_add {
-                let dep_mod = models::dependency_module::add(
-                    &mut conn,
-                    &dep_type_python.id,
-                    module_depends_python_name,
-                    &new_module.id,
-                )
-                .unwrap();
-                // Check OSV
-                if module_depends_python_name.contains("==")
-                    || module_depends_python_name.contains("<")
-                {
-                    let Some(caps) = re.captures(module_depends_python_name) else {
-                        log::warn!(
-                            "Can't parse python dependency '{module_depends_python_name}'. Skipping OSV check..."
-                        );
-                        continue;
-                    };
-                    let package_name = caps
-                        .get(1)
-                        .map_or(String::new(), |m| m.as_str().trim().to_string());
-                    let mut package_ver = caps
-                        .get(2)
-                        .map_or(String::new(), |m| m.as_str().trim().to_string());
-                    if !module_depends_python_name.contains("<=")
-                        && module_depends_python_name.contains("<")
-                    {
-                        // A PyPI/network hiccup only skips this dep's OSV check,
-                        // never the whole collector run.
-                        let package_ver_opt = match pypi_client
-                            .get_nearest_version(&package_name, &package_ver)
-                            .await
-                        {
-                            Ok(res) => res,
-                            Err(err) => {
-                                log::warn!(
-                                    "Can't query PyPI for '{package_name}': {err}. Skipping OSV check..."
-                                );
-                                continue;
-                            }
-                        };
-                        let Some(nearest_ver) = package_ver_opt else {
-                            log::info!(
-                                "No valid release version found for '{}': '{}' ({}). Skipping...",
-                                module_depends_python_name,
-                                package_name,
-                                package_ver
-                            );
-                            continue;
-                        };
-                        package_ver = nearest_ver;
-                    }
-                    let package_info = match pypi_client
-                        .get_package_info(&package_name, Some(&package_ver))
-                        .await
-                    {
-                        Ok(res) => res,
-                        Err(err) => {
-                            log::warn!(
-                                "Can't query PyPI for '{package_name}': {err}. Skipping OSV check..."
-                            );
-                            continue;
-                        }
-                    };
-                    let vulns_opt = package_info["vulnerabilities"].as_array();
-                    if let Some(vulns) = vulns_opt {
-                        for vuln in vulns {
-                            let Some(vuln_id) = vuln["id"].as_str() else {
-                                continue;
-                            };
-                            let fixed_in: String = vuln["fixed_in"]
-                                .as_array()
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|x| x.as_str())
-                                        .collect::<Vec<&str>>()
-                                        .join(", ")
-                                })
-                                .unwrap_or_default();
-                            models::dependency_osv::add(
-                                &mut conn,
-                                &dep_mod.id,
-                                vuln_id,
-                                vuln["details"].as_str().unwrap_or(""),
-                                fixed_in.as_str(),
-                            )
-                            .unwrap();
-                        }
-                    }
-                }
-            }
-
-            // Add bin deps.
-            let module_depends_bin =
-                models::dependency_module::get_names(&mut conn, &new_module.id, &dep_type_bin.id);
-
-            let module_depends_bin_to_remove: Vec<&String> = module_depends_bin
-                .iter()
-                .filter(|item| !manifest.external_depends_bin.contains(item))
-                .collect();
-            let module_depends_bin_to_add: Vec<&String> = manifest
-                .external_depends_bin
-                .iter()
-                .filter(|item| !module_depends_bin.contains(&item.to_string()))
-                .collect();
-            for module_depends_bin_name in module_depends_bin_to_remove {
-                let module_depend_bin_id_opt = models::dependency::get_by_name(
-                    &mut conn,
-                    &dep_type_bin.id,
-                    module_depends_bin_name,
-                );
-                if let Some(module_depend_id) = module_depend_bin_id_opt {
-                    let _ = models::dependency_module::delete_by_module_id_dependency_id(
-                        &mut conn,
-                        &new_module.id,
-                        &module_depend_id.id,
-                    );
-                    let _ = models::system_event::register_delete_module_dependency(
-                        &mut conn,
-                        &module_depend_id.name,
-                        "Bin",
-                        &new_module.technical_name,
-                        &new_module.name,
-                        odoo_version_u8_to_string(&(new_module.version_odoo as u8)).as_str(),
-                    );
-                }
-            }
-            for module_depends_bin_name in module_depends_bin_to_add {
-                models::dependency_module::add(
-                    &mut conn,
-                    &dep_type_bin.id,
-                    module_depends_bin_name,
-                    &new_module.id,
-                )
-                .unwrap();
-            }
-        }
-
-        log::info!("Removing outdated modules info...");
-        for (key, value) in module_ids_by_repo {
-            if !value.is_empty() {
-                models::module::delete_outdated(&mut conn, &key, config.get_version_odoo(), &value)
-                    .unwrap();
-            }
-        }
-    } else {
-        log::info!("Nothing to do!");
-    }
+    let workdir = job_workdir(std::process::id());
+    let forge = actions::Forge::new(
+        matches!(config.get_git_type(), GitType::Gitlab),
+        config.get_base_url(),
+    );
+    let deps = workflow::Deps {
+        analyzer: &analyzer,
+        pypi: &pypi_client,
+        forge: &forge,
+        actions: config.get_actions(),
+        branch: config.get_branch(),
+        workdir: &workdir,
+        ai_calls_left: std::cell::Cell::new(ai_limit()),
+        ai_limit_warned: std::cell::Cell::new(false),
+        dry_runs_left: std::cell::Cell::new(workflow::DRY_RUN_EVENTS),
+        dry_runs_held: std::cell::Cell::new(0),
+    };
+    let manifest_count = workflow::run_modules(
+        &mut conn,
+        &engine,
+        &deps,
+        config.get_read_paths(),
+        &repo_infos,
+        &gh_repo_ids,
+        odoo_ver,
+    )
+    .await;
 
     log::info!("Scanning '{}' repos for pull requests...", repo_infos.len());
-    let workdir = job_workdir(std::process::id());
     let mut budget = pull_requests::Budget {
         analyses: pr_analysis_limit(),
         ci_lookups: pull_requests::CI_LOOKUPS_PER_JOB,
@@ -762,10 +446,13 @@ async fn main() {
             analyzer: &analyzer,
             workdir: &workdir,
             full: config.get_full_pull_requests(),
+            engine: &engine,
+            deps: &deps,
         };
         pull_requests::collect(&prs, &mut conn, &mut budget).await;
     }
     let _ = fs::remove_dir_all(&workdir);
+    deps.log_held_dry_runs(&mut conn);
 
     // What was collected stays saved either way; a failed run is recorded by
     // `run_config` (with its first error) instead of as finished.

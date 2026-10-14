@@ -40,6 +40,8 @@ pub struct PullRequestInfo {
     /// `pull_requests::extract_migration_module_name`).
     pub head_ref: String,
     pub head_sha: String,
+    /// Description (what `pr_edit` templates start from).
+    pub description: String,
     pub author: Option<String>,
     pub is_draft: bool,
     pub labels: Vec<String>,
@@ -76,7 +78,7 @@ pub(crate) fn git_run<S: AsRef<str>>(dir: &str, args: &[S]) -> Result<String, St
 }
 
 /// `git_run` with extra environment variables (see `git_auth_env`).
-fn git_run_env<S: AsRef<str>>(
+pub(crate) fn git_run_env<S: AsRef<str>>(
     dir: &str,
     args: &[S],
     env: &[(String, String)],
@@ -118,7 +120,7 @@ fn git_run_env<S: AsRef<str>>(
 /// without git scopes can't break them), and the token is never written to the
 /// clone's `.git/config` (on the shared data volume) nor shown by `ps`. The
 /// empty helper first drops any helper inherited from the user's git config.
-fn git_auth_env(repo_url: &str, user: &str, token: &str) -> Vec<(String, String)> {
+pub(crate) fn git_auth_env(repo_url: &str, user: &str, token: &str) -> Vec<(String, String)> {
     let Ok(url) = reqwest::Url::parse(repo_url) else {
         return Vec::new();
     };

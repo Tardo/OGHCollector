@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
+    "drawflow": "0.0.60",
     "graphology-layout": "^0.6.1",
     "graphology-layout-forceatlas2": "^0.10.1",
     "graphology-types": "^0.24.8",

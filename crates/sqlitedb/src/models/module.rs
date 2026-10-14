@@ -1337,7 +1337,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
     // A hash-only change (source touched, but no manifest field moved) must
     // still persist - otherwise last_commit_* freezes at the first insert
     // forever (the `changes` list above only tracks manifest fields), and
-    // OGHCollectorAnalyzer::get_module_info's unchanged-module skip - which
+    // the collector workflows' `unchanged` (collector::workflow) - which
     // compares against this stored hash - would never see a hash it can
     // trust. But a truly unchanged module must stay untouched: update_date
     // is shown on the module page and served over the API/MCP, and bumping

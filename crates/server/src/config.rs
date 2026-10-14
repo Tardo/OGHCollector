@@ -18,6 +18,8 @@ pub struct OGHServerConfig {
     db_pool_max_size: u32,
     doodba_max_modules: usize,
     mcp_info_enabled: bool,
+    workflow_editor_enabled: bool,
+    collector_config: String,
     scan_enabled: bool,
     mcp_url: String,
     trusted_proxies: Vec<IpNet>,
@@ -53,6 +55,12 @@ impl OGHServerConfig {
         let db_pool_max_size = settings.get_int("db_pool_max_size").unwrap_or(15) as u32;
         let doodba_max_modules = settings.get_int("doodba_max_modules").unwrap_or(500) as usize;
         let mcp_info_enabled = settings.get_bool("mcp_info_enabled").unwrap_or(false);
+        let workflow_editor_enabled = settings
+            .get_bool("workflow_editor_enabled")
+            .unwrap_or(false);
+        let collector_config = settings
+            .get_string("collector_config")
+            .unwrap_or("collector".to_string());
         let scan_enabled = settings.get_bool("scan_enabled").unwrap_or(false);
         let mcp_url = settings
             .get_string("mcp_url")
@@ -84,6 +92,8 @@ impl OGHServerConfig {
             db_pool_max_size,
             doodba_max_modules,
             mcp_info_enabled,
+            workflow_editor_enabled,
+            collector_config,
             scan_enabled,
             mcp_url,
             trusted_proxies,
@@ -152,6 +162,14 @@ impl OGHServerConfig {
 
     pub fn get_mcp_info_enabled(&self) -> bool {
         self.mcp_info_enabled
+    }
+
+    pub fn get_workflow_editor_enabled(&self) -> bool {
+        self.workflow_editor_enabled
+    }
+
+    pub fn get_collector_config(&self) -> &str {
+        &self.collector_config
     }
 
     pub fn get_scan_enabled(&self) -> bool {

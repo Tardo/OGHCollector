@@ -126,6 +126,8 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `db_pool_max_size` | int | Maximum number of pooled DB connections | `15` |
 | `doodba_max_modules` | int | Maximum number of modules accepted per Doodba tool request (converter/dependency-resolver/migration-plan); larger requests are rejected with `400` | `500` |
 | `mcp_info_enabled` | bool | Show the `/mcp` page explaining how to connect popular LLM clients to the MCP endpoint, and its nav link | `false` |
+| `workflow_editor_enabled` | bool | Show the `/workflows` editor (see [Workflows](#workflows)) and its nav link. **It publishes the `workflows:` section of the collector config** (prompts, AI hosts, `api_key_env` names), never its sources or actions | `false` |
+| `collector_config` | string | Collector config the editor reads the workflows from (`config` crate path, extension optional) | `collector` |
 | `scan_enabled` | bool | Enable the live instance scanner. Disabled by default because it creates outbound requests; enable it only behind the access controls appropriate for your deployment. | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
 | `trusted_proxies` | list of strings | IPs/CIDRs (e.g. your reverse proxy's address, or the Docker network subnet) allowed to set `X-Forwarded-For`/`Forwarded`; honored only when the request's direct TCP peer matches one of these, otherwise the headers are stripped and the real peer address is used instead. Needed for correct client IPs in access logs (and `REQ_BASE_URL` scheme/host) behind Traefik/nginx/etc. | `[]` |
@@ -241,6 +243,190 @@ error in the portal's event log (`/logs`, and its Atom feed). API rate limits ar
 apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
 IDEs), the container keeps seeing the old copy until `docker compose restart collector`. The image
 also ships the repository's copy as a fallback for plain `docker run`.
+
+### Workflows
+
+The collector itself only walks the sources: it clones them and finds every module folder. What
+happens to each module is a *workflow*, a graph of nodes, and a source runs the ones it names. The
+built-in `default` workflow is what the collector always did (a test checks it leaves exactly the
+same data and events), so a source without `workflows:` behaves as before; `workflows: []` only
+walks.
+
+```yaml
+# default (built in): unchanged modules only get their manifest stored
+default:
+  on: module
+  nodes:
+    - {id: changed, type: if, when: not unchanged, then: stats, else: store}
+    - {id: stats, type: git_stats, next: analyze}
+    - {id: analyze, type: analyze_code, next: security}
+    - {id: security, type: security, next: migration}
+    - {id: migration, type: migration_notes, next: store}
+    - {id: store, type: store_module, next: osv}
+    - {id: osv, type: osv}
+```
+
+A workflow starts at its first node and follows `next` (or, for `if`, `then`/`else`) until a node
+has none. The portal can show them as a graph and build them visually: with
+`workflow_editor_enabled` (server config), `/workflows` lists the built-in workflows and those of
+the collector config, lets you change them or draw new ones (drag nodes, link their outputs, fill
+in their fields) and gives the YAML to paste into `collector.yaml`, checked as you go by the same
+rules as `oghcollector --check`. Nothing is saved there. Workflows go under `workflows:` in `collector.yaml` (one with a built-in's name replaces
+it) and sources pick them by name:
+
+```yaml
+workflows:
+  security_only:                    # names: lowercase letters, digits, '-' and '_'
+    on: module                      # each module a job finds (the only trigger for now)
+    nodes:
+      - {id: changed, type: if, when: not unchanged, then: stats, else: store}
+      - {id: stats, type: git_stats, next: security}   # committers and folder size
+      - {id: security, type: security, next: grave}
+      - {id: grave, type: if, when: "security.grave > 0", then: alert, else: store}
+      - id: alert
+        type: log
+        event: security
+        severity: error
+        message: "{{ technical_name }} [{{ odoo_version }}]: {{ security.grave }} grave finding(s)"
+        next: store
+      - {id: store, type: store_module}
+
+sources:
+  - source: MyGroup
+    git: GL
+    versions: [18.0]
+    workflows: [security_only]
+```
+
+| Node | Does | Fields |
+| --- | --- | --- |
+| `if` | Goes to `then` when the `when` condition holds, else to `else` (none: ends) | `when`, `then`, `else` |
+| `read_manifest` | Reads the manifest | `next` |
+| `git_stats` | Committers and folder size, from git (without it they aren't updated: the module page's activity and size stay as stored) | `next` |
+| `analyze_code` | Analyzes the `.py`/`.xml`/`.csv` files (views, models, records, routes) | `next` |
+| `security` | [Security rules](#security-and-migration-reports) over that analysis | `next` |
+| `migration_notes` | Migration notes for the collected version | `next` |
+| `store_module` | Stores the module with what the workflow computed (a section it didn't compute keeps its stored data), its dependencies, and logs the usual events | `next` |
+| `osv` | Known vulnerabilities of the pinned Python dependencies `store_module` just added | `next` |
+| `log` | An event in `/logs`: `event` type (default `workflow`), `severity` (`info`, `success`, `warning`, `error`) and a `message` template | `next`, `event`, `severity`, `message` |
+| `ai` | Asks an AI; the answer is `ai.<node id>` for the nodes after it. Outward: see [Actions](#actions) | `next`, `provider`, `model`, `prompt`, `system`, `url`, `api_key_env`, `max_tokens`, `timeout` |
+| `pr_open` | Opens a PR/MR with one commit, the `patch` template (a unified diff, e.g. `{{ ai.fix }}`), on the module's version branch. Outward | `next`, `title`, `body`, `patch` |
+
+`on: pull_request` workflows run on every PR/MR a job tracks (see the source's `pull_requests`),
+after it's stored and analyzed. Besides `if`, `log` and `ai`, they have:
+
+| Node | Does | Fields |
+| --- | --- | --- |
+| `pr_comment` | Comments on the PR/MR (`body` template). Outward | `next`, `body` |
+| `pr_edit` | Replaces its description (`body` template; `pr.description` is the current one). Outward | `next`, `body` |
+
+A node computes what it needs that no earlier node computed (`security` analyzes the code,
+`store_module` reads the manifest). Conditions and messages are
+[Jinja](https://docs.rs/minijinja/latest/minijinja/syntax/) over these variables:
+`technical_name`, `path` (the module folder), `source_path`, `org`, `repo`, `odoo_version`,
+`is_new` (not stored before), `unchanged` (same last commit as stored, analyzed by the same
+analyses as the source's storing workflow),
+`last_commit.hash|author|date|name`, `manifest.name|version|license|category|author|installable|depends`,
+`security.grave|minor|findings` and `migration.count|notes`; the last three are empty until a node
+computes them. `file('models/x.py')` returns a file of the module (up to 100 KB; nothing outside
+its folder).
+
+In `pull_request` workflows: `org`, `repo`, `odoo_version`,
+`pr.number|title|author|labels|draft|ci_status|head_sha|head_ref|url|description`, `pr.is_new`
+(first seen), `pr.head_changed`, `pr.ci_changed` (checks just turned green or red), `pr.is_ours`
+(opened by `pr_open`), and `modules`, one `{name, port, analysis}` per module it changes
+(`analysis` with `pull_requests: full`). `diff()` returns its changes (up to 200,000 characters;
+`full` sources only, the others never fetch the PR head). Both kinds see `ai.<node id>`.
+
+- `oghcollector --check` validates every workflow (types, fields, node references, cycles,
+  conditions, templates) along with the sources. A source can store modules from one of its
+  workflows only, and each workflow starts from a clean slate (they don't see each other's
+  results).
+- A module's stored analysis is tagged with which analyses produced it, so adding `security` or
+  `migration_notes` to a source's workflow analyzes its unchanged modules once more.
+- A failing node logs a warning and stops that workflow for that module; the job goes on.
+- Stored modules a job no longer finds in the repository are deleted, whatever the workflows do.
+- Which PRs/MRs are tracked (and analyzed) still depends on the source's `pull_requests`.
+
+#### Actions
+
+`ai`, `pr_comment`, `pr_edit` and `pr_open` reach outside the collector, so they only **log what
+they would do** (`[dry-run] ...` events in `/logs`, with what they'd send) until the source lists
+them:
+
+```yaml
+workflows:
+  review:
+    on: pull_request
+    nodes:
+      - {id: ours, type: if, when: "not pr.is_ours", then: ask}
+      - id: ask
+        type: ai
+        provider: anthropic              # or openai: OpenAI, Ollama, LM Studio, vLLM...
+        model: claude-opus-5-5
+        api_key_env: ANTHROPIC_API_KEY   # env var, or the anthropic_api_key Docker secret
+        prompt: "Review this Odoo {{ odoo_version }} change:\n{{ diff() }}"
+        next: comment
+      - {id: comment, type: pr_comment, body: "{{ ai.ask }}"}
+  fix_views:
+    on: module
+    nodes:
+      - {id: todo, type: if, when: "not unchanged", then: notes}
+      - {id: notes, type: migration_notes, next: any}
+      - {id: any, type: if, when: "migration.count > 0", then: ask}
+      - id: ask
+        type: ai
+        provider: openai
+        url: http://ollama:11434/v1      # a local model
+        model: qwen2.5-coder
+        prompt: "Write a unified diff (paths from the repo root, under {{ source_path }}/) fixing: {{ migration.notes | tojson }}"
+        next: open
+      - {id: open, type: pr_open, title: "[{{ odoo_version }}][FIX] {{ technical_name }}: migration notes", patch: "{{ ai.ask }}"}
+
+sources:
+  - source: MyGroup
+    git: GL
+    versions: [18.0]
+    pull_requests: full
+    workflows: [default, fix_views, review]
+    actions: [ai, pr_comment]            # pr_open stays dry-run
+```
+
+- **Once per item.** A ledger (`workflow_action`) records every action: a comment or description
+  edit runs once per PR head (a new push may get another), `pr_open` once per module and version,
+  and dry-run reports once too. An AI answer is kept and reused while the item, prompt and settings
+  are the same, so an unchanged module or PR never pays twice. A failed action isn't recorded and
+  is retried on the next run.
+- **Tokens.** PR/MR actions use a write token of their own, never the read one:
+  `OGHCOLLECTOR_WRITE_TOKEN_GH` / `_GL` (or the `gh_write_token` / `gl_write_token` Docker secret);
+  without it they fail with a warning. AI keys come from the env var named in `api_key_env` (or
+  the Docker secret of the same name in lowercase); none of them is ever logged.
+- **Limits.** A job makes at most `OGHCOLLECTOR_AI_LIMIT` (default `20`) AI calls, each waiting up
+  to `timeout` seconds (default `300`, at most `600`); `max_tokens` defaults to `16000`. Items past
+  the limit wait for the next run.
+- **Gates that are true once.** `pr.head_changed`, `pr.ci_changed` and `not unchanged` only hold on
+  the run that sees the change: an action that fails then (an AI timeout, the call limit, a missing
+  token) isn't retried for that head or commit, and turning a node live doesn't act on items already
+  seen. The ledger already stops repeats, so gate on them only when that's what you mean. A module
+  workflow gated on `not unchanged` (like `fix_views`) only ever looks at modules with new commits;
+  without the gate it analyzes every module on every run (its AI answers and PRs are still once).
+- **Bot PRs.** A PR opened or edited by these nodes comes back through the webhooks; gate PR
+  workflows on `not pr.is_ours` so they don't review their own work.
+- **`pr_edit` replaces** the description. A `body` that appends to `pr.description` grows on every
+  new head unless it checks for its own text: `{% if 'Reviewed' not in pr.description %}...`.
+- **Dry-run reports** are capped at 20 per job; the rest are reported by later runs (a line says how
+  many were held back).
+- **`pr_open` safety.** The branch is always `ogh/<workflow>/<module>-<version>`, never pushed
+  over an existing one (an existing branch is an earlier attempt: only its missing PR is created).
+  The patch must only add, edit or delete regular files inside the module folder (no renames out of
+  it, no mode changes, symlinks, submodules or binaries) and apply cleanly; dry-run checks all that
+  and logs which files it would change. It's committed as `OGHCOLLECTOR_COMMIT_AUTHOR` ("Name
+  <email>", default `OGHCollector <oghcollector@localhost>`) in a worktree of its own. **A branch
+  pushed to the repository runs its CI with the repository's secrets**, and AI-written code (whose
+  prompt may include text from anyone's PR) then runs there: enable `pr_open` only where that's
+  acceptable.
+- Sending a private repository's code to a cloud AI is up to you: it only happens for sources
+  that list `ai`, to the `url`/provider the workflow names.
 
 ### Workspaces
 
@@ -453,8 +639,9 @@ services:
   guess a running Odoo version.
 
 Each module stores the `ANALYSIS_VERSION` (`crates/collector/src/analyzer.rs`) its findings were
-computed with; bump it whenever the extractor or the security/migration rules change, and the next
-collector run re-analyzes every module, even those whose branch gets no new commits. To force a
+computed with (and which analyses ran, see [Workflows](#workflows)); bump it whenever the extractor
+or the security/migration rules change, and the next collector run re-analyzes every module, even
+those whose branch gets no new commits. To force a
 full re-analysis regardless, set `OGHCOLLECTOR_FORCE_REANALYZE=1`:
 
 ```sh
@@ -501,6 +688,10 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_SCHEDULE_HOURS` | collector | `--listen`: collect every source in `collector.yaml` every this many hours, at multiples of it since 00:00 UTC (default `6`, `0` = off) |
 | `OGHCOLLECTOR_WEBHOOK_SECRET_GH` / `_GL` | collector | `--listen`: GitHub/GitLab webhook secret (fallback if the `gh_webhook_secret`/`gl_webhook_secret` Docker secret isn't set); no secret = no endpoint |
 | `OGHCOLLECTOR_WEBHOOK_BIND_ADDR` | collector | `--listen`: webhook bind address (default `0.0.0.0:8082`) |
+| `OGHCOLLECTOR_CONFIG` | collector | Collector config a single-source run loads custom workflows from (default `collector`, i.e. `./collector.yaml`; set for you on the jobs of a `collector.yaml` run or of the daemon) |
+| `OGHCOLLECTOR_WRITE_TOKEN_GH` / `_GL` | collector | Write token for workflow PR/MR actions (fallback if the `gh_write_token`/`gl_write_token` Docker secret isn't set); never the read token |
+| `OGHCOLLECTOR_AI_LIMIT` | collector | AI calls per job at most (default `20`) |
+| `OGHCOLLECTOR_COMMIT_AUTHOR` | collector | Author of `pr_open` commits, `Name <email>` (default `OGHCollector <oghcollector@localhost>`) |
 | `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` | collector | Pull/merge requests analyzed per job at most, most recently active first (default `100`) |
 | `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass (set on the per-job children of a `collector.yaml` run, which runs it once at the end) |
 | `RUST_LOG` | all three binaries | Log level (default: `info`) |

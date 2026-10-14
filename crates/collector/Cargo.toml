@@ -10,6 +10,7 @@ documentation.workspace = true
 sqlitedb = { path = "../sqlitedb" }
 oghutils = { path = "../oghutils" }
 oghembed = { path = "../oghembed" }
+oghworkflow = { path = "../oghworkflow" }
 reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true
@@ -26,7 +27,11 @@ urlencoding.workspace = true
 base64.workspace = true
 chrono.workspace = true
 config.workspace = true
+minijinja = { workspace = true, features = ["json"] }
 axum.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+
+[dev-dependencies]
+diesel.workspace = true

@@ -7,6 +7,8 @@ use std::fs;
 
 use oghutils::version::{odoo_version_string_to_u8, parse_odoo_version};
 
+use crate::workflow::{self, Workflow};
+
 // `deny_unknown_fields`: a typo (`path:`, `version:`) in a hand-written or
 // generated config must fail, not silently fall back to a default.
 #[derive(Deserialize)]
@@ -16,6 +18,9 @@ struct CollectorFile {
     /// written once and referenced by name (`template:`).
     #[serde(default)]
     templates: HashMap<String, Vec<String>>,
+    /// Named workflows (see `workflow`), on top of the built-in ones.
+    #[serde(default)]
+    workflows: HashMap<String, Workflow>,
     sources: Vec<CollectorSource>,
 }
 
@@ -40,7 +45,17 @@ struct CollectorSource {
     /// `full`: every PR/MR, mapped to its modules and analyzed.
     #[serde(default = "default_pull_requests")]
     pull_requests: String,
+    /// What runs on each module it walks (default: `default`, what the
+    /// collector always did; `[]`: nothing, only the walk).
+    workflows: Option<Vec<String>>,
+    /// Outward workflow nodes allowed to act for real here (`ai`,
+    /// `pr_comment`, `pr_edit`, `pr_open`); the rest are dry-run.
+    #[serde(default)]
+    actions: Vec<String>,
 }
+
+/// The 6th/7th job argument when a source runs no workflow / allows no action.
+pub const NO_WORKFLOWS: &str = "-";
 
 /// Values of a source's `pull_requests` (the 5th job argument).
 pub const PULL_REQUEST_MODES: [&str; 2] = ["migration", "full"];
@@ -67,11 +82,15 @@ fn default_git() -> String {
 }
 
 /// Expands a collector config (see the shipped `collector.yaml`) into the
-/// `<source>[:<paths>] <version> <git> <workspaces> <pull_requests>` argument lists of the
+/// `<source>[:<paths>] <version> <git> <workspaces> <pull_requests> <workflows> <actions>` argument lists of the
 /// single-run CLI, in file order. Everything is validated here, before any
 /// job runs.
 pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
-    let CollectorFile { templates, sources } = Config::builder()
+    let CollectorFile {
+        templates,
+        workflows,
+        sources,
+    } = Config::builder()
         .add_source(config::File::with_name(path))
         .build()
         .and_then(|c| c.try_deserialize())
@@ -108,6 +127,12 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
             (src.to_string(), ws)
         })
         .collect();
+    let workflows = workflow::with_built_in(&workflows);
+    let mut names: Vec<&String> = workflows.keys().collect();
+    names.sort();
+    for name in names {
+        workflow::validate(name, &workflows[name])?;
+    }
     let mut jobs = Vec::new();
     for (idx, src) in sources.into_iter().enumerate() {
         let name = format!("sources[{idx}] ({})", src.source);
@@ -126,6 +151,30 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
         if src.versions.is_empty() {
             return Err(format!("{name}: no versions"));
         }
+        let source_workflows = src
+            .workflows
+            .clone()
+            .unwrap_or_else(|| vec![workflow::DEFAULT.to_string()]);
+        workflow::Engine::new(&source_workflows, &workflows)
+            .map_err(|err| format!("{name}: {err}"))?;
+        let source_workflows = match source_workflows.is_empty() {
+            true => NO_WORKFLOWS.to_string(),
+            false => source_workflows.join(","),
+        };
+        if let Some(bad) = src
+            .actions
+            .iter()
+            .find(|a| !workflow::ACTIONS.contains(&a.as_str()))
+        {
+            return Err(format!(
+                "{name}: unknown action '{bad}' ({})",
+                workflow::ACTIONS.join(", ")
+            ));
+        }
+        let source_actions = match src.actions.is_empty() {
+            true => NO_WORKFLOWS.to_string(),
+            false => src.actions.join(","),
+        };
         if !PULL_REQUEST_MODES.contains(&src.pull_requests.as_str()) {
             return Err(format!(
                 "{name}: unknown pull_requests '{}' ({})",
@@ -171,6 +220,8 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
                 git.clone(),
                 source_workspaces[&src.source].clone(),
                 src.pull_requests.clone(),
+                source_workflows.clone(),
+                source_actions.clone(),
             ]);
         }
     }
@@ -185,6 +236,13 @@ pub fn read_secret(file: &str, env_var: &str) -> Option<String> {
         secret => secret.to_string(),
     };
     (!secret.is_empty()).then_some(secret)
+}
+
+/// The workflows a job can run: the built-in ones plus the config file's
+/// (an absent file is fine: manual runs only need the built-in `default`).
+/// `load_jobs` already validated the file; a job re-reads it when it starts.
+pub fn load_workflows(path: &str) -> Result<HashMap<String, Workflow>, String> {
+    Ok(workflow::with_built_in(&oghworkflow::file_workflows(path)?))
 }
 
 #[derive(Debug)]
@@ -205,6 +263,8 @@ pub struct OGHCollectorConfig {
     read_paths: Vec<String>,
     workspaces: Option<Vec<String>>,
     full_pull_requests: bool,
+    workflows: Vec<String>,
+    actions: Vec<String>,
 }
 
 impl OGHCollectorConfig {
@@ -267,6 +327,25 @@ impl OGHCollectorConfig {
             Some(bad) => panic!("Invalid pull_requests '{bad}' (migration or full)"),
         };
 
+        // No 6th argument: `default`, what the collector always did.
+        let workflows = match args.get(6).map(String::as_str) {
+            None => vec![workflow::DEFAULT.to_string()],
+            Some(NO_WORKFLOWS) => Vec::new(),
+            Some(names) => names.split(',').map(str::to_string).collect(),
+        };
+
+        // No 7th argument: every outward action is dry-run.
+        let actions: Vec<String> = match args.get(7).map(String::as_str) {
+            None | Some(NO_WORKFLOWS) => Vec::new(),
+            Some(names) => names.split(',').map(str::to_string).collect(),
+        };
+        if let Some(bad) = actions
+            .iter()
+            .find(|a| !workflow::ACTIONS.contains(&a.as_str()))
+        {
+            panic!("Invalid action '{bad}' ({})", workflow::ACTIONS.join(", "));
+        }
+
         OGHCollectorConfig {
             src: src.to_string(),
             token,
@@ -278,6 +357,8 @@ impl OGHCollectorConfig {
             read_paths,
             workspaces,
             full_pull_requests,
+            workflows,
+            actions,
         }
     }
 
@@ -324,6 +405,14 @@ impl OGHCollectorConfig {
         self.workspaces.as_ref()
     }
 
+    pub fn get_workflows(&self) -> &[String] {
+        &self.workflows
+    }
+
+    pub fn get_actions(&self) -> &[String] {
+        &self.actions
+    }
+
     /// Every PR/MR analyzed (`full`), not only migration branches tracked.
     pub fn get_full_pull_requests(&self) -> bool {
         self.full_pull_requests
@@ -342,6 +431,8 @@ mod tests {
                 "GH".to_string(),
                 "all".to_string(),
                 "migration".to_string(),
+                "default".to_string(),
+                "-".to_string(),
             ]
         };
         let new_versions = [
@@ -379,6 +470,27 @@ mod tests {
              - {source: B, versions: [17.0]}\n",
         );
         assert_eq!(ws_of(jobs.unwrap()), ["x,y,z", "x,y,z", "all", "all"]);
+        // Workflows: default when unset, `-` for none, defined ones by name.
+        let jobs = load(
+            "workflows:\n  logged:\n    on: module\n    nodes: [{id: l, type: log, message: hi}]\n\
+             sources:\n- {source: A, versions: [18.0]}\n- {source: B, versions: [18.0], workflows: []}\n\
+             - {source: C, versions: [18.0], workflows: [default, logged]}\n",
+        );
+        let wf_of =
+            |jobs: Vec<Vec<String>>| jobs.into_iter().map(|j| j[5].clone()).collect::<Vec<_>>();
+        assert_eq!(wf_of(jobs.unwrap()), ["default", "-", "default,logged"]);
+        // What a job loads: the file's workflows plus the built-in ones, or
+        // only those without a file (a manual run elsewhere).
+        let defs = super::load_workflows(dir.join("collector").to_str().unwrap()).unwrap();
+        assert!(defs.contains_key("logged") && defs.contains_key("default"));
+        let defs = super::load_workflows(dir.join("absent").to_str().unwrap()).unwrap();
+        assert_eq!(defs.keys().collect::<Vec<_>>(), ["default"]);
+        for bad in ["[nope]", "[default, default]"] {
+            let yaml = format!("sources:\n- {{source: A, versions: [18.0], workflows: {bad}}}\n");
+            assert!(load(&yaml).is_err(), "{bad}");
+        }
+        let broken = "workflows:\n  w: {on: module, nodes: [{id: a, type: nope}]}\nsources: []\n";
+        assert!(load(broken).unwrap_err().contains("unknown type"));
         let jobs = load("sources:\n- {source: A, versions: [18.0], pull_requests: full}\n");
         assert_eq!(jobs.unwrap()[0][4], "full");
         assert!(load("sources:\n- {source: A, versions: [18.0], pull_requests: deep}\n").is_err());

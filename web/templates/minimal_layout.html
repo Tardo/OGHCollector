@@ -60,7 +60,7 @@
     "osv": "Security", "scan": "Security",
     "favorites": "Workspace", "pack": "Workspace",
     "doodba_converter": "Doodba", "doodba_dep_resolver": "Doodba", "doodba_migration_plan": "Doodba",
-    "api": "Developer", "mcp_info": "Developer", "logs": "Developer"
+    "api": "Developer", "mcp_info": "Developer", "logs": "Developer", "workflows": "Developer"
 } %}
 {% set page_title = meta_title if meta_title is defined else "Overview" %}
 {% set nav_section = nav_sections[page_name] if page_name is defined else none %}
@@ -112,6 +112,9 @@
                     {{ nav_item("/api", "api", "REST API", page_name == 'api') }}
                     {% if MCP_INFO_ENABLED %}
                     {{ nav_item("/mcp", "smart_toy", "MCP server", page_name == 'mcp_info') }}
+                    {% endif %}
+                    {% if WORKFLOW_EDITOR_ENABLED %}
+                    {{ nav_item("/workflows", "schema", "Workflows", page_name == 'workflows') }}
                     {% endif %}
                     {{ nav_item("/logs", "receipt_long", "System logs", page_name == 'logs') }}
                 </ul>

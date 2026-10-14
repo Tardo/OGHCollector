@@ -940,15 +940,18 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "config",
+ "diesel",
  "duct",
  "env_logger",
  "fs_extra",
  "hmac",
  "libc",
  "log",
+ "minijinja",
  "named-lock",
  "oghembed",
  "oghutils",
+ "oghworkflow",
  "pyo3",
  "regex",
  "reqwest 0.13.5",
@@ -2968,6 +2971,7 @@ dependencies = [
  "percent-encoding",
  "self_cell",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3268,6 +3272,17 @@ name = "oghutils"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "oghworkflow"
+version = "0.1.0"
+dependencies = [
+ "config",
+ "minijinja",
+ "serde",
+ "serde_json",
+ "yaml-rust2",
 ]
 
 [[package]]
@@ -4607,6 +4622,7 @@ dependencies = [
  "oghembed",
  "oghscan",
  "oghutils",
+ "oghworkflow",
  "pulldown-cmark",
  "serde",
  "serde_json",

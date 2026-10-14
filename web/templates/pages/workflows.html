@@ -1,0 +1,79 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Workflows" %}
+{% set meta_description = "Visual editor for OGHCollector workflows: view them, build new ones and copy their YAML." %}
+{% set content_class = "app-content-fill" %}
+{% block base_head_content %}
+{{ super() }}
+
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/workflows.css" as="style">
+    <script type="module" src="/static/auto/workflows.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+
+<header class="page-header">
+    <h1>Workflows</h1>
+    <p class="page-header-desc">What the collector does with each module or pull request it finds. Open one, change it or build a new one, then copy its YAML into the <code>workflows:</code> of <code>collector.yaml</code>: nothing is saved here. It's checked against the collector's own rules as you go.</p>
+    <div class="page-header-actions">
+        <button type="button" class="btn btn-outline-secondary" id="wf-new"><span class="material-icons" aria-hidden="true">add</span> New</button>
+        <button type="button" class="btn btn-outline-secondary" id="wf-import-open"><span class="material-icons" aria-hidden="true">upload</span> Import YAML</button>
+    </div>
+</header>
+
+<div class="wf-layout">
+    <section class="wf-main panel" aria-label="Editor">
+        <div class="wf-toolbar">
+            <select class="form-select form-select-sm" id="wf-list" aria-label="Open a workflow"><option>Loading…</option></select>
+            <label class="wf-field-inline">Name <input type="text" class="form-control form-control-sm" id="wf-name" spellcheck="false" autocomplete="off"></label>
+            <label class="wf-field-inline">On <select class="form-select form-select-sm" id="wf-trigger"></select></label>
+            <span class="wf-toolbar-sep"></span>
+            <select class="form-select form-select-sm" id="wf-palette" aria-label="Node type to add"></select>
+            <button type="button" class="btn btn-sm btn-primary" id="wf-add"><span class="material-icons" aria-hidden="true">add_box</span> Add node</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-start" disabled title="The workflow starts at this node"><span class="material-icons" aria-hidden="true">flag</span> Start here</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="wf-delete" disabled><span class="material-icons" aria-hidden="true">delete</span> Delete</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-layout-btn" title="Lay the nodes out again"><span class="material-icons" aria-hidden="true">auto_fix_high</span></button>
+        </div>
+        <p class="wf-file-error text-danger small" id="wf-file-error" hidden></p>
+        <div class="wf-canvas" id="wf-canvas" tabindex="0" aria-label="Workflow graph"></div>
+        <p class="wf-hint small text-body-secondary">Drag from a node's right dot to another node's left dot to connect them (an <code>if</code> has <em>then</em> and <em>else</em>). Delete a link by clicking it, then <kbd>Del</kbd>.</p>
+    </section>
+
+    <aside class="wf-side" aria-label="Node and YAML">
+        <section class="panel wf-props">
+            <div class="panel-header"><h2>Node</h2></div>
+            <div id="wf-props"><p class="text-body-secondary small">Select a node to edit it.</p></div>
+        </section>
+        <section class="panel wf-yaml">
+            <div class="panel-header">
+                <h2>YAML</h2>
+                <span class="wf-status" id="wf-status" aria-live="polite"></span>
+            </div>
+            <ul class="wf-errors small" id="wf-errors"></ul>
+            <pre class="wf-yaml-text" id="wf-yaml"></pre>
+            <div class="wf-yaml-actions">
+                <button type="button" class="btn btn-sm btn-primary" id="wf-copy" disabled><span class="material-icons" aria-hidden="true">content_copy</span> Copy</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-download" disabled><span class="material-icons" aria-hidden="true">download</span> Download</button>
+            </div>
+            <p class="small text-body-secondary">Copy gives just this workflow, indented to paste under the <code>workflows:</code> of your <code>collector.yaml</code>; Download gives the whole file above.</p>
+            <details class="wf-vars small">
+                <summary>Variables for conditions and templates</summary>
+                <ul id="wf-vars"></ul>
+            </details>
+        </section>
+    </aside>
+</div>
+
+<dialog class="wf-import" id="wf-import">
+    <form method="dialog">
+        <h2 class="h5">Import YAML</h2>
+        <p class="small text-body-secondary">A whole <code>collector.yaml</code> or just its <code>workflows:</code> section.</p>
+        <textarea class="form-control font-monospace" id="wf-import-text" rows="14" spellcheck="false"></textarea>
+        <p class="text-danger small" id="wf-import-error" hidden></p>
+        <div class="wf-import-actions">
+            <button type="submit" class="btn btn-outline-secondary" value="cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="wf-import-load">Load</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}

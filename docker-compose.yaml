@@ -21,6 +21,11 @@ services:
     <<: *app
     command: oghserver
     restart: unless-stopped
+    volumes:
+      - app_data:/app/data
+      # Only read with `workflow_editor_enabled`: its `workflows:` (never its
+      # sources) are shown on /workflows.
+      - ./collector.yaml:/app/collector.yaml:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

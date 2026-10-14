@@ -33,6 +33,7 @@ use sqlitedb::DbSqliteConnection as SqliteConnection;
 use crate::analyzer::{self, OGHCollectorAnalyzer};
 use crate::anygitclient::AnyGitClient;
 use crate::gitclient::{git_run, GitClient, RepoInfo};
+use crate::workflow::{Deps, Engine, FoundPr};
 use crate::{migration, security};
 
 /// Modules analyzed per PR at most; the rest still get their row (analysis
@@ -66,6 +67,9 @@ pub struct RepoPrs<'a> {
     pub workdir: &'a Path,
     /// The source's `pull_requests: full`.
     pub full: bool,
+    /// Its `on: pull_request` workflows, run on every tracked PR at the end.
+    pub engine: &'a Engine,
+    pub deps: &'a Deps<'a>,
 }
 
 /// OCA migration convention: head branch `{version}-mig-{module_technical_name}`,
@@ -113,6 +117,8 @@ pub async fn collect(c: &RepoPrs<'_>, conn: &mut SqliteConnection, budget: &mut 
         return;
     };
     let mut open: Vec<PullRequest> = Vec::with_capacity(listed.len());
+    // (listing, row before this run, row now) of every tracked PR.
+    let mut tracked = Vec::with_capacity(listed.len());
     for info in &listed {
         let migration_module = extract_migration_module_name(&info.head_ref);
         if !c.full && migration_module.is_none() {
@@ -189,6 +195,7 @@ pub async fn collect(c: &RepoPrs<'_>, conn: &mut SqliteConnection, budget: &mut 
                 );
             }
         }
+        tracked.push((info, before, pr.clone()));
         open.push(pr);
     }
 
@@ -219,9 +226,49 @@ pub async fn collect(c: &RepoPrs<'_>, conn: &mut SqliteConnection, budget: &mut 
         &merged_prids,
     );
 
-    if !c.full {
+    if c.full {
+        analyze_pending(c, conn, budget, open);
+    }
+    if !c.engine.runs("pull_request") {
         return;
     }
+    for (info, before, pr) in tracked {
+        // `diff()` needs the head: `migration` sources (or PRs the analysis
+        // budget skipped) never fetched it. Once fetched, it stays.
+        let clone = c.repo.get_clone_path();
+        if git_run(clone, &["cat-file", "-e", &info.head_sha]).is_err() {
+            if let Err(err) = c.git.fetch_pull_request(clone, c.repo.get_url(), pr.prid) {
+                log::warn!(
+                    "PR #{} of '{}': fetch failed: {err}",
+                    pr.prid,
+                    c.repo.get_name()
+                );
+            }
+        }
+        let modules = models::pull_request_module::get_by_pull_request_ids(conn, &[pr.id])
+            .unwrap_or_default();
+        let found = FoundPr {
+            repo: c.repo,
+            version_odoo: c.version_odoo,
+            branch: c.branch,
+            info,
+            pr,
+            before,
+            modules,
+        };
+        c.engine.run_pull_request(&found, conn, c.deps).await;
+    }
+}
+
+/// Analyzes the PRs whose head (or the analysis rules) changed, most
+/// recently active first, while `budget` lasts.
+fn analyze_pending(
+    c: &RepoPrs,
+    conn: &mut SqliteConnection,
+    budget: &mut Budget,
+    mut open: Vec<PullRequest>,
+) {
+    let repo_name = c.repo.get_name();
     open.retain(|pr| {
         pr.head_sha.is_some()
             && (pr.analyzed_sha != pr.head_sha || pr.analysis_version != analyzer::ANALYSIS_VERSION)
@@ -580,6 +627,7 @@ mod tests {
                 .chain(args);
             cmd("git", args.copied())
                 .dir(cwd)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null") // no commit signing
                 .stderr_null()
                 .read()
                 .unwrap()
@@ -653,6 +701,15 @@ mod tests {
             url: origin_url,
         };
         let client = AnyGitClient::Gitlab(GitlabClient::new("x", ""));
+        let defs = crate::workflow::with_built_in(&Default::default());
+        let engine = Engine::new(&[], &defs).unwrap();
+        let (analyzer, pypi) = (
+            OGHCollectorAnalyzer::new(&18),
+            crate::pypi::PypiClient::new(),
+        );
+        let forge = crate::actions::Forge::with(true, "http://127.0.0.1:9", None);
+        let workdir = dir.join("work");
+        let deps = Deps::for_tests(&analyzer, &pypi, &forge, &workdir, &[]);
         let c = RepoPrs {
             git: &client,
             repo: &repo,
@@ -663,6 +720,8 @@ mod tests {
             analyzer: &OGHCollectorAnalyzer::new(&18),
             workdir: &dir.join("work"),
             full: true,
+            engine: &engine,
+            deps: &deps,
         };
         analyze(&c, &mut conn, &pr);
 

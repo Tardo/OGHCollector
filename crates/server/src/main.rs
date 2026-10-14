@@ -252,6 +252,13 @@ async fn main() -> std::io::Result<()> {
                 }
             })
             .configure(|cfg| {
+                if SERVER_CONFIG.get_workflow_editor_enabled() {
+                    cfg.service(routes::workflows::route)
+                        .service(routes::workflows::route_data)
+                        .service(routes::workflows::route_parse);
+                }
+            })
+            .configure(|cfg| {
                 if SERVER_CONFIG.get_scan_enabled() {
                     cfg.service(routes::scan::route)
                         .service(routes::scan::route_run);

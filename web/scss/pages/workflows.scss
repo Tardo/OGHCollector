@@ -1,0 +1,294 @@
+// Copyright 2026 Alexandre D. Díaz
+// Workflow editor: list | canvas | node + YAML, full height (app-content-fill).
+@import "../../../node_modules/drawflow/dist/drawflow.min";
+
+.wf-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.wf-main,
+.wf-side > .panel {
+  min-height: 0;
+  margin: 0;
+}
+
+.wf-file-error {
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+#wf-list {
+  max-width: 16rem;
+}
+
+.wf-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.wf-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color);
+
+  .form-select,
+  .form-control {
+    width: auto;
+  }
+
+  .btn .material-icons {
+    font-size: 1.1rem;
+    vertical-align: text-bottom;
+  }
+}
+
+.wf-field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.wf-toolbar-sep {
+  flex: 1 1 auto;
+}
+
+.wf-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 320px;
+  overflow: hidden;
+  background-color: var(--bs-body-bg);
+  background-image: radial-gradient(var(--bs-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
+
+  &:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
+  }
+}
+
+.wf-hint {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid var(--bs-border-color);
+}
+
+// Drawflow, themed.
+.wf-canvas .drawflow {
+  .drawflow-node {
+    width: 170px;
+    min-height: 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius-lg);
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+
+    &:hover {
+      background: var(--bs-secondary-bg);
+    }
+
+    &.selected {
+      border-color: var(--bs-primary);
+      background: var(--bs-secondary-bg);
+      box-shadow: 0 0 0 2px var(--bs-primary);
+    }
+
+    &.wf-start {
+      border-left: 4px solid var(--bs-success);
+    }
+
+    .input,
+    .output {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--bs-body-bg);
+      background: var(--bs-secondary-color);
+    }
+
+    .output:hover,
+    .input:hover {
+      background: var(--bs-primary);
+    }
+  }
+
+  // Outward nodes (they act outside the collector).
+  .wf-type-ai,
+  .wf-type-pr_comment,
+  .wf-type-pr_edit,
+  .wf-type-pr_open {
+    border-style: dashed;
+  }
+
+  .wf-type-if .outputs {
+    .output_1::after,
+    .output_2::after {
+      position: absolute;
+      top: 0;
+      right: 18px;
+      color: var(--bs-secondary-color);
+      font-size: 0.7rem;
+      line-height: 14px;
+    }
+
+    .output_1::after {
+      content: "then";
+    }
+
+    .output_2::after {
+      content: "else";
+    }
+  }
+
+  .connection .main-path {
+    stroke: var(--bs-secondary-color);
+    stroke-width: 3px;
+
+    &:hover,
+    &.selected {
+      stroke: var(--bs-primary);
+    }
+  }
+}
+
+.wf-node-type {
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wf-node-id {
+  font-family: var(--bs-font-monospace);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.wf-start .wf-node-type::after {
+  content: " · start";
+  color: var(--bs-success);
+}
+
+.wf-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  overflow: auto;
+}
+
+.wf-props > div,
+.wf-yaml {
+  padding: 0 0.75rem 0.75rem;
+}
+
+.wf-props-head {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.wf-prop {
+  display: block;
+  margin-bottom: 0.6rem;
+}
+
+.wf-prop-name {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.8rem;
+}
+
+.wf-prop-help {
+  display: block;
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+}
+
+.wf-yaml .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wf-status {
+  font-size: 0.875rem;
+}
+
+.wf-errors {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  color: var(--bs-danger);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.wf-yaml-text {
+  max-height: 40vh;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  overflow: auto;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background: var(--bs-tertiary-bg);
+  font-size: 0.8rem;
+  white-space: pre;
+}
+
+.wf-yaml-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.wf-vars ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.75rem;
+}
+
+.wf-import {
+  width: min(720px, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-lg);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+
+  &::backdrop {
+    background: rgb(0 0 0 / 50%);
+  }
+}
+
+.wf-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+// Narrow screens: one column, the canvas keeps a usable height.
+@media (max-width: 1199.98px) {
+  .wf-layout {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .wf-main {
+    min-height: 480px;
+  }
+}

@@ -155,6 +155,7 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
         REQ_BASE_URL => base_url.clone(),
         REQ_URL => format!("{}{}", &base_url, req.path()),
         MCP_INFO_ENABLED => SERVER_CONFIG.get_mcp_info_enabled(),
+        WORKFLOW_EDITOR_ENABLED => SERVER_CONFIG.get_workflow_editor_enabled(),
         SCAN_ENABLED => SERVER_CONFIG.get_scan_enabled(),
         MCP_URL => SERVER_CONFIG.get_mcp_url().clone(),
         SEO_ENABLED => SERVER_CONFIG.get_seo_enabled(),

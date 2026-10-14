@@ -190,6 +190,7 @@ impl GitClient for GitlabClient {
                     number: mr["iid"].as_i64().unwrap_or(0),
                     title: mr["title"].as_str().unwrap_or("").to_string(),
                     head_ref: mr["source_branch"].as_str().unwrap_or("").to_string(),
+                    description: mr["description"].as_str().unwrap_or("").to_string(),
                     head_sha: mr["sha"].as_str().unwrap_or("").to_string(),
                     author: mr["author"]["username"].as_str().map(str::to_string),
                     is_draft: mr["draft"].as_bool().unwrap_or(false),

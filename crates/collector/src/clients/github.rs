@@ -164,6 +164,7 @@ impl GitClient for GithubClient {
                     number: pull["number"].as_i64().unwrap_or(0),
                     title: pull["title"].as_str().unwrap_or("").to_string(),
                     head_ref: pull["head"]["ref"].as_str().unwrap_or("").to_string(),
+                    description: pull["body"].as_str().unwrap_or("").to_string(),
                     head_sha: pull["head"]["sha"].as_str().unwrap_or("").to_string(),
                     author: pull["user"]["login"].as_str().map(str::to_string),
                     is_draft: pull["draft"].as_bool().unwrap_or(false),

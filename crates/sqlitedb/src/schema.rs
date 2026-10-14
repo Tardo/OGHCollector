@@ -336,6 +336,16 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    workflow_action (id) {
+        id -> BigInt,
+        key -> Text,
+        dry_run -> Bool,
+        outcome -> Nullable<Text>,
+        date -> Text,
+    }
+}
+
 diesel::joinable!(gh_repository_workspace -> gh_repository (gh_repository_id));
 diesel::joinable!(module_controller -> module_version (module_version_id));
 diesel::joinable!(module_embedding -> module (module_id));
@@ -377,4 +387,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     pull_request_module,
     system_event,
     system_event_type,
+    workflow_action,
 );

@@ -21,3 +21,4 @@ pub mod pack;
 pub mod robots;
 pub mod scan;
 pub mod sitemap;
+pub mod workflows;
