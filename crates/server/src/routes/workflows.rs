@@ -180,8 +180,13 @@ mod tests {
         // No workflows file there: the copy built in.
         std::fs::remove_file(dir.join("workflows.yaml")).unwrap();
         let built_in = data(dir.join("collector").to_str().unwrap());
-        assert_eq!(built_in["workflows"][0]["name"], "default");
-        assert_eq!(built_in["workflows"][0]["origin"], "built-in");
+        let default = built_in["workflows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["name"] == "default")
+            .unwrap();
+        assert_eq!(default["origin"], "built-in");
         std::fs::write(
             dir.join("workflows.yaml"),
             "workflows:\n  shared: {on: module, enabled: false, nodes: [{id: o, type: osv}]}\n",

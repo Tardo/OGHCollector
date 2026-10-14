@@ -67,17 +67,68 @@ impl Engine {
     /// store modules with one workflow only: two would keep overwriting each
     /// other's analysis stamp.
     pub fn new(names: &[String], defs: &HashMap<String, Workflow>) -> Result<Engine, String> {
-        let mut workflows = Vec::with_capacity(names.len());
+        let mut listed: Vec<(&String, &Workflow)> = Vec::with_capacity(names.len());
         for name in names {
             let wf = defs
                 .get(name)
                 .ok_or_else(|| format!("unknown workflow '{name}'"))?;
             validate(name, wf)?;
-            if workflows.iter().any(|(n, _)| n == name) {
+            if listed.iter().any(|(n, _)| *n == name) {
                 return Err(format!("workflow '{name}' listed twice"));
             }
+            listed.push((name, wf));
+        }
+        // `after` is per module or PR: the same trigger, run by this source.
+        for (name, wf) in &listed {
+            for dep in wf.after.iter().flatten() {
+                let Some((_, dep_wf)) = listed.iter().find(|(n, _)| *n == dep) else {
+                    return Err(format!(
+                        "workflow '{name}' runs after '{dep}', which this source doesn't run: \
+                         add it to its `workflows:`"
+                    ));
+                };
+                if dep_wf.on != wf.on {
+                    return Err(format!(
+                        "workflow '{name}' (on: {}) can't run after '{dep}' (on: {}): `after` \
+                         is per module or per PR, and PR workflows already run after the \
+                         module ones",
+                        wf.on, dep_wf.on
+                    ));
+                }
+            }
+        }
+        // The listed order, but each after what it names.
+        let mut ordered: Vec<(&String, &Workflow)> = Vec::with_capacity(listed.len());
+        while !listed.is_empty() {
+            let ready = listed.iter().position(|(_, wf)| {
+                wf.after
+                    .iter()
+                    .flatten()
+                    .all(|dep| ordered.iter().any(|(n, _)| *n == dep))
+            });
+            let Some(at) = ready else {
+                let stuck: Vec<&str> = listed.iter().map(|(n, _)| n.as_str()).collect();
+                return Err(format!(
+                    "workflows {}: their `after` go round in a circle",
+                    stuck.join(", ")
+                ));
+            };
+            ordered.push(listed.remove(at));
+        }
+        // Off, or after one that doesn't run: skipped.
+        let mut workflows: Vec<(String, Workflow)> = Vec::with_capacity(ordered.len());
+        for (name, wf) in ordered {
             if !wf.is_enabled() {
                 log::warn!("Workflow '{name}' is disabled (enabled: false): skipped");
+                continue;
+            }
+            if let Some(dep) = wf
+                .after
+                .iter()
+                .flatten()
+                .find(|dep| !workflows.iter().any(|(n, _)| n == *dep))
+            {
+                log::warn!("Workflow '{name}' runs after '{dep}', which doesn't run: skipped");
                 continue;
             }
             workflows.push((name.clone(), wf.clone()));
@@ -106,17 +157,15 @@ impl Engine {
         self.workflows.iter().any(|(_, wf)| wf.on == trigger)
     }
 
-    /// Runs the `module` workflows over one module, each from a clean context.
+    /// Runs the `module` workflows over one module.
     pub async fn run_module(
         &self,
         found: &Found<'_>,
         conn: &mut SqliteConnection,
         deps: &Deps<'_>,
     ) {
-        for (name, wf) in self.workflows.iter().filter(|(_, wf)| wf.on == "module") {
-            let mut ctx = Ctx::Module(Box::new(ModuleCtx::new(found, self.stamp)));
-            self.walk(name, wf, &mut ctx, conn, deps).await;
-        }
+        let fresh = || Ctx::Module(Box::new(ModuleCtx::new(found, self.stamp)));
+        self.run_all("module", fresh, conn, deps).await;
     }
 
     /// Runs the `pull_request` workflows over one tracked PR/MR.
@@ -126,19 +175,59 @@ impl Engine {
         conn: &mut SqliteConnection,
         deps: &Deps<'_>,
     ) {
-        for (name, wf) in self
-            .workflows
-            .iter()
-            .filter(|(_, wf)| wf.on == "pull_request")
-        {
-            let mut ctx = Ctx::Pr(PrCtx {
+        let fresh = || {
+            Ctx::Pr(PrCtx {
                 found,
                 ai: BTreeMap::new(),
-            });
-            self.walk(name, wf, &mut ctx, conn, deps).await;
+            })
+        };
+        self.run_all("pull_request", fresh, conn, deps).await;
+    }
+
+    /// Runs the `trigger` workflows over one item, in order: each from a
+    /// clean context, or, one with `after`, from what those left (the first
+    /// listed wins where two computed the same) and only if they finished.
+    async fn run_all<'f, 'a: 'f>(
+        &self,
+        trigger: &str,
+        fresh: impl Fn() -> Ctx<'f, 'a>,
+        conn: &mut SqliteConnection,
+        deps: &Deps<'_>,
+    ) {
+        // What finished workflows left, kept for those that run after them.
+        let mut left: HashMap<&str, Ctx<'f, 'a>> = HashMap::new();
+        for (name, wf) in self.workflows.iter().filter(|(_, wf)| wf.on == trigger) {
+            let after = wf.after.as_deref().unwrap_or_default();
+            if let Some(dep) = after.iter().find(|dep| !left.contains_key(dep.as_str())) {
+                // It already said why (or stopped at a filter: then it finished).
+                log::info!(
+                    "Workflow '{name}' skipped for {}: '{dep}' didn't finish",
+                    fresh().label()
+                );
+                continue;
+            }
+            let mut ctx = match after.split_first() {
+                None => fresh(),
+                Some((first, rest)) => {
+                    let mut ctx = left[first.as_str()].clone();
+                    for dep in rest {
+                        ctx.inherit(&left[dep.as_str()]);
+                    }
+                    ctx.handed_on()
+                }
+            };
+            let needed = self
+                .workflows
+                .iter()
+                .any(|(_, w)| w.after.iter().flatten().any(|dep| dep == name));
+            if self.walk(name, wf, &mut ctx, conn, deps).await && needed {
+                left.insert(name, ctx);
+            }
         }
     }
 
+    /// Runs a workflow over an item; whether it finished (reached an end
+    /// without a node failing; stopping at an `if` without `else` is an end).
     async fn walk(
         &self,
         name: &str,
@@ -146,7 +235,7 @@ impl Engine {
         ctx: &mut Ctx<'_, '_>,
         conn: &mut SqliteConnection,
         deps: &Deps<'_>,
-    ) {
+    ) -> bool {
         let mut current = Some(&wf.nodes[0]);
         while let Some(node) = current {
             let next = match self.step(name, node, ctx, conn, deps).await {
@@ -160,11 +249,12 @@ impl Engine {
                             ctx.label()
                         );
                     }
-                    None
+                    return false;
                 }
             };
             current = next.and_then(|id| wf.nodes.iter().find(|n| n.id == id));
         }
+        true
     }
 
     /// Runs a node; the id of the node to go to next.
@@ -573,6 +663,7 @@ pub struct Found<'a> {
 
 /// One workflow's view of a module: what the walk found plus what its nodes
 /// computed so far.
+#[derive(Clone)]
 pub struct ModuleCtx<'f, 'a> {
     found: &'f Found<'a>,
     stamp: i32,
@@ -612,6 +703,25 @@ impl<'f, 'a> ModuleCtx<'f, 'a> {
             notes: None,
             added_python: Vec::new(),
             ai: BTreeMap::new(),
+        }
+    }
+
+    /// What `other` (another workflow's, on this module) computed and this
+    /// one hasn't.
+    fn inherit(&mut self, other: &ModuleCtx) {
+        fn fill<T: Clone>(mine: &mut Option<T>, theirs: &Option<T>) {
+            if mine.is_none() {
+                mine.clone_from(theirs);
+            }
+        }
+        fill(&mut self.manifest, &other.manifest);
+        fill(&mut self.committers, &other.committers);
+        fill(&mut self.folder_size, &other.folder_size);
+        fill(&mut self.analysis, &other.analysis);
+        fill(&mut self.security, &other.security);
+        fill(&mut self.notes, &other.notes);
+        for (id, answer) in &other.ai {
+            self.ai.entry(id.clone()).or_insert_with(|| answer.clone());
         }
     }
 
@@ -692,6 +802,7 @@ pub struct FoundPr<'a> {
 }
 
 /// One workflow's view of a PR/MR.
+#[derive(Clone)]
 pub struct PrCtx<'f, 'a> {
     found: &'f FoundPr<'a>,
     ai: BTreeMap<String, String>,
@@ -746,6 +857,13 @@ impl PrCtx<'_, '_> {
                 "ci_changed": ci_changed,
                 // Opened by `pr_open`: its webhooks come back here.
                 "is_ours": info.head_ref.starts_with("ogh/"),
+                // `modules[].analysis`, `security` and `migration` are of this
+                // head: false while it waits for its analysis (a new push past
+                // the job's analysis limit, a failed fetch, a `migration`
+                // source), when they're an older head's or none.
+                "analyzed": pr.head_sha.is_some()
+                    && pr.analyzed_sha == pr.head_sha
+                    && pr.analysis_version == analyzer::ANALYSIS_VERSION,
             },
             "modules": modules,
             "security": security,
@@ -784,12 +902,36 @@ fn pr_problems(analyses: &[(&str, Option<Value>)]) -> (Value, Value) {
 }
 
 /// What a workflow runs over.
+#[derive(Clone)]
 pub enum Ctx<'f, 'a> {
     Module(Box<ModuleCtx<'f, 'a>>),
     Pr(PrCtx<'f, 'a>),
 }
 
 impl<'f, 'a> Ctx<'f, 'a> {
+    /// What `other` (another workflow's, on the same item) computed and this
+    /// one hasn't (`Engine::new` keeps `after` within a trigger).
+    fn inherit(&mut self, other: &Ctx) {
+        match (self, other) {
+            (Ctx::Module(ctx), Ctx::Module(other)) => ctx.inherit(other),
+            (Ctx::Pr(ctx), Ctx::Pr(other)) => {
+                for (id, answer) in &other.ai {
+                    ctx.ai.entry(id.clone()).or_insert_with(|| answer.clone());
+                }
+            }
+            _ => unreachable!("`after` across triggers"),
+        }
+    }
+
+    /// A finished workflow's context, for one that runs after it: what its
+    /// `store_module` added is its own (`osv` would report it again).
+    fn handed_on(mut self) -> Self {
+        if let Ctx::Module(ctx) = &mut self {
+            ctx.added_python.clear();
+        }
+        self
+    }
+
     /// `validate` keeps module nodes out of PR workflows.
     fn module(&mut self) -> &mut ModuleCtx<'f, 'a> {
         match self {
@@ -1244,6 +1386,134 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workflows_run_after_the_ones_they_name_and_start_from_them() {
+        let f = crate::golden::Fixture::new("after");
+        crate::golden::first_commit(&f);
+        let pool = f.db();
+        let conn = &mut pool.get().unwrap();
+        let wf = |yaml: &str| parse(&format!("on: module\n{yaml}"));
+        let probe = |text: &str| {
+            format!("[{{id: p, type: log, event: probe, message: '{text} {{{{ technical_name }}}}: {{{{ migration.count }}}}'}}]")
+        };
+        let defs = with_built_in(&HashMap::from([
+            (
+                "notes".into(),
+                wf("nodes: [{id: n, type: migration_notes}]"),
+            ),
+            (
+                "report".into(),
+                wf(&format!("after: [notes]\nnodes: {}", probe("after"))),
+            ),
+            ("alone".into(), wf(&format!("nodes: {}", probe("alone")))),
+            // Fails (no such file): what runs after it doesn't.
+            (
+                "broken".into(),
+                wf("nodes: [{id: b, type: log, message: \"{{ file('nope') }}\"}]"),
+            ),
+            (
+                "after_broken".into(),
+                wf(&format!("after: [broken]\nnodes: {}", probe("never"))),
+            ),
+            // Stops at a filter: that's an end, it finished.
+            (
+                "filter".into(),
+                wf("nodes: [{id: f, type: if, when: 'false', then: o}, {id: o, type: osv}]"),
+            ),
+            (
+                "after_filter".into(),
+                wf(&format!("after: [filter]\nnodes: {}", probe("filtered"))),
+            ),
+        ]));
+        // Listed before what it runs after: it still comes second, and sees
+        // the notes `notes` computed; `alone` starts from nothing.
+        let names = [
+            "report",
+            "alone",
+            "notes",
+            "after_broken",
+            "broken",
+            "after_filter",
+            "filter",
+        ];
+        probe_run(&f, conn, &defs, &names).await;
+        let got = probes(conn);
+        assert!(got.contains(&"after mod_a: 1".to_string()), "{got:?}");
+        assert!(got.contains(&"after mod_b: 0".to_string()), "{got:?}");
+        assert!(
+            got.iter()
+                .any(|p| p.starts_with("alone mod_a:") && !p.ends_with('1')),
+            "{got:?}"
+        );
+        assert!(
+            got.iter().any(|p| p.starts_with("filtered mod_a")),
+            "{got:?}"
+        );
+        assert!(!got.iter().any(|p| p.starts_with("never")), "{got:?}");
+    }
+
+    #[tokio::test]
+    async fn a_dependent_computes_what_its_dependency_skipped() {
+        let f = crate::golden::Fixture::new("after-unchanged");
+        crate::golden::first_commit(&f);
+        let pool = f.db();
+        let conn = &mut pool.get().unwrap();
+        // On an unchanged module `default` only stores the manifest: a node
+        // that needs the findings computes them then, and reuses them else.
+        let grave = parse(
+            "on: module\nafter: [default]\nnodes: [{id: s, type: security, next: p}, \
+             {id: p, type: log, event: probe, message: '{{ technical_name }} {{ unchanged }} {{ security.grave }}'}]",
+        );
+        let defs = with_built_in(&HashMap::from([("grave".to_string(), grave)]));
+        probe_run(&f, conn, &defs, &["grave", "default"]).await;
+        probe_run(&f, conn, &defs, &["grave", "default"]).await;
+        let got = probes(conn);
+        assert!(got.contains(&"mod_a false 1".to_string()), "{got:?}");
+        assert!(got.contains(&"mod_a true 1".to_string()), "{got:?}");
+    }
+
+    #[test]
+    fn after_stays_within_a_source_and_a_trigger() {
+        let wf = |yaml: &str| parse(yaml);
+        let defs = with_built_in(&HashMap::from([
+            (
+                "mine".into(),
+                wf("on: module\nafter: [default]\nnodes: [{id: o, type: osv}]"),
+            ),
+            (
+                "pr".into(),
+                wf("on: pull_request\nafter: [default]\nnodes: [{id: l, type: log, message: x}]"),
+            ),
+            (
+                "a".into(),
+                wf("on: module\nafter: [b]\nnodes: [{id: o, type: osv}]"),
+            ),
+            (
+                "b".into(),
+                wf("on: module\nafter: [a]\nnodes: [{id: o, type: osv}]"),
+            ),
+            (
+                "off".into(),
+                wf("on: module\nenabled: false\nnodes: [{id: o, type: osv}]"),
+            ),
+            (
+                "after_off".into(),
+                wf("on: module\nafter: [off]\nnodes: [{id: o, type: osv}]"),
+            ),
+        ]));
+        let engine = |names: &[&str]| {
+            let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+            Engine::new(&names, &defs)
+        };
+        let err = |names: &[&str]| engine(names).err().unwrap_or_default();
+        assert!(err(&["mine"]).contains("which this source doesn't run"));
+        assert!(err(&["pr", "default"]).contains("can't run after"));
+        assert!(err(&["a", "b"]).contains("circle"));
+        assert!(engine(&["mine", "default"]).is_ok());
+        // Off, and so is what runs after it.
+        assert!(!engine(&["after_off", "off"]).unwrap().runs("module"));
+    }
+
+    #[tokio::test]
     async fn unchanged_follows_commits_and_the_analysis_stamp() {
         let f = crate::golden::Fixture::new("unchanged");
         f.write(
@@ -1374,12 +1644,12 @@ mod tests {
         assert_eq!(migration["count"], 1);
         // The shipped workflows file (repo root, mounted in Docker): off.
         let shipped = concat!(env!("CARGO_MANIFEST_DIR"), "/../../workflows");
-        let demo = &oghworkflow::file_workflows(shipped).unwrap()["demo_pr_review"];
+        let demo = &oghworkflow::file_workflows(shipped).unwrap()["ai_pr_review"];
         assert!(!demo.is_enabled());
-        assert_eq!(validate("demo_pr_review", demo), Ok(()));
+        assert_eq!(validate("ai_pr_review", demo), Ok(()));
         // Named by a source, it still doesn't run.
-        let defs = HashMap::from([("demo_pr_review".to_string(), demo.clone())]);
-        let engine = Engine::new(&["demo_pr_review".to_string()], &defs).unwrap();
+        let defs = HashMap::from([("ai_pr_review".to_string(), demo.clone())]);
+        let engine = Engine::new(&["ai_pr_review".to_string()], &defs).unwrap();
         assert!(!engine.runs("pull_request"));
         let mut env = Environment::new();
         env.add_function("diff", || "--- a/m/models/m.py".to_string());
@@ -1398,6 +1668,19 @@ mod tests {
                 .unwrap()
                 .is_true()
         };
+        // Only PRs not its own, once their head is analyzed.
+        let gate = |pr: Value| {
+            let view = minijinja::Value::from_serialize(json!({"pr": pr}));
+            let when = demo.nodes[0].when.as_deref().unwrap();
+            env.compile_expression(when)
+                .unwrap()
+                .eval(view)
+                .unwrap()
+                .is_true()
+        };
+        assert!(gate(json!({"is_ours": false, "analyzed": true})));
+        assert!(!gate(json!({"is_ours": false, "analyzed": false})));
+        assert!(!gate(json!({"is_ours": true, "analyzed": true})));
         let none = json!({"grave": 0, "minor": 0, "findings": []});
         let no_notes = json!({"count": 0, "notes": []});
         assert!(holds(&view(&security, &no_notes, "")));

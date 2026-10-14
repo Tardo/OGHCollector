@@ -257,8 +257,19 @@ built with, used only when there's no `workflows.yaml` next to the collector con
 one, it's the whole list (a workflow taken out of it is gone). `collector.yaml` may have a
 `workflows:` too; its definitions replace any of the same name. A workflow with `enabled: false`
 doesn't run even where a source names it (the job logs a warning); it's still checked. The shipped
-`workflows.yaml` has `default` and one more, off: `demo_pr_review`, an AI reviewing the PRs that
+`workflows.yaml` has `default` and one more, off: `ai_pr_review`, an AI reviewing the PRs that
 bring grave security findings or migration notes (see [Actions](#actions)).
+
+A workflow can run after others: `after: [default]`. On each module (or PR) it then runs once
+those have, whatever the source's list order, only if they all *finished* (reached an end with no
+node failing; stopping at an `if` without `else` is an end), and it starts from what they
+computed: the manifest, analysis, findings, notes and AI answers are there without being computed
+again (where two computed the same, the first in `after` wins). What it needs and they didn't
+compute (say `default` on an unchanged module, which only stores the manifest) its own nodes
+compute as usual, so a `security` node before a `security.grave` test costs nothing when
+`default` already ran it. The workflows it names must be in the same source's list (they aren't
+added for it), with the same trigger: PR workflows run after every module workflow anyway. One
+that is off (or runs after one that is off) is skipped with a warning.
 
 ```yaml
 # default (in workflows.yaml): unchanged modules only get their manifest stored
@@ -346,7 +357,8 @@ its folder).
 In `pull_request` workflows: `org`, `repo`, `odoo_version`,
 `pr.number|title|author|labels|draft|ci_status|head_sha|head_ref|url|description`, `pr.is_new`
 (first seen), `pr.head_changed`, `pr.ci_changed` (checks just turned green or red), `pr.is_ours`
-(opened by `pr_open`), and `modules`, one `{name, port, analysis}` per module it changes
+(opened by `pr_open`), `pr.analyzed` (the analysis below is of this head: false while a new push
+waits for it, and always on `pull_requests: migration` sources), and `modules`, one `{name, port, analysis}` per module it changes
 (`analysis` with `pull_requests: full`). Over those, like a module workflow's own:
 `security.grave|minor|findings` (only the findings the PR brings, not those of the merged module)
 and `migration.count|notes`, each item with its `module` (empty without the analysis). `diff()` returns its changes (up to 200,000 characters;
@@ -442,11 +454,11 @@ sources:
   without the gate it analyzes every module on every run (its AI answers and PRs are still once).
 - **Bot PRs.** A PR opened or edited by these nodes comes back through the webhooks; gate PR
   workflows on `not pr.is_ours` so they don't review their own work.
-- **The demo, `demo_pr_review`** (in `workflows.yaml`): on PRs that aren't its own and bring a
+- **The demo, `ai_pr_review`** (in `workflows.yaml`): on PRs that aren't its own and bring a
   grave security finding or a migration note, it asks `claude-opus-5-5` for a fix as a diff of the
   PR's lines and posts a review listing the findings, with the fix as suggestions. It ships with
   `enabled: false`: to try it, set `enabled: true` and name it in a `pull_requests: full` source
-  (`workflows: [default, demo_pr_review]`), which only logs what it would ask and post; then add
+  (`workflows: [default, ai_pr_review]`), which only logs what it would ask and post; then add
   `actions: [ai]` to have it ask (`/logs` then says how many suggestions it would post, on which
   files), and `pr_review` to post them. Set
   `ANTHROPIC_API_KEY` (or the `anthropic_api_key` Docker secret) and the write token. Change it

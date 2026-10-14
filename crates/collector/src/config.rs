@@ -487,7 +487,7 @@ mod tests {
         let defs = super::load_workflows(dir.join("absent").to_str().unwrap()).unwrap();
         let mut built_in: Vec<_> = defs.keys().collect();
         built_in.sort();
-        assert_eq!(built_in, ["default", "demo_pr_review"]);
+        assert_eq!(built_in, ["ai_pr_review", "default"]);
         for bad in ["[nope]", "[default, default]"] {
             let yaml = format!("sources:\n- {{source: A, versions: [18.0], workflows: {bad}}}\n");
             assert!(load(&yaml).is_err(), "{bad}");

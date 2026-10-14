@@ -23,6 +23,12 @@ pub struct Workflow {
     /// draft). It's still checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// Workflows (same trigger, run by the same source) it runs after, on
+    /// each module or PR: only once all of them finished (reached an end
+    /// without a node failing), and starting from what they computed (the
+    /// first listed wins where two computed the same).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<Vec<String>>,
     /// The first node is where it starts.
     pub nodes: Vec<Node>,
 }
@@ -322,6 +328,7 @@ pub fn metadata() -> serde_json::Value {
                 "org", "repo", "odoo_version", "pr.number", "pr.title", "pr.author", "pr.labels",
                 "pr.draft", "pr.ci_status", "pr.head_sha", "pr.head_ref", "pr.url",
                 "pr.description", "pr.is_new", "pr.head_changed", "pr.ci_changed", "pr.is_ours",
+                "pr.analyzed",
                 "modules[].name", "modules[].port", "modules[].analysis", "security.grave",
                 "security.minor", "security.findings", "migration.count", "migration.notes",
                 "ai.<node id>", "diff()",
@@ -462,6 +469,16 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
         return whole("no nodes".to_string());
     }
     let mut found = Vec::new();
+    let mut after = HashSet::new();
+    for dep in wf.after.iter().flatten() {
+        let problem = match () {
+            _ if !is_valid_name(dep) => format!("invalid `after` name '{dep}'"),
+            _ if dep == name => "can't run after itself".to_string(),
+            _ if !after.insert(dep) => format!("'{dep}' is in `after` twice"),
+            _ => continue,
+        };
+        found.push(format!("workflow '{name}': {problem}"));
+    }
     let mut ids = HashSet::new();
     for node in &wf.nodes {
         if !is_valid_name(&node.id) || !ids.insert(node.id.as_str()) {
@@ -747,6 +764,17 @@ mod tests {
         assert!(
             parse_workflows("workflows: {w: {on: module, nodes: [{id: l, typo: x}]}}").is_err()
         );
+        // Its dependencies: well named, not itself, once each.
+        let after = |list: &str| {
+            let yaml = format!(
+                "workflows: {{w: {{on: module, after: {list}, nodes: [{{id: o, type: osv}}]}}}}"
+            );
+            problems("w", &parse_workflows(&yaml).unwrap()["w"])
+        };
+        assert!(after("[default]").is_empty());
+        assert!(after("[w]")[0].contains("itself"));
+        assert!(after("[a, a]")[0].contains("twice"));
+        assert!(after("['Bad name']")[0].contains("invalid"));
         // Off, and said so when serialized; on is the default, left out.
         let off = &parse_workflows(
             "workflows: {w: {on: module, enabled: false, nodes: [{id: o, type: osv}]}}",

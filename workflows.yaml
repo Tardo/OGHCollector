@@ -51,7 +51,10 @@ workflows:
     nodes:
       - id: theirs
         type: if
-        when: not pr.is_ours
+        # Not its own PRs, and only once the collector analyzed this head
+        # (`pull_requests: full`): before that, the problems below would be
+        # an older head's, or none.
+        when: not pr.is_ours and pr.analyzed
         then: problems
       - id: problems
         type: if

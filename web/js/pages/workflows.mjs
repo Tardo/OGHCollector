@@ -16,6 +16,7 @@ const els = {
   name: $('wf-name'),
   trigger: $('wf-trigger'),
   enabled: $('wf-enabled'),
+  after: $('wf-after'),
   palette: $('wf-palette'),
   add: $('wf-add'),
   start: $('wf-start'),
@@ -394,6 +395,7 @@ function loadWorkflow(name, workflow) {
   els.name.value = name;
   els.trigger.value = workflow.on;
   els.enabled.checked = workflow.enabled !== false;
+  els.after.value = (workflow.after ?? []).join(', ');
   refreshTrigger();
   const ids = new Map();
   const unplaced = [];
@@ -485,9 +487,14 @@ function toWorkflow() {
     out.pos = [Math.round(node.pos_x), Math.round(node.pos_y)];
     return out;
   });
-  // On is the default: only "off" is written.
+  // On is the default: only "off" is written; no `after`, none.
   const enabled = els.enabled.checked ? {} : {enabled: false};
-  return {on: els.trigger.value, ...enabled, nodes};
+  const names = els.after.value
+    .split(',')
+    .map(name => name.trim())
+    .filter(Boolean);
+  const after = names.length ? {after: names} : {};
+  return {on: els.trigger.value, ...enabled, ...after, nodes};
 }
 
 function workflowName() {
@@ -1244,6 +1251,7 @@ function bindEvents() {
   });
   els.name.addEventListener('input', regenerate);
   els.enabled.addEventListener('change', regenerate);
+  els.after.addEventListener('input', regenerate);
   els.trigger.addEventListener('change', () => {
     refreshTrigger();
     regenerate();
