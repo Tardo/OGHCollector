@@ -1,4 +1,11 @@
 // Copyright Alexandre D. Díaz
+//! One `pull_request` row per open PR/MR (head, CI, labels, draft, author, `analyzed_sha`); the
+//! modules it changes are `pull_request_module` rows (`is_new` = port, `analysis` JSON). Consumers
+//! that mean "migration PR" (doodba, `/modules` `get_all`, badge `status`, `pull_request_history`)
+//! filter `is_new`; the module page shows all. `add` returns `(before, after)` for change
+//! detection; `delete_outdated` also deletes the module rows (no FK cascade) and logs merged vs
+//! closed. `Model::preference_key` = which PR to pick (green > pending > none > failing, approved
+//! label, not draft, recent) — doodba and the module page's "best for X" use it.
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};

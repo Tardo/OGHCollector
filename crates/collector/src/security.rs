@@ -6,6 +6,19 @@
 //! depends on other modules, global rules, field restrictions and Python code.
 //! "error" (shown prominently on ommd.info) is kept for high-precision
 //! rules; calibrate changes with analyzer.rs's ignored `calibrate` test.
+//!
+//! Static security checks over the analyzed records (lax `ir.model.access` grants, permissive
+//! `ir.rule` domains correlated with the module's own ACLs, privilege-escalation ACLs), HTTP
+//! controllers (CSRF disabled on authenticated endpoints, `.sudo()` in public routes, mass
+//! assignment of the raw request payload) and code-level facts (SQL injection: grave only when the
+//! formatted value is caller-controlled — a parameter of an RPC-callable model method or route, the
+//! request payload, or the context —, eval/exec, pickle/unsafe YAML, `shell=True`, `verify=False`,
+//! user-writable `Html(sanitize=False)`). `test_*`/"Tests"-category modules are skipped. Every
+//! finding is stored in `module_security_warning`; grave ones (`error`) are shown on the module
+//! detail page, minor ones (`warning`) are counted there and also logged as a `system_event` the
+//! first time they appear for a version snapshot. The analyzer also extracts every `http.route`
+//! endpoint (paths, resolved auth, type, methods, csrf, sudo usage) into `module_controller`, shown
+//! on the module page and served via `/api/v1/module/*` and MCP `get_module_code_analysis`.
 use sqlitedb::models::module_code_analysis::{
     ControllerAnalysisInfo, MigrationFactInfo, ModelAnalysisInfo, ModuleAnalysisInfo,
     RecordAnalysisInfo,

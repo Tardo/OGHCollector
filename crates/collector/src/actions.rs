@@ -2,6 +2,30 @@
 //! What workflows do outside the collector: ask an AI, comment on, edit and
 //! open PRs/MRs. `workflow` gates every call (the source's `actions`, else
 //! dry-run) and records it (`workflow_action`), so none repeats.
+//!
+//! Outward side of workflows: `Forge` (write API with `OGHCOLLECTOR_WRITE_TOKEN_GH/GL`, never the
+//! read token; `without_url()` on errors so no credentials reach logs), `ask` (OpenAI-compatible
+//! `/chat/completions` or Anthropic `/v1/messages` + `anthropic-version: 2023-06-01`; `refusal` →
+//! Err; model always explicit in YAML), `open_pr` (worktree under the job workdir after `worktree
+//! prune`; `check_patch` = numstat/summary: only regular files under the module dir, no
+//! renames/mode/symlink/submodule/binary, `apply --check`; push only if the `ogh/...` branch is
+//! absent upstream, else create the missing PR; dry-run still checks the patch; patch gets a
+//! trailing newline — minijinja strips it and git calls that corrupt). In `workflow.rs`: `on:
+//! pull_request` (run from `pull_requests::collect` on every tracked PR after store/analysis,
+//! `FoundPr`/`PrCtx`, `diff()`), `ai`/`pr_comment`/`pr_edit`/`pr_review`/`pr_open` nodes gated by
+//! the source's `actions` (7th job arg) else dry-run, all through the `workflow_action` ledger (key
+//! = item + workflow/node; AI key adds a sha256 of provider/model/url/max_tokens/system/prompt and
+//! caches the answer; `pr_open` key/branch per module+version, no commit). `file()` canonicalizes
+//! (no escape via symlink). `OGHCOLLECTOR_AI_LIMIT` (20) × `timeout` (≤600) stays under
+//! `JOB_TIMEOUT`. `diff()` errors (never "") when the head isn't in the clone, and `collect`
+//! fetches PR heads on demand before PR workflows (migration sources never fetched them) — an empty
+//! diff would get reviewed and ledgered. `api_key_env` may not name the collector's own secrets
+//! (`OGHCOLLECTOR_*`, `{gh,gl}_{token,write_token,webhook_secret}`). Dry-run reports capped at
+//! `DRY_RUN_EVENTS` (20) per job, the rest NOT recorded so later runs report them
+//! (`log_held_dry_runs` line). AI limit warns once per job (step returns `Err("")` = silent stop).
+//! Gates like `pr.head_changed`/`not unchanged` defeat retries — the README says so; prefer relying
+//! on the ledger. `actions_tests.rs` = axum mock of OpenAI/Anthropic/GitLab/GitHub (records
+//! path+query) + local bare origin (incl. the push-done-PR-missing recovery).
 use std::path::Path;
 use std::time::Duration;
 

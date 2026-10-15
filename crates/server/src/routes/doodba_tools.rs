@@ -24,12 +24,8 @@ fn validate_request(mods: &[Text<String>], versions: &[&str]) -> Result<(), AWEr
     validate_module_count(mods.len())?;
     // Empty is allowed (an optional upper-bound version left blank); a
     // non-empty value must parse, since odoo_version_string_to_u8 unwraps.
-    for v in versions {
-        if !v.is_empty() && v.parse::<f32>().is_err() {
-            return Err(actix_web::error::ErrorBadRequest(format!(
-                "invalid odoo version: {v:?}"
-            )));
-        }
+    for v in versions.iter().filter(|v| !v.is_empty()) {
+        crate::utils::odoo_version(v)?;
     }
     Ok(())
 }
@@ -563,6 +559,12 @@ mod tests {
 
         assert!(validate_request(&ok, &["abc"]).is_err());
         assert!(validate_request(&ok, &["17.0", "not-a-version"]).is_err());
+
+        // Whatever passes validation must convert downstream too.
+        assert!(validate_request(&ok, &[" 17.0"]).is_ok());
+        let mut conn = setup_db();
+        let _ = get_doodba_addons(&mut conn, &ok, " 17.0");
+        let _ = get_migration_plan(&mut conn, &ok, " 17.0", Some(" 18.0"));
     }
 
     fn setup_db() -> SqliteConnection {

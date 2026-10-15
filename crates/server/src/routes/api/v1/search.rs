@@ -1,11 +1,22 @@
 // Copyright Alexandre D. Díaz
+//! Serves `GET /v1/semantic-search` (embedding-based free-text search via `oghembed`, same
+//! ranking as the MCP tool; own top-level path so it can't collide with the `/search/{module_name}`
+//! dynamic segment), documented on the `/api` page. The module search dropdown
+//! (`web/js/components/module-search.mjs`) exposes it as the "Semantic" option of its field select
+//! — that mode skips the local preloaded index and fetches from the endpoint per (debounced) query,
+//! folding the per-Odoo-version rows into one entry per module. `semantic_search_enabled` (default
+//! `true`) turns the feature off: the route is not registered (via `App::configure`), the model
+//! warmup thread is skipped on startup, and the "Semantic" option / `/api` doc entry are hidden
+//! from templates (`SEMANTIC_SEARCH_ENABLED` in the context).
 use std::collections::HashMap;
 
 use actix_web::{get, web, Error as AWError, HttpResponse};
 use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
-use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
+use oghutils::version::odoo_version_u8_to_string;
+
+use crate::utils::odoo_version;
 use sqlitedb::models;
 
 use crate::workspace::AreaPool;
@@ -133,16 +144,17 @@ pub async fn route_semantic(
 ) -> Result<HttpResponse, AWError> {
     let params = info.into_inner();
     let limit = params.limit.unwrap_or(20).min(50) as usize;
+    let version_filter = params
+        .odoo_version
+        .as_deref()
+        .map(odoo_version)
+        .transpose()?;
     let result = web::block(move || -> Result<Vec<SemanticSearchResponse>, String> {
         let query_vec = oghembed::embed_texts(&[params.q.as_str()])
             .map_err(|e| format!("embedding model unavailable: {e}"))?
             .pop()
             .ok_or("embedding model returned no vector")?;
         let mut conn = pool.get().unwrap();
-        let version_filter = params
-            .odoo_version
-            .as_deref()
-            .map(odoo_version_string_to_u8);
         let rows = models::module_embedding::get_vectors(&mut conn, version_filter.as_ref());
         let lexical =
             models::module_embedding::lexical_scores(&mut conn, &params.q, version_filter.as_ref());
@@ -184,7 +196,7 @@ pub async fn route_criteria(
     info: web::Query<RouteSearchCriteriaRequest>,
 ) -> Result<HttpResponse, AWError> {
     let params = info.into_inner();
-    let version_odoo = odoo_version_string_to_u8(&params.odoo_version);
+    let version_odoo = odoo_version(&params.odoo_version)?;
     let limit = params.limit.unwrap_or(50).min(200) as i64;
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
@@ -208,27 +220,23 @@ pub async fn route(
     info: web::Query<RouteSearchRequest>,
 ) -> Result<HttpResponse, AWError> {
     let module_name = path.into_inner();
-    if let (Some(version_odoo), Some(installable)) = (info.odoo_version.clone(), info.installable) {
+    let version_odoo = info.odoo_version.as_deref().map(odoo_version).transpose()?;
+    if let (Some(version_odoo), Some(installable)) = (version_odoo, info.installable) {
         let result = web::block(move || {
             let mut conn = pool.get().unwrap();
             get_modules_by_odoo_version_installable(
                 &mut conn,
                 &module_name,
-                &odoo_version_string_to_u8(&version_odoo),
+                &version_odoo,
                 &installable,
             )
         })
         .await?;
         return Ok(HttpResponse::Ok().json(result));
-    } else if info.odoo_version.is_some() {
-        let version_odoo = info.odoo_version.clone().unwrap();
+    } else if let Some(version_odoo) = version_odoo {
         let result = web::block(move || {
             let mut conn = pool.get().unwrap();
-            get_modules_by_odoo_version(
-                &mut conn,
-                &module_name,
-                &odoo_version_string_to_u8(&version_odoo),
-            )
+            get_modules_by_odoo_version(&mut conn, &module_name, &version_odoo)
         })
         .await?;
         return Ok(HttpResponse::Ok().json(result));

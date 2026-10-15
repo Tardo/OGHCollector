@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string, parse_odoo_version};
+use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
 use sqlitedb::{models, Pool};
 
 use super::api::v1::module::{process_modules_db, ModuleFullInfoResponse};
@@ -293,7 +293,7 @@ pub async fn route_tab(
     info: web::Query<RouteModulePageRequest>,
 ) -> Result<HttpResponse> {
     let (org, technical_name, odoo_version) = path.into_inner();
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let version_odoo = crate::utils::odoo_version(&odoo_version)?;
     let version_module = info.version.clone();
     let (module_infos, module_versions) = web::block(move || {
         let mut conn = pool.get().unwrap();

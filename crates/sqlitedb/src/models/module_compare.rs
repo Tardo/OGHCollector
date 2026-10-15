@@ -5,6 +5,8 @@
 //! finding counts). Shared by the server's compare page/API and the MCP
 //! `compare_module_versions` tool. Records (`module_record`) are left out on
 //! purpose: localization data files make them huge and noisy.
+//! `analysis_available: false` when either side has no `module_version`
+//! snapshot (then only manifest and dependencies are compared).
 use diesel::sqlite::SqliteConnection;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

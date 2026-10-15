@@ -13,6 +13,31 @@
 //! Outward nodes (`ai`, `pr_comment`, `pr_edit`, `pr_open`) are dry-run (they
 //! log what they would do) unless the source lists them in `actions`, and the
 //! `workflow_action` ledger makes each run once per item.
+//!
+//! The per-module pipeline is a graph of nodes (root `workflows.yaml`, `default` = the old
+//! pipeline). The core only walks (`run_modules`: `analyzer.module_folders`, sorted by name, + git
+//! info + the stored row → `Found`), then each of the source's workflows runs from a fresh
+//! `ModuleCtx`. Nodes: `if` (minijinja `compile_expression` over `ModuleCtx::view`),
+//! `read_manifest`, `git_stats`, `analyze_code`, `security`, `migration_notes`, `store_module`
+//! (module::add + snapshot/warnings/notes only for what was computed + version-mismatch event +
+//! `sync_dependencies`), `osv`, `log` (minijinja template → `system_event::add`). Nodes compute
+//! their prerequisites lazily. `validate` = types, per-type fields, refs, cycles, expressions,
+//! `after` names; `Engine::new` also rejects two storing workflows on one source, an `after` the
+//! source doesn't list or of another trigger, and `after` cycles, orders the list topologically
+//! (stable: list order otherwise) and skips (warn) disabled ones and, recursively, what runs after
+//! them. `run_all` per item: a workflow with `after` starts from a clone of its first dependency's
+//! final `Ctx` (`inherit` fills the rest, first wins; `handed_on` clears `added_python` so `osv`
+//! doesn't repeat) and is skipped (info) unless every dependency *finished* (`walk` → true: reached
+//! an end without a node `Err`; an `if` without `else` is an end; the AI-limit `Err("")` isn't);
+//! only contexts some later workflow needs are kept. `stamp` = `ANALYSIS_VERSION +
+//! 1000*missing(security, migration_notes)` of the *storing* workflow (one per `Engine`;
+//! `ANALYSIS_VERSION` if none stores — every workflow's `unchanged` compares with it), stored as
+//! `module.analysis_version` (default == plain ANALYSIS_VERSION, so no re-analysis on upgrade).
+//! Deletion follows the walk, not the store. Workflows travel as the 6th job arg (`-` = none); a
+//! job loads definitions via `config::load_workflows(OGHCOLLECTOR_CONFIG)` (set by `run_job` from
+//! `--config`). Node failures `warn`. `golden.rs` (test) pins the default workflow's DB output on a
+//! deterministic git fixture (`GIT_CONFIG_GLOBAL=/dev/null`: the dev's gpg signing hangs commits);
+//! `OGH_GOLDEN_RECORD=1` re-records — only when a change is *meant* to alter output.
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};

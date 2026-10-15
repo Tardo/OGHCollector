@@ -37,4 +37,5 @@ cached.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
+sqlitedb = { path = "../sqlitedb", features = ["fixture"] }
 diesel_migrations.workspace = true

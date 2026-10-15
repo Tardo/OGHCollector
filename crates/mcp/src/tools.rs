@@ -1,4 +1,16 @@
 // Copyright Alexandre D. Díaz
+//! `OghMcp` holds the read-only `sqlitedb::Pool`, `Clone`d per session by the
+//! `StreamableHttpService` factory closure. Query logic calls `sqlitedb::models::*` directly, in
+//! parallel with (not layered on top of) `server`'s `routes/api/v1/*`; the query logic shared
+//! between the two is `sqlitedb::models::dependency::get_full_dependency_info[_many]` (the
+//! recursive dependency-graph walker, which also returns the closure's `nodes`/`edges` for
+//! `license_review`) and `sqlitedb::models::module_compare`. The per-module lookups and
+//! `list_repository_modules`/`list_modules_by_criteria` are wrapped in `cached` `TimedSizedCache`s
+//! (same pattern as `server`'s `atlas::get_graph_data`) keyed on their parsed query params, sized
+//! 500 entries, TTL from `config.rs`; `semantic_search_modules` is not (free-text queries rarely
+//! repeat). Every `odoo_version` param goes through `odoo_version` first: bad input is
+//! `invalid_params` (an empty answer would read as "no such module" to an LLM). The contract (tool
+//! names, required params, answer fields) is pinned by `tools_tests.rs`.
 use std::collections::HashMap;
 
 use cached::{proc_macro::cached, stores::TimedSizedCache};
@@ -14,7 +26,7 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 
 use oghutils::license::LicenseReport;
-use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
+use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
 use sqlitedb::{models, Pool};
 
 /// Params for the `scan_instance` tool.
@@ -23,6 +35,18 @@ pub struct ScanInstanceParams {
     /// Full URL of the Odoo instance to scan, e.g. "https://demo.odoo.com". A
     /// bare host ("demo.odoo.com") is accepted and probed over HTTPS.
     pub url: String,
+}
+
+/// A tool's `odoo_version` ("17.0") as stored (170). Bad input is the
+/// caller's to fix, not an empty answer: "nothing at v17" reads as "no such
+/// module" to an LLM.
+fn odoo_version(raw: &str) -> Result<u8, McpError> {
+    parse_odoo_version(raw).ok_or_else(|| {
+        McpError::invalid_params(
+            format!("invalid odoo_version: {raw:?} (expected e.g. \"17.0\")"),
+            None,
+        )
+    })
 }
 
 fn live_scan_enabled() -> bool {
@@ -625,9 +649,8 @@ fn build_module_dependency_info(
 fn review_module_licenses(
     conn: &mut SqliteConnection,
     technical_names: &[String],
-    odoo_version: &str,
+    version_odoo: u8,
 ) -> ModuleLicensesReview {
-    let version_odoo = odoo_version_string_to_u8(odoo_version);
     let modules =
         models::module::get_by_technical_name_odoo_version(conn, technical_names, &version_odoo);
     let not_found = technical_names
@@ -831,23 +854,22 @@ fn build_module_summary(
             TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{org}|{repo}|{odoo_version:?}|{installable:?}") }"#
+    convert = r#"{ format!("{org}|{repo}|{version_odoo:?}|{installable:?}") }"#
 )]
 fn list_repository_modules_cached(
     pool: Pool,
     org: String,
     repo: String,
-    odoo_version: Option<String>,
+    version_odoo: Option<u8>,
     installable: Option<bool>,
 ) -> Vec<ModuleSummary> {
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
     let modules = models::module::get_by_organization_repository_name(&mut conn, &org, &repo);
-    let version_filter = odoo_version.as_deref().map(odoo_version_string_to_u8);
     modules
         .iter()
-        .filter(|m| version_filter.is_none_or(|v| m.version_odoo as u8 == v))
+        .filter(|m| version_odoo.is_none_or(|v| m.version_odoo as u8 == v))
         .filter(|m| installable.is_none_or(|i| m.installable == i))
         .map(|m| build_module_summary(&mut conn, m))
         .collect::<Vec<_>>()
@@ -862,19 +884,18 @@ fn list_repository_modules_cached(
             TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+    convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}") }"#
 )]
 fn get_module_cached(
     pool: Pool,
     technical_name: String,
-    odoo_version: String,
+    version_odoo: u8,
     org: Option<String>,
     repo: Option<String>,
 ) -> Vec<ModuleInfo> {
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
     let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
     modules
         .iter()
@@ -891,19 +912,18 @@ fn get_module_cached(
             TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+    convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}") }"#
 )]
 fn get_module_docs_cached(
     pool: Pool,
     technical_name: String,
-    odoo_version: String,
+    version_odoo: u8,
     org: Option<String>,
     repo: Option<String>,
 ) -> Vec<ModuleDocs> {
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
     let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
     modules
         .iter()
@@ -920,19 +940,18 @@ fn get_module_docs_cached(
             TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}") }"#
+    convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}") }"#
 )]
 fn get_module_dependencies_cached(
     pool: Pool,
     technical_name: String,
-    odoo_version: String,
+    version_odoo: u8,
     org: Option<String>,
     repo: Option<String>,
 ) -> Vec<ModuleDependencyInfo> {
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
     let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
     modules
         .iter()
@@ -949,12 +968,12 @@ fn get_module_dependencies_cached(
             TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{technical_name}|{odoo_version}|{org:?}|{repo:?}|{version_module:?}") }"#
+    convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}|{version_module:?}") }"#
 )]
 fn get_module_code_analysis_cached(
     pool: Pool,
     technical_name: String,
-    odoo_version: String,
+    version_odoo: u8,
     org: Option<String>,
     repo: Option<String>,
     version_module: Option<String>,
@@ -962,7 +981,6 @@ fn get_module_code_analysis_cached(
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
     let modules = find_modules(&mut conn, &technical_name, &version_odoo, &org, &repo);
     modules
         .iter()
@@ -979,11 +997,11 @@ fn get_module_code_analysis_cached(
             TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
         }
     "#,
-    convert = r#"{ format!("{odoo_version}|{search_term:?}|{category:?}|{depends_on:?}|{limit}") }"#
+    convert = r#"{ format!("{version_odoo}|{search_term:?}|{category:?}|{depends_on:?}|{limit}") }"#
 )]
 fn list_modules_by_criteria_cached(
     pool: Pool,
-    odoo_version: String,
+    version_odoo: u8,
     search_term: Option<String>,
     category: Option<String>,
     depends_on: Option<String>,
@@ -992,7 +1010,6 @@ fn list_modules_by_criteria_cached(
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
     models::module::search_by_criteria(
         &mut conn,
         &version_odoo,
@@ -1005,7 +1022,7 @@ fn list_modules_by_criteria_cached(
     .map(|m| ModuleCriteriaResult {
         technical_name: m.technical_name,
         name: m.name,
-        odoo_version: odoo_version.clone(),
+        odoo_version: odoo_version_u8_to_string(&version_odoo),
         category: m.category.unwrap_or_default(),
         installable: m.installable,
         application: m.application,
@@ -1024,7 +1041,7 @@ fn list_modules_by_criteria_cached(
 fn semantic_search(
     pool: Pool,
     query: &str,
-    odoo_version: Option<&str>,
+    version_filter: Option<u8>,
     limit: usize,
 ) -> Result<Vec<SemanticSearchResult>, String> {
     let query_vec = oghembed::embed_texts(&[query])
@@ -1034,7 +1051,6 @@ fn semantic_search(
     let mut conn = pool
         .get()
         .expect("failed to get a DB connection from the pool");
-    let version_filter = odoo_version.map(odoo_version_string_to_u8);
     let rows = models::module_embedding::get_vectors(&mut conn, version_filter.as_ref());
     let lexical =
         models::module_embedding::lexical_scores(&mut conn, query, version_filter.as_ref());
@@ -1095,25 +1111,28 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<SearchModulesParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = params
+            .odoo_version
+            .as_deref()
+            .map(odoo_version)
+            .transpose()?;
         let pool = self.pool.clone();
         let rows = tokio::task::spawn_blocking(move || {
             let mut conn = pool
                 .get()
                 .expect("failed to get a DB connection from the pool");
-            match (params.odoo_version, params.installable) {
+            match (version_odoo, params.installable) {
                 (Some(v), Some(installable)) => {
                     models::module::get_generic_info_by_odoo_version_installable(
                         &mut conn,
                         &params.name,
-                        &odoo_version_string_to_u8(&v),
+                        &v,
                         &installable,
                     )
                 }
-                (Some(v), None) => models::module::get_generic_info_by_odoo_version(
-                    &mut conn,
-                    &params.name,
-                    &odoo_version_string_to_u8(&v),
-                ),
+                (Some(v), None) => {
+                    models::module::get_generic_info_by_odoo_version(&mut conn, &params.name, &v)
+                }
                 (None, Some(installable)) => models::module::get_generic_info_by_installable(
                     &mut conn,
                     &params.name,
@@ -1143,12 +1162,13 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<ListModulesByCriteriaParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let limit = params.limit.unwrap_or(50).min(200) as i64;
         let results = tokio::task::spawn_blocking(move || {
             list_modules_by_criteria_cached(
                 pool,
-                params.odoo_version,
+                version_odoo,
                 params.search_term,
                 params.category,
                 params.depends_on,
@@ -1177,10 +1197,15 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<SemanticSearchModulesParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = params
+            .odoo_version
+            .as_deref()
+            .map(odoo_version)
+            .transpose()?;
         let pool = self.pool.clone();
         let limit = params.limit.unwrap_or(10).min(50) as usize;
         let results = tokio::task::spawn_blocking(move || {
-            semantic_search(pool, &params.query, params.odoo_version.as_deref(), limit)
+            semantic_search(pool, &params.query, version_odoo, limit)
         })
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?
@@ -1202,12 +1227,13 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<GetModuleParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let infos = tokio::task::spawn_blocking(move || {
             get_module_cached(
                 pool,
                 params.technical_name,
-                params.odoo_version,
+                version_odoo,
                 params.org,
                 params.repo,
             )
@@ -1228,12 +1254,13 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<GetModuleParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let docs = tokio::task::spawn_blocking(move || {
             get_module_docs_cached(
                 pool,
                 params.technical_name,
-                params.odoo_version,
+                version_odoo,
                 params.org,
                 params.repo,
             )
@@ -1257,12 +1284,13 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<GetModuleParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let deps = tokio::task::spawn_blocking(move || {
             get_module_dependencies_cached(
                 pool,
                 params.technical_name,
-                params.odoo_version,
+                version_odoo,
                 params.org,
                 params.repo,
             )
@@ -1293,18 +1321,13 @@ impl OghMcp {
                 None,
             ));
         }
-        if oghutils::version::parse_odoo_version(&params.odoo_version).is_none() {
-            return Err(McpError::invalid_params(
-                format!("invalid odoo_version: {:?}", params.odoo_version),
-                None,
-            ));
-        }
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let review = tokio::task::spawn_blocking(move || {
             let mut conn = pool
                 .get()
                 .expect("failed to get a DB connection from the pool");
-            review_module_licenses(&mut conn, &params.technical_names, &params.odoo_version)
+            review_module_licenses(&mut conn, &params.technical_names, version_odoo)
         })
         .await
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -1328,12 +1351,10 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<CompareModuleVersionsParams>,
     ) -> Result<CallToolResult, McpError> {
-        let parse = |raw: &str| {
-            oghutils::version::parse_odoo_version(raw).ok_or_else(|| {
-                McpError::invalid_params(format!("invalid Odoo version: {raw:?}"), None)
-            })
-        };
-        let (from, to) = (parse(&params.from_version)?, parse(&params.to_version)?);
+        let (from, to) = (
+            odoo_version(&params.from_version)?,
+            odoo_version(&params.to_version)?,
+        );
         let pool = self.pool.clone();
         let diff = tokio::task::spawn_blocking(move || {
             let mut conn = pool
@@ -1396,12 +1417,13 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<GetModuleCodeAnalysisParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let analyses = tokio::task::spawn_blocking(move || {
             get_module_code_analysis_cached(
                 pool,
                 params.technical_name,
-                params.odoo_version,
+                version_odoo,
                 params.org,
                 params.repo,
                 params.version_module,
@@ -1422,12 +1444,12 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<ListModuleVersionsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = odoo_version(&params.odoo_version)?;
         let pool = self.pool.clone();
         let history = tokio::task::spawn_blocking(move || {
             let mut conn = pool
                 .get()
                 .expect("failed to get a DB connection from the pool");
-            let version_odoo = odoo_version_string_to_u8(&params.odoo_version);
             let modules = find_modules(
                 &mut conn,
                 &params.technical_name,
@@ -1514,13 +1536,18 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<ListRepositoryModulesParams>,
     ) -> Result<CallToolResult, McpError> {
+        let version_odoo = params
+            .odoo_version
+            .as_deref()
+            .map(odoo_version)
+            .transpose()?;
         let pool = self.pool.clone();
         let summaries = tokio::task::spawn_blocking(move || {
             list_repository_modules_cached(
                 pool,
                 params.org,
                 params.repo,
-                params.odoo_version,
+                version_odoo,
                 params.installable,
             )
         })
@@ -1635,3 +1662,7 @@ impl ServerHandler for OghMcp {
             )
     }
 }
+
+#[cfg(test)]
+#[path = "tools_tests.rs"]
+mod tests;

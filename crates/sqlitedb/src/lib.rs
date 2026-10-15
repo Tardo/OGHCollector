@@ -1,4 +1,6 @@
 // Copyright Alexandre D. Díaz
+#[cfg(feature = "fixture")]
+pub mod fixture;
 pub mod models;
 pub mod schema;
 pub mod utils;

@@ -1,4 +1,18 @@
 // Copyright Alexandre D. Díaz
+//! Orchestrates the pipeline; uses `named-lock` to prevent concurrent runs for the same org. A run
+//! fails iff the `collector` target logged an error (`LOGGED_ERRORS`, counted by the
+//! `ErrorCountingLogger` wrapper around env_logger; a panic hook routes panics through
+//! `log::error!`): what it collected stays saved, it skips the "Scan finished" event and exits 1.
+//! So every failure path must end in a `log::error!` — a silent `break`/empty `Vec` is how
+//! "collected nothing, exit 0, no log" happened. `run_config` pipes each child's stderr through and
+//! records each failed job (`run_and_record`, shared with `listen`) as `Scan failed for '<source>'
+//! [<ver>]: <first error> (N error(s), exit code|signal)` (`system_event` collector/error), signal
+//! deaths (OOM) included. A hung run used to stall every later one (Ofelia printed output only at
+//! job end and `no-overlap` skipped later runs; the daemon's single worker would stall the same
+//! way): nothing may block forever — `run_job` kills a job (its own process group: git too, TERM
+//! first so git drops its lock files) after `JOB_TIMEOUT` (4h), `gitclient::http_client` (every
+//! reqwest client) has connect/request timeouts and `git_run_env` a low-speed limit. The batch
+//! parent's embeddings pass is not covered (the daemon's is: it's a `run_job` child).
 mod actions;
 #[cfg(test)]
 mod actions_tests;

@@ -2,6 +2,15 @@
 //! Web links of a collected repository. The collector only speaks GitHub
 //! (github.com) and GitLab (any host), so a host other than github.com is
 //! GitLab, whose web routes live under `/-/`.
+//!
+//! Repo web links from the stored clone URL: `clone_url` (github.com fallback), `files_url` (append
+//! `/blob|tree|raw/{branch}/{path}`; non-github.com hosts are GitLab → `/-/`), `pull_request_url`
+//! (`/pull/N` vs `/-/merge_requests/N`). Also `pull_request_ref` (`refs/pull/N/head` vs
+//! `refs/merge-requests/N/head`, doodba merges). The server exposes `files_url` as the `repo_files`
+//! template filter; pages listing many repos load `sqlitedb::models::gh_repository::clone_urls`
+//! once (`org/repo` → stored URL) and pass `.get()` to `clone_url`. Doodba JSON carries `repo_urls`
+//! (repo name → clone URL) and `merge_ref` on pending PRs for the JS `repos.yaml`. GitLab repos are
+//! stored by project `path` (slug), not display `name`.
 
 /// Clone URL of a repository: the one the collector stored, else the
 /// github.com one (rows collected before the URL was stored).

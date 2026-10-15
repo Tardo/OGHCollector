@@ -4,6 +4,24 @@
 //! line comments inside the PR's own diff, and an AI's hunk headers are often
 //! off: each hunk is found by its text in the file at the head, and what
 //! can't be placed that way goes in the review's text, as a diff.
+//!
+//! `pr_review`: an (AI) unified diff → one-click suggestions on the PR head. Hunks are found by
+//! their text in `git show <head>:<path>` (AI line numbers are unreliable), trimmed to what changes
+//! (pure insertion borrows a neighbour line), and kept only if inside one hunk of the PR's own `git
+//! diff -U3 origin/<base>...<head>` (forges reject others); the rest are leftovers in the review
+//! text. `Forge::review`: GitHub one `pulls/N/reviews` (`event: COMMENT`; a 422 → resent
+//! text-only), GitLab `diff_refs` check (moved head → Err, nothing written) then a discussion per
+//! suggestion (`suggestion:-N+0`, `old_line` on context lines) and a note; once anything is written
+//! it never returns Err (ledger = successes only). `extract_patch` joins every fenced diff block
+//! (one per file). PR workflows also see `security.grave|minor|findings` (only the PR's `new`
+//! findings) and `migration.count|notes` over its modules (`workflow::pr_problems`), like module
+//! workflows. Workflows load via `oghworkflow::layered`: the `workflows.yaml` beside the collector
+//! config (repo root; shipped in the image, bind-mounted into collector+server, and bind-mounted
+//! into the Docker *build* too since `oghworkflow` `include_str!`s it as the fallback copy) or,
+//! without one, that built-in copy; then the config's own `workflows:`. `default` lives there
+//! (golden-pinned). `Workflow.enabled: false` = validated but skipped by `Engine::new` (warn),
+//! editor switch + "· off" in its list. The demo `ai_pr_review` lives in root `workflows.yaml`,
+//! `enabled: false` (its test loads that file).
 use std::collections::{BTreeMap, HashMap};
 
 use crate::gitclient::git_run;

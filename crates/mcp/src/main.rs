@@ -1,4 +1,12 @@
 // Copyright Alexandre D. Díaz
+//! Resolves the SQLite DB path (CLI arg, else `OGHCOLLECTOR_DB_PATH`, else `data/data.db`,
+//! canonicalized to an absolute path) and serves `OghMcp` as a Streamable HTTP MCP endpoint at
+//! `/mcp` (`rmcp::transport::streamable_http_server::StreamableHttpService` mounted into an
+//! `axum::Router`, served via `axum::serve`/`tokio::net::TcpListener`). Binds
+//! `OGHCOLLECTOR_MCP_BIND_ADDR` (default `0.0.0.0:8081`). rmcp rejects requests whose `Host` header
+//! isn't localhost/127.0.0.1/::1 by default (DNS-rebinding protection) — set
+//! `OGHCOLLECTOR_MCP_ALLOWED_HOSTS` (comma-separated) to the real public hostname(s)/IP(s) for a
+//! reachable deployment; `main.rs` logs a warning when it falls back to the loopback-only default.
 mod config;
 mod tools;
 

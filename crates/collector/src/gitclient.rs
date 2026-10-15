@@ -1,4 +1,25 @@
 // Copyright Alexandre D. Díaz
+//! `GitClient` trait: `clone_source` (what `main.rs` calls: one repo or a whole org/group),
+//! `clone_or_update_repo`, `clone_org_repos`, `get_org_repos`. Default impl uses `duct::cmd!` to
+//! shell out to `git`. GitHub: `owner/repo` = repo, else org. GitLab: `a/b[/c]` is looked up as a
+//! project (`projects/:path`), else listed as a (sub)group; org = first path segment (same-named
+//! projects in sibling subgroups collide). Private repos: `clone`/`fetch` get a host-scoped
+//! `credential.<origin>.helper` (an empty one first resets inherited helpers) via `GIT_CONFIG_*`
+//! env (`git_auth_env`); the `!sh` helper prints the user from `git_credentials` (`x-access-token`
+//! GH, `oauth2` GL) and the token from `OGHCOLLECTOR_GIT_TOKEN`. Git only asks after a 401, so
+//! public repos stay anonymous (an under-scoped token can't break them), and the token is never in
+//! the remote URL / `.git/config` on the volume. Collecting private code makes it public on
+//! server/mcp — they need auth then. `RepoInfo.url` (the clone URL) is stored per run in
+//! `gh_repository.url` (`set_url`); every web link is built from it via `oghutils::git` (NULL =
+//! pre-column row → github.com fallback).
+//!
+//! `clients/{github,gitlab}.rs`: concrete HTTP clients implementing `GitClient` via reqwest. They
+//! only implement `request`; the trait's default `request_json` turns non-2xx into `Err` (before,
+//! an API error parsed as an error-object JSON that callers read as "no repos") and retries rate
+//! limits (until reset, ≤1h; `retry-after`/`x-ratelimit-*`/`ratelimit-*`), 5xx and network errors,
+//! 3 attempts. GitLab's `a/b` project lookup treats a 404 as "it's a group".
+//! `get_open_migration_pull_requests` returns `None` when (part of) the listing failed: main then
+//! leaves the stored PRs alone (an empty list used to close/delete every stored PR of the repo).
 use duct::cmd;
 use reqwest::StatusCode;
 use std::fs;

@@ -1,10 +1,19 @@
 // Copyright Alexandre D. Díaz
+//! DB pool is diesel's r2d2 integration with `PRAGMA query_only = ON` applied per-connection
+//! (`sqlitedb::new_read_pool`). `main.rs`'s `resolve_db_path()` (CLI-arg-free; env var only, unlike
+//! mcp) requires the DB file to already exist — it canonicalizes the path and panics with a clear
+//! message instead of silently opening/creating an empty one, since an IDE run config's default cwd
+//! (the crate directory, not the workspace root) previously made a bare relative default silently
+//! create a phantom empty DB there.
 mod config;
 mod middlewares;
 mod minijinja_renderer;
 mod routes;
 mod utils;
 mod workspace;
+
+#[cfg(test)]
+mod api_tests;
 
 use actix_cors::Cors;
 use actix_files as afs;

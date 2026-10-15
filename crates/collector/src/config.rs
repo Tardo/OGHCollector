@@ -1,4 +1,18 @@
 // Copyright Alexandre D. Díaz
+//! Parses CLI args into `OGHCollectorConfig` (source, Odoo version, git type `GH`/`GL`).
+//! `load_jobs` expands `collector.yaml` (`templates: {name: [paths]}`, `sources: [{source,
+//! versions, template, paths, git, base_url}]`; `deny_unknown_fields`, everything validated up
+//! front — it's meant to be machine-generated too, JSON/TOML work via the `config` crate) into
+//! those CLI arg lists. `pull_requests: migration|full` → 5th job arg (see `pull_requests.rs`);
+//! `workflows: [..]` → 6th (see `workflow.rs`); `actions: [..]` → 7th (see `actions.rs`). Run with
+//! no args (or `--config <file>`, `--check` = validate + print jobs), `main.rs::run_config` runs
+//! each job as its own child process (`current_exe()`), so a panic/busy lock only skips that job,
+//! and runs the embeddings pass once at the end (`OGHCOLLECTOR_SKIP_EMBEDDINGS` on the children).
+//! The image ships `collector.yaml`. `read_secret` (Docker secret file, else env var) backs both
+//! the API tokens and the webhook secrets. A test pins the shipped file to the old shell loop's 30
+//! jobs. `workspaces: [..]` per source → 4th job arg (`a,b`, or `all` = every workspace;
+//! same-`source` entries get the union): each job rewrites `gh_repository_workspace` for the repos
+//! it collected; a run without a 4th arg leaves them alone. No rows = repo in every workspace.
 use config::Config;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};

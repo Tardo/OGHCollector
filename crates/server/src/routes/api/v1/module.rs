@@ -1,4 +1,20 @@
 // Copyright Alexandre D. Díaz
+//! Compare: `/module/{org}/{technical_name}/compare?from=&to=` (page, defaults to the two newest
+//! versions) and `GET /v1/compare/{module_name}?from=&to=&org=&repo=` (JSON, `null` when missing),
+//! both on `sqlitedb::models::module_compare`.
+//!
+//! Module health (`api/v1/module.rs::module_health`): synthetic 0-100 `health` field on every
+//! `/v1/module/*` row, shown as the top band (score + one bar per factor) of the module-page
+//! summary panel when `health_score_enabled` (default `true`, `HEALTH_SCORE_ENABLED` in the
+//! template context). Four factors of 25 (security findings, months since the last *human* commit
+//! on that branch via `module_committer_period` filtered by `sqlitedb::models::HUMAN_COMMITTER`,
+//! the shared SQL predicate on `com.name` that also drives every committer ranking (suffix patterns
+//! like `% bot`/`%-bot`/`%[bot]`/`Launchpad Translations on behalf of %`, not a list — bots come in
+//! dozens of spellings) — `last_commit_date` is useless here, ~70% of 16.0+ modules' last commit is
+//! Weblate/bot —, "Required by", Odoo series count up to this version). Thresholds were checked
+//! against whether 16.0/17.0 modules were later migrated (see the comment on `module_health`).
+//! Factors without data are `null` and left out of the denominator; a grave finding caps the grade
+//! at "fair".
 use array_tool::vec::Uniq;
 use std::collections::HashMap;
 
@@ -8,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
 use oghutils::license::LicenseReport;
-use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string, parse_odoo_version};
+use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
 
 use crate::utils::normalize_python_dep;
@@ -596,7 +612,7 @@ pub async fn route_odoo_version(
     info: web::Query<RouteModuleRequest>,
 ) -> Result<HttpResponse, AWError> {
     let (module_name, odoo_version) = path.into_inner();
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let version_odoo = crate::utils::odoo_version(&odoo_version)?;
     let version_module = info.version.clone();
 
     if info.org.is_some() && info.repo.is_some() {
@@ -660,7 +676,7 @@ pub async fn route_versions(
     info: web::Query<RouteModuleRequest>,
 ) -> Result<HttpResponse, AWError> {
     let (module_name, odoo_version) = path.into_inner();
-    let version_odoo = odoo_version_string_to_u8(&odoo_version);
+    let version_odoo = crate::utils::odoo_version(&odoo_version)?;
     let org = info.org.clone();
     let repo = info.repo.clone();
 
@@ -775,12 +791,10 @@ pub async fn route_compare(
 ) -> Result<HttpResponse, AWError> {
     let module_name = path.into_inner();
     let info = info.into_inner();
-    let parse = |raw: &str| {
-        parse_odoo_version(raw).ok_or_else(|| {
-            actix_web::error::ErrorBadRequest(format!("invalid odoo version: {raw:?}"))
-        })
-    };
-    let (from, to) = (parse(&info.from)?, parse(&info.to)?);
+    let (from, to) = (
+        crate::utils::odoo_version(&info.from)?,
+        crate::utils::odoo_version(&info.to)?,
+    );
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
         let (org, repo) = (info.org.as_deref(), info.repo.as_deref());

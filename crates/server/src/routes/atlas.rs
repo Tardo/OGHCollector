@@ -3,7 +3,6 @@ use actix_web::{get, web, Error as AWError, HttpRequest, HttpResponse, Responder
 use cached::{proc_macro::cached, stores::TimedSizedCache};
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
-use oghutils::version::odoo_version_string_to_u8;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -232,14 +231,10 @@ pub async fn route_atlas_data(
     pool: AreaPool,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AWError> {
-    let odoo_version = path.into_inner();
+    let version_odoo = crate::utils::odoo_version(&path.into_inner())?;
     let result = web::block(move || {
         let mut conn = pool.get().unwrap();
-        get_graph_data(
-            &mut conn,
-            pool.key(),
-            &odoo_version_string_to_u8(&odoo_version),
-        )
+        get_graph_data(&mut conn, pool.key(), &version_odoo)
     })
     .await?;
     Ok(HttpResponse::Ok().json(result))

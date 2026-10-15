@@ -1,9 +1,16 @@
 // Copyright Alexandre D. Díaz
+//! License review (`oghutils::license` over the closure graph of `sqlitedb::models::dependency`):
+//! `license_review` field on `/v1/module/*` (module page: License stat card, alert and facts row),
+//! on the dependency resolver response and on `/pack/info` (now `{modules, license_review}`), plus
+//! `GET /v1/license-check?odoo_version=&modules=a,b` for CI. "Combined: X" is shown only when
+//! there's a `LICENSE_EFFECTIVE_UPGRADE` finding, since a proprietary module isn't distributed
+//! under its dependencies' copyleft. `doodba_tools::validate_module_count` (`doodba_max_modules`)
+//! caps every endpoint that walks the closures of a caller-supplied list.
 use actix_web::{get, web, Error as AWError, HttpResponse};
 use serde::{Deserialize, Serialize};
 
 use oghutils::license::LicenseReport;
-use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
+use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
 
 use crate::routes::doodba_tools::validate_module_count;
@@ -32,9 +39,7 @@ pub async fn route(
     info: web::Query<RouteLicenseCheckRequest>,
 ) -> Result<HttpResponse, AWError> {
     let info = info.into_inner();
-    let version_odoo = parse_odoo_version(&info.odoo_version).ok_or_else(|| {
-        actix_web::error::ErrorBadRequest(format!("invalid odoo version: {:?}", info.odoo_version))
-    })?;
+    let version_odoo = crate::utils::odoo_version(&info.odoo_version)?;
     let mut names: Vec<String> = info
         .modules
         .split(',')

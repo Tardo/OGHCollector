@@ -1,4 +1,8 @@
 // Copyright Alexandre D. Díaz
+//! `utils::markdown` (`markdown` filter): module description → HTML via `pulldown-cmark`; raw HTML
+//! shown as text, URL scheme allowlist (http/https/mailto/relative), relative images resolved
+//! against the `repo_files` raw URL. Custom filters must also be registered in the template-test
+//! `Environment` (`routes/module.rs`).
 use actix_web::HttpRequest;
 use minijinja::{context, Value};
 use std::collections::HashMap;
@@ -7,6 +11,13 @@ use std::io::{BufRead, BufReader};
 use std::sync::LazyLock;
 
 use crate::config::SERVER_CONFIG;
+
+/// A request's Odoo version ("17.0") as stored (170); anything else is a
+/// 400, not a panic.
+pub fn odoo_version(raw: &str) -> Result<u8, actix_web::Error> {
+    oghutils::version::parse_odoo_version(raw)
+        .ok_or_else(|| actix_web::error::ErrorBadRequest(format!("invalid odoo version: {raw:?}")))
+}
 
 static PIP_NAMES_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     let path = "files/pip_names.txt";

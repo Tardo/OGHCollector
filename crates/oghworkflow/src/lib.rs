@@ -2,6 +2,18 @@
 //! Workflow definitions and their rules: what `collector.yaml` `workflows:`
 //! may say. Shared by the collector (which runs them) and the server (whose
 //! editor builds and validates them), so both apply the same rules.
+//!
+//! The workflow model and rules, shared by collector (runs them) and server (editor):
+//! `Workflow`/`Node` (serde both ways; unset fields skipped when serialized), `NODE_TYPES` (type,
+//! fields, triggers), `validate`, `built_in()` (= `include_str!` of the repo-root `workflows.yaml`:
+//! the binary's fallback copy) / `shipped(config)` (the `workflows.yaml` beside the config if it
+//! exists — then the whole list, the built-in copy ignored — else `built_in()`) / `layered` (+ the
+//! config's own `workflows:`), `parse_workflows(yaml)` (`config` crate from a string — the same
+//! parse the collector does) and `file_workflows(path)`. `metadata()` = the editor's view of the
+//! same tables (`NODE_DOCS`, `FIELDS` kind/description/enum values, `REQUIRED`, variables per
+//! trigger); `the_editor_metadata_covers_every_rule` fails if a rule field has no spec. Its own
+//! crate (not oghutils) so minijinja/config don't reach sqlitedb. `stamp()` and everything
+//! analyzer-bound stay in collector.
 use std::collections::{HashMap, HashSet};
 
 use minijinja::Environment;

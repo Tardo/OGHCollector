@@ -6,6 +6,10 @@ authors.workspace = true
 description.workspace = true
 documentation.workspace = true
 
+[features]
+# Seeded test DB for the server/mcp contract tests (see src/fixture.rs).
+fixture = []
+
 [dependencies]
 oghutils = { path = "../oghutils" }
 chrono.workspace = true

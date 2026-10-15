@@ -1,4 +1,10 @@
 // Copyright Alexandre D. Díaz
+//! The one closure walker: `get_full_dependency_info_many(roots)` (union of several closures, each
+//! at its own Odoo version) also collects `nodes` (id → org/repo/name/license) and `edges`;
+//! `FullDependencyInfo::license_review(roots)` feeds them to `oghutils::license`. The doodba
+//! resolver is built on it (one walk for the whole list, no per-module `process_modules_db`).
+//! `dependency_module(module_id)` and `system_event(event_type_id)` are indexed (migration
+//! `add_lookup_indexes`) - without them every closure node was a full-table scan.
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

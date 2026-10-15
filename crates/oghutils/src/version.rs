@@ -3,8 +3,18 @@ pub fn odoo_version_u8_to_string(version: &u8) -> String {
     format!("{float_ver:.1}")
 }
 
+/// "18.0" → 180, `None` for anything that isn't a number. No range check:
+/// the lenient reading of a manifest's version (`OdooVersion`); a request's
+/// goes through `parse_odoo_version`.
+pub fn odoo_version_number(version: &str) -> Option<u8> {
+    let value = version.trim().parse::<f32>().ok()?;
+    Some((value * 10.0) as u8)
+}
+
+/// Trusted input only (branch names, already validated values): panics on
+/// anything that isn't a number.
 pub fn odoo_version_string_to_u8(version: &str) -> u8 {
-    (version.parse::<f32>().unwrap() * 10.0) as u8
+    odoo_version_number(version).unwrap_or_else(|| panic!("not an Odoo version: {version:?}"))
 }
 
 /// `odoo_version_string_to_u8` for untrusted input (URL params): None
@@ -24,16 +34,16 @@ pub struct OdooVersion {
 
 impl OdooVersion {
     pub fn new(version: &str, def_version: &u8) -> OdooVersion {
-        let version_odoo: u8;
-        let version_module: String;
         let ver_parts = version.split(".").collect::<Vec<&str>>();
-        if ver_parts.len() > 3 {
-            version_odoo = odoo_version_string_to_u8(&ver_parts[..2].join("."));
-            version_module = ver_parts[2..].join(".");
-        } else {
-            version_odoo = *def_version;
-            version_module = version.to_string();
-        }
+        // A manifest is anyone's text ("v16.0.1.0.0"): unparsable is the
+        // short style, not a panic.
+        let (version_odoo, version_module) = match (ver_parts.len() > 3)
+            .then(|| odoo_version_number(&ver_parts[..2].join(".")))
+            .flatten()
+        {
+            Some(version_odoo) => (version_odoo, ver_parts[2..].join(".")),
+            None => (*def_version, version.to_string()),
+        };
         OdooVersion {
             raw: version.to_string(),
             version_odoo,
@@ -95,5 +105,24 @@ mod tests {
         let v = OdooVersion::new("1.0.0", &160);
         assert_eq!(*v.get_version_odoo(), 160);
         assert_eq!(v.get_version_module(), "1.0.0");
+    }
+
+    #[test]
+    fn test_odoo_version_unparsable_prefix_falls_back_instead_of_panicking() {
+        let v = OdooVersion::new("v16.0.1.0.0", &160);
+        assert_eq!(*v.get_version_odoo(), 160);
+        assert_eq!(v.get_version_module(), "v16.0.1.0.0");
+        // Any number still splits as it always did, in range or not.
+        let v = OdooVersion::new("0.1.0.0", &160);
+        assert_eq!(*v.get_version_odoo(), 1);
+        assert_eq!(v.get_version_module(), "0.0");
+    }
+
+    #[test]
+    fn test_string_to_u8_accepts_what_parse_odoo_version_accepts() {
+        // Request handlers validate with parse_odoo_version (trims) and may
+        // convert again later: the two must agree.
+        assert_eq!(parse_odoo_version(" 17.0"), Some(170));
+        assert_eq!(odoo_version_string_to_u8(" 17.0"), 170);
     }
 }

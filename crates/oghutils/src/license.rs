@@ -6,6 +6,12 @@
 //! Odoo modules extend each other through Python inheritance, so every module
 //! is treated as a derivative work of everything in its dependency closure.
 //! This is a heuristic for spotting problems early, not legal advice.
+//!
+//! Pure license-compatibility rules (no DB) over a closure graph: effective license = strongest
+//! copyleft (AGPL-3 > GPL-3 > GPL-2 > LGPL-3); errors for proprietary↔GPL/AGPL (transitive) and
+//! GPL-2-only↔v3; warnings for LGPL on proprietary and for a root upgraded to AGPL by its deps;
+//! info for unknown licenses. Heuristic, worded as "not legal advice" in every UI. The collector
+//! stores a missing manifest license as AGPL-3 below 9.0 (OpenERP's default) and LGPL-3 from 9.0.
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 

@@ -4,6 +4,20 @@
 //! actions), and builds YAML to copy by hand: the server stays read-only.
 //! Parsing and validation are the collector's own (`oghworkflow`), so what
 //! the editor accepts is what `oghcollector --check` accepts.
+//!
+//! `workflows` (only with `workflow_editor_enabled`, default off): `GET /workflows` (page), `GET
+//! /workflows/data` (JSON: `oghworkflow::metadata()` + built-ins + the `collector_config` file's
+//! `workflows:` — never sources/actions —, re-read per request, a broken file → `file_error`,
+//! built-ins still load) and `POST /workflows/parse` (YAML text → normalized workflows + `validate`
+//! errors; stateless; actix's 256 KiB payload default caps it, and
+//! `oghworkflow::check_untrusted_yaml` (yaml-rust2 event scan: no aliases, depth ≤ 64) runs first —
+//! an alias bomb of a few KB made the YAML loader abort the process on allocation failure; nesting
+//! alone is caught by yaml-rust2's recursion limit). `/workflows/data` is `Cache-Control: no-cache`
+//! (re-read per request; DefaultHeaders would make it public/1h). Copy gives only the `<name>:`
+//! block indented for an existing `workflows:` (a second top-level `workflows:` would clobber the
+//! file's); Download gives the whole document. Served as JSON, not template `tojson` (minijinja
+//! `json` feature isn't on for a server-only build, and prompts could carry `</script>`). Compose
+//! mounts `collector.yaml` into server too.
 use std::collections::BTreeMap;
 
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder, Result};

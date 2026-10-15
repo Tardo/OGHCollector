@@ -1,4 +1,12 @@
 // Copyright Alexandre D. Díaz
+//! End-of-run global pass (all orgs/versions, not just the one collected): builds one embed text
+//! per module (name/technical name/category/truncated description), hashes it
+//! (`oghembed::text_hash`, model tag included so changing the model re-embeds everything) and
+//! (re)embeds only modules whose hash changed or that have no vector yet — so the first run after
+//! the migration backfills the whole DB. Vectors land in `module_embedding` (little-endian f32
+//! BLOB); orphans of deleted modules are cleaned explicitly (FKs aren't enabled on these
+//! connections, the CASCADE never fires). Model failures only log — a collector run never dies
+//! because HuggingFace is unreachable.
 use sqlitedb::models;
 use sqlitedb::DbSqliteConnection as SqliteConnection;
 

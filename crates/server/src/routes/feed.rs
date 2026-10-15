@@ -1,4 +1,9 @@
 // Copyright Alexandre D. Díaz
+//! Atom feeds over `system_event`: `GET /feed.atom?type=&odoo_version=&q=` (default types skip
+//! committer/author/maintainer/dependency/security noise; `type=all` for everything) and
+//! `/module/{org}/{technical_name}/feed.atom`. Filtering is substring-only (`[18.0]`,
+//! `'technical_name'`) since events are free text. Cached per filter set for `cache_ttl`. Linked
+//! from `/logs` (Subscribe), the module header (Follow) and `<link rel="alternate">`.
 use actix_web::{get, web, HttpRequest, HttpResponse, Result};
 use cached::{proc_macro::cached, stores::TimedSizedCache};
 use chrono::{NaiveDateTime, SecondsFormat};

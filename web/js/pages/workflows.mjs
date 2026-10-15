@@ -5,6 +5,32 @@
 // (`/workflows/data`, the collector's own tables), every change is
 // re-checked by the collector's parser and rules (`/workflows/parse`), and
 // the result is YAML to copy by hand: nothing is saved.
+//
+// Front: `web/js/pages/workflows.mjs` on Drawflow 0.0.60 (palette/forms from the metadata, one link
+// per output, start node = first in YAML, export order start → DFS → rest, every text
+// escaped/textContent, links also settable by select, debounced validation; Copy/Download only
+// after a pass; every card holds its form (`draggable_inputs = false`; a canvas mousedown listener
+// registered after Drawflow's resets `editor.drag` on forms/header buttons, so they select without
+// dragging; keydown/contextmenu stopped at the card: Drawflow's Delete only spares a clicked
+// INPUT/TEXTAREA), foldable to a summary (≤3 settings + "+N more", unset required in red); link
+// selects of every card refilled on add/rename/remove/link (`refreshLinks`); help in a screen-space
+// `#wf-balloon` via the header's info button or a hover pause on a header/field; `arrange` =
+// measured grid (after `document.fonts.ready`), columns picked for the biggest zoom (below
+// `MIN_ZOOM`: as many as fit across, the rest panned vertically), `fitView` centers; the wand
+// re-arranges without rebuilding, and while `pristine` (no mousedown/wheel/key on the canvas since
+// the last fit) any canvas/card resize re-runs it — e.g. the first check's problems; backward links
+// drawn square via an instance `createCurvature` override; `Node.pos` (`[x, y]`, any node type, not
+// in `fields()`, ignored by the collector) is the editor layout: exported per node (js-yaml
+// `flowLevel` keeps it one line), a workflow with positions opens with them (`auto_layout` false:
+// resizes only re-fit, nodes without `pos` go in a row below), dragging syncs Drawflow's data from
+// the card's style on `nodeMoved` (0.0.60 stores it a step ahead) and regenerates; `if.when` gets a
+// rule builder (variable · operator · value, all/any) that writes/reads back plain Jinja
+// (`ruleExpr`/`parseCondition`; anything else stays raw text) — an `if` without `else` is the
+// filter node, no separate type; `the_editor_condition_rules_evaluate` (oghworkflow) pins those
+// forms against minijinja; `/workflows/parse` reports `oghworkflow::problems` (first problem of
+// every node, then a cycle; `validate` = its first, so the collector is unchanged) and the editor
+// turns each named node's card red with its problem inside; YAML in a collapsed dock under the
+// canvas).
 import '@scss/pages/workflows.scss';
 import Drawflow from 'drawflow';
 import * as yaml from 'js-yaml';

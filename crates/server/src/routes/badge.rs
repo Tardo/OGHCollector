@@ -1,4 +1,9 @@
 // Copyright Alexandre D. Díaz
+//! `GET /badge/{org}/{technical_name}/{versions|status|license|security}.svg[?odoo_version=]`,
+//! shields-style SVG. Always 200 (a grey "not found" badge): the app-wide 404 handler would swap in
+//! HTML and break README images. Only DB text/fixed strings are rendered, XML-escaped
+//! (`utils::xml_escape`, shared with the sitemap/feeds). Snippets (Markdown/RST/HTML) are under
+//! "Embed badges" in the module facts aside.
 use actix_web::{get, web, HttpResponse, Result};
 use diesel::sqlite::SqliteConnection;
 use serde::Deserialize;

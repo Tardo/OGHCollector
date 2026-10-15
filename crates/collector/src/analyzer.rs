@@ -1,4 +1,15 @@
 // Copyright Alexandre D. Díaz
+//! `OGHCollectorAnalyzer`: walks cloned repo directories, uses **PyO3** to invoke Python to parse
+//! Odoo `__manifest__.py` files, extracts `ManifestInfo`.
+//!
+//! Also embeds the Python extractor (`ANALYZER_PY_SRC`, stdlib-only, Python 3.8-compatible) that
+//! emits raw `migration_facts`/`security_facts` (no judging) plus views/models/records/controllers.
+//! `ANALYSIS_VERSION` is stored per module (`module.analysis_version`) and is part of the "skip
+//! unchanged module" test, so **bump it whenever the extractor, `security.rs` or `migration.rs`
+//! change** — otherwise modules without new commits keep stale findings. An `#[ignore]`d
+//! `calibrate` test runs every rule over real checkouts (`OGH_CALIBRATE=<dir>[:<dir>]
+//! OGH_CALIBRATE_VERSION=180 cargo test -p collector calibrate -- --ignored --nocapture`); use it
+//! before changing a rule's severity.
 use base64::Engine;
 use duct::cmd;
 use pyo3::prelude::*;

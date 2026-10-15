@@ -3,6 +3,29 @@
 //! both the mcp endpoint and the web server embed queries + cosine-rank
 //! against them. Its own crate (not `oghutils`) to keep the ONNX runtime
 //! dependency in one place.
+//!
+//! Shared text-embedding helper used by `collector` (vector generation), `mcp`
+//! (`semantic_search_modules`) and `server` (`GET /v1/semantic-search`). Its own crate (not
+//! `oghutils`) to keep the ONNX runtime dependency in one place. `top_k` is the shared query-side
+//! ranking (embed query → cosine against every `module_embedding` BLOB, blended with the
+//! IDF-weighted verbatim-keyword boost from `sqlitedb::models::module_embedding::lexical_scores` →
+//! best-first), so mcp and server can't drift apart. The lexical boost exists because pure
+//! embeddings miss rare proper nouns the model predates ("Veri*Factu"); its two guards (min 4-char
+//! tokens, unmatched tokens diluting the denominator) stop substring stopword collisions ("los" ⊂
+//! "close") from hijacking the ranking.
+//!
+//! Wraps `fastembed` with a single hardcoded multilingual model
+//! (`paraphrase-multilingual-MiniLM-L12-v2`, quantized, 384 dims) behind a `Mutex` (fastembed's
+//! `embed()` takes `&mut self`). First call downloads the model to `OGHCOLLECTOR_EMBED_CACHE_DIR`
+//! (default `data/.fastembed_cache`, inside the Docker data volume so it survives container
+//! rebuilds).
+//!
+//! Also owns the storage/compare primitives: `vec_to_bytes`/`bytes_to_vec` (LE f32 BLOB format of
+//! `module_embedding.embedding`), `cosine`, and `text_hash` (std `DefaultHasher` — not guaranteed
+//! stable across Rust releases; worst case a toolchain bump re-embeds everything once).
+//!
+//! `cargo run -p oghembed --example smoke` is a manual end-to-end model check (downloads the model,
+//! asserts a Spanish query ranks the right English text first).
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Mutex;

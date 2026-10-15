@@ -4,6 +4,22 @@
 //! `run_job`): the whole `collector.yaml` every `OGHCOLLECTOR_SCHEDULE_HOURS`,
 //! and the pushed repository/branch as soon as a GitHub/GitLab push webhook
 //! arrives, ahead of the scheduled jobs still pending.
+//!
+//! `oghcollector --listen`, the compose `collector` service (replaced Ofelia + `sleep infinity`):
+//! one worker thread runs a deduplicating queue of `load_jobs` arg lists one at a time via
+//! `run_and_record` (still child processes), so jobs never hit each other's org lock. A scheduler
+//! thread queues the whole config at multiples of `OGHCOLLECTOR_SCHEDULE_HOURS` since the epoch
+//! (never at startup); `POST /hooks/github` (HMAC `X-Hub-Signature-256`; push, pull_request,
+//! check_suite, status) / `/hooks/gitlab` (`X-Gitlab-Token`; push, merge_request, pipeline) map an
+//! event to a branch (CI events: `pull_request::get_version_by_head_sha` through the pool) and then
+//! via `jobs_for_push` (source = the repo or its direct parent, `job[1]` = branch, same git type;
+//! `job[0]` rewritten to the repo, paths/git/workspaces kept) and queue it at the front. A route
+//! exists only if its secret is set; everything not queued answers 2xx (GitLab disables failing
+//! hooks). When the queue drains it runs `oghcollector --embeddings` as a child: the ONNX model
+//! stays resident in whatever process loads it (~800MB). SIGTERM/Ctrl+C TERMs the running job's
+//! group (`RUNNING_JOB`) and waits ≤25s holding the queue lock (compose: `init: true`,
+//! `stop_grace_period: 30s`). Webhooks only help for orgs you administer; OCA/odoo stay on the
+//! schedule.
 use std::collections::VecDeque;
 use std::env;
 use std::sync::atomic::Ordering;

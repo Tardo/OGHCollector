@@ -17,6 +17,28 @@
 //! Change events (`system_event`) are only recorded against a known previous
 //! state, or for PRs opened in the last day, so a first run over thousands of
 //! open PRs stays quiet. This is where future workflows hook in.
+//!
+//! Open PRs/MRs of the job's branch, run per repo after the modules are saved. Per source
+//! `pull_requests` (collector.yaml; 5th job arg, so webhook jobs keep it): `migration` (default,
+//! OCA/Odoo = public data) = only `extract_migration_module_name` branches, link row `is_new` from
+//! the branch name, no fetch/analysis/`pull_request` events (the old behavior); `full` (private
+//! repos) = everything below. A full→migration switch drops still-open untracked PRs quietly
+//! (`delete_by_ids`), not as "closed". Listing via `GitClient::get_open_pull_requests` (`None` on
+//! error *or* page cap, else `delete_outdated` would close everything past it); GitHub CI via
+//! `get_ci_status` (2 requests) only when the head changed or the stored state isn't final,
+//! GitLab's comes free in the listing (`AnyGitClient` must dispatch every overridden default
+//! method). PRs whose `analyzed_sha`/`analysis_version` differ are analyzed, newest activity first,
+//! up to `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` per job: `fetch_pull_request` (objects only, no ref),
+//! `git diff --no-renames --name-only origin/<branch>...<sha>` → `touched_modules` (folders under
+//! the read paths; only `.py/.xml/.csv` changes get analyzed) → a module = manifest at the head;
+//! `is_new` = no manifest on the base branch (that's what "migration PR" means everywhere now).
+//! Analysis: `git archive` into the job's temp workdir (`oghcollector-<pid>`), symlinks deleted,
+//! `analyzer::literal_manifest` (`ast.literal_eval` — never `read_manifest`'s eval on fork code),
+//! then the same `security`/`migration` rules; findings get `new` vs the merged module (port: its
+//! newest lower version, any repo of the org). Stored as JSON in `pull_request_module.analysis`.
+//! Events only when "fresh" (new head of a previously analyzed PR, or opened ≤1 day ago) — that's
+//! where future workflows hook in. Per-PR failures `warn` (never `error`: it'd fail the job) and
+//! leave it unanalyzed for a retry.
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
