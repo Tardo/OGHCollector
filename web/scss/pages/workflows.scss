@@ -153,6 +153,21 @@
       border-left: 4px solid var(--bs-success);
     }
 
+    &.wf-end {
+      border-right: 4px solid var(--bs-info);
+    }
+
+    // Never reached from the start: still editable, clearer under the pointer.
+    &.wf-ghost {
+      opacity: 0.45;
+      filter: grayscale(1);
+
+      &:hover,
+      &.selected {
+        opacity: 0.85;
+      }
+    }
+
     .input,
     .output {
       width: 14px;
@@ -204,6 +219,11 @@
     &.selected {
       stroke: var(--bs-primary);
     }
+  }
+
+  .connection.wf-ghost .main-path {
+    opacity: 0.4;
+    stroke-dasharray: 6 6;
   }
 }
 
@@ -356,6 +376,17 @@
 
 .wf-start .wf-node-type::after {
   content: " · start";
+  color: var(--bs-success);
+}
+
+.wf-end .wf-node-type::after {
+  content: " · end";
+  color: var(--bs-info);
+}
+
+// A lone node: both.
+.wf-start.wf-end .wf-node-type::after {
+  content: " · start · end";
   color: var(--bs-success);
 }
 

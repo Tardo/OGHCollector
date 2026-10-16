@@ -7,7 +7,8 @@
 // the result is YAML to copy by hand: nothing is saved.
 //
 // Front: `web/js/pages/workflows.mjs` on Drawflow 0.0.60 (palette/forms from the metadata, one link
-// per output, start node = first in YAML, export order start → DFS → rest, every text
+// per output, start node = first in YAML, `markFlow` marks start, ends (no link out) and ghosts
+// (cards the start never reaches, with their links out), export order start → DFS → rest, every text
 // escaped/textContent, links also settable by select, debounced validation; Copy/Download only
 // after a pass; every card holds its form (`draggable_inputs = false`; a canvas mousedown listener
 // registered after Drawflow's resets `editor.drag` on forms/header buttons, so they select without
@@ -404,12 +405,32 @@ function placeBelow(ids) {
   }
 }
 
-function markStart() {
-  els.canvas
-    .querySelectorAll('.drawflow-node.wf-start')
-    .forEach(node => node.classList.remove('wf-start'));
-  if (start_id !== null) {
-    $(`node-${start_id}`)?.classList.add('wf-start');
+// The flow as it runs: the start, the ends (no link out), and as ghosts the
+// cards the start never reaches (what feeds into it, loose ones) with their
+// links out: the collector never runs them.
+function markFlow() {
+  const nodes = flowData();
+  const reached = new Set();
+  const walk = id => {
+    if (!nodes[id] || reached.has(id)) {
+      return;
+    }
+    reached.add(id);
+    for (const output of Object.values(nodes[id].outputs)) {
+      output.connections.forEach(({node}) => walk(String(node)));
+    }
+  };
+  walk(String(start_id));
+  for (const [id, node] of Object.entries(nodes)) {
+    const ghost = !reached.has(id);
+    const end = Object.values(node.outputs).every(o => !o.connections.length);
+    const card = $(`node-${id}`).classList;
+    card.toggle('wf-start', id === String(start_id));
+    card.toggle('wf-end', !ghost && end);
+    card.toggle('wf-ghost', ghost);
+    els.canvas
+      .querySelectorAll(`.connection.node_out_node-${id}`)
+      .forEach(link => link.classList.toggle('wf-ghost', ghost));
   }
 }
 
@@ -454,7 +475,7 @@ function loadWorkflow(name, workflow) {
   start_id = workflow.nodes.length ? ids.get(workflow.nodes[0].id) : null;
   selected_id = null;
   loading = false;
-  markStart();
+  markFlow();
   // Its own layout when it saved one, ours otherwise.
   auto_layout = unplaced.length === workflow.nodes.length;
   if (auto_layout) {
@@ -1037,8 +1058,15 @@ function showBalloon(id, field, anchor) {
   if (field === null) {
     const head = el('div', {class: 'wf-balloon-head'});
     head.append(el('span', {class: 'badge text-bg-secondary'}, data.type));
-    if (id === start_id) {
-      head.append(el('span', {class: 'badge text-bg-primary'}, 'start'));
+    const card = $(`node-${id}`).classList;
+    if (card.contains('wf-start')) {
+      head.append(el('span', {class: 'badge text-bg-success'}, 'start'));
+    }
+    if (card.contains('wf-end')) {
+      head.append(el('span', {class: 'badge text-bg-info'}, 'end'));
+    }
+    if (card.contains('wf-ghost')) {
+      head.append(el('span', {class: 'badge text-bg-dark'}, 'never runs'));
     }
     balloon.append(
       head,
@@ -1243,10 +1271,12 @@ function bindEvents() {
       return;
     }
     keepOnly(output_id, output_class, input_id);
+    markFlow();
     regenerate();
     refreshLinks();
   });
   editor.on('connectionRemoved', () => {
+    markFlow();
     regenerate();
     refreshLinks();
   });
@@ -1262,7 +1292,7 @@ function bindEvents() {
     if (balloon_at?.id === String(id)) {
       hideBalloon();
     }
-    markStart();
+    markFlow();
     setNodeButtons();
     refreshLinks();
     regenerate();
@@ -1288,14 +1318,14 @@ function bindEvents() {
     const id = addNode({id: uniqueId(type), type, fields: {}}, at.x, at.y);
     if (start_id === null) {
       start_id = id;
-      markStart();
+      markFlow();
     }
     refreshLinks();
     regenerate();
   });
   els.start.addEventListener('click', () => {
     start_id = selected_id;
-    markStart();
+    markFlow();
     setNodeButtons();
     regenerate();
   });
