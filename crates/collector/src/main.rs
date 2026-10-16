@@ -431,6 +431,8 @@ async fn main() {
         workdir: &workdir,
         ai_calls_left: std::cell::Cell::new(ai_limit()),
         ai_limit_warned: std::cell::Cell::new(false),
+        notifications_left: std::cell::Cell::new(workflow::NOTIFY_LIMIT),
+        notify_limit_warned: std::cell::Cell::new(false),
         dry_runs_left: std::cell::Cell::new(workflow::DRY_RUN_EVENTS),
         dry_runs_held: std::cell::Cell::new(0),
     };

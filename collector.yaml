@@ -29,8 +29,8 @@
 #   workflows: workflows run on each of its modules (default: [default];
 #             []: only the walk, nothing stored or analyzed) and PRs
 #   actions:  outward workflow nodes allowed to act for real here (ai,
-#             pr_comment, pr_edit, pr_open); the rest only log what they
-#             would do (default: none)
+#             pr_comment, pr_edit, pr_review, pr_open, apprise); the rest
+#             only log what they would do (default: none)
 #
 # Unknown keys are errors. JSON or TOML with the same keys also work
 # (`--config collector.json`).

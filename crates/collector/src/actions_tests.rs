@@ -170,6 +170,69 @@ nodes:
     assert_eq!(events(conn, "probe")[2..], ["info |", "info |"]);
 }
 
+#[tokio::test]
+async fn apprise_notifies_once_and_retries_only_what_sent_nothing() {
+    let (base, calls) = serve(|_, path| match path {
+        "/notify/partial" => json!({"__status": 424}),
+        "/notify/down" => json!({"__status": 500}),
+        _ => json!({}),
+    })
+    .await;
+    std::env::set_var("OGH_TEST_APPRISE_URLS", "json://hook.example/x");
+    let f = Fixture::new("apprise");
+    f.write(
+        "m/__manifest__.py",
+        "{'name': 'M', 'version': '18.0.1.0.0'}",
+    );
+    f.commit("one");
+    let pool = f.db();
+    let conn = &mut pool.get().unwrap();
+    let wf = parse(
+        &"on: module
+nodes:
+  - {id: ok, type: apprise, url: BASE/notify/, api_key_env: OGH_TEST_APPRISE_URLS,
+     severity: error, title: '{{ technical_name }}', body: 'new in {{ repo }}', next: partial}
+  - {id: partial, type: apprise, url: BASE/notify/partial, body: p, next: down}
+  - {id: down, type: apprise, url: BASE/notify/down, body: d}
+"
+        .replace("BASE", base.trim_end_matches('/')),
+    );
+    let forge = Forge::with(false, &base, None);
+
+    // Dry-run: nothing sent, what it would send logged.
+    walk(&f, conn, &wf, &[], &forge).await;
+    assert!(calls.lock().unwrap().is_empty());
+    let dry = events(conn, "workflow");
+    assert!(
+        dry[0].contains(
+            "[dry-run] Workflow 'w' (ok): notify 127.0.0.1 about 'm' in 'repo' [18.0]: new in repo"
+        ),
+        "{dry:?}"
+    );
+
+    // Live, twice: 424 (something went out) is recorded like a success, the
+    // 500 (nothing did) is retried.
+    walk(&f, conn, &wf, &["apprise"], &forge).await;
+    walk(&f, conn, &wf, &["apprise"], &forge).await;
+    let calls = calls.lock().unwrap();
+    let paths: Vec<&str> = calls.iter().map(|c| c.1.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/notify/",
+            "/notify/partial",
+            "/notify/down",
+            "/notify/down"
+        ]
+    );
+    assert_eq!(
+        calls[0].2,
+        json!({"title": "m", "body": "new in repo", "type": "failure", "urls": "json://hook.example/x"})
+    );
+    assert_eq!(calls[1].2["type"], "info");
+    assert!(calls[1].2.get("urls").is_none());
+}
+
 /// One job's PR step over a repo.
 struct PrJob<'a> {
     engine: &'a Engine,

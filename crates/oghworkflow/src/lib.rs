@@ -157,7 +157,7 @@ const AI_FIELDS: &[&str] = &[
 
 /// Node types, the fields each takes besides `id`/`type`, and the triggers
 /// it can run on.
-const NODE_TYPES: [(&str, &[&str], &[&str]); 14] = [
+const NODE_TYPES: [(&str, &[&str], &[&str]); 15] = [
     ("if", &["when", "then", "else"], ANY),
     ("read_manifest", &["next"], MODULE),
     ("git_stats", &["next"], MODULE),
@@ -172,10 +172,22 @@ const NODE_TYPES: [(&str, &[&str], &[&str]); 14] = [
     ("pr_edit", &["next", "body"], PULL_REQUEST),
     ("pr_review", &["next", "body", "patch"], PULL_REQUEST),
     ("pr_open", &["next", "title", "body", "patch"], MODULE),
+    (
+        "apprise",
+        &["next", "url", "api_key_env", "severity", "title", "body"],
+        ANY,
+    ),
 ];
 
 /// The outward node types a source can let act for real (`actions`).
-pub const ACTIONS: [&str; 5] = ["ai", "pr_comment", "pr_edit", "pr_review", "pr_open"];
+pub const ACTIONS: [&str; 6] = [
+    "ai",
+    "pr_comment",
+    "pr_edit",
+    "pr_review",
+    "pr_open",
+    "apprise",
+];
 const PROVIDERS: [&str; 2] = ["openai", "anthropic"];
 /// `ai.timeout` at most: with `OGHCOLLECTOR_AI_LIMIT` calls per job it must
 /// stay well within the job timeout.
@@ -184,7 +196,7 @@ const MAX_AI_TIMEOUT: u64 = 600;
 const SEVERITIES: [&str; 4] = ["info", "success", "warning", "error"];
 
 /// What each node type does, for people (the editor's palette).
-const NODE_DOCS: [(&str, &str); 14] = [
+const NODE_DOCS: [(&str, &str); 15] = [
     (
         "if",
         "Goes to `then` when the condition holds, else to `else` (none: the flow stops there, a filter)",
@@ -217,6 +229,10 @@ const NODE_DOCS: [(&str, &str); 14] = [
         "pr_open",
         "Opens a PR/MR with a patch on the module (outward)",
     ),
+    (
+        "apprise",
+        "Sends a notification through an Apprise API server (outward)",
+    ),
 ];
 
 /// How each field is edited (`edge`: a link to another node; `condition`:
@@ -235,7 +251,11 @@ const FIELDS: [(&str, &str, &str); 18] = [
         "Node when it doesn't (none: the workflow ends)",
     ),
     ("event", "text", "Event type in /logs (default: workflow)"),
-    ("severity", "enum", "Event severity (default: info)"),
+    (
+        "severity",
+        "enum",
+        "Event or notification severity (default: info)",
+    ),
     ("message", "template", "Event text"),
     (
         "provider",
@@ -245,11 +265,15 @@ const FIELDS: [(&str, &str, &str); 18] = [
     ("model", "text", "Model name"),
     ("prompt", "template", "What to ask"),
     ("system", "template", "System prompt"),
-    ("url", "text", "Base URL (default: the provider's)"),
+    (
+        "url",
+        "text",
+        "ai: base URL (default: the provider's); apprise: the endpoint, e.g. http://apprise:8000/notify/<key>",
+    ),
     (
         "api_key_env",
         "text",
-        "Env var (or Docker secret) holding the API key",
+        "Env var (or Docker secret) holding the API key (ai) or the Apprise URLs to send to (apprise)",
     ),
     (
         "max_tokens",
@@ -261,8 +285,12 @@ const FIELDS: [(&str, &str, &str); 18] = [
         "number",
         "Seconds to wait, 1 to 600 (default: 300)",
     ),
-    ("body", "template", "Comment or description text"),
-    ("title", "template", "PR/MR title"),
+    (
+        "body",
+        "template",
+        "Comment, description or notification text",
+    ),
+    ("title", "template", "PR/MR or notification title"),
     (
         "patch",
         "template",
@@ -271,7 +299,7 @@ const FIELDS: [(&str, &str, &str); 18] = [
 ];
 
 /// The fields `validate` requires, per node type.
-const REQUIRED: [(&str, &[&str]); 7] = [
+const REQUIRED: [(&str, &[&str]); 8] = [
     ("if", &["when", "then"]),
     ("log", &["message"]),
     ("ai", &["provider", "model", "prompt"]),
@@ -279,6 +307,7 @@ const REQUIRED: [(&str, &[&str]); 7] = [
     ("pr_edit", &["body"]),
     ("pr_review", &["patch"]),
     ("pr_open", &["title", "patch"]),
+    ("apprise", &["url", "body"]),
 ];
 
 /// Everything an editor needs to build valid workflows, from the same
@@ -501,6 +530,22 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
         }
     }
     let env = Environment::new();
+    let bad_severity = |node: &Node| match node.severity.as_deref() {
+        Some(s) if !SEVERITIES.contains(&s) => Err(format!(
+            "node '{}': severity is one of {}",
+            node.id,
+            SEVERITIES.join(", ")
+        )),
+        _ => Ok(()),
+    };
+    // With any `url`, that would send the forge's tokens away.
+    let own_secret = |node: &Node| match node.api_key_env.as_deref() {
+        Some(env) if is_collector_secret(env) => Err(format!(
+            "node '{}': api_key_env can't be one of the collector's own secrets",
+            node.id
+        )),
+        _ => Ok(()),
+    };
     let check = |node: &Node| -> Result<(), String> {
         let at = format!("node '{}'", node.id);
         let Some((_, allowed, triggers)) = NODE_TYPES.iter().find(|(kind, ..)| *kind == node.kind)
@@ -545,16 +590,7 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
                 if let Err(err) = env.template_from_str(message) {
                     return fail(format!("{at}: bad message: {err}"));
                 }
-                if node
-                    .severity
-                    .as_deref()
-                    .is_some_and(|s| !SEVERITIES.contains(&s))
-                {
-                    return fail(format!(
-                        "{at}: severity is one of {}",
-                        SEVERITIES.join(", ")
-                    ));
-                }
+                bad_severity(node).or_else(fail)?;
                 if node.event.as_deref().is_some_and(|e| !is_valid_name(e)) {
                     return fail(format!("{at}: invalid event type"));
                 }
@@ -576,12 +612,7 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
                 if node.max_tokens == Some(0) {
                     return fail(format!("{at}: max_tokens must be positive"));
                 }
-                // With any `url`, that would send the forge's tokens away.
-                if node.api_key_env.as_deref().is_some_and(is_collector_secret) {
-                    return fail(format!(
-                        "{at}: api_key_env can't be one of the collector's own secrets"
-                    ));
-                }
+                own_secret(node).or_else(fail)?;
                 template("prompt", &node.prompt, true).or_else(fail)?;
                 template("system", &node.system, false).or_else(fail)?;
             }
@@ -594,6 +625,19 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
                 template("title", &node.title, true).or_else(fail)?;
                 template("patch", &node.patch, true).or_else(fail)?;
                 template("body", &node.body, false).or_else(fail)?;
+            }
+            "apprise" => {
+                if !node
+                    .url
+                    .as_deref()
+                    .is_some_and(|u| u.starts_with("http://") || u.starts_with("https://"))
+                {
+                    return fail(format!("{at}: `apprise` needs an http(s) `url`"));
+                }
+                bad_severity(node).or_else(fail)?;
+                own_secret(node).or_else(fail)?;
+                template("body", &node.body, true).or_else(fail)?;
+                template("title", &node.title, false).or_else(fail)?;
             }
             _ => {}
         }
@@ -880,6 +924,22 @@ mod tests {
             (
                 "on: module\nnodes: [{id: a, type: ai, provider: openai, model: m, prompt: x, api_key_env: GH_TOKEN}]",
                 "collector's own secrets",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: apprise, body: x}]",
+                "needs an http(s) `url`",
+            ),
+            (
+                "on: pull_request\nnodes: [{id: a, type: apprise, url: 'http://apprise:8000/notify/ogh'}]",
+                "needs `body`",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: apprise, url: 'http://a/notify/', body: x, api_key_env: OGHCOLLECTOR_WRITE_TOKEN_GL}]",
+                "collector's own secrets",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: apprise, url: 'http://a/notify/', body: x, severity: failure}]",
+                "severity",
             ),
             ("on: module\nnodes: [{id: a, type: nope}]", "unknown type"),
             (

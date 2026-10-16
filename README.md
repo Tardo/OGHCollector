@@ -126,7 +126,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `db_pool_max_size` | int | Maximum number of pooled DB connections | `15` |
 | `doodba_max_modules` | int | Maximum number of modules accepted per Doodba tool request (converter/dependency-resolver/migration-plan); larger requests are rejected with `400` | `500` |
 | `mcp_info_enabled` | bool | Show the `/mcp` page explaining how to connect popular LLM clients to the MCP endpoint, and its nav link | `false` |
-| `workflow_editor_enabled` | bool | Show the `/workflows` editor (see [Workflows](#workflows)) and its nav link. **It publishes the `workflows:` section of the collector config** (prompts, AI hosts, `api_key_env` names), never its sources or actions | `false` |
+| `workflow_editor_enabled` | bool | Show the `/workflows` editor (see [Workflows](#workflows)) and its nav link. **It publishes the `workflows:` section of the collector config** (prompts, AI hosts, `api_key_env` names, Apprise `url`s with their keys), never its sources or actions | `false` |
 | `collector_config` | string | Collector config the editor reads the workflows from (`config` crate path, extension optional) | `collector` |
 | `scan_enabled` | bool | Enable the live instance scanner. Disabled by default because it creates outbound requests; enable it only behind the access controls appropriate for your deployment. | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
@@ -333,9 +333,10 @@ sources:
 | `log` | An event in `/logs`: `event` type (default `workflow`), `severity` (`info`, `success`, `warning`, `error`) and a `message` template | `next`, `event`, `severity`, `message` |
 | `ai` | Asks an AI; the answer is `ai.<node id>` for the nodes after it. Outward: see [Actions](#actions) | `next`, `provider`, `model`, `prompt`, `system`, `url`, `api_key_env`, `max_tokens`, `timeout` |
 | `pr_open` | Opens a PR/MR with one commit, the `patch` template (a unified diff, e.g. `{{ ai.fix }}`), on the module's version branch. Outward | `next`, `title`, `body`, `patch` |
+| `apprise` | Sends a notification (`title`, `body` templates; `severity` as in `log`) through an [Apprise API](https://github.com/caronc/apprise-api) server at `url`. Outward: see [Actions](#actions) | `next`, `url`, `api_key_env`, `severity`, `title`, `body` |
 
 `on: pull_request` workflows run on every PR/MR a job tracks (see the source's `pull_requests`),
-after it's stored and analyzed. Besides `if`, `log` and `ai`, they have:
+after it's stored and analyzed. Besides `if`, `log`, `ai` and `apprise`, they have:
 
 | Node | Does | Fields |
 | --- | --- | --- |
@@ -376,7 +377,7 @@ and `migration.count|notes`, each item with its `module` (empty without the anal
 
 #### Actions
 
-`ai`, `pr_comment`, `pr_edit`, `pr_review` and `pr_open` reach outside the collector, so they only **log what
+`ai`, `pr_comment`, `pr_edit`, `pr_review`, `pr_open` and `apprise` reach outside the collector, so they only **log what
 they would do** (`[dry-run] ...` events in `/logs`, with what they'd send) until the source lists
 them:
 
@@ -472,6 +473,18 @@ sources:
   refuses. A GitLab MR pushed to since the PR step waits for the next run (its new head). Dry-run
   logs how many suggestions it would make and on which files; it only has something to say when
   `ai` is live (a dry-run `ai` answers "").
+- **`apprise` notifications** go through an Apprise API server (e.g. the `caronc/apprise` image
+  on the compose network, not published): `url: http://apprise:8000/notify/ogh` sends to what its
+  configuration `ogh` lists, so no service's token is in the workflow; or `url:
+  http://apprise:8000/notify/` with `api_key_env` naming the env var (or Docker secret) that holds
+  the Apprise URLs (`tgram://...`, `mailto://...`, comma-separated). `severity: error` goes out as
+  Apprise's `failure`. Once per item like the rest (one per module commit or PR head and node),
+  so put it behind an `if` (`is_new`, `security.grave > 0`, `pr.is_new`...). A job sends at most
+  20: past that the node is skipped and the workflow goes on, so the rest only go out on a later run
+  if their gate still holds (see the gates that are true once, below). An answer of 424 (some of
+  its targets failed) counts as sent; one that sent nothing (Apprise down) stops that item's
+  workflow and is retried, so place it after `store_module`/`osv`, or in a workflow of its own with
+  `after: [default]`, where an outage can't hold up collecting.
 - **`pr_edit` replaces** the description. A `body` that appends to `pr.description` grows on every
   new head unless it checks for its own text: `{% if 'Reviewed' not in pr.description %}...`.
 - **Dry-run reports** are capped at 20 per job; the rest are reported by later runs (a line says how

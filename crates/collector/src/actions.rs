@@ -1,6 +1,6 @@
 // Copyright Alexandre D. Díaz
 //! What workflows do outside the collector: ask an AI, comment on, edit and
-//! open PRs/MRs. `workflow` gates every call (the source's `actions`, else
+//! open PRs/MRs, send Apprise notifications. `workflow` gates every call (the source's `actions`, else
 //! dry-run) and records it (`workflow_action`), so none repeats.
 //!
 //! Outward side of workflows: `Forge` (write API with `OGHCOLLECTOR_WRITE_TOKEN_GH/GL`, never the
@@ -26,6 +26,10 @@
 //! Gates like `pr.head_changed`/`not unchanged` defeat retries — the README says so; prefer relying
 //! on the ledger. `actions_tests.rs` = axum mock of OpenAI/Anthropic/GitLab/GitHub (records
 //! path+query) + local bare origin (incl. the push-done-PR-missing recovery).
+//! `notify` = one POST to an Apprise API server (`caronc/apprise`): `url` is `/notify/<key>` (its
+//! saved config) or `/notify/` + `urls` from `api_key_env`; 424 (some targets failed, it can't say
+//! which) counts as sent, or a retry repeats it on those that worked. Capped at `NOTIFY_LIMIT` per
+//! job (in `workflow.rs`: past it the node is skipped, unrecorded, and the walk goes on). Logs show the host only (`host`): the path holds the key.
 use std::path::Path;
 use std::time::Duration;
 
@@ -122,10 +126,7 @@ impl Forge {
     }
 
     fn api_host(&self) -> String {
-        reqwest::Url::parse(&self.api)
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_string))
-            .unwrap_or_default()
+        host(&self.api)
     }
 
     fn project(&self, full_path: &str) -> String {
@@ -349,10 +350,51 @@ impl AiRequest<'_> {
 
     /// The host asked (for logs: never the URL itself, it may hold credentials).
     pub fn host(&self) -> String {
-        reqwest::Url::parse(self.base_url())
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_string))
-            .unwrap_or_default()
+        host(self.base_url())
+    }
+}
+
+/// A URL's host, for logs: never the URL itself, it may hold credentials.
+pub fn host(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// Sends a notification through an Apprise API server: `url` is its
+/// `/notify/<key>` (a saved configuration) or `/notify/` with `urls` (Apprise
+/// URLs). `kind`: info, success, warning or failure. Its outcome: "" or what
+/// went wrong after something was sent (424: some targets failed, and it
+/// doesn't say which; a retry would repeat it on those that worked).
+pub async fn notify(
+    url: &str,
+    urls: Option<String>,
+    title: &str,
+    body: &str,
+    kind: &str,
+) -> Result<String, String> {
+    let mut payload = json!({"title": title, "body": body, "type": kind});
+    if let Some(urls) = urls {
+        payload["urls"] = json!(urls);
+    }
+    let res = crate::gitclient::http_client()
+        .post(url)
+        .header(USER_AGENT, "OGHCollector")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("{}: {}", host(url), e.without_url()))?;
+    match res.status() {
+        status if status.is_success() => Ok(String::new()),
+        reqwest::StatusCode::FAILED_DEPENDENCY => {
+            log::warn!(
+                "{} sent a notification, but some of its targets failed",
+                host(url)
+            );
+            Ok("some of its targets failed".to_string())
+        }
+        status => Err(format!("{} answered {status}", host(url))),
     }
 }
 

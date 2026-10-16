@@ -10,7 +10,8 @@
 //! only warn (that item's workflow stops, the job goes on): `error` is for
 //! invalid config, which `validate` rejects before anything runs.
 //!
-//! Outward nodes (`ai`, `pr_comment`, `pr_edit`, `pr_open`) are dry-run (they
+//! Outward nodes (`ai`, `pr_comment`, `pr_edit`, `pr_review`, `pr_open`,
+//! `apprise`) are dry-run (they
 //! log what they would do) unless the source lists them in `actions`, and the
 //! `workflow_action` ledger makes each run once per item.
 //!
@@ -470,6 +471,44 @@ impl Engine {
                     record(conn, deps, &key, live, &what, &outcome);
                 }
             }
+            "apprise" => {
+                let (title, body) = (render(ctx, &node.title)?, render(ctx, &node.body)?);
+                let url = node.url.as_deref().unwrap_or_default();
+                let kind = match node.severity.as_deref().unwrap_or("info") {
+                    "error" => "failure",
+                    severity => severity,
+                };
+                let what = format!(
+                    "Workflow '{workflow}' ({}): notify {} about {}",
+                    node.id,
+                    actions::host(url),
+                    ctx.label()
+                );
+                let key = format!("{}:{workflow}/{}", ctx.item(), node.id);
+                if deps.live("apprise") && workflow_action::get(conn, &key, false).is_none() {
+                    let left = deps.notifications_left.get();
+                    if left == 0 {
+                        // Skipped, not recorded (a later run may send it), and
+                        // the workflow goes on: nothing reads a notification.
+                        if !deps.notify_limit_warned.replace(true) {
+                            log::warn!("No notifications left for this job ({NOTIFY_LIMIT}): the rest are skipped");
+                        }
+                        return Ok(node.next.as_deref());
+                    }
+                    deps.notifications_left.set(left - 1);
+                }
+                let send = async {
+                    let urls = match node.api_key_env.as_deref() {
+                        Some(env) => Some(
+                            crate::config::read_secret(&env.to_lowercase(), env)
+                                .ok_or_else(|| format!("{env} isn't set"))?,
+                        ),
+                        None => None,
+                    };
+                    actions::notify(url, urls, &title, &body, kind).await
+                };
+                act(conn, deps, &node.kind, &key, &what, &body, send).await?;
+            }
             kind => unreachable!("node type '{kind}' passed validation"),
         }
         Ok(node.next.as_deref())
@@ -624,6 +663,9 @@ pub struct Deps<'a> {
     /// AI calls this job may still make (`OGHCOLLECTOR_AI_LIMIT`).
     pub ai_calls_left: Cell<usize>,
     pub ai_limit_warned: Cell<bool>,
+    /// Notifications this job may still send (`NOTIFY_LIMIT`).
+    pub notifications_left: Cell<usize>,
+    pub notify_limit_warned: Cell<bool>,
     /// Dry-run reports this job may still log, and those held back.
     pub dry_runs_left: Cell<usize>,
     pub dry_runs_held: Cell<usize>,
@@ -631,6 +673,10 @@ pub struct Deps<'a> {
 
 /// Dry-run reports one job logs at most.
 pub const DRY_RUN_EVENTS: usize = 20;
+/// Notifications one job sends at most: a first run over a big source would
+/// otherwise flood the channel (and the job's time, one HTTP call each).
+/// ponytail: a constant; an env var like `OGHCOLLECTOR_AI_LIMIT` if it needs tuning.
+pub const NOTIFY_LIMIT: usize = 20;
 
 impl<'a> Deps<'a> {
     fn live(&self, kind: &str) -> bool {
@@ -666,6 +712,8 @@ impl<'a> Deps<'a> {
             workdir,
             ai_calls_left: Cell::new(20),
             ai_limit_warned: Cell::new(false),
+            notifications_left: Cell::new(NOTIFY_LIMIT),
+            notify_limit_warned: Cell::new(false),
             dry_runs_left: Cell::new(DRY_RUN_EVENTS),
             dry_runs_held: Cell::new(0),
         }
