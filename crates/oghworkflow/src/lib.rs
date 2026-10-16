@@ -11,7 +11,9 @@
 //! config's own `workflows:`), `parse_workflows(yaml)` (`config` crate from a string — the same
 //! parse the collector does) and `file_workflows(path)`. `metadata()` = the editor's view of the
 //! same tables (`NODE_DOCS`, `FIELDS` kind/description/enum values, `REQUIRED`, variables per
-//! trigger); `the_editor_metadata_covers_every_rule` fails if a rule field has no spec. Its own
+//! trigger); `the_editor_metadata_covers_every_rule` fails if a rule field has no spec.
+//! `secret_ref`/`url_parts`: the secrets a node names (`api_key_env`, `${...}` in `url` after the
+//! host), the one parser of validation and the collector's `secrets` (which resolves them). Its own
 //! crate (not oghutils) so minijinja/config don't reach sqlitedb. `stamp()` and everything
 //! analyzer-bound stay in collector.
 use std::collections::{HashMap, HashSet};
@@ -75,8 +77,8 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     /// `ai`: `openai` (any compatible API) or `anthropic`, the model, prompt
-    /// and system templates, base URL, env var (or Docker secret) holding the
-    /// key, answer size and seconds to wait.
+    /// and system templates, base URL, secret holding the key (`secret_ref`),
+    /// answer size and seconds to wait.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -268,12 +270,12 @@ const FIELDS: [(&str, &str, &str); 18] = [
     (
         "url",
         "text",
-        "ai: base URL (default: the provider's); apprise: the endpoint, e.g. http://apprise:8000/notify/<key>",
+        "ai: base URL (default: the provider's); apprise: the endpoint, e.g. http://apprise:8000/notify/<key>. A ${secret} after the host (like api_key_env's) is filled in when it runs: /notify/${APPRISE_KEY}",
     ),
     (
         "api_key_env",
         "text",
-        "Env var (or Docker secret) holding the API key (ai) or the Apprise URLs to send to (apprise)",
+        "The secret holding the API key (ai) or the Apprise URLs to send to (apprise): an env var or Docker secret name, or vault:<path>#<key> (HashiCorp Vault)",
     ),
     (
         "max_tokens",
@@ -475,16 +477,106 @@ fn is_valid_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
-/// The collector's own secrets (forge tokens, webhook secrets), by env var or
-/// Docker secret name.
+/// The collector's own secrets (forge tokens, webhook secrets, Vault
+/// credentials), by env var or Docker secret name.
 fn is_collector_secret(name: &str) -> bool {
     let name = name.to_lowercase();
     name.starts_with("oghcollector_")
+        || name.starts_with("vault_")
         || ["gh", "gl"].iter().any(|forge| {
             ["token", "write_token", "webhook_secret"]
                 .iter()
                 .any(|kind| name == format!("{forge}_{kind}"))
         })
+}
+
+/// A secret a workflow names (`api_key_env`, `${...}` in a `url`).
+#[derive(Debug, PartialEq)]
+pub enum SecretRef<'a> {
+    /// The Docker secret `/run/secrets/<name in lowercase>`, else the env var.
+    Env(&'a str),
+    /// `vault:<path>#<key>`: `key` of what HashiCorp Vault answers at
+    /// `/v1/<path>` (the API path: KV v2 has `data/` after the mount).
+    Vault { path: &'a str, key: &'a str },
+}
+
+/// What a secret reference names. Never one of the collector's own secrets:
+/// with any `url`, that would send them away.
+pub fn secret_ref(reference: &str) -> Result<SecretRef<'_>, String> {
+    if let Some(rest) = reference.strip_prefix("vault:") {
+        let (path, key) = rest.split_once('#').unwrap_or((rest, ""));
+        let segment = |s: &str| {
+            !matches!(s, "" | "." | "..")
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+        };
+        if key.is_empty() || !path.split('/').all(segment) {
+            return Err(format!(
+                "bad Vault reference '{reference}' (vault:<path>#<key>, e.g. vault:secret/data/ogh#api_key)"
+            ));
+        }
+        return Ok(SecretRef::Vault { path, key });
+    }
+    let name_char = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    if reference.is_empty() || !reference.chars().all(name_char) {
+        return Err(format!(
+            "bad secret '{reference}' (an env var or Docker secret name: letters, digits, '_', '-'; or vault:<path>#<key>)"
+        ));
+    }
+    if is_collector_secret(reference) {
+        return Err(format!(
+            "'{reference}' is one of the collector's own secrets"
+        ));
+    }
+    Ok(SecretRef::Env(reference))
+}
+
+/// A piece of a `url`: its text, or a `${...}` secret reference.
+#[derive(Debug, PartialEq)]
+pub enum UrlPart<'a> {
+    Text(&'a str),
+    Secret(&'a str),
+}
+
+/// A `url` cut into its text and `${...}` secrets, which may only come after
+/// the host (`scheme://host/`): logs name the host.
+pub fn url_parts(url: &str) -> Result<Vec<UrlPart<'_>>, String> {
+    let path_at = url
+        .find("://")
+        .and_then(|at| url[at + 3..].find('/').map(|slash| at + 3 + slash));
+    let mut parts = Vec::new();
+    let mut done = 0;
+    while let Some(at) = url[done..].find("${").map(|at| done + at) {
+        if path_at.is_none_or(|path| at < path) {
+            return Err("a ${secret} can only come after the host (scheme://host/...)".to_string());
+        }
+        let Some(len) = url[at + 2..].find('}') else {
+            return Err("unclosed ${ in the url".to_string());
+        };
+        parts.push(UrlPart::Text(&url[done..at]));
+        parts.push(UrlPart::Secret(&url[at + 2..at + 2 + len]));
+        done = at + 3 + len;
+    }
+    parts.push(UrlPart::Text(&url[done..]));
+    Ok(parts)
+}
+
+/// The secrets a node names, each checked (`secret_ref`).
+fn node_secrets(node: &Node) -> Result<(), String> {
+    let mut refs: Vec<&str> = node.api_key_env.iter().map(String::as_str).collect();
+    for part in node
+        .url
+        .as_deref()
+        .map(url_parts)
+        .transpose()?
+        .into_iter()
+        .flatten()
+    {
+        if let UrlPart::Secret(reference) = part {
+            refs.push(reference);
+        }
+    }
+    refs.into_iter().try_for_each(|r| secret_ref(r).map(drop))
 }
 
 /// Everything a workflow can get wrong, checked before any job runs.
@@ -538,14 +630,6 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
         )),
         _ => Ok(()),
     };
-    // With any `url`, that would send the forge's tokens away.
-    let own_secret = |node: &Node| match node.api_key_env.as_deref() {
-        Some(env) if is_collector_secret(env) => Err(format!(
-            "node '{}': api_key_env can't be one of the collector's own secrets",
-            node.id
-        )),
-        _ => Ok(()),
-    };
     let check = |node: &Node| -> Result<(), String> {
         let at = format!("node '{}'", node.id);
         let Some((_, allowed, triggers)) = NODE_TYPES.iter().find(|(kind, ..)| *kind == node.kind)
@@ -573,6 +657,9 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
         };
         if let Some(target) = node.targets().find(|t| !ids.contains(t)) {
             return fail(format!("{at}: unknown node '{target}'"));
+        }
+        if let Err(err) = node_secrets(node) {
+            return fail(format!("{at}: {err}"));
         }
         match node.kind.as_str() {
             "if" => {
@@ -612,7 +699,6 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
                 if node.max_tokens == Some(0) {
                     return fail(format!("{at}: max_tokens must be positive"));
                 }
-                own_secret(node).or_else(fail)?;
                 template("prompt", &node.prompt, true).or_else(fail)?;
                 template("system", &node.system, false).or_else(fail)?;
             }
@@ -635,7 +721,6 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
                     return fail(format!("{at}: `apprise` needs an http(s) `url`"));
                 }
                 bad_severity(node).or_else(fail)?;
-                own_secret(node).or_else(fail)?;
                 template("body", &node.body, true).or_else(fail)?;
                 template("title", &node.title, false).or_else(fail)?;
             }
@@ -883,6 +968,53 @@ mod tests {
     }
 
     #[test]
+    fn secrets_are_named_never_written() {
+        assert_eq!(
+            secret_ref("ANTHROPIC_API_KEY"),
+            Ok(SecretRef::Env("ANTHROPIC_API_KEY"))
+        );
+        assert_eq!(
+            secret_ref("vault:secret/data/ogh#api_key"),
+            Ok(SecretRef::Vault {
+                path: "secret/data/ogh",
+                key: "api_key"
+            })
+        );
+        for bad in [
+            "",
+            "a/b",
+            "vault:secret/data/ogh",
+            "vault:/secret#k",
+            "vault:secret//x#k",
+            "vault:secret/x?y#k",
+            "gl_write_token",
+            "Vault_Addr",
+        ] {
+            assert!(secret_ref(bad).is_err(), "{bad}");
+        }
+        use UrlPart::{Secret, Text};
+        assert_eq!(
+            url_parts("http://apprise:8000/notify/${vault:kv/ogh#key}?x=${K}"),
+            Ok(vec![
+                Text("http://apprise:8000/notify/"),
+                Secret("vault:kv/ogh#key"),
+                Text("?x="),
+                Secret("K"),
+                Text(""),
+            ])
+        );
+        assert_eq!(url_parts("http://a/b"), Ok(vec![Text("http://a/b")]));
+        assert!(url_parts("http://${K}@a/").is_err());
+        assert!(url_parts("${K}").is_err());
+        // Written in a block, a `${...}` needs no quotes.
+        let wf = &parse_workflows(
+            "workflows:\n  w:\n    on: module\n    nodes:\n      - id: a\n        type: apprise\n        url: http://apprise:8000/notify/${APPRISE_KEY}\n        body: x\n",
+        )
+        .unwrap()["w"];
+        assert_eq!(validate("w", wf), Ok(()));
+    }
+
+    #[test]
     fn workflows_are_validated_up_front() {
         let built_in = with_built_in(&HashMap::new());
         for (name, wf) in &built_in {
@@ -940,6 +1072,30 @@ mod tests {
             (
                 "on: module\nnodes: [{id: a, type: apprise, url: 'http://a/notify/', body: x, severity: failure}]",
                 "severity",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: apprise, url: 'http://a/notify/${OGHCOLLECTOR_WRITE_TOKEN_GH}', body: x}]",
+                "collector's own secrets",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: ai, provider: openai, model: m, prompt: x, api_key_env: VAULT_TOKEN}]",
+                "collector's own secrets",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: ai, provider: openai, model: m, prompt: x, api_key_env: ../../etc/passwd}]",
+                "bad secret",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: ai, provider: openai, model: m, prompt: x, api_key_env: 'vault:secret/../sys#k'}]",
+                "bad Vault reference",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: ai, provider: openai, model: m, prompt: x, url: 'https://${HOST}/v1'}]",
+                "after the host",
+            ),
+            (
+                "on: module\nnodes: [{id: a, type: apprise, url: 'http://a/notify/${KEY', body: x}]",
+                "unclosed",
             ),
             ("on: module\nnodes: [{id: a, type: nope}]", "unknown type"),
             (

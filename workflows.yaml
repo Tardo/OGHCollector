@@ -43,8 +43,9 @@ workflows:
   # `enabled: true` and name it in a `pull_requests: full` source
   # (`workflows: [default, ai_pr_review]`): it only logs what it would ask
   # and post until that source also lists `ai` and `pr_review` in `actions`.
-  # Needs ANTHROPIC_API_KEY (or the anthropic_api_key Docker secret) and a
-  # write token.
+  # Needs ANTHROPIC_API_KEY (or the anthropic_api_key Docker secret; or
+  # name a Vault secret: `api_key_env: vault:secret/data/ogh#anthropic_api_key`)
+  # and a write token.
   ai_pr_review:
     on: pull_request
     enabled: false

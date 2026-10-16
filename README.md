@@ -126,7 +126,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `db_pool_max_size` | int | Maximum number of pooled DB connections | `15` |
 | `doodba_max_modules` | int | Maximum number of modules accepted per Doodba tool request (converter/dependency-resolver/migration-plan); larger requests are rejected with `400` | `500` |
 | `mcp_info_enabled` | bool | Show the `/mcp` page explaining how to connect popular LLM clients to the MCP endpoint, and its nav link | `false` |
-| `workflow_editor_enabled` | bool | Show the `/workflows` editor (see [Workflows](#workflows)) and its nav link. **It publishes the `workflows:` section of the collector config** (prompts, AI hosts, `api_key_env` names, Apprise `url`s with their keys), never its sources or actions | `false` |
+| `workflow_editor_enabled` | bool | Show the `/workflows` editor (see [Workflows](#workflows)) and its nav link. **It publishes the `workflows:` section of the collector config** (prompts, AI hosts, `api_key_env` names, Apprise `url`s: write their keys as `${...}` [secrets](#workflow-secrets)), never its sources or actions, nor any secret's value | `false` |
 | `collector_config` | string | Collector config the editor reads the workflows from (`config` crate path, extension optional) | `collector` |
 | `scan_enabled` | bool | Enable the live instance scanner. Disabled by default because it creates outbound requests; enable it only behind the access controls appropriate for your deployment. | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
@@ -442,8 +442,36 @@ sources:
   is retried on the next run.
 - **Tokens.** PR/MR actions use a write token of their own, never the read one:
   `OGHCOLLECTOR_WRITE_TOKEN_GH` / `_GL` (or the `gh_write_token` / `gl_write_token` Docker secret);
-  without it they fail with a warning. AI keys come from the env var named in `api_key_env` (or
-  the Docker secret of the same name in lowercase); none of them is ever logged.
+  without it they fail with a warning. AI keys come from the secret named in `api_key_env` (see
+  below); none of them is ever logged.
+- <a id="workflow-secrets"></a>**Secrets.** A workflow names its secrets, never holds them:
+  `api_key_env`, and `${...}` anywhere in a `url` after its host, take either a name (the Docker
+  secret of that name in lowercase, else the env var) or `vault:<path>#<key>`, read from
+  [HashiCorp Vault](https://developer.hashicorp.com/vault) (or OpenBao) at its API path
+  `/v1/<path>`, so a KV v2 secret has `data/` after the mount (`vault kv put secret/ogh
+  anthropic_api_key=...` → `vault:secret/data/ogh#anthropic_api_key`; KV v1 has no `data/`).
+  They're read only by the collector, only right before a live call (never in dry-run, never for
+  an answer the ledger already has), once per job; never in templates, logs, `/logs`, the ledger
+  or `/workflows`. The collector's own secrets (`OGHCOLLECTOR_*`, `VAULT_*`, the forge tokens) are
+  refused. Vault is set with its usual variables on the collector: `VAULT_ADDR`, `VAULT_TOKEN` (or
+  the `vault_token` Docker secret), `VAULT_NAMESPACE` (Enterprise) and `VAULT_CACERT` (a private
+  CA's PEM). Give the token a policy that only reads those paths; for AppRole, Kubernetes and
+  token renewal, run a [Vault Proxy](https://developer.hashicorp.com/vault/docs/agent-and-proxy/proxy)
+  with `api_proxy { use_auto_auth_token = true }` and point `VAULT_ADDR` at it, with no token.
+
+  ```yaml
+  - id: ask
+    type: ai
+    provider: anthropic
+    model: claude-opus-5-5
+    api_key_env: vault:secret/data/ogh#anthropic_api_key
+    prompt: "..."
+  - id: tell
+    type: apprise
+    url: http://apprise:8000/notify/${vault:secret/data/ogh#apprise_key}
+    body: "..."
+  - {id: tell2, type: apprise, url: 'http://apprise:8000/notify/${APPRISE_KEY}', body: "..."}  # quoted inside { }
+  ```
 - **Limits.** A job makes at most `OGHCOLLECTOR_AI_LIMIT` (default `20`) AI calls, each waiting up
   to `timeout` seconds (default `300`, at most `600`); `max_tokens` defaults to `16000`. Items past
   the limit wait for the next run.
@@ -475,8 +503,9 @@ sources:
   `ai` is live (a dry-run `ai` answers "").
 - **`apprise` notifications** go through an Apprise API server (e.g. the `caronc/apprise` image
   on the compose network, not published): `url: http://apprise:8000/notify/ogh` sends to what its
-  configuration `ogh` lists, so no service's token is in the workflow; or `url:
-  http://apprise:8000/notify/` with `api_key_env` naming the env var (or Docker secret) that holds
+  configuration `ogh` lists, so no service's token is in the workflow (its key is: write it as
+  `/notify/${APPRISE_KEY}`, see secrets above); or `url:
+  http://apprise:8000/notify/` with `api_key_env` naming the secret that holds
   the Apprise URLs (`tgram://...`, `mailto://...`, comma-separated). `severity: error` goes out as
   Apprise's `failure`. Once per item like the rest (one per module commit or PR head and node),
   so put it behind an `if` (`is_new`, `security.grave > 0`, `pr.is_new`...). A job sends at most
@@ -764,6 +793,7 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_CONFIG` | collector | Collector config a single-source run loads custom workflows from (default `collector`, i.e. `./collector.yaml`; set for you on the jobs of a `collector.yaml` run or of the daemon) |
 | `OGHCOLLECTOR_WRITE_TOKEN_GH` / `_GL` | collector | Write token for workflow PR/MR actions (fallback if the `gh_write_token`/`gl_write_token` Docker secret isn't set); never the read token |
 | `OGHCOLLECTOR_AI_LIMIT` | collector | AI calls per job at most (default `20`) |
+| `VAULT_ADDR` / `VAULT_TOKEN` / `VAULT_NAMESPACE` / `VAULT_CACERT` | collector | HashiCorp Vault for `vault:` [workflow secrets](#workflow-secrets): address, token (fallback if the `vault_token` Docker secret isn't set; none = a Vault Proxy adds it), Enterprise namespace, private CA (PEM) |
 | `OGHCOLLECTOR_COMMIT_AUTHOR` | collector | Author of `pr_open` commits, `Name <email>` (default `OGHCollector <oghcollector@localhost>`) |
 | `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` | collector | Pull/merge requests analyzed per job at most, most recently active first (default `100`) |
 | `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass (set on the per-job children of a `collector.yaml` run, which runs it once at the end) |

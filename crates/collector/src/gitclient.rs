@@ -181,11 +181,16 @@ const GIT_TOKEN_ENV: &str = "OGHCOLLECTOR_GIT_TOKEN";
 /// `--listen` daemon runs them one at a time). A timeout is a
 /// network error, retried by `request_json`.
 pub fn http_client() -> reqwest::Client {
+    http_builder()
+        .build()
+        .unwrap_or_else(|e| panic!("Problem creating the client: {e:?}"))
+}
+
+/// `http_client`'s builder (its timeouts), for one that needs more.
+pub fn http_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(120))
-        .build()
-        .unwrap_or_else(|e| panic!("Problem creating the client: {e:?}"))
 }
 
 const API_ATTEMPTS: u32 = 3;

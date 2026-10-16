@@ -29,6 +29,7 @@ mod migration;
 mod pull_requests;
 mod pypi;
 mod review;
+mod secrets;
 mod security;
 mod workflow;
 

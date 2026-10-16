@@ -171,14 +171,44 @@ nodes:
 }
 
 #[tokio::test]
+async fn ai_secrets_are_read_only_to_ask_for_real() {
+    let (base, calls) = serve(|_, _| json!({"choices": [{"message": {"content": "x"}}]})).await;
+    let f = Fixture::new("ai-secret");
+    f.write("m/__manifest__.py", "{'name': 'M'}");
+    f.commit("one");
+    let pool = f.db();
+    let conn = &mut pool.get().unwrap();
+    let wf = parse(
+        &"on: module
+nodes:
+  - {id: ask, type: ai, provider: openai, model: m, url: 'BASE/${OGH_TEST_AI_UNSET}',
+     api_key_env: OGH_TEST_AI_UNSET, prompt: hi}
+"
+        .replace("BASE", base.trim_end_matches('/')),
+    );
+    let forge = Forge::with(false, &base, None);
+    // Dry-run never reads it: logged as usual.
+    walk(&f, conn, &wf, &[], &forge).await;
+    let dry = events(conn, "workflow");
+    assert!(
+        dry[0].contains("[dry-run] Workflow 'w' (ask): ask m at 127.0.0.1"),
+        "{dry:?}"
+    );
+    // Live, a secret that isn't there stops it before any call.
+    walk(&f, conn, &wf, &["ai"], &forge).await;
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn apprise_notifies_once_and_retries_only_what_sent_nothing() {
     let (base, calls) = serve(|_, path| match path {
-        "/notify/partial" => json!({"__status": 424}),
+        "/notify/k3y" => json!({"__status": 424}),
         "/notify/down" => json!({"__status": 500}),
         _ => json!({}),
     })
     .await;
     std::env::set_var("OGH_TEST_APPRISE_URLS", "json://hook.example/x");
+    std::env::set_var("OGH_TEST_APPRISE_KEY", "k3y");
     let f = Fixture::new("apprise");
     f.write(
         "m/__manifest__.py",
@@ -192,7 +222,7 @@ async fn apprise_notifies_once_and_retries_only_what_sent_nothing() {
 nodes:
   - {id: ok, type: apprise, url: BASE/notify/, api_key_env: OGH_TEST_APPRISE_URLS,
      severity: error, title: '{{ technical_name }}', body: 'new in {{ repo }}', next: partial}
-  - {id: partial, type: apprise, url: BASE/notify/partial, body: p, next: down}
+  - {id: partial, type: apprise, url: 'BASE/notify/${OGH_TEST_APPRISE_KEY}', body: p, next: down}
   - {id: down, type: apprise, url: BASE/notify/down, body: d}
 "
         .replace("BASE", base.trim_end_matches('/')),
@@ -218,12 +248,7 @@ nodes:
     let paths: Vec<&str> = calls.iter().map(|c| c.1.as_str()).collect();
     assert_eq!(
         paths,
-        [
-            "/notify/",
-            "/notify/partial",
-            "/notify/down",
-            "/notify/down"
-        ]
+        ["/notify/", "/notify/k3y", "/notify/down", "/notify/down"]
     );
     assert_eq!(
         calls[0].2,
@@ -231,6 +256,13 @@ nodes:
     );
     assert_eq!(calls[1].2["type"], "info");
     assert!(calls[1].2.get("urls").is_none());
+    // The key in its url went out, and nowhere else.
+    let events = events(conn, "workflow").join("\n");
+    assert!(events.contains("(partial): notify 127.0.0.1"), "{events}");
+    assert!(
+        !events.contains("k3y") && !events.contains("hook.example"),
+        "{events}"
+    );
 }
 
 /// One job's PR step over a repo.

@@ -19,15 +19,17 @@
 //! (no escape via symlink). `OGHCOLLECTOR_AI_LIMIT` (20) × `timeout` (≤600) stays under
 //! `JOB_TIMEOUT`. `diff()` errors (never "") when the head isn't in the clone, and `collect`
 //! fetches PR heads on demand before PR workflows (migration sources never fetched them) — an empty
-//! diff would get reviewed and ledgered. `api_key_env` may not name the collector's own secrets
-//! (`OGHCOLLECTOR_*`, `{gh,gl}_{token,write_token,webhook_secret}`). Dry-run reports capped at
+//! diff would get reviewed and ledgered. `api_key_env` and `${...}` in `url` are secret references
+//! (`secrets`: env/Docker secret or HashiCorp Vault), never the collector's own secrets
+//! (`OGHCOLLECTOR_*`, `VAULT_*`, `{gh,gl}_{token,write_token,webhook_secret}`); `ask`/`notify` get
+//! them resolved. Dry-run reports capped at
 //! `DRY_RUN_EVENTS` (20) per job, the rest NOT recorded so later runs report them
 //! (`log_held_dry_runs` line). AI limit warns once per job (step returns `Err("")` = silent stop).
 //! Gates like `pr.head_changed`/`not unchanged` defeat retries — the README says so; prefer relying
 //! on the ledger. `actions_tests.rs` = axum mock of OpenAI/Anthropic/GitLab/GitHub (records
 //! path+query) + local bare origin (incl. the push-done-PR-missing recovery).
 //! `notify` = one POST to an Apprise API server (`caronc/apprise`): `url` is `/notify/<key>` (its
-//! saved config) or `/notify/` + `urls` from `api_key_env`; 424 (some targets failed, it can't say
+//! saved config, `${...}` to keep it out of the workflow) or `/notify/` + `urls` from `api_key_env`; 424 (some targets failed, it can't say
 //! which) counts as sent, or a retry repeats it on those that worked. Capped at `NOTIFY_LIMIT` per
 //! job (in `workflow.rs`: past it the node is skipped, unrecorded, and the walk goes on). Logs show the host only (`host`): the path holds the key.
 use std::path::Path;

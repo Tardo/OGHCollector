@@ -13,7 +13,11 @@
 //! Outward nodes (`ai`, `pr_comment`, `pr_edit`, `pr_review`, `pr_open`,
 //! `apprise`) are dry-run (they
 //! log what they would do) unless the source lists them in `actions`, and the
-//! `workflow_action` ledger makes each run once per item.
+//! `workflow_action` ledger makes each run once per item. Their secrets
+//! (`api_key_env`, `${...}` in `url`) are resolved (`secrets`) only right
+//! before a live call: logs, ledger keys and AI digests use the unexpanded
+//! `url`, and nothing resolved ever reaches `Ctx::view` (prompts and bodies
+//! leave the collector).
 //!
 //! The per-module pipeline is a graph of nodes (root `workflows.yaml`, `default` = the old
 //! pipeline). The core only walks (`run_modules`: `analyzer.module_folders`, sorted by name, + git
@@ -62,7 +66,7 @@ use crate::actions::{self, AiRequest, Forge, NewPr};
 use crate::analyzer::{self, GitInfo, OGHCollectorAnalyzer};
 use crate::gitclient::{git_run, PullRequestInfo, RepoInfo};
 use crate::pypi::PypiClient;
-use crate::{migration, review, security};
+use crate::{migration, review, secrets, security};
 
 pub use oghworkflow::{validate, Node, Workflow, ACTIONS, DEFAULT};
 // Jobs load workflows in layers (`config::load_workflows`); tests start from
@@ -499,13 +503,10 @@ impl Engine {
                 }
                 let send = async {
                     let urls = match node.api_key_env.as_deref() {
-                        Some(env) => Some(
-                            crate::config::read_secret(&env.to_lowercase(), env)
-                                .ok_or_else(|| format!("{env} isn't set"))?,
-                        ),
+                        Some(reference) => Some(secrets::get(reference).await?),
                         None => None,
                     };
-                    actions::notify(url, urls, &title, &body, kind).await
+                    actions::notify(&secrets::expand(url).await?, urls, &title, &body, kind).await
                 };
                 act(conn, deps, &node.kind, &key, &what, &body, send).await?;
             }
@@ -591,11 +592,9 @@ async fn ask_ai(
     let req = AiRequest {
         provider: node.provider.as_deref().unwrap_or_default(),
         model: node.model.as_deref().unwrap_or_default(),
+        // Unexpanded: `${...}` secrets stay out of the logs and the ledger key.
         url: node.url.as_deref(),
-        key: node
-            .api_key_env
-            .as_deref()
-            .and_then(|env| crate::config::read_secret(&env.to_lowercase(), env)),
+        key: None,
         system,
         prompt,
         max_tokens: node.max_tokens.unwrap_or(16000),
@@ -643,6 +642,20 @@ async fn ask_ai(
         }
         return Err(String::new());
     }
+    // Secrets only now: dry-run and cached answers never read them.
+    let url = match node.url.as_deref() {
+        Some(url) => Some(secrets::expand(url).await?),
+        None => None,
+    };
+    let api_key = match node.api_key_env.as_deref() {
+        Some(reference) => Some(secrets::get(reference).await?),
+        None => None,
+    };
+    let req = AiRequest {
+        url: url.as_deref(),
+        key: api_key,
+        ..req
+    };
     deps.ai_calls_left.set(left - 1);
     let answer = actions::ask(&req).await?;
     let _ = workflow_action::record(conn, &key, false, Some(&answer));
