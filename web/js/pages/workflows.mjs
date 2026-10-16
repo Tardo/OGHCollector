@@ -1180,9 +1180,9 @@ function newNodePosition() {
 
 function renderList(active) {
   els.list.textContent = '';
-  els.list.append(
-    el('option', {value: ''}, active === null ? '(new)' : 'Open…'),
-  );
+  if (active === null) {
+    els.list.append(el('option', {value: ''}, '(new)'));
+  }
   library.forEach((item, index) => {
     const warn =
       (item.workflow.enabled === false ? ' · off' : '') +
