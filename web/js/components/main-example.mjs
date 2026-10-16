@@ -6,7 +6,7 @@ const EXAMPLES = [
   `/v1/module/web_responsive/16.0?org=OCA&repo=web`,
   `/v1/search/sales`,
   `/v1/module/contract_sale_generation`,
-  `/v1/repository/product-pack`,
+  `/v1/repo/product-pack`,
   `/v1/search/account?odoo_version=14.0`,
   `/v1/module/shopfloor_base/16.0`,
   `/v1/module/project_hr/15.0?repo=project`,

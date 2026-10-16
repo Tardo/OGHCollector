@@ -1,6 +1,94 @@
 // Copyright 2025 Alexandre D. Díaz
-#mcp-endpoint-box {
-    #mcp-endpoint-url {
-        word-break: break-all;
+// /mcp: endpoint box, client tabs inside a .panel, tool groups in a grid.
+// Snippets use the shared .code-panel.
+@import "../components/code-panel";
+
+.mcp-endpoint {
+    font-size: 1rem !important;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.mcp-clients {
+    .panel-header {
+        padding: 0.6rem 0.75rem;
+    }
+
+    .nav {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+
+    .nav-link {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.85rem;
+    }
+
+    .code-panel + .mcp-step { margin-top: 1.25rem; }
+}
+
+.mcp-step, .mcp-steps {
+    margin-bottom: 0.6rem;
+    color: var(--bs-secondary-color);
+
+    strong { color: var(--bs-body-color); }
+}
+
+.mcp-steps li + li { margin-top: 0.35rem; }
+
+.mcp-note {
+    margin: 0.75rem 0 0;
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+}
+
+.mcp-callout {
+    padding: 0.65rem 0.9rem;
+    font-size: 0.875rem;
+    background: var(--bs-warning-bg-subtle);
+    border-left: 3px solid var(--bs-warning-border-subtle);
+    border-radius: var(--bs-border-radius);
+}
+
+.mcp-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+
+    @media (min-width: 992px) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .panel-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+}
+
+.mcp-tool-list {
+    margin: 0;
+
+    dt {
+        font-family: var(--bs-font-monospace);
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--ommd-accent);
+        overflow-wrap: anywhere;
+    }
+
+    dd {
+        margin: 0.2rem 0 0;
+        padding-bottom: 0.75rem;
+        font-size: 0.875rem;
+        color: var(--bs-secondary-color);
+        border-bottom: 1px solid var(--bs-border-color-translucent);
+    }
+
+    dd + dt { margin-top: 0.75rem; }
+
+    dd:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
     }
 }

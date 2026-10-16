@@ -1,4 +1,7 @@
 {# Copyright 2025 Alexandre D. Díaz #}
+{#- One scrolling reference: a sticky index (ScrollSpy highlights the section in view) and one
+    `endpoint` panel per route, each linkable as /api#<id>. Keep it in step with the `/v1`
+    routes (`main.rs` `configure_v1`) and the answer fields pinned by `api_tests.rs`. -#}
 {% extends "minimal_layout.html" %}
 {% set meta_title = "API" %}
 {% set meta_description = "REST API reference for Odoo module metadata, dependencies and code analysis." %}
@@ -12,146 +15,168 @@
 {% block content %}
 {{ super() }}
 
-{% macro api_doc_tab_pane(prefix, path_parameters, query_parameters, method, endpoint, example_curl, example, schema, pipe="| jq", sample_label="cURL + jq") -%}
-    <div class="row">
-        <div class="col-12 col-lg-4">
-            <h2 class="fs-4 fw-bold mb-4">Parameters</h2>
-            <h4 class="border-bottom pb-4 fs-6 fw-bold text-secondary-emphasis">Path parameters</h4>
-            {{ path_parameters|safe }}
-            <h4 class="border-bottom mt-5 pb-4 fs-6 fw-bold text-secondary-emphasis">Query parameters</h4>
-            {{ query_parameters|safe }}
-        </div>
-        <div class="col-12 col-lg-8 d-none d-sm-block">
-            <h2 class="fs-4 fw-bold mb-4">Samples</h2>
-            <div>
-                <div class="border p-3">
-                    <span class="badge rounded-pill text-bg-primary me-2">{{ method }}</span> <span class="fw-bold">{{ endpoint }}</span>
-                </div>
-                <div>
-                    <ul class="nav nav-tabs px-2 pt-2 border">
-                        <li class="nav-item"><a class="nav-link active" aria-current="page" href="#">{{ sample_label }}</a></li>
-                    </ul>
-                    <div class="p-3 text-bg-secondary">
-                        <code class="text-light">curl -s {{ REQ_BASE_URL }}{{ example_curl }} {{ pipe }}</code>
-                    </div>
-                </div>
-            </div>
-            <h2 class="fs-4 fw-bold my-4">Response</h2>
-            <div>
-                <ul class="nav nav-tabs">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="{{ prefix }}-example-tab" data-bs-toggle="tab" data-bs-target="#{{ prefix }}-example-tab-pane" type="button" role="tab" aria-controls="{{ prefix }}-example-tab-pane" aria-selected="true">Example</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="{{ prefix }}-schema-tab" data-bs-toggle="tab" data-bs-target="#{{ prefix }}-schema-tab-pane" type="button" role="tab" aria-controls="{{ prefix }}-schema-tab-pane" aria-selected="true">Schema</button>
-                    </li>
-                </ul>
-                <div class="tab-content" id="myTabContent">
-                    <div class="tab-pane fade show active p-3 text-bg-secondary" id="{{ prefix }}-example-tab-pane" role="tabpanel" aria-labelledby="{{ prefix }}-example-tab" tabindex="0">
-                        <pre><code>{{ example }}</code></pre>
-                    </div>
-                    <div class="tab-pane fade p-3 text-bg-secondary" id="{{ prefix }}-schema-tab-pane" role="tabpanel" aria-labelledby="{{ prefix }}-schema-tab" tabindex="0">
-                        <pre><code>{{ schema }}</code></pre>
-                    </div>
-                </div>
-            </div>
-        </div>
+{#- `params`: rows of [name, "path"|"query", type, required, description (HTML)]. The call
+    block's body is the endpoint description. `example`/`schema` are plain text (autoescaped);
+    without a schema the response box has no tabs. -#}
+{% macro endpoint(id, title, method, path, params, curl, example="", schema="", pipe="| jq", lang="JSON") -%}
+<section class="panel api-endpoint" id="{{ id }}">
+    <div class="panel-header">
+        <h3>{{ title }}</h3>
+        <a class="api-anchor" href="#{{ id }}" aria-label="Link to {{ title }}">#</a>
     </div>
-{% endmacro -%}
+    <div class="panel-body">
+        <div class="api-route"><span class="api-method">{{ method }}</span><code>{{ path|replace("/", "/<wbr>")|safe }}</code></div>
+        <div class="api-desc">{{ caller() }}</div>
+
+        <h4 class="subsection-title">Parameters</h4>
+        {% if params %}
+        <ul class="api-params">
+            {% for name, where, type, required, desc in params %}
+            <li>
+                <div class="api-param-head">
+                    <code class="api-param-name">{{ name }}</code>
+                    <span class="api-param-meta">{{ type }} · {{ where }}</span>
+                    {% if required %}<span class="api-param-req">Required</span>{% endif %}
+                </div>
+                <div class="api-param-desc">{{ desc|safe }}</div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="api-desc mb-0">None</p>
+        {% endif %}
+
+        <h4 class="subsection-title">Request</h4>
+        <div class="code-panel">
+            <div class="code-panel-bar">
+                <span>cURL</span>
+                <button type="button" class="code-copy" data-copy>Copy</button>
+            </div>
+            <pre><code>curl -s '{{ REQ_BASE_URL }}{{ curl }}' {{ pipe }}</code></pre>
+        </div>
+
+        {% if example %}
+        <h4 class="subsection-title">Response</h4>
+        <div class="code-panel">
+            <div class="code-panel-bar">
+                {% if schema %}
+                <div class="nav" role="tablist">
+                    <button class="nav-link active" id="{{ id }}-example-tab" data-bs-toggle="tab" data-bs-target="#{{ id }}-example" type="button" role="tab" aria-controls="{{ id }}-example" aria-selected="true">Example</button>
+                    <button class="nav-link" id="{{ id }}-schema-tab" data-bs-toggle="tab" data-bs-target="#{{ id }}-schema" type="button" role="tab" aria-controls="{{ id }}-schema" aria-selected="false">Schema</button>
+                </div>
+                {% else %}
+                <span>Example</span>
+                {% endif %}
+                <span class="code-panel-label">{{ lang }}</span>
+            </div>
+            {% if schema %}
+            <div class="tab-content">
+                <pre class="tab-pane fade show active" id="{{ id }}-example" role="tabpanel" aria-labelledby="{{ id }}-example-tab" tabindex="0"><code>{{ example }}</code></pre>
+                <pre class="tab-pane fade" id="{{ id }}-schema" role="tabpanel" aria-labelledby="{{ id }}-schema-tab" tabindex="0"><code>{{ schema }}</code></pre>
+            </div>
+            {% else %}
+            <pre><code>{{ example }}</code></pre>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</section>
+{%- endmacro %}
 
 
 <template id="template-mirlo-main-example">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/main-example.css" as="style" />
-    <input type="text" readonly="1" id="display" />
+    <input type="text" readonly="1" id="display" aria-label="Example request" />
 </template>
 
 
 <header class="page-header">
-    <h1>REST API (v1)</h1>
-    <p class="page-header-desc">Read-only JSON endpoints exposing the same module, repository and search data as this site. No authentication, no API key — just curl.</p>
-</header>
-<ol class="text-left w-100 fs-6" id="main_example">
-    <li class="lh-lg">Open a terminal</li>
-    <li class="lh-lg">Type<br/>
-        <mirlo-main-example class="border rounded p-2"></mirlo-main-example>
-    </li>
-    <li class="lh-lg">That's it!</li>
-</ol>
-<div class="d-flex flex-column flex-md-row align-items-start mt-5">
-    <div class="nav flex-column nav-pills me-3 d-none d-md-flex" id="api-pills-tab" role="tablist" aria-orientation="vertical">
-        <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-generic" aria-selected="true">Get generic module information</button>
-        <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
-        <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
-        <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
-        <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
-        <button class="nav-link" id="api-pills-licenses-tab" data-bs-toggle="pill" data-bs-target="#api-pills-licenses" type="button" role="tab" aria-controls="api-pills-licenses" aria-selected="false">Check licenses</button>
-        <button class="nav-link" id="api-pills-compare-tab" data-bs-toggle="pill" data-bs-target="#api-pills-compare" type="button" role="tab" aria-controls="api-pills-compare" aria-selected="false">Compare module versions</button>
-        <button class="nav-link" id="api-pills-feeds-tab" data-bs-toggle="pill" data-bs-target="#api-pills-feeds" type="button" role="tab" aria-controls="api-pills-feeds" aria-selected="false">Activity feeds (Atom)</button>
-        <button class="nav-link" id="api-pills-badges-tab" data-bs-toggle="pill" data-bs-target="#api-pills-badges" type="button" role="tab" aria-controls="api-pills-badges" aria-selected="false">README badges</button>
-        {% if SEMANTIC_SEARCH_ENABLED %}
-        <button class="nav-link" id="api-pills-semantic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-semantic" type="button" role="tab" aria-controls="api-pills-semantic" aria-selected="false">Semantic search</button>
-        {% endif %}
+    <h1>REST API <span class="api-version">v1</span></h1>
+    <p class="page-header-desc">Read-only JSON endpoints exposing the same module, repository and search data as this site. No authentication, no API key &mdash; just curl.</p>
+    {% if MCP_INFO_ENABLED %}
+    <div class="page-header-actions">
+        <a class="btn btn-sm btn-outline-secondary" href="/mcp">Using an LLM? See the MCP endpoint</a>
     </div>
-    <ul class="nav nav-pills mb-3 d-flex d-md-none mb-5" id="pills-tab" role="tablist">
-        <li class="nav-item dropdown bg-primary-subtle">
-            <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Select Topic</a>
-            <ul class="dropdown-menu">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="api-pills-generic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-generic" type="button" role="tab" aria-controls="api-pills-generic" aria-selected="true">Get generic module information</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-detailed-tab" data-bs-toggle="pill" data-bs-target="#api-pills-detailed" type="button" role="tab" aria-controls="api-pills-detailed" aria-selected="false">Get detailed module information</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-repo-tab" data-bs-toggle="pill" data-bs-target="#api-pills-repo" type="button" role="tab" aria-controls="api-pills-repo" aria-selected="false">Get a repository</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-qsearch-tab" data-bs-toggle="pill" data-bs-target="#api-pills-qsearch" type="button" role="tab" aria-controls="api-pills-qsearch" aria-selected="false">Do a quick search</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-criteria-tab" data-bs-toggle="pill" data-bs-target="#api-pills-criteria" type="button" role="tab" aria-controls="api-pills-criteria" aria-selected="false">Search by criteria</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-licenses-tab" data-bs-toggle="pill" data-bs-target="#api-pills-licenses" type="button" role="tab" aria-controls="api-pills-licenses" aria-selected="false">Check licenses</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-compare-tab" data-bs-toggle="pill" data-bs-target="#api-pills-compare" type="button" role="tab" aria-controls="api-pills-compare" aria-selected="false">Compare module versions</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-feeds-tab" data-bs-toggle="pill" data-bs-target="#api-pills-feeds" type="button" role="tab" aria-controls="api-pills-feeds" aria-selected="false">Activity feeds (Atom)</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-badges-tab" data-bs-toggle="pill" data-bs-target="#api-pills-badges" type="button" role="tab" aria-controls="api-pills-badges" aria-selected="false">README badges</button>
-                </li>
+    {% endif %}
+</header>
+
+<div class="code-panel">
+    <div class="code-panel-bar"><span>Try it in a terminal</span></div>
+    <div class="api-try">
+        <span class="api-prompt" aria-hidden="true">$</span>
+        <mirlo-main-example></mirlo-main-example>
+    </div>
+</div>
+<dl class="panel api-conventions">
+    <div>
+        <dt>Base URL</dt>
+        <dd><code>{{ REQ_BASE_URL }}/v1</code></dd>
+    </div>
+    <div>
+        <dt>Requests</dt>
+        <dd>Plain <code>GET</code>, answers in JSON (feeds and badges aside).</dd>
+    </div>
+    <div>
+        <dt>Odoo versions</dt>
+        <dd>Written as <code>18.0</code>; anything else answers <code>400</code>.</dd>
+    </div>
+    <div>
+        <dt>Not found</dt>
+        <dd><code>null</code> for a single object, <code>[]</code> for a list.</dd>
+    </div>
+</dl>
+
+<div class="api-layout">
+    <nav class="api-toc" id="api-toc" aria-label="Endpoints">
+        <div>
+            <div class="api-toc-group">Modules</div>
+            <div class="nav flex-column">
+                <a class="nav-link" href="#module">Overview</a>
+                <a class="nav-link" href="#module-detail">Details</a>
+                <a class="nav-link" href="#module-versions">Version history</a>
+                <a class="nav-link" href="#compare">Compare versions</a>
+            </div>
+        </div>
+        <div>
+            <div class="api-toc-group">Search</div>
+            <div class="nav flex-column">
+                <a class="nav-link" href="#quick-search">Quick search</a>
+                <a class="nav-link" href="#search-criteria">By criteria</a>
                 {% if SEMANTIC_SEARCH_ENABLED %}
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="api-pills-semantic-tab" data-bs-toggle="pill" data-bs-target="#api-pills-semantic" type="button" role="tab" aria-controls="api-pills-semantic" aria-selected="false">Semantic search</button>
-                </li>
+                <a class="nav-link" href="#semantic-search">Semantic search</a>
                 {% endif %}
-            </ul>
-        </li>
-    </ul>
-    <div class="tab-content flex-grow-1" id="api-pills-tabContent">
-        <div class="tab-pane fade show active" id="api-pills-generic" role="tabpanel" aria-labelledby="api-pills-generic-tab" tabindex="0">
-            {{ api_doc_tab_pane(
-                "generic",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>module_name</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The module technical name
-                        </div>
-                    </li>
-                </ul>",
-                "",
-                "GET",
-                "/v1/module/{module_name}",
-                "/v1/module/MODULE_TECHNICAL_NAME",
-                "{
+            </div>
+        </div>
+        <div>
+            <div class="api-toc-group">Repositories</div>
+            <div class="nav flex-column">
+                <a class="nav-link" href="#repo">Repository</a>
+            </div>
+        </div>
+        <div>
+            <div class="api-toc-group">Packs</div>
+            <div class="nav flex-column">
+                <a class="nav-link" href="#license-check">License check</a>
+            </div>
+        </div>
+        <div>
+            <div class="api-toc-group">Integrations</div>
+            <div class="nav flex-column">
+                <a class="nav-link" href="#feeds">Atom feeds</a>
+                <a class="nav-link" href="#badges">README badges</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="api-sections" data-bs-spy="scroll" data-bs-target="#api-toc" data-bs-root-margin="0px 0px -55%">
+
+        <div class="section-heading"><h2>Modules</h2></div>
+
+        {% call endpoint(
+            "module", "Module overview", "GET", "/v1/module/{module_name}",
+            [["module_name", "path", "string", true, "The module technical name"]],
+            "/v1/module/web_responsive",
+            "{
     \"name\": \"Web Responsive\",
     \"technical_name\": \"web_responsive\",
     \"odoo_versions\": [
@@ -162,63 +187,27 @@
         \"https://github.com/OCA/web.git\"
     ]
 }",
-                "{
+            "{
     \"name\": string,
     \"technical_name\": string,
     \"odoo_versions\": Array[string],
     \"repos\": Array[string]
 }"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-detailed" role="tabpanel" aria-labelledby="api-pills-detailed-tab" tabindex="0">
-            {{ api_doc_tab_pane(
-                "detailed",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>module_name</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The module technical name
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The odoo version
-                        </div>
-                    </li>
-                </ul>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>org</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The organization name
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>repo</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The repository name
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/v1/module/{module_name}/{odoo_version}",
-                "/v1/module/MODULE_TECHNICAL_NAME/ODOO_VERSION",
-                "[
+        ) %}
+            Every Odoo version and repository that carries a module.
+        {% endcall %}
+
+        {% call endpoint(
+            "module-detail", "Module details", "GET", "/v1/module/{module_name}/{odoo_version}",
+            [
+                ["module_name", "path", "string", true, "The module technical name"],
+                ["odoo_version", "path", "string", true, "The Odoo version, e.g. <code>18.0</code>"],
+                ["org", "query", "string", false, "Only the module in this organization"],
+                ["repo", "query", "string", false, "Only the module in this repository"],
+                ["version", "query", "string", false, "A recorded module version (see <a href='#module-versions'>version history</a>) instead of the current one. Unknown versions answer empty <code>views</code>/<code>models</code>"]
+            ],
+            "/v1/module/web_responsive/17.0?org=OCA",
+            "[
     {
         \"technical_name\": \"web_responsive\",
         \"name\": \"Web Responsive\",
@@ -258,7 +247,7 @@
         \"folder_size\": 5146591,
         \"repository\": \"web\",
         \"organization\": \"OCA\",
-        \"odoo_version\": \"15.0\",
+        \"odoo_version\": \"17.0\",
         \"source_path\": \"web_responsive\",
         \"views\": [
             {
@@ -318,11 +307,12 @@
         }
     }
 ]",
-                "{
+            "Array[{
     \"technical_name\": string,
     \"name\": string,
     \"version\": string,
     \"description\": string,
+    \"icon\": string,  // base64 PNG, \"\" when none
     \"authors\": Array[string],
     \"website\": string,
     \"license\": string,
@@ -344,18 +334,6 @@
     \"organization\": string,
     \"odoo_version\": string,
     \"source_path\": string,
-    \"license_review\": {
-        \"effective_license\": string|null,
-        \"effective_license_source\": string|null,
-        \"proprietary\": Array[string],
-        \"licenses\": Object,
-        \"findings\": Array[{\"severity\": string, \"code\": string, \"message\": string, \"module\": string, \"related\": Array[string]}]
-    },
-    \"health\": {
-        \"score\": number,
-        \"grade\": \"good\"|\"fair\"|\"poor\",
-        \"factors\": Array[{\"name\": string, \"points\": number|null, \"detail\": string}]
-    },
     \"views\": Array[{
         \"xml_id\": string,
         \"name\": string,
@@ -383,83 +361,180 @@
             \"signature\": string,
             \"docstring\": string|null
         }]
-    }]
-}"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-repo" role="tabpanel" aria-labelledby="api-pills-repo-tab" tabindex="0">
-            {{ api_doc_tab_pane(
-                "repo",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>repo_name</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The repository name
-                        </div>
-                    </li>
-                </ul>",
-                "",
-                "GET",
-                "/v1/repo/{repo_name}",
-                "/v1/repo/REPOSITORY_NAME",
-                "{
-    \"name\": \"web\",
-    \"organizations\": {
-        \"OCA\": {
-            \"14.0\": 62,
-            \"15.0\": 47
-        }
+    }],
+    \"controllers\": Array[{
+        \"class_name\": string,
+        \"name\": string,
+        \"routes\": Array[string],
+        \"auth\": string|null,
+        \"http_type\": string,
+        \"methods\": Array[string],
+        \"csrf\": boolean|null,
+        \"website\": boolean,
+        \"uses_sudo\": boolean,
+        \"signature\": string,
+        \"docstring\": string|null
+    }],
+    \"security_warnings\": Array[{
+        \"code\": string,
+        \"message\": string,
+        \"xml_id\": string|null,
+        \"file\": string|null,
+        \"line\": number|null
+    }],
+    \"security_warning_count\": number,
+    \"migration_considerations\": Array[{
+        \"severity\": string,
+        \"code\": string,
+        \"message\": string,
+        \"context\": string|null,
+        \"file\": string|null,
+        \"line\": number|null
+    }],
+    \"required_by\": Array[{
+        \"technical_name\": string,
+        \"name\": string,
+        \"category\": string|null,
+        \"installable\": boolean,
+        \"application\": boolean,
+        \"organization\": string,
+        \"repository\": string
+    }],
+    \"license_review\": {
+        \"effective_license\": string|null,
+        \"effective_license_source\": string|null,
+        \"proprietary\": Array[string],
+        \"licenses\": Object,
+        \"findings\": Array[{\"severity\": string, \"code\": string, \"message\": string, \"module\": string, \"related\": Array[string]}]
+    },
+    \"health\": {
+        \"score\": number,
+        \"grade\": \"good\"|\"fair\"|\"poor\",
+        \"factors\": Array[{\"name\": string, \"points\": number|null, \"detail\": string}]
     }
+}]"
+        ) %}
+            The full record of a module at one Odoo version: manifest, dependency closure, code analysis
+            (views, models, controllers), security findings, migration notes, the modules that depend on it,
+            a license review and the health score. One entry per repository carrying it; narrow with
+            <code>org</code>/<code>repo</code>.
+        {% endcall %}
+
+        {% call endpoint(
+            "module-versions", "Module version history", "GET", "/v1/module/{module_name}/{odoo_version}/versions",
+            [
+                ["module_name", "path", "string", true, "The module technical name"],
+                ["odoo_version", "path", "string", true, "The Odoo version, e.g. <code>18.0</code>"],
+                ["org", "query", "string", false, "Only the module in this organization"],
+                ["repo", "query", "string", false, "Only the module in this repository"]
+            ],
+            "/v1/module/web_responsive/17.0/versions?org=OCA",
+            "[
+    {
+        \"organization\": \"OCA\",
+        \"repository\": \"web\",
+        \"versions\": [
+            {
+                \"version_module\": \"1.1.10\",
+                \"create_date\": \"2026-08-07 08:22:54\",
+                \"update_date\": \"2026-08-07 08:22:54\",
+                \"is_latest\": true
+            }
+        ]
+    }
+]",
+            "Array[{
+    \"organization\": string,
+    \"repository\": string,
+    \"versions\": Array[{
+        \"version_module\": string,
+        \"create_date\": string,
+        \"update_date\": string,
+        \"is_latest\": boolean
+    }]
+}]"
+        ) %}
+            Every module version recorded for that Odoo series, with first/last-seen dates. Any of them can be
+            passed as <code>version</code> to <a href="#module-detail">module details</a>.
+        {% endcall %}
+
+        {% call endpoint(
+            "compare", "Compare module versions", "GET", "/v1/compare/{module_name}",
+            [
+                ["module_name", "path", "string", true, "The module technical name"],
+                ["from", "query", "string", true, "Baseline Odoo version"],
+                ["to", "query", "string", true, "Odoo version to compare against"],
+                ["org", "query", "string", false, "The organization name"],
+                ["repo", "query", "string", false, "The repository name"]
+            ],
+            "/v1/compare/web_responsive?from=17.0&to=18.0&org=OCA",
+            "{
+    \"technical_name\": \"web_responsive\",
+    \"from_odoo_version\": \"17.0\",
+    \"to_odoo_version\": \"18.0\",
+    \"from_module_version\": \"1.0.0\",
+    \"to_module_version\": \"1.0.0\",
+    \"manifest\": [],
+    \"depends\": {\"added\": [], \"removed\": []},
+    \"pip\": {\"added\": [], \"removed\": []},
+    \"bin\": {\"added\": [], \"removed\": []},
+    \"analysis_available\": true,
+    \"models\": [
+        {
+            \"model\": \"res.users\",
+            \"status\": \"changed\",
+            \"fields\": {\"added\": [{\"name\": \"is_redirect_home\", \"value\": \"Boolean\"}], \"removed\": [], \"changed\": []},
+            \"methods\": {\"added\": [], \"removed\": [], \"changed\": []}
+        }
+    ],
+    \"views\": {\"added\": [], \"removed\": [], \"changed\": []},
+    \"routes\": {\"added\": [], \"removed\": [], \"changed\": []},
+    \"security_from\": {\"grave\": 0, \"minor\": 0},
+    \"security_to\": {\"grave\": 0, \"minor\": 0}
 }",
-                "{
-    \"name\": string,
-    \"organizations\": Object
+            "{
+    \"technical_name\": string,
+    \"from_odoo_version\": string,
+    \"to_odoo_version\": string,
+    \"from_module_version\": string,
+    \"to_module_version\": string,
+    \"manifest\": [{\"name\": string, \"from\": string, \"to\": string}],
+    \"depends\" | \"pip\" | \"bin\": {\"added\": [string], \"removed\": [string]},
+    \"analysis_available\": bool,
+    \"models\": [
+        {
+            \"model\": string,
+            \"status\": \"added\"|\"removed\"|\"changed\",
+            \"fields\" | \"methods\": ITEM_DIFF
+        }
+    ],
+    \"views\" | \"routes\": ITEM_DIFF,
+    \"security_from\" | \"security_to\": {\"grave\": integer, \"minor\": integer}|null
+}
+
+ITEM_DIFF = {
+    \"added\": [{\"name\": string, \"value\": string}],
+    \"removed\": [{\"name\": string, \"value\": string}],
+    \"changed\": [{\"name\": string, \"from\": string, \"to\": string}]
 }"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-qsearch" role="tabpanel" aria-labelledby="api-pills-qsearch-tab" tabindex="0">
-            {{ api_doc_tab_pane(
-                "qsearch",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>module_name</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The module technical name
-                        </div>
-                    </li>
-                </ul>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The odoo version
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>installable</span>
-                            <span class='text-danger-emphasis'>bool</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            If the module is installable
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/v1/search/{module_name}",
-                "/v1/search/MODULE_TECHNICAL_NAME",
-                "[
+        ) %}
+            What changed in a module between two Odoo versions: manifest, direct dependencies,
+            models/fields/methods, views and HTTP routes. <code>null</code> when the module doesn't exist at one of
+            them; <code>analysis_available: false</code> when one side has no stored code analysis. Also browsable
+            from a module page (&ldquo;Compare&rdquo;).
+        {% endcall %}
+
+        <div class="section-heading"><h2>Search</h2></div>
+
+        {% call endpoint(
+            "quick-search", "Quick search", "GET", "/v1/search/{module_name}",
+            [
+                ["module_name", "path", "string", true, "Part of a module technical name"],
+                ["odoo_version", "query", "string", false, "Only modules at this Odoo version"],
+                ["installable", "query", "bool", false, "Only installable (or non-installable) modules"]
+            ],
+            "/v1/search/web_re",
+            "[
     {
         \"technical_name\": \"web_refresher\",
         \"versions\": {
@@ -488,68 +563,25 @@
         }
     }
 ]",
-                "{
+            "Array[{
     \"technical_name\": string,
-    \"versions\": Object
-}"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-criteria" role="tabpanel" aria-labelledby="api-pills-criteria-tab" tabindex="0">
-            {{ api_doc_tab_pane(
-                "criteria",
-                "<span class='text-secondary-emphasis'>None</span>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The odoo version
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>term</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Free-text term matched against technical name, display name and description
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>category</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Exact manifest category
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>depends_on</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Only modules that declare this module as an Odoo dependency (reverse dependency search)
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>limit</span>
-                            <span class='text-danger-emphasis'>integer</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Max results (default 50, max 200)
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/v1/search",
-                "'/v1/search?odoo_version=18.0&depends_on=web'",
-                "[
+    \"versions\": {\"org/repo\": Array[string]}
+}]"
+        ) %}
+            Modules whose technical name contains the given text, with the Odoo versions each repository carries.
+        {% endcall %}
+
+        {% call endpoint(
+            "search-criteria", "Search by criteria", "GET", "/v1/search",
+            [
+                ["odoo_version", "query", "string", true, "The Odoo version, e.g. <code>18.0</code>"],
+                ["term", "query", "string", false, "Free-text term matched against technical name, display name and description"],
+                ["category", "query", "string", false, "Exact manifest category"],
+                ["depends_on", "query", "string", false, "Only modules that declare this module as an Odoo dependency (reverse dependency search)"],
+                ["limit", "query", "integer", false, "Max results (default 50, max 200)"]
+            ],
+            "/v1/search?odoo_version=18.0&depends_on=web",
+            "[
     {
         \"technical_name\": \"web_responsive\",
         \"name\": \"Web Responsive\",
@@ -560,50 +592,89 @@
         \"repository\": \"web\"
     }
 ]",
-                "[
+            "Array[{
+    \"technical_name\": string,
+    \"name\": string,
+    \"category\": string|null,
+    \"installable\": bool,
+    \"application\": bool,
+    \"organization\": string,
+    \"repository\": string
+}]"
+        ) %}
+            Discover modules across every repository by a free-text term, a category and/or reverse dependency
+            (&ldquo;which modules depend on <code>web</code>?&rdquo;).
+        {% endcall %}
+
+        {% if SEMANTIC_SEARCH_ENABLED %}
+        {% call endpoint(
+            "semantic-search", "Semantic search", "GET", "/v1/semantic-search",
+            [
+                ["q", "query", "string", true, "What you're looking for, in plain words and any language"],
+                ["odoo_version", "query", "string", false, "Only modules at this Odoo version"],
+                ["limit", "query", "integer", false, "Max results (default 20, max 50)"]
+            ],
+            "/v1/semantic-search?q=send%20invoices%20to%20the%20tax%20agency&odoo_version=18.0",
+            "[
     {
-        \"technical_name\": string,
-        \"name\": string,
-        \"category\": string|null,
-        \"installable\": bool,
-        \"application\": bool,
-        \"organization\": string,
-        \"repository\": string
+        \"technical_name\": \"l10n_es_aeat_sii_oca\",
+        \"name\": \"Suministro Inmediato de Información en el IVA\",
+        \"category\": \"Accounting & Finance\",
+        \"odoo_version\": \"18.0\",
+        \"org_name\": \"OCA\",
+        \"repository\": \"l10n-spain\",
+        \"score\": 0.61
     }
-]"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-licenses" role="tabpanel" aria-labelledby="api-pills-licenses-tab" tabindex="0">
-            <p class="text-secondary-emphasis">Reviews the license of a set of modules deployed together plus everything they depend on: the license the combined work must be distributed under, proprietary modules pulled in, and conflicts (e.g. a proprietary module on GPL/AGPL code). Handy in CI &mdash; fail the build when a finding has <code>"severity": "error"</code>. A heuristic based on manifest licenses, not legal advice.</p>
-            {{ api_doc_tab_pane(
-                "licenses",
-                "<span class='text-secondary-emphasis'>None</span>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The odoo version
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>modules</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Comma-separated technical names (max 500 by default)
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/v1/license-check",
-                "'/v1/license-check?odoo_version=18.0&modules=mis_report_partner_details,sale_order_type'",
-                "{
+]",
+            "Array[{
+    \"technical_name\": string,
+    \"name\": string,
+    \"category\": string,
+    \"odoo_version\": string,
+    \"org_name\": string,
+    \"repository\": string,
+    \"score\": number
+}]"
+        ) %}
+            Modules ranked by meaning rather than by name: the query is matched against each module's embedded
+            name, category and description, with a boost when its words appear verbatim in module names (so exact
+            product names rank too). One row per Odoo version a module is carried at, best score first.
+        {% endcall %}
+        {% endif %}
+
+        <div class="section-heading"><h2>Repositories</h2></div>
+
+        {% call endpoint(
+            "repo", "Repository", "GET", "/v1/repo/{repo_name}",
+            [["repo_name", "path", "string", true, "The repository name"]],
+            "/v1/repo/web",
+            "{
+    \"name\": \"web\",
+    \"organizations\": {
+        \"OCA\": {
+            \"14.0\": 62,
+            \"15.0\": 47
+        }
+    }
+}",
+            "{
+    \"name\": string,
+    \"organizations\": {org: {odoo_version: integer}}
+}"
+        ) %}
+            How many modules a repository carries, per organization and Odoo version.
+        {% endcall %}
+
+        <div class="section-heading"><h2>Packs</h2></div>
+
+        {% call endpoint(
+            "license-check", "License check", "GET", "/v1/license-check",
+            [
+                ["odoo_version", "query", "string", true, "The Odoo version, e.g. <code>18.0</code>"],
+                ["modules", "query", "string", true, "Comma-separated technical names (max 500 by default)"]
+            ],
+            "/v1/license-check?odoo_version=18.0&modules=mis_report_partner_details,sale_order_type",
+            "{
     \"odoo_version\": \"18.0\",
     \"not_found\": [],
     \"effective_license\": \"AGPL-3\",
@@ -620,7 +691,7 @@
         }
     ]
 }",
-                "{
+            "{
     \"odoo_version\": string,
     \"not_found\": [string],
     \"effective_license\": string|null,
@@ -637,156 +708,24 @@
         }
     ]
 }"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-compare" role="tabpanel" aria-labelledby="api-pills-compare-tab" tabindex="0">
-            <p class="text-secondary-emphasis">What changed in a module between two Odoo versions: manifest, direct dependencies, models/fields/methods, views and HTTP routes. <code>null</code> when the module doesn't exist at one of them; <code>analysis_available: false</code> when one side has no stored code analysis. Also browsable from a module page (&ldquo;Compare&rdquo;).</p>
-            {{ api_doc_tab_pane(
-                "compare",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>module_name</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The technical name of the module
-                        </div>
-                    </li>
-                </ul>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>from</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Baseline Odoo version
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>to</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Odoo version to compare against
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>org</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The organization name
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>repo</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The repository name
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/v1/compare/{module_name}",
-                "'/v1/compare/web_responsive?from=17.0&to=18.0&org=OCA'",
-                "{
-    \"technical_name\": \"web_responsive\",
-    \"from_odoo_version\": \"17.0\",
-    \"to_odoo_version\": \"18.0\",
-    \"from_module_version\": \"1.0.0\",
-    \"to_module_version\": \"1.0.0\",
-    \"manifest\": [],
-    \"depends\": {\"added\": [], \"removed\": []},
-    \"pip\": {\"added\": [], \"removed\": []},
-    \"bin\": {\"added\": [], \"removed\": []},
-    \"analysis_available\": true,
-    \"models\": [
-        {
-            \"model\": \"res.users\",
-            \"status\": \"changed\",
-            \"fields\": {\"added\": [{\"name\": \"is_redirect_home\", \"value\": \"Boolean\"}], \"removed\": [], \"changed\": []},
-            \"methods\": {\"added\": [], \"removed\": [], \"changed\": []}
-        }
-    ],
-    \"views\": {\"added\": [], \"removed\": [], \"changed\": []},
-    \"routes\": {\"added\": [], \"removed\": [], \"changed\": []},
-    \"security_from\": {\"grave\": 0, \"minor\": 0},
-    \"security_to\": {\"grave\": 0, \"minor\": 0}
-}",
-                "{
-    \"technical_name\": string,
-    \"from_odoo_version\": string,
-    \"to_odoo_version\": string,
-    \"from_module_version\": string,
-    \"to_module_version\": string,
-    \"manifest\": [{\"name\": string, \"from\": string, \"to\": string}],
-    \"depends\" | \"pip\" | \"bin\": {\"added\": [string], \"removed\": [string]},
-    \"analysis_available\": bool,
-    \"models\": [
-        {
-            \"model\": string,
-            \"status\": \"added\"|\"removed\"|\"changed\",
-            \"fields\" | \"methods\": ITEM_DIFF
-        }
-    ],
-    \"views\" | \"routes\": ITEM_DIFF,
-    \"security_from\" | \"security_to\": {\"grave\": integer, \"minor\": integer}|null
-}
+        ) %}
+            Reviews the license of a set of modules deployed together plus everything they depend on: the license
+            the combined work must be distributed under, proprietary modules pulled in, and conflicts (e.g. a
+            proprietary module on GPL/AGPL code). Handy in CI &mdash; fail the build when a finding has
+            <code>"severity": "error"</code>. A heuristic based on manifest licenses, not legal advice.
+        {% endcall %}
 
-ITEM_DIFF = {
-    \"added\": [{\"name\": string, \"value\": string}],
-    \"removed\": [{\"name\": string, \"value\": string}],
-    \"changed\": [{\"name\": string, \"from\": string, \"to\": string}]
-}"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-feeds" role="tabpanel" aria-labelledby="api-pills-feeds-tab" tabindex="0">
-            <p class="text-secondary-emphasis">Atom feeds of the collector's activity log (the 50 newest events), for feed readers or chat integrations (Slack/Teams RSS apps). <code>/module/{org}/{technical_name}/feed.atom</code> follows a single module &mdash; every event mentioning it, all versions.</p>
-            {{ api_doc_tab_pane(
-                "feeds",
-                "<span class='text-secondary-emphasis'>None</span>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>type</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Comma-separated event types: module, migration_pr, vulnerability, security, issue, repository, organization, dependency, committer, author, maintainer, collector &mdash; or <code>all</code>. Default: module, migration_pr, vulnerability, issue, repository, organization
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Only events about this Odoo version
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>q</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Only events whose text contains this (e.g. a repository name)
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/feed.atom",
-                "'/feed.atom?type=migration_pr,vulnerability&odoo_version=18.0'",
-                "<feed xmlns=\"http://www.w3.org/2005/Atom\">
+        <div class="section-heading"><h2>Integrations</h2></div>
+
+        {% call endpoint(
+            "feeds", "Atom feeds", "GET", "/feed.atom",
+            [
+                ["type", "query", "string", false, "Comma-separated event types: module, migration_pr, vulnerability, security, issue, repository, organization, dependency, committer, author, maintainer, collector &mdash; or <code>all</code>. Default: module, migration_pr, vulnerability, issue, repository, organization"],
+                ["odoo_version", "query", "string", false, "Only events about this Odoo version"],
+                ["q", "query", "string", false, "Only events whose text contains this (e.g. a repository name)"]
+            ],
+            "/feed.atom?type=migration_pr,vulnerability&odoo_version=18.0",
+            "<feed xmlns=\"http://www.w3.org/2005/Atom\">
   <title>Odoo Module Metadata: activity [18.0]</title>
   <entry>
     <title>[migration_pr] New migration PR #123 ...</title>
@@ -795,130 +734,35 @@ ITEM_DIFF = {
     <content type=\"text\">New migration PR #123 ...</content>
   </entry>
 </feed>",
-                "Atom 1.0 (application/atom+xml)",
-                pipe="| head -20",
-                sample_label="cURL"
-            ) }}
-        </div>
-        <div class="tab-pane fade" id="api-pills-badges" role="tabpanel" aria-labelledby="api-pills-badges-tab" tabindex="0">
-            <p class="text-secondary-emphasis">SVG status badges for READMEs. Ready-to-paste Markdown / reStructuredText / HTML snippets are under &ldquo;Embed badges&rdquo; on every module page. Unknown modules render a grey &ldquo;not found&rdquo; badge.</p>
-            {{ api_doc_tab_pane(
-                "badges",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>org</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The organization name
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>technical_name</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The technical name of the module
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>kind</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            <code>versions</code> (Odoo versions carrying it), <code>status</code> (available / migration PR open / not migrated), <code>license</code> (its license, and the effective one of its dependencies when stronger), <code>security</code> (static-analysis findings)
-                        </div>
-                    </li>
-                </ul>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            For <code>status</code>: the Odoo version to check (default: the newest tracked). For <code>license</code>/<code>security</code>: which version of the module (default: its newest)
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/badge/{org}/{technical_name}/{kind}.svg",
-                "'/badge/OCA/web_responsive/status.svg?odoo_version=18.0'",
-                "odoo 18.0 | available",
-                "SVG image (image/svg+xml)",
-                pipe="-o badge.svg",
-                sample_label="cURL"
-            ) }}
-        </div>
-        {% if SEMANTIC_SEARCH_ENABLED %}
-        <div class="tab-pane fade" id="api-pills-semantic" role="tabpanel" aria-labelledby="api-pills-semantic-tab" tabindex="0">
-            {{ api_doc_tab_pane(
-                "semantic",
-                "<span class='text-secondary-emphasis'>None</span>",
-                "<ul class='list-unstyled'>
-                    <li>
-                        <div>
-                            <span class='badge text-bg-secondary'>q</span>
-                            <span class='text-danger-emphasis'>string</span>
-                            <span class='ms-3 text-warning'>Required</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Natural-language description of the functionality you're looking for, in any language — matched by meaning against each module's embedded name/category/description, plus a boost when query words appear verbatim in module names (so exact product names rank too)
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>odoo_version</span>
-                            <span class='text-danger-emphasis'>string</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            The odoo version
-                        </div>
-                    </li>
-                    <li class='mt-4'>
-                        <div>
-                            <span class='badge text-bg-secondary'>limit</span>
-                            <span class='text-danger-emphasis'>integer</span>
-                        </div>
-                        <div class='mt-2 text-secondary-emphasis'>
-                            Max results (default 20, max 50). One row per Odoo version a module is carried at, best score first
-                        </div>
-                    </li>
-                </ul>",
-                "GET",
-                "/v1/semantic-search",
-                "'/v1/semantic-search?q=send%20invoices%20to%20the%20tax%20agency&odoo_version=18.0'",
-                "[
-    {
-        \"technical_name\": \"l10n_es_aeat_sii_oca\",
-        \"name\": \"Suministro Inmediato de Información en el IVA\",
-        \"category\": \"Accounting & Finance\",
-        \"odoo_version\": \"18.0\",
-        \"org_name\": \"OCA\",
-        \"repository\": \"l10n-spain\",
-        \"score\": 0.61
-    }
-]",
-                "[
-    {
-        \"technical_name\": string,
-        \"name\": string,
-        \"category\": string,
-        \"odoo_version\": string,
-        \"org_name\": string,
-        \"repository\": string,
-        \"score\": number
-    }
-]"
-            ) }}
-        </div>
-        {% endif %}
+            pipe="| head -20",
+            lang="Atom XML"
+        ) %}
+            Atom feeds of the collector's activity log (the 50 newest events), for feed readers or chat
+            integrations (Slack/Teams RSS apps). <code>/module/{org}/{technical_name}/feed.atom</code> follows a
+            single module &mdash; every event mentioning it, all versions.
+        {% endcall %}
+
+        {% call endpoint(
+            "badges", "README badges", "GET", "/badge/{org}/{technical_name}/{kind}.svg",
+            [
+                ["org", "path", "string", true, "The organization name"],
+                ["technical_name", "path", "string", true, "The module technical name"],
+                ["kind", "path", "string", true, "<code>versions</code> (Odoo versions carrying it), <code>status</code> (available / migration PR open / not migrated), <code>license</code> (its license, and the effective one of its dependencies when stronger), <code>security</code> (static-analysis findings)"],
+                ["odoo_version", "query", "string", false, "For <code>status</code>: the Odoo version to check (default: the newest tracked). For <code>license</code>/<code>security</code>: which version of the module (default: its newest)"]
+            ],
+            "/badge/OCA/web_responsive/status.svg?odoo_version=18.0",
+            pipe="-o badge.svg"
+        ) %}
+            SVG status badges (<code>image/svg+xml</code>) for READMEs. Ready-to-paste Markdown /
+            reStructuredText / HTML snippets are under &ldquo;Embed badges&rdquo; on every module page. Unknown
+            modules render a grey &ldquo;not found&rdquo; badge.
+            <div class="api-badges">
+                <img src="/badge/OCA/web_responsive/versions.svg" alt="versions badge" loading="lazy">
+                <img src="/badge/OCA/web_responsive/status.svg" alt="status badge" loading="lazy">
+                <img src="/badge/OCA/web_responsive/license.svg" alt="license badge" loading="lazy">
+                <img src="/badge/OCA/web_responsive/security.svg" alt="security badge" loading="lazy">
+            </div>
+        {% endcall %}
     </div>
 </div>
 {% endblock %}

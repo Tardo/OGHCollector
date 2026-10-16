@@ -1,10 +1,11 @@
 // Copyright 2025 Alexandre D. Díaz
+// The host (.api-try on /api) sets the terminal colours and font.
 #display {
+    width: 100%;
+    padding: 0;
     outline: none;
-    font-size: 1em;
-    background-color: rgb(24, 24, 24);
-    color: white;
-    font-family: 'Lucida Console', Monaco, monospace;
-    width: 90%;
+    font: inherit;
+    color: inherit;
+    background: transparent;
     border: none;
 }

@@ -1,4 +1,6 @@
 {# Copyright 2025 Alexandre D. Díaz #}
+{#- The tool list mirrors `crates/mcp/src/tools.rs` (names pinned by `tools_tests.rs`): add a
+    tool there, list it here. -#}
 {% extends "minimal_layout.html" %}
 {% set meta_title = "MCP" %}
 {% set meta_description = "Connect Claude, Cursor, VS Code and other MCP clients to Odoo module metadata." %}
@@ -12,170 +14,51 @@
 {{ super() }}
 
 <header class="page-header">
-    <h1>MCP (Model Context Protocol)</h1>
+    <h1>MCP server</h1>
+    <p class="page-header-desc">
+        Give an LLM client the module search, dependency-graph, code-analysis and maintenance data of this site
+        through the <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">Model Context Protocol</a>.
+        Read-only, no API key.
+    </p>
+    <div class="page-header-actions">
+        <a class="btn btn-sm btn-outline-secondary" href="/api">Plain HTTP? See the REST API</a>
+    </div>
 </header>
-<p class="fs-5 text-secondary-emphasis">
-    This server also exposes an <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">MCP</a>
-    endpoint, giving an LLM client the same module search, dependency-graph, code-analysis and maintenance
-    data shown in this dashboard. It's split into small, single-purpose tools instead of one big
-    "give me everything" call, so a client only fetches the detail it actually needs for a given question -
-    look up a module's contents, its dependencies and its code are three separate tools rather than one
-    reply carrying all three every time.
-</p>
 
-<div class="border rounded p-3 mb-4 text-bg-secondary" id="mcp-endpoint-box">
-    <div class="fs-6 text-uppercase text-secondary-emphasis mb-1">MCP endpoint URL</div>
-    <code class="text-light fs-5" id="mcp-endpoint-url">{{ MCP_URL }}</code>
+<div class="code-panel">
+    <div class="code-panel-bar">
+        <span>Endpoint &middot; Streamable HTTP</span>
+        <button type="button" class="code-copy" data-copy>Copy</button>
+    </div>
+    <pre class="mcp-endpoint"><code>{{ MCP_URL }}</code></pre>
 </div>
 
-<h3 class="fs-4 fw-bold mt-5 mb-3">Available tools</h3>
-<div class="row">
-    <div class="col-12 col-lg-6 mb-4">
-        <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Find modules &amp; repositories</h4>
-        <ul class="list-unstyled">
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">search_modules</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    Find modules by (part of) their technical name, optionally filtered by Odoo version
-                    or whether they're installable.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">list_modules_by_criteria</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    Discover modules across every repository by category, a free-text term, and/or reverse
-                    dependency (which modules depend on a given module) - the entry point when you don't
-                    know which repository carries them.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">search_repositories</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    Find a GitHub/GitLab repository by name - e.g. locate OCA's per-country/topic repos
-                    such as <code>l10n-spain</code> or <code>account-invoicing</code>.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">list_repository_modules</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    List every module in a repository at once, with maintenance signals (last commit,
-                    committers) and direct dependencies - the go-to tool for assembling a module pack.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">list_module_versions</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    See every recorded version of a module, with first/last-seen dates and which one
-                    is the latest.
-                </div>
-            </li>
-        </ul>
-    </div>
-    <div class="col-12 col-lg-6 mb-4">
-        <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">One module in detail</h4>
-        <ul class="list-unstyled">
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">get_module</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    Manifest metadata for one module: description, authors/maintainers, license,
-                    category and install flags.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">get_module_docs</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    Rendered install/usage instructions for the module, when its repository documents
-                    them.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">get_module_dependencies</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    The full dependency closure for one module: every Odoo module, Python package and
-                    system binary it needs, directly or transitively - plus a license review of it.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">compare_module_versions</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    What changed in a module between two Odoo versions: manifest, dependencies,
-                    models/fields/methods, views and HTTP routes - for planning a migration.
-                </div>
-            </li>
-            <li class="mb-3">
-                <span class="badge text-bg-secondary">get_module_code_analysis</span>
-                <div class="mt-2 text-secondary-emphasis">
-                    The XML views and Odoo models/fields/methods the module defines or extends. The
-                    most detailed - and heaviest - tool on this server.
-                </div>
-            </li>
-        </ul>
-    </div>
+<div class="section-heading">
+    <h2>Connect your client</h2>
+    <p>Every snippet points at the endpoint above.</p>
 </div>
-<div class="mb-4">
-    <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Packs &amp; maintainers</h4>
-    <ul class="list-unstyled">
-        <li class="mb-3">
-            <span class="badge text-bg-secondary">review_module_licenses</span>
-            <div class="mt-2 text-secondary-emphasis">
-                License review of a set of modules deployed together, dependencies included: the
-                license of the combined work, proprietary modules pulled in and conflicts.
-            </div>
-        </li>
-        <li class="mb-3">
-            <span class="badge text-bg-secondary">get_committer_activity</span>
-            <div class="mt-2 text-secondary-emphasis">
-                What else a specific person has committed to, e.g. to check whether a module's top
-                contributor is still active elsewhere before relying on it.
-            </div>
-        </li>
-    </ul>
-</div>
-
-<h3 class="fs-4 fw-bold mt-5 mb-3">Installation &amp; usage</h3>
-<p class="fs-6 text-secondary-emphasis mb-4">
-    Pick your client below and copy its configuration snippet to point it at the endpoint URL above.
-</p>
-<div class="d-flex flex-column flex-md-row align-items-start mt-4">
-    <div class="nav flex-column nav-pills me-3 d-none d-md-flex" id="mcp-pills-tab" role="tablist" aria-orientation="vertical">
-        <button class="nav-link active" id="mcp-pills-claude-code-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-claude-code" type="button" role="tab" aria-controls="mcp-pills-claude-code" aria-selected="true">Claude Code</button>
-        <button class="nav-link" id="mcp-pills-desktop-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-desktop" type="button" role="tab" aria-controls="mcp-pills-desktop" aria-selected="false">Claude Desktop / claude.ai</button>
-        <button class="nav-link" id="mcp-pills-cursor-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-cursor" type="button" role="tab" aria-controls="mcp-pills-cursor" aria-selected="false">Cursor</button>
-        <button class="nav-link" id="mcp-pills-vscode-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-vscode" type="button" role="tab" aria-controls="mcp-pills-vscode" aria-selected="false">VS Code (Copilot)</button>
-        <button class="nav-link" id="mcp-pills-other-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-other" type="button" role="tab" aria-controls="mcp-pills-other" aria-selected="false">Other clients / local</button>
+<div class="panel mcp-clients">
+    <div class="panel-header">
+        <div class="nav nav-pills" role="tablist">
+            <button class="nav-link active" id="mcp-pills-claude-code-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-claude-code" type="button" role="tab" aria-controls="mcp-pills-claude-code" aria-selected="true">Claude Code</button>
+            <button class="nav-link" id="mcp-pills-desktop-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-desktop" type="button" role="tab" aria-controls="mcp-pills-desktop" aria-selected="false">Claude Desktop / claude.ai</button>
+            <button class="nav-link" id="mcp-pills-cursor-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-cursor" type="button" role="tab" aria-controls="mcp-pills-cursor" aria-selected="false">Cursor</button>
+            <button class="nav-link" id="mcp-pills-vscode-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-vscode" type="button" role="tab" aria-controls="mcp-pills-vscode" aria-selected="false">VS Code (Copilot)</button>
+            <button class="nav-link" id="mcp-pills-other-tab" data-bs-toggle="pill" data-bs-target="#mcp-pills-other" type="button" role="tab" aria-controls="mcp-pills-other" aria-selected="false">Other clients / local</button>
+        </div>
     </div>
-    <ul class="nav nav-pills mb-3 d-flex d-md-none mb-5" id="mcp-pills-tab-mobile" role="tablist">
-        <li class="nav-item dropdown bg-primary-subtle">
-            <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">Select client</a>
-            <ul class="dropdown-menu">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#mcp-pills-claude-code" type="button" role="tab" aria-controls="mcp-pills-claude-code" aria-selected="true">Claude Code</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-desktop" type="button" role="tab" aria-controls="mcp-pills-desktop" aria-selected="false">Claude Desktop / claude.ai</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-cursor" type="button" role="tab" aria-controls="mcp-pills-cursor" aria-selected="false">Cursor</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-vscode" type="button" role="tab" aria-controls="mcp-pills-vscode" aria-selected="false">VS Code (Copilot)</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#mcp-pills-other" type="button" role="tab" aria-controls="mcp-pills-other" aria-selected="false">Other clients / local</button>
-                </li>
-            </ul>
-        </li>
-    </ul>
-    <div class="tab-content flex-grow-1" id="mcp-pills-tabContent">
+    <div class="panel-body tab-content">
 
         <div class="tab-pane fade show active" id="mcp-pills-claude-code" role="tabpanel" aria-labelledby="mcp-pills-claude-code-tab" tabindex="0">
-            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Command line</h4>
-            <div class="p-3 text-bg-secondary mb-4">
-                <pre class="mb-0"><code class="text-light">claude mcp add --transport http oghcollector {{ MCP_URL }}</code></pre>
+            <p class="mcp-step">Run once in a terminal:</p>
+            <div class="code-panel">
+                <div class="code-panel-bar"><span>Terminal</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+                <pre><code>claude mcp add --transport http oghcollector {{ MCP_URL }}</code></pre>
             </div>
-            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">Or via <code>.mcp.json</code> (project-scoped, checked into git)</h4>
-            <div class="p-3 text-bg-secondary">
-                <pre class="mb-0"><code class="text-light">{
+            <p class="mcp-step">Or share it with the whole project in a <code>.mcp.json</code> checked into git:</p>
+            <div class="code-panel">
+                <div class="code-panel-bar"><code>.mcp.json</code><button type="button" class="code-copy" data-copy>Copy</button></div>
+                <pre><code>{
   "mcpServers": {
     "oghcollector": {
       "type": "http",
@@ -187,33 +70,30 @@
         </div>
 
         <div class="tab-pane fade" id="mcp-pills-desktop" role="tabpanel" aria-labelledby="mcp-pills-desktop-tab" tabindex="0">
-            <p class="text-secondary-emphasis">
-                Claude Desktop and claude.ai connect to custom connectors from Anthropic's cloud, not from
-                your own machine &mdash; the URL below must be reachable over the public internet
-                (a <code>localhost</code> URL will not work here; use the
-                <a href="#" onclick="document.getElementById('mcp-pills-other-tab').click(); return false;">local bridge</a>
-                tab instead for local development).
+            <p class="mcp-callout">
+                Claude Desktop and claude.ai connect to custom connectors from Anthropic's cloud, not from your own
+                machine: the URL must be reachable over the public internet. A <code>localhost</code> URL won't work
+                here &mdash; for local development use the
+                <a href="#mcp-pills-other" onclick="document.getElementById('mcp-pills-other-tab').click(); return false;">local bridge</a>
+                instead.
             </p>
-            <ol class="text-secondary-emphasis">
-                <li class="mb-2"><span class="fw-bold text-light">Pro / Max plan:</span> go to <em>Settings &rarr; Customize &rarr; Connectors</em>, click <strong>+</strong>, choose <strong>Add custom connector</strong>.</li>
-                <li class="mb-2"><span class="fw-bold text-light">Team / Enterprise plan:</span> an owner goes to <em>Organization settings &rarr; Connectors</em>, clicks <strong>Add</strong> &rarr; <strong>Custom</strong> &rarr; <strong>Web</strong>; members then enable it from <em>Settings &rarr; Customize &rarr; Connectors</em>.</li>
-                <li class="mb-2">Paste the endpoint URL:</li>
+            <ol class="mcp-steps">
+                <li><strong>Pro / Max plan:</strong> go to <em>Settings &rarr; Customize &rarr; Connectors</em>, click <strong>+</strong> and choose <strong>Add custom connector</strong>.</li>
+                <li><strong>Team / Enterprise plan:</strong> an owner goes to <em>Organization settings &rarr; Connectors</em>, clicks <strong>Add</strong> &rarr; <strong>Custom</strong> &rarr; <strong>Web</strong>; members then enable it from <em>Settings &rarr; Customize &rarr; Connectors</em>.</li>
+                <li>Paste the endpoint URL and click <strong>Add</strong>:</li>
             </ol>
-            <div class="p-3 text-bg-secondary mb-3">
-                <pre class="mb-0"><code class="text-light">{{ MCP_URL }}</code></pre>
+            <div class="code-panel">
+                <div class="code-panel-bar"><span>Connector URL</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+                <pre><code>{{ MCP_URL }}</code></pre>
             </div>
-            <p class="text-secondary-emphasis">
-                Click <strong>Add</strong>, then enable the connector for a conversation from the
-                <strong>+</strong> menu in the chat composer.
-            </p>
+            <p class="mcp-note">Then enable the connector for a conversation from the <strong>+</strong> menu in the chat composer.</p>
         </div>
 
         <div class="tab-pane fade" id="mcp-pills-cursor" role="tabpanel" aria-labelledby="mcp-pills-cursor-tab" tabindex="0">
-            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">
-                <code>.cursor/mcp.json</code> (project) or <code>~/.cursor/mcp.json</code> (global)
-            </h4>
-            <div class="p-3 text-bg-secondary">
-                <pre class="mb-0"><code class="text-light">{
+            <p class="mcp-step">Add it to <code>.cursor/mcp.json</code> (project) or <code>~/.cursor/mcp.json</code> (global):</p>
+            <div class="code-panel">
+                <div class="code-panel-bar"><code>mcp.json</code><button type="button" class="code-copy" data-copy>Copy</button></div>
+                <pre><code>{
   "mcpServers": {
     "oghcollector": {
       "url": "{{ MCP_URL }}"
@@ -221,18 +101,17 @@
   }
 }</code></pre>
             </div>
-            <p class="text-secondary-emphasis mt-3">
-                Cursor runs locally, so a <code>localhost</code> URL works fine here. Fully quit and reopen
-                Cursor afterwards &mdash; MCP servers are only loaded at startup.
+            <p class="mcp-note">
+                Cursor runs locally, so a <code>localhost</code> URL works fine. Fully quit and reopen Cursor
+                afterwards &mdash; MCP servers are only loaded at startup.
             </p>
         </div>
 
         <div class="tab-pane fade" id="mcp-pills-vscode" role="tabpanel" aria-labelledby="mcp-pills-vscode-tab" tabindex="0">
-            <h4 class="border-bottom pb-3 fs-6 fw-bold text-secondary-emphasis">
-                <code>.vscode/mcp.json</code> (workspace) or the user profile <code>mcp.json</code>
-            </h4>
-            <div class="p-3 text-bg-secondary">
-                <pre class="mb-0"><code class="text-light">{
+            <p class="mcp-step">Add it to <code>.vscode/mcp.json</code> (workspace) or the user profile <code>mcp.json</code>:</p>
+            <div class="code-panel">
+                <div class="code-panel-bar"><code>mcp.json</code><button type="button" class="code-copy" data-copy>Copy</button></div>
+                <pre><code>{
   "servers": {
     "oghcollector": {
       "type": "http",
@@ -241,24 +120,23 @@
   }
 }</code></pre>
             </div>
-            <p class="text-secondary-emphasis mt-3">
-                Open the Command Palette &rarr; <em>MCP: Add Server&hellip;</em> to have VS Code write this
-                for you, or edit the file directly. VS Code runs locally too, so <code>localhost</code>
-                works fine.
+            <p class="mcp-note">
+                Or open the Command Palette &rarr; <em>MCP: Add Server&hellip;</em> and let VS Code write it for you.
+                VS Code runs locally too, so <code>localhost</code> works fine.
             </p>
         </div>
 
         <div class="tab-pane fade" id="mcp-pills-other" role="tabpanel" aria-labelledby="mcp-pills-other-tab" tabindex="0">
-            <p class="text-secondary-emphasis">
-                Any client that only supports launching a local <em>stdio</em> server (no native remote/HTTP
-                option) can still reach this endpoint through
+            <p class="mcp-step">
+                Clients that can only launch a local <em>stdio</em> server reach the endpoint through
                 <a href="https://www.npmjs.com/package/mcp-remote" target="_blank" rel="noopener">mcp-remote</a>,
-                a small bridge run with <code>npx</code>. Since it runs as a local process on your own
-                machine, this also works when the endpoint is on <code>localhost</code> &mdash; use it for
-                local development with clients whose connector UI requires a public URL.
+                a small bridge run with <code>npx</code>. It runs on your own machine, so it also works with a
+                <code>localhost</code> endpoint &mdash; handy for local development with clients whose connector UI
+                requires a public URL.
             </p>
-            <div class="p-3 text-bg-secondary">
-                <pre class="mb-0"><code class="text-light">{
+            <div class="code-panel">
+                <div class="code-panel-bar"><span>Client config (stdio)</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+                <pre><code>{
   "mcpServers": {
     "oghcollector": {
       "command": "npx",
@@ -267,12 +145,67 @@
   }
 }</code></pre>
             </div>
-            <p class="text-secondary-emphasis mt-3">
+            <p class="mcp-note">
                 Requires Node.js 18+. If the URL uses plain <code>http://</code> on a host other than
-                <code>localhost</code>, add the <code>--allow-http</code> flag to the <code>args</code> array.
+                <code>localhost</code>, add <code>--allow-http</code> to the <code>args</code> array.
             </p>
         </div>
 
     </div>
+</div>
+
+<div class="section-heading">
+    <h2>Available tools</h2>
+    <p>Small single-purpose tools: a client fetches only the detail a question needs.</p>
+</div>
+<div class="mcp-tools">
+    <section class="panel">
+        <div class="panel-header"><h3>Find modules &amp; repositories</h3></div>
+        <dl class="panel-body mcp-tool-list">
+            <dt>search_modules</dt>
+            <dd>Find modules by (part of) their technical name, optionally filtered by Odoo version or whether they're installable.</dd>
+            <dt>list_modules_by_criteria</dt>
+            <dd>Discover modules across every repository by category, a free-text term and/or reverse dependency (which modules depend on a given one) &mdash; the entry point when you don't know which repository carries them.</dd>
+            <dt>semantic_search_modules</dt>
+            <dd>Describe the functionality you need in plain words, any language, and get the closest modules by meaning &mdash; &ldquo;send invoices to the tax agency&rdquo; finds e-invoicing modules even when no keyword overlaps.</dd>
+            <dt>search_repositories</dt>
+            <dd>Find a GitHub/GitLab repository by name, e.g. OCA's per-country/topic repos such as <code>l10n-spain</code> or <code>account-invoicing</code>.</dd>
+            <dt>list_repository_modules</dt>
+            <dd>Every module in a repository at once, with maintenance signals (last commit, committers) and direct dependencies &mdash; the go-to tool for assembling a module pack.</dd>
+            <dt>list_module_versions</dt>
+            <dd>Every recorded version of a module, with first/last-seen dates and which one is the latest.</dd>
+        </dl>
+    </section>
+    <section class="panel">
+        <div class="panel-header"><h3>One module in detail</h3></div>
+        <dl class="panel-body mcp-tool-list">
+            <dt>get_module</dt>
+            <dd>Manifest metadata for one module: description, authors/maintainers, license, category and install flags.</dd>
+            <dt>get_module_docs</dt>
+            <dd>Rendered install/usage instructions, when its repository documents them.</dd>
+            <dt>get_module_dependencies</dt>
+            <dd>The full dependency closure: every Odoo module, Python package and system binary it needs, directly or transitively &mdash; plus a license review of it.</dd>
+            <dt>compare_module_versions</dt>
+            <dd>What changed between two Odoo versions: manifest, dependencies, models/fields/methods, views and HTTP routes &mdash; for planning a migration.</dd>
+            <dt>get_module_code_analysis</dt>
+            <dd>The XML views, models/fields/methods, records and controllers the module defines or extends. The most detailed &mdash; and heaviest &mdash; tool on this server.</dd>
+        </dl>
+    </section>
+    <section class="panel">
+        <div class="panel-header"><h3>Packs &amp; maintainers</h3></div>
+        <dl class="panel-body mcp-tool-list">
+            <dt>review_module_licenses</dt>
+            <dd>License review of a set of modules deployed together, dependencies included: the license of the combined work, proprietary modules pulled in and conflicts. Not legal advice.</dd>
+            <dt>get_committer_activity</dt>
+            <dd>What else a specific person has committed to, e.g. to check whether a module's top contributor is still active elsewhere before relying on it.</dd>
+        </dl>
+    </section>
+    <section class="panel">
+        <div class="panel-header"><h3>Live instance</h3></div>
+        <dl class="panel-body mcp-tool-list">
+            <dt>scan_instance</dt>
+            <dd>Anonymous probe of a running Odoo instance by URL: version, modules, TLS certificate, debug mode, cookie flags and an exposed database manager. Off unless the MCP server sets <code>OGHCOLLECTOR_SCAN_ENABLED</code>.</dd>
+        </dl>
+    </section>
 </div>
 {% endblock %}
