@@ -266,13 +266,14 @@ mod tests {
     }
 
     #[test]
-    fn test_localization_only_includes_direct_country_modules() {
+    fn test_localization_includes_country_modules_and_repos() {
         use diesel::connection::SimpleConnection;
         let mut conn = setup_db();
         conn.batch_execute(
             "INSERT INTO gh_organization (id, name) VALUES (1, 'OCA');
              INSERT INTO gh_repository (id, name, gh_organization_id, create_date, update_date)
-             VALUES (1, 'l10n-spain', 1, '', '');
+             VALUES (1, 'l10n-espana', 1, '', ''), (2, 'server-tools', 1, '', ''),
+                    (3, 'l10n_pt_extra', 1, '', ''), (4, 'l10n-poland', 1, '', '');
              INSERT INTO module (technical_name, version_odoo, name, version_module,
                  gh_repository_id, create_date, update_date, folder_size, last_commit_hash,
                  last_commit_author, last_commit_name, last_commit_date, source_path)
@@ -280,25 +281,46 @@ mod tests {
                     ('l10n_es_invoice', 18, 'Spain invoice', '', 1, '', '', 0, '', '', '', '', ''),
                     ('l10n_es_invoice', 19, 'Spain invoice', '', 1, '', '', 0, '', '', '', '', ''),
                     ('l10n_estonia', 18, 'Other', '', 1, '', '', 0, '', '', '', '', ''),
-                    ('delivery_dhl_parcel', 18, 'Not a localization', '', 1, '', '', 0, '', '', '', '', '');",
+                    ('delivery_dhl_parcel', 18, 'In l10n-espana', '', 1, '', '', 0, '', '', '', '', ''),
+                    ('base_tier', 18, 'Not a localization', '', 2, '', '', 0, '', '', '', '', ''),
+                    ('pt_saft', 18, 'In l10n_pt_extra', '', 3, '', '', 0, '', '', '', '', ''),
+                    ('pl_jpk', 18, 'In l10n-poland', '', 4, '', '', 0, '', '', '', '', '');",
         )
         .unwrap();
 
+        // l10n-espana's code comes from its modules, l10n_pt_extra's from its
+        // name, OCA's l10n-poland's (no l10n_pl module) from the OCA map.
         let countries = super::module::localization_countries(&mut conn);
-        assert_eq!(countries.len(), 1);
-        assert_eq!((countries[0].code.as_str(), countries[0].count), ("ES", 2));
+        let countries: Vec<_> = countries
+            .iter()
+            .map(|c| (c.code.as_str(), c.count))
+            .collect();
+        assert_eq!(countries, [("ES", 4), ("PL", 1), ("PT", 1)]);
         let by_version = super::module::localization_countries_by_version(&mut conn);
-        assert_eq!(by_version.len(), 2);
-        assert_eq!((by_version[0].version_odoo, by_version[0].count), (18, 2));
-        assert_eq!((by_version[1].version_odoo, by_version[1].count), (19, 1));
+        let by_version: Vec<_> = by_version
+            .iter()
+            .map(|c| (c.code.as_str(), c.version_odoo, c.count))
+            .collect();
+        assert_eq!(
+            by_version,
+            [("ES", 18, 4), ("ES", 19, 1), ("PL", 18, 1), ("PT", 18, 1)]
+        );
         assert_eq!(
             super::module::count(&mut conn).last().unwrap().version_odoo,
             19
         );
         let modules = super::module::list_localization(&mut conn, "es", None);
-        assert_eq!(modules.len(), 2);
-        assert_eq!(modules[1].technical_name, "l10n_es_invoice");
-        assert_eq!(modules[1].versions_odoo.len(), 2);
+        let names: Vec<_> = modules.iter().map(|m| m.technical_name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "delivery_dhl_parcel",
+                "l10n_es",
+                "l10n_es_invoice",
+                "l10n_estonia"
+            ]
+        );
+        assert_eq!(modules[2].versions_odoo.len(), 2);
         let filtered = super::module::list_localization(&mut conn, "es", Some(19));
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].technical_name, "l10n_es_invoice");

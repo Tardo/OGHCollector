@@ -1,7 +1,7 @@
 {# Copyright 2026 Alexandre D. Díaz #}
 {% extends "minimal_layout.html" %}
 {% set meta_title = "Localizations" %}
-{% set meta_description = "Countries with Odoo localization modules (l10n_XX), per Odoo version." %}
+{% set meta_description = "Countries with Odoo localization modules (l10n_XX and l10n-* repositories), per Odoo version." %}
 {% block base_head_content %}
 {{ super() }}
     <link rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css">
@@ -11,7 +11,7 @@
 {{ super() }}
 <header class="page-header">
     <h1>Localizations</h1>
-    <p class="page-header-desc">Countries with directly associated <code>l10n_XX</code> modules. Choose a version and a country to list its modules.</p>
+    <p class="page-header-desc">Countries with <code>l10n_XX</code> modules or <code>l10n-*</code> repositories (every addon in them counts). Choose a version and a country to list its modules.</p>
 </header>
 
 {% if localization_countries %}
@@ -35,6 +35,10 @@
         </div>
     </div>
 </div>
+<section class="localization-selection" id="localization-selection" hidden>
+    <div class="section-heading"><h2 id="localization-selection-title"></h2><p id="localization-selection-count" aria-live="polite"></p></div>
+    <div id="localization-selection-list"></div>
+</section>
 {% else %}
 <p class="text-body-secondary">No localization modules indexed yet.</p>
 {% endif %}

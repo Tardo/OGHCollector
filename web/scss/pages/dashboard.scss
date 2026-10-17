@@ -267,12 +267,13 @@
         font-size: 0.85rem;
     }
 
-    a:hover, a:focus-visible { color: var(--ommd-accent); }
+    a:hover, a:focus-visible, a[aria-current] { color: var(--ommd-accent); }
+    a[aria-current] { font-weight: 600; }
     a[hidden] { display: none; }
     .country-count { white-space: nowrap; color: var(--bs-secondary-color); }
 }
 
-// ---- Localization results page ----
+// ---- Localization results (country page, and the globe page's in-page list) ----
 
 .localization-result {
     display: flex;

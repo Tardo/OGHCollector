@@ -224,6 +224,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::common::route_odoo_committer_list)
             .service(routes::dashboard::route)
             .service(routes::localization::route)
+            .service(routes::localization::route_modules)
             .service(routes::localization::route_index)
             .service(routes::modules::route)
             .service(routes::modules::route_tab)

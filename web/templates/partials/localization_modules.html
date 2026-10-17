@@ -1,0 +1,13 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{# One country's modules: localization.html, and /localization/{code}/modules for the globe page's in-page list. #}
+<div class="panel localization-results-list">
+    {% for module in modules %}
+    <a class="localization-result" href="/module/{{ module.org_name | urlencode }}/{{ module.technical_name | urlencode }}">
+        <span><strong>{{ module.technical_name }}</strong><small>{{ module.name }} · {{ module.org_name }}</small></span>
+        <span class="localization-versions">{{ module.versions | join(', ') }}</span>
+        <span class="material-icons" aria-hidden="true">arrow_forward</span>
+    </a>
+    {% else %}
+    <p class="text-body-secondary p-3 mb-0">No modules found for this country.</p>
+    {% endfor %}
+</div>

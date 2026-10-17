@@ -231,34 +231,73 @@ pub struct LocalizationCountryVersion {
     pub count: i64,
 }
 
+/// Each module's localization country as `l10n.code` (uppercase), if any: the
+/// `XX` of a module named `l10n_XX`/`l10n_XX_*`, else its repository's when
+/// that is an `l10n-*`/`l10n_*` one: an `l10n_XX…` repo name, else OCA's
+/// `l10n-<country>` repos by name (codes as Odoo's modules spell them: `uk`,
+/// not `gb`), else the most common `l10n_XX` prefix among its modules (other
+/// orgs' repos). So every addon of a country repo counts, not just the
+/// `l10n_XX` ones; an unknown repo with no `l10n_XX` module stays out.
+// MATERIALIZED: inlined, the per-repo subquery reruns per module row (2.9s vs 0.03s).
+// ponytail: manual list of OCA's 51 l10n repos (2026-10); a new one falls back to the prefix rule.
+const L10N_MODULES: &str = "WITH l10n_repo_oca(name, code) AS (VALUES \
+       ('l10n-argentina', 'ar'), ('l10n-australia', 'au'), ('l10n-austria', 'at'), \
+       ('l10n-belarus', 'by'), ('l10n-belgium', 'be'), ('l10n-brazil', 'br'), \
+       ('l10n-bulgaria', 'bg'), ('l10n-cambodia', 'kh'), ('l10n-canada', 'ca'), \
+       ('l10n-chile', 'cl'), ('l10n-china', 'cn'), ('l10n-colombia', 'co'), \
+       ('l10n-costa-rica', 'cr'), ('l10n-croatia', 'hr'), ('l10n-ecuador', 'ec'), \
+       ('l10n-estonia', 'ee'), ('l10n-ethiopia', 'et'), ('l10n-finland', 'fi'), \
+       ('l10n-france', 'fr'), ('l10n-germany', 'de'), ('l10n-greece', 'gr'), \
+       ('l10n-india', 'in'), ('l10n-indonesia', 'id'), ('l10n-iran', 'ir'), \
+       ('l10n-ireland', 'ie'), ('l10n-italy', 'it'), ('l10n-japan', 'jp'), \
+       ('l10n-luxemburg', 'lu'), ('l10n-macedonia', 'mk'), ('l10n-mexico', 'mx'), \
+       ('l10n-morocco', 'ma'), ('l10n-netherlands', 'nl'), ('l10n-norway', 'no'), \
+       ('l10n-paraguay', 'py'), ('l10n-peru', 'pe'), ('l10n-poland', 'pl'), \
+       ('l10n-portugal', 'pt'), ('l10n-romania', 'ro'), ('l10n-russia', 'ru'), \
+       ('l10n-slovenia', 'si'), ('l10n-spain', 'es'), ('l10n-switzerland', 'ch'), \
+       ('l10n-taiwan', 'tw'), ('l10n-thailand', 'th'), ('l10n-turkey', 'tr'), \
+       ('l10n-ukraine', 'ua'), ('l10n-united-kingdom', 'uk'), ('l10n-uruguay', 'uy'), \
+       ('l10n-usa', 'us'), ('l10n-venezuela', 've'), ('l10n-vietnam', 'vn')), \
+     l10n_repo AS MATERIALIZED ( \
+       SELECT repo.id, coalesce( \
+         CASE WHEN repo.name GLOB 'l10n?[a-z][a-z]*' AND substr(repo.name, 8, 1) IN ('', '-', '_') \
+           THEN substr(repo.name, 6, 2) END, \
+         (SELECT code FROM l10n_repo_oca WHERE l10n_repo_oca.name = repo.name), \
+         (SELECT substr(m.technical_name, 6, 2) FROM module AS m \
+          WHERE m.gh_repository_id = repo.id AND m.technical_name GLOB 'l10n_[a-z][a-z]*' \
+            AND substr(m.technical_name, 8, 1) IN ('', '_') \
+          GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT 1)) AS code \
+       FROM gh_repository AS repo WHERE repo.name GLOB 'l10n[-_]*'), \
+     l10n AS ( \
+       SELECT mod.technical_name, mod.name, mod.description, mod.category, mod.version_odoo, \
+         org.id AS org_id, org.name AS org_name, \
+         upper(coalesce(CASE WHEN mod.technical_name GLOB 'l10n_[a-z][a-z]*' \
+             AND substr(mod.technical_name, 8, 1) IN ('', '_') \
+           THEN substr(mod.technical_name, 6, 2) END, l10n_repo.code)) AS code \
+       FROM module AS mod \
+       INNER JOIN gh_repository AS repo ON mod.gh_repository_id = repo.id \
+       INNER JOIN gh_organization AS org ON repo.gh_organization_id = org.id \
+       LEFT JOIN l10n_repo ON l10n_repo.id = repo.id \
+       WHERE mod.technical_name GLOB 'l10n_*' OR repo.name GLOB 'l10n[-_]*') ";
+
 pub fn localization_countries_by_version(
     conn: &mut SqliteConnection,
 ) -> Vec<LocalizationCountryVersion> {
-    diesel::sql_query(
-        "SELECT upper(substr(mod.technical_name, 6, 2)) AS code, mod.version_odoo, \
-         count(DISTINCT org.id || '/' || mod.technical_name) AS count FROM module AS mod \
-         INNER JOIN gh_repository AS repo ON mod.gh_repository_id = repo.id \
-         INNER JOIN gh_organization AS org ON repo.gh_organization_id = org.id \
-         WHERE mod.technical_name GLOB 'l10n_[a-z][a-z]*' \
-           AND substr(mod.technical_name, 8, 1) IN ('', '_') \
-         GROUP BY code, mod.version_odoo ORDER BY count DESC, code",
-    )
+    diesel::sql_query(format!(
+        "{L10N_MODULES} SELECT code, version_odoo, \
+         count(DISTINCT org_id || '/' || technical_name) AS count FROM l10n \
+         WHERE code IS NOT NULL GROUP BY code, version_odoo ORDER BY count DESC, code"
+    ))
     .load(conn)
     .expect("DB error in module::localization_countries_by_version")
 }
 
-/// Only modules named l10n_XX or l10n_XX_*, not every addon in an
-/// l10n-* repository (which can contain unrelated modules).
+/// Countries as in [`L10N_MODULES`], over every version.
 pub fn localization_countries(conn: &mut SqliteConnection) -> Vec<LocalizationCountry> {
-    diesel::sql_query(
-        "SELECT upper(substr(mod.technical_name, 6, 2)) AS code, \
-         count(DISTINCT org.id || '/' || mod.technical_name) AS count FROM module AS mod \
-         INNER JOIN gh_repository AS repo ON mod.gh_repository_id = repo.id \
-         INNER JOIN gh_organization AS org ON repo.gh_organization_id = org.id \
-         WHERE mod.technical_name GLOB 'l10n_[a-z][a-z]*' \
-           AND substr(mod.technical_name, 8, 1) IN ('', '_') \
-         GROUP BY code ORDER BY count DESC, code",
-    )
+    diesel::sql_query(format!(
+        "{L10N_MODULES} SELECT code, count(DISTINCT org_id || '/' || technical_name) AS count \
+         FROM l10n WHERE code IS NOT NULL GROUP BY code ORDER BY count DESC, code"
+    ))
     .load(conn)
     .expect("DB error in module::localization_countries")
 }
@@ -844,21 +883,13 @@ pub fn list_localization(
     code: &str,
     version: Option<i32>,
 ) -> Vec<ModuleListInfo> {
-    let base = format!("l10n_{code}");
-    diesel::sql_query(
-        "SELECT mod.technical_name, MAX(mod.name) as name, MAX(mod.description) as description, \
-         MAX(mod.category) as category, gh_org.name as org_name, \
-         GROUP_CONCAT(DISTINCT mod.version_odoo) as versions_str \
-         FROM module as mod \
-         INNER JOIN gh_repository as gh_repo ON mod.gh_repository_id = gh_repo.id \
-         INNER JOIN gh_organization as gh_org ON gh_org.id = gh_repo.gh_organization_id \
-         WHERE (mod.technical_name = ? OR mod.technical_name GLOB ?) \
-            AND (? IS NULL OR mod.version_odoo = ?) \
-         GROUP BY gh_org.name, mod.technical_name \
-         ORDER BY mod.technical_name, gh_org.name",
-    )
-    .bind::<diesel::sql_types::Text, _>(&base)
-    .bind::<diesel::sql_types::Text, _>(format!("{base}_*"))
+    diesel::sql_query(format!(
+        "{L10N_MODULES} SELECT technical_name, MAX(name) as name, MAX(description) as description, \
+         MAX(category) as category, org_name, GROUP_CONCAT(DISTINCT version_odoo) as versions_str \
+         FROM l10n WHERE code = ? AND (? IS NULL OR version_odoo = ?) \
+         GROUP BY org_name, technical_name ORDER BY technical_name, org_name"
+    ))
+    .bind::<diesel::sql_types::Text, _>(code.to_uppercase())
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(version)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(version)
     .load::<ModuleListRow>(conn)

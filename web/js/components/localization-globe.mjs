@@ -1,3 +1,6 @@
+// The globe page (/localization): the globe, the version filter, and the
+// chosen country's modules listed in place below it. Country links keep
+// their /localization/{code} href (new tab, no JS, sitemap).
 import {geoContains, geoGraticule10, geoOrthographic, geoPath} from 'd3-geo';
 import {feature} from 'topojson-client';
 import {whereAlpha2, whereNumeric} from 'iso-3166-1';
@@ -9,6 +12,15 @@ if (canvas) {
   const stage = canvas.closest('.globe-stage');
   const caption = document.querySelector('#globe-caption');
   const versionSelect = document.querySelector('#localization-version');
+  const countryList = document.querySelector('.localization-countries');
+  const selection = document.querySelector('#localization-selection');
+  const selectionTitle = document.querySelector(
+    '#localization-selection-title',
+  );
+  const selectionCount = document.querySelector(
+    '#localization-selection-count',
+  );
+  const selectionList = document.querySelector('#localization-selection-list');
   const links = new Map();
   const countryLinks = [];
   const countries = feature(world, world.objects.countries).features;
@@ -25,11 +37,12 @@ if (canvas) {
       continue;
     }
     link.querySelector('.country-name').textContent = country.country;
-    const id = codes.get(country.alpha2);
-    if (id) countryLinks.push({id, link});
+    // Not every country is on the atlas: those are only in the list.
+    countryLinks.push({id: codes.get(country.alpha2), link});
   }
 
   const requestedVersion = new URL(location.href).searchParams.get('version');
+  const requestedCountry = new URL(location.href).searchParams.get('country');
   if (
     [...versionSelect.options].some(option => option.value === requestedVersion)
   ) {
@@ -44,7 +57,7 @@ if (canvas) {
       link.hidden = !matches;
       if (matches) {
         link.href = `/localization/${link.dataset.country.toLowerCase()}?version=${encodeURIComponent(versionSelect.value)}`;
-        links.set(id, link);
+        if (id) links.set(id, link);
       }
     }
     showCountry(null);
@@ -63,6 +76,8 @@ if (canvas) {
   let visible = true;
   let dragging = null;
   let active = null;
+  let selected = null;
+  let request = null;
   let lastFrame = 0;
 
   function draw() {
@@ -103,7 +118,7 @@ if (canvas) {
       ctx.beginPath();
       path(country);
       ctx.fillStyle = enabled
-        ? country === active
+        ? country === active || links.get(country.id) === selected
           ? '#7af5da'
           : '#2fbaa5'
         : 'rgba(107, 147, 156, 0.23)';
@@ -134,18 +149,83 @@ if (canvas) {
     active = country;
     const link = country && links.get(country.id);
     caption.textContent = link
-      ? `${link.querySelector('.country-name').textContent} · ${link.querySelector('.country-count').firstChild.textContent.trim()} modules · Click to explore`
+      ? `${link.querySelector('.country-name').textContent} · ${link.querySelector('.country-count').firstChild.textContent.trim()} modules · Click to list them`
       : 'Hover to pause · Drag to rotate · Select a highlighted country';
     canvas.style.cursor = link ? 'pointer' : 'grab';
     draw();
   }
 
-  filterCountries();
-  versionSelect.addEventListener('change', () => {
-    filterCountries();
+  // Lists the country's modules below the globe (null = none), and keeps
+  // both choices in the URL so it can be shared. `reveal`: scroll to the list
+  // once loaded if it starts off-screen (stacked layout, short windows).
+  async function select(link, reveal = false) {
+    selected?.removeAttribute('aria-current');
+    selected = link;
+    request?.abort();
     const url = new URL(location.href);
     url.searchParams.set('version', versionSelect.value);
+    if (link)
+      url.searchParams.set('country', link.dataset.country.toLowerCase());
+    else url.searchParams.delete('country');
     history.replaceState(null, '', url);
+    draw();
+    selection.hidden = !link;
+    if (!link) return;
+    link.setAttribute('aria-current', 'true');
+    selectionTitle.textContent = `${link.querySelector('.country-name').textContent} · Odoo ${versionSelect.value}`;
+    selectionCount.textContent = 'Loading…';
+    request = new AbortController();
+    try {
+      const res = await fetch(
+        `/localization/${link.dataset.country.toLowerCase()}/modules?version=${encodeURIComponent(versionSelect.value)}`,
+        {signal: request.signal},
+      );
+      if (!res.ok) throw new Error(res.statusText);
+      selectionList.innerHTML = await res.text();
+      const count = selectionList.querySelectorAll(
+        '.localization-result',
+      ).length;
+      selectionCount.textContent = `${count} module${count === 1 ? '' : 's'}`;
+      if (
+        reveal &&
+        selectionList.getBoundingClientRect().top > innerHeight - 80
+      ) {
+        selection.scrollIntoView({
+          behavior: reduceMotion.matches ? 'auto' : 'smooth',
+          block: 'start',
+        });
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      selectionList.replaceChildren();
+      selectionCount.textContent = 'Could not load the modules.';
+    }
+  }
+
+  filterCountries();
+  const initial = countryList.querySelector(
+    `a[data-country="${CSS.escape((requestedCountry || '').toUpperCase())}"]:not([hidden])`,
+  );
+  if (initial) select(initial);
+  versionSelect.addEventListener('change', () => {
+    filterCountries();
+    select(selected && !selected.hidden ? selected : null);
+  });
+  countryList.addEventListener('click', event => {
+    const link = event.target.closest('a');
+    // Modified clicks still open the country's own page.
+    if (
+      !link ||
+      event.button ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    select(link, true);
   });
 
   canvas.addEventListener('pointerenter', () => {
@@ -178,7 +258,7 @@ if (canvas) {
   canvas.addEventListener('pointerup', event => {
     if (dragging && !dragging.moved) {
       const country = countryAt(event);
-      if (country) window.location.assign(links.get(country.id).href);
+      if (country) links.get(country.id).click();
     }
     dragging = null;
   });
