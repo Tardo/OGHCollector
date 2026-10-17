@@ -6,8 +6,17 @@ use actix_web::{
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
 
-/// Error handler for a 404 Page not found error.
+/// Error handler for a 404 Page not found error. A route that renders its
+/// own 404 page (the module page of a name with no data) keeps it.
 pub fn handler_fn<B>(svc_res: ServiceResponse<B>) -> Result<ErrorHandlerResponse<B>> {
+    let own_page = svc_res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/html"));
+    if own_page {
+        return Ok(ErrorHandlerResponse::Response(svc_res.map_into_left_body()));
+    }
     let res = get_error_response(&svc_res, "Page not found");
 
     Ok(ErrorHandlerResponse::Response(ServiceResponse::new(
@@ -43,5 +52,30 @@ fn get_error_response<B>(res: &ServiceResponse<B>, error: &str) -> HttpResponse 
             .map_into_boxed_body(),
 
         Err(_) => fallback(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use actix_web::{http::StatusCode, middleware::ErrorHandlers, test, web, App, HttpResponse};
+
+    #[actix_web::test]
+    async fn a_routes_own_404_page_is_kept() {
+        let app = test::init_service(
+            App::new()
+                .wrap(ErrorHandlers::new().handler(StatusCode::NOT_FOUND, super::handler_fn))
+                .route(
+                    "/",
+                    web::get().to(|| async {
+                        HttpResponse::NotFound()
+                            .content_type("text/html; charset=utf-8")
+                            .body("own page")
+                    }),
+                ),
+        )
+        .await;
+        let res = test::call_service(&app, test::TestRequest::get().uri("/").to_request()).await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(test::read_body(res).await, "own page");
     }
 }

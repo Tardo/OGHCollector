@@ -16,10 +16,29 @@
 
 
 
+{# OpenUpgrade (apriori.py) renames/merges, followed across versions:
+   what it became, one line each; what became it, one line (a core
+   module has dozens). In both headers: a name with no data left here
+   may still say where it went. #}
+{% macro upstream_link(u) %}{% if u.org %}<a href="/module/{{ u.org | urlencode }}/{{ u.name | urlencode }}"><code>{{ u.name }}</code></a>{% else %}<code>{{ u.name }}</code>{% endif %}{% endmacro %}
+{% set upstream_lines %}
+{% for chain in upstream.became %}
+<p class="page-header-desc module-upstream" title="Recorded by OpenUpgrade"><span class="material-icons" aria-hidden="true">{{ 'call_merge' if chain[0].kind == 'merged' else 'drive_file_rename_outline' }}</span>
+    {%- for u in chain %}{% set verb = 'merged into' if u.kind == 'merged' else 'renamed to' %}{{ ', then' if not loop.first }} {{ verb | capitalize if loop.first else verb }} {{ upstream_link(u) }} in {{ u.odoo_version }}{% endfor %}</p>
+{% endfor %}
+{% if upstream.replaces %}
+{% set replaces %}{% for v, infos in upstream.replaces %}{% if not loop.first %} &middot; {% endif %}{% for u in infos %}<span title="{{ u.kind | capitalize }} in {{ v }}">{{ upstream_link(u) }}{% if u.via %} <small>via <code>{{ u.via }}</code></small>{% endif %}</span>{{ ', ' if not loop.last }}{% endfor %} ({{ v }}){% endfor %}{% endset %}
+<div class="page-header-desc module-upstream" title="Recorded by OpenUpgrade"><span class="material-icons" aria-hidden="true">call_merge</span>
+    {%- if upstream.replaced > 5 %} <details><summary>Replaces {{ upstream.replaced }} modules renamed or merged into it</summary>{{ replaces }}</details>
+    {%- else %} Replaces {{ replaces }}{% endif %}</div>
+{% endif %}{% endset %}
 {% if not modules and not pull_request_count %}
-<header class="page-header">
-    <h1>{{ technical_name }}</h1>
-    <p class="page-header-desc">No data found for this module.</p>
+<header class="page-header module-page-header">
+    <div>
+        <h1>{{ technical_name }}</h1>
+        <p class="page-header-desc">No data found for this module.</p>
+        {{ upstream_lines }}
+    </div>
 </header>
 {% else %}
 <header class="page-header module-page-header">
@@ -31,6 +50,7 @@
     <div>
         <h1>{{ modules[0].name if modules else technical_name }}</h1>
         <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
+        {{ upstream_lines }}
     </div>
     <div class="module-header-actions">
     <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" title="Atom feed: new versions, migration PRs, findings and committers of this module"><span class="material-icons" aria-hidden="true">rss_feed</span> Follow</a>

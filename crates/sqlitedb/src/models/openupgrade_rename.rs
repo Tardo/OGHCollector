@@ -1,7 +1,9 @@
 // Copyright Alexandre D. Díaz
 //! Module renames/merges OpenUpgrade records per Odoo version (the
 //! collector's `openupgrade.rs` fills it). Not filtered by workspace: it's
-//! upstream knowledge, joined by module name.
+//! upstream knowledge, joined by module name. Read whole (`all`) by
+//! `/migration` and the module page header, which follow renames across
+//! versions.
 use diesel::prelude::*;
 use serde::Serialize;
 

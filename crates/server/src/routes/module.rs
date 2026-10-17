@@ -1,7 +1,7 @@
 // Copyright Alexandre D. Díaz
 use std::collections::{HashMap, HashSet};
 
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder, Result};
+use actix_web::{get, http::StatusCode, web, HttpRequest, HttpResponse, Responder, Result};
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use serde::{Deserialize, Serialize};
@@ -139,6 +139,111 @@ fn get_module_pull_requests(
         .collect()
 }
 
+// A rename/merge OpenUpgrade records for this module's name (joined by
+// name, like `/migration`).
+#[derive(Debug, Serialize)]
+pub struct ModuleUpstreamInfo {
+    /// `renamed` / `merged` (into an existing module).
+    pub kind: &'static str,
+    pub name: String,
+    pub odoo_version: String,
+    /// `name`'s organization, when it's collected (its page link).
+    pub org: Option<String>,
+    /// In `replaces`: what `name` became at that step, when it isn't this
+    /// module yet (it became this one at a later step).
+    pub via: Option<String>,
+}
+
+#[derive(Debug, Serialize, Default)]
+pub struct ModuleUpstream {
+    /// What this module became, each followed through the later versions
+    /// (renamed to B in 17.0, then merged into C in 18.0).
+    pub became: Vec<Vec<ModuleUpstreamInfo>>,
+    /// What became this module, directly or through later steps, per
+    /// version: dozens for a core module (`account`), so the page folds them
+    /// into one line.
+    pub replaces: Vec<(String, Vec<ModuleUpstreamInfo>)>,
+    /// Modules in `replaces`.
+    pub replaced: usize,
+}
+
+fn get_module_upstream(conn: &mut SqliteConnection, technical_name: &str) -> ModuleUpstream {
+    let rows = models::openupgrade_rename::all(conn);
+    // Every step of a chain is at a later version (forward) or an earlier
+    // one (backward), so both walks end, renames back and forth included.
+    let next = |r: &models::openupgrade_rename::Model| {
+        rows.iter()
+            .filter(|n| n.old_name == r.new_name && n.version_odoo > r.version_odoo)
+            .min_by_key(|n| n.version_odoo)
+    };
+    let chains: Vec<Vec<&models::openupgrade_rename::Model>> = rows
+        .iter()
+        .filter(|r| r.old_name == technical_name)
+        .map(|first| {
+            let mut chain = vec![first];
+            while let Some(n) = next(chain[chain.len() - 1]) {
+                chain.push(n);
+            }
+            chain
+        })
+        .collect();
+    let mut back = Vec::new();
+    let mut queue = vec![(technical_name, i32::MAX)];
+    let mut seen = HashSet::new();
+    while let Some((name, before)) = queue.pop() {
+        for r in &rows {
+            if r.new_name == name
+                && r.version_odoo < before
+                && r.old_name != technical_name
+                && seen.insert((r.version_odoo, r.old_name.as_str()))
+            {
+                back.push(r);
+                queue.push((&r.old_name, r.version_odoo));
+            }
+        }
+    }
+    back.sort_by_key(|r| (r.version_odoo, r.old_name.as_str()));
+
+    let names: Vec<String> = chains
+        .iter()
+        .flatten()
+        .map(|r| r.new_name.clone())
+        .chain(back.iter().map(|r| r.old_name.clone()))
+        .collect();
+    let orgs: HashMap<String, String> =
+        models::module::get_repository_org_by_technical_names(conn, &names)
+            .into_iter()
+            .map(|m| (m.technical_name, m.organization))
+            .collect();
+    let info = |r: &models::openupgrade_rename::Model, name: &str, via| ModuleUpstreamInfo {
+        kind: if r.merged { "merged" } else { "renamed" },
+        name: name.to_string(),
+        odoo_version: odoo_version_u8_to_string(&(r.version_odoo as u8)),
+        org: orgs.get(name).cloned(),
+        via,
+    };
+    let mut upstream = ModuleUpstream {
+        became: chains
+            .iter()
+            .map(|chain| chain.iter().map(|r| info(r, &r.new_name, None)).collect())
+            .collect(),
+        replaced: back.len(),
+        ..Default::default()
+    };
+    // Sorted by version, so each version's are consecutive.
+    for r in back {
+        let via = (r.new_name != technical_name).then(|| r.new_name.clone());
+        let info = info(r, &r.old_name, via);
+        match upstream.replaces.last_mut() {
+            Some((v, infos)) if *v == info.odoo_version => infos.push(info),
+            _ => upstream
+                .replaces
+                .push((info.odoo_version.clone(), vec![info])),
+        }
+    }
+    upstream
+}
+
 // Keyed by Odoo version (e.g. "17.0") for the template's per-tab
 // version-history dropdown; shared by `route` (active tab, eager) and
 // `route_tab` (one lazily-loaded tab).
@@ -183,75 +288,91 @@ pub async fn route(
     let org_ctx = org.clone();
     let technical_name_ctx = technical_name.clone();
     let version_module = info.version.clone();
-    let (module_infos, module_versions, (pull_request_count, pull_requests), odoo_versions) =
-        web::block(move || {
-            let mut conn = pool.get().unwrap();
-            let modules = models::module::get_by_technical_name_organization_name(
-                &mut conn,
-                &technical_name,
-                &org,
-            );
-            let merged_versions: HashSet<i32> = modules.iter().map(|m| m.version_odoo).collect();
+    let (
+        module_infos,
+        module_versions,
+        (pull_request_count, pull_requests),
+        odoo_versions,
+        upstream,
+    ) = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let modules = models::module::get_by_technical_name_organization_name(
+            &mut conn,
+            &technical_name,
+            &org,
+        );
+        let merged_versions: HashSet<i32> = modules.iter().map(|m| m.version_odoo).collect();
 
-            let mut distinct_versions: Vec<i32> = merged_versions.iter().copied().collect();
-            distinct_versions.sort_unstable();
-            let odoo_versions: Vec<String> = distinct_versions
+        let mut distinct_versions: Vec<i32> = merged_versions.iter().copied().collect();
+        distinct_versions.sort_unstable();
+        let odoo_versions: Vec<String> = distinct_versions
+            .iter()
+            .rev() // newest first, matches the tab order
+            .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+            .collect();
+
+        // Only the newest Odoo version is rendered eagerly here - the rest
+        // are fetched lazily by the client on first tab activation (see
+        // route_tab below), to avoid computing dependency trees, code
+        // analysis and required_by (up to 500 rows) for versions nobody
+        // may ever look at.
+        let active_modules: Vec<models::module::Model> = match distinct_versions.last() {
+            Some(&newest) => modules
                 .iter()
-                .rev() // newest first, matches the tab order
-                .map(|v| odoo_version_u8_to_string(&(*v as u8)))
-                .collect();
+                .filter(|m| m.version_odoo == newest)
+                .cloned()
+                .collect(),
+            None => Vec::new(),
+        };
+        let (module_infos, module_versions) =
+            build_module_context(&mut conn, &active_modules, version_module.as_deref());
+        let pull_request_count = models::pull_request::count_by_technical_name_organization_name(
+            &mut conn,
+            &technical_name,
+            &org,
+        );
+        // Lazy (route_pull_requests) unless it's the only tab.
+        let pull_requests = match modules.is_empty() {
+            true => get_module_pull_requests(&mut conn, &org, &technical_name),
+            false => Vec::new(),
+        };
+        let upstream = get_module_upstream(&mut conn, &technical_name);
+        (
+            module_infos,
+            module_versions,
+            (pull_request_count, pull_requests),
+            odoo_versions,
+            upstream,
+        )
+    })
+    .await?;
 
-            // Only the newest Odoo version is rendered eagerly here - the rest
-            // are fetched lazily by the client on first tab activation (see
-            // route_tab below), to avoid computing dependency trees, code
-            // analysis and required_by (up to 500 rows) for versions nobody
-            // may ever look at.
-            let active_modules: Vec<models::module::Model> = match distinct_versions.last() {
-                Some(&newest) => modules
-                    .iter()
-                    .filter(|m| m.version_odoo == newest)
-                    .cloned()
-                    .collect(),
-                None => Vec::new(),
-            };
-            let (module_infos, module_versions) =
-                build_module_context(&mut conn, &active_modules, version_module.as_deref());
-            let pull_request_count =
-                models::pull_request::count_by_technical_name_organization_name(
-                    &mut conn,
-                    &technical_name,
-                    &org,
-                );
-            // Lazy (route_pull_requests) unless it's the only tab.
-            let pull_requests = match modules.is_empty() {
-                true => get_module_pull_requests(&mut conn, &org, &technical_name),
-                false => Vec::new(),
-            };
-            (
-                module_infos,
-                module_versions,
-                (pull_request_count, pull_requests),
-                odoo_versions,
-            )
-        })
-        .await?;
-
-    tmpl_env.render(
-        "pages/module.html",
-        context!(
-            ..get_minijinja_context(&req),
-            ..context!(
-                page_name => "module",
-                org => org_ctx,
-                technical_name => technical_name_ctx,
-                module_infos => module_infos,
-                module_versions => module_versions,
-                pull_request_count => pull_request_count,
-                pull_requests => pull_requests,
-                odoo_versions => odoo_versions,
-            )
-        ),
-    )
+    // Nothing collected under this name here: still a page (it may say what
+    // OpenUpgrade renamed it into), but a 404 for crawlers.
+    let status = match odoo_versions.is_empty() && pull_request_count == 0 {
+        true => StatusCode::NOT_FOUND,
+        false => StatusCode::OK,
+    };
+    Ok(tmpl_env
+        .render(
+            "pages/module.html",
+            context!(
+                ..get_minijinja_context(&req),
+                ..context!(
+                    page_name => "module",
+                    org => org_ctx,
+                    technical_name => technical_name_ctx,
+                    module_infos => module_infos,
+                    module_versions => module_versions,
+                    pull_request_count => pull_request_count,
+                    pull_requests => pull_requests,
+                    odoo_versions => odoo_versions,
+                    upstream => upstream,
+                )
+            ),
+        )?
+        .customize()
+        .with_status(status))
 }
 
 // The "Pull requests" tab (`partials/module_pull_requests.html`), fetched by
@@ -442,6 +563,92 @@ mod tests {
             Some((170, 180))
         );
         assert_eq!(pick_compare_versions(&[180], None, None), None);
+    }
+
+    // Both directions, chains followed; the other module links only when
+    // it's collected.
+    #[test]
+    fn upstream_tells_renames_and_merges_both_ways() {
+        let (db, pool) = sqlitedb::fixture::demo("module-upstream");
+        let mut write = sqlitedb::new_write_pool(&db.path).get().unwrap();
+        let row = |old: &str, new: &str, merged| (old.to_string(), new.to_string(), merged);
+        for (v, rows) in [
+            (170, vec![row("web_widget_old", "web_widget_demo", false)]),
+            (
+                180,
+                vec![
+                    row("web_widget_demo", "sale", true),
+                    row("sale_tip", "sale", true),
+                ],
+            ),
+        ] {
+            sqlitedb::models::openupgrade_rename::replace_for_version(&mut write, v, &rows)
+                .unwrap();
+        }
+        let mut conn = pool.get().unwrap();
+        let tuple =
+            |u: &super::ModuleUpstreamInfo| (u.kind, u.name.clone(), u.org.clone(), u.via.clone());
+        let get = |conn: &mut _, name| {
+            let u = super::get_module_upstream(conn, name);
+            let became: Vec<Vec<_>> = u
+                .became
+                .iter()
+                .map(|chain| chain.iter().map(tuple).collect())
+                .collect();
+            let replaces: Vec<(String, Vec<_>)> = u
+                .replaces
+                .iter()
+                .map(|(v, infos)| (v.clone(), infos.iter().map(tuple).collect()))
+                .collect();
+            (became, replaces, u.replaced)
+        };
+        let some = |s: &str| Some(s.to_string());
+        let step = |kind, name: &str, org: Option<String>, via: Option<String>| {
+            (kind, name.to_string(), org, via)
+        };
+        // A → B (17.0) → C (18.0), from each end and the middle.
+        let (became, replaces, _) = get(&mut conn, "web_widget_old");
+        assert_eq!(
+            became,
+            [vec![
+                step("renamed", "web_widget_demo", some("OCA"), None),
+                step("merged", "sale", some("odoo"), None),
+            ]]
+        );
+        assert!(replaces.is_empty());
+        let (became, replaces, _) = get(&mut conn, "web_widget_demo");
+        assert_eq!(became, [vec![step("merged", "sale", some("odoo"), None)]]);
+        assert_eq!(
+            replaces,
+            [(
+                "17.0".into(),
+                vec![step("renamed", "web_widget_old", None, None)]
+            )]
+        );
+        let (became, replaces, replaced) = get(&mut conn, "sale");
+        assert!(became.is_empty());
+        assert_eq!(
+            replaces,
+            [
+                (
+                    "17.0".into(),
+                    vec![step(
+                        "renamed",
+                        "web_widget_old",
+                        None,
+                        some("web_widget_demo")
+                    )]
+                ),
+                (
+                    "18.0".into(),
+                    vec![
+                        step("merged", "sale_tip", None, None),
+                        step("merged", "web_widget_demo", some("OCA"), None),
+                    ]
+                ),
+            ]
+        );
+        assert_eq!(replaced, 3);
     }
 }
 

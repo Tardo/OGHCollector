@@ -7,6 +7,16 @@
 
     > div:not(.module-header-actions) { min-width: 0; overflow-wrap: anywhere; }
 
+    // OpenUpgrade rename/merge, under the technical name.
+    .module-upstream {
+        margin-top: 0.25rem;
+
+        .material-icons { font-size: 1.1em; vertical-align: -0.15em; color: var(--bs-info); }
+
+        details, summary { display: inline; }
+        summary { cursor: pointer; text-decoration: underline dotted; }
+    }
+
     @media (max-width: 767.98px) {
         flex-wrap: wrap;
 
