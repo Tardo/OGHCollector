@@ -264,7 +264,7 @@ diff --git a/schema.rs b/schema.rs
          message -> Text,
          xml_id -> Nullable<Text>,
          module_version_id -> BigInt,
-@@ -253,39 +253,39 @@
+@@ -253,23 +253,23 @@
          line -> Nullable<Integer>,
      }
  }
@@ -290,7 +290,8 @@ diff --git a/schema.rs b/schema.rs
          model -> Nullable<Text>,
          inherit_xml_id -> Nullable<Text>,
          view_type -> Nullable<Text>,
-         module_version_id -> BigInt,
+@@ -285,16 +285,16 @@
+         merged -> Bool,
      }
  }
  
@@ -308,7 +309,7 @@ diff --git a/schema.rs b/schema.rs
          last_message_at -> Nullable<Text>,
          head_sha -> Nullable<Text>,
          author -> Nullable<Text>,
-@@ -295,53 +295,53 @@
+@@ -304,53 +304,53 @@
          analysis_version -> Integer,
      }
  }

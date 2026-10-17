@@ -681,40 +681,72 @@ pub struct VersionCoverage {
     /// Modules of `prev_version` that also exist here.
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub ported: i64,
-    /// Modules of `prev_version` not here yet, with an open migration PR here.
+    /// Modules of `prev_version` not here under their name, but under the
+    /// one OpenUpgrade records them renamed or merged into here.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub renamed: i64,
+    /// Modules of `prev_version` not here yet (nor renamed), with an open
+    /// migration PR here.
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub in_progress: i64,
+    /// Modules here that no repository had at `prev_version`.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub new_modules: i64,
 }
 
 // Installable modules by technical name: a module that exists at an Odoo
-// version (any org/repo) counts as ported there. Same name = same module is
-// a heuristic: upstream renames/merges read as "not ported".
+// version (any org/repo) counts as ported there. Same name = same module,
+// unless OpenUpgrade records a rename/merge (`openupgrade_rename`).
+//
+// Under a workspace pool the unqualified `module`/`gh_repository`/
+// `gh_organization` are that workspace's (TEMP views) and the `main.` ones
+// everyone's. Migration figures list the workspace's modules, but what is
+// known about them (exists at the other version, has a migration PR, became
+// another module) comes from every workspace: a dependency kept in another
+// workspace is no less ported or pending. `pull_request*` and `dependency*`
+// aren't shadowed.
 const INSTALLABLE_NAMES: &str =
     "SELECT DISTINCT technical_name, version_odoo FROM module WHERE installable";
+const INSTALLABLE_NAMES_ALL: &str =
+    "SELECT DISTINCT technical_name, version_odoo FROM main.module WHERE installable";
 const MIGRATION_PR_NAMES: &str = "SELECT DISTINCT pm.module_technical_name AS technical_name, \
      pr.version_odoo FROM pull_request AS pr \
-     INNER JOIN pull_request_module AS pm ON pm.pull_request_id = pr.id AND pm.is_new \
-     INNER JOIN gh_repository AS repo ON repo.id = pr.gh_repository_id";
+     INNER JOIN pull_request_module AS pm ON pm.pull_request_id = pr.id AND pm.is_new";
 
 /// Per Odoo version (newest first), how many installable modules of the
-/// previous indexed version made it here, are being migrated (open migration
-/// PR) or not.
+/// previous indexed version made it here (under their name or renamed),
+/// are being migrated (open migration PR) or not. One rename step per
+/// pair: the same answer as `/migration` for consecutive versions. Counts
+/// the workspace's modules, judged against every workspace (see above).
 pub fn version_coverage(conn: &mut SqliteConnection) -> Vec<VersionCoverage> {
     diesel::sql_query(format!(
-        "WITH tv AS ({INSTALLABLE_NAMES}), pr AS ({MIGRATION_PR_NAMES}), \
+        "WITH tw AS ({INSTALLABLE_NAMES}), tv AS ({INSTALLABLE_NAMES_ALL}), pr AS ({MIGRATION_PR_NAMES}), \
          vers AS (SELECT version_odoo, LAG(version_odoo) OVER (ORDER BY version_odoo) AS prev_version \
-                  FROM (SELECT DISTINCT version_odoo FROM tv)) \
+                  FROM (SELECT DISTINCT version_odoo FROM tw)), \
+         rn AS (SELECT r.version_odoo, r.old_name FROM openupgrade_rename AS r WHERE EXISTS \
+                (SELECT 1 FROM tv WHERE tv.version_odoo = r.version_odoo AND tv.technical_name = r.new_name)), \
+         gone AS (SELECT v.version_odoo, p.technical_name FROM vers AS v \
+                  INNER JOIN tw AS p ON p.version_odoo = v.prev_version WHERE NOT EXISTS \
+                  (SELECT 1 FROM tv AS c WHERE c.version_odoo = v.version_odoo \
+                   AND c.technical_name = p.technical_name)), \
+         gone_kind AS (SELECT g.version_odoo, \
+                  EXISTS (SELECT 1 FROM rn WHERE rn.version_odoo = g.version_odoo \
+                          AND rn.old_name = g.technical_name) AS renamed, \
+                  EXISTS (SELECT 1 FROM pr WHERE pr.version_odoo = g.version_odoo \
+                          AND pr.technical_name = g.technical_name) AS in_pr FROM gone AS g) \
          SELECT v.version_odoo, v.prev_version, \
-          (SELECT count(*) FROM tv WHERE tv.version_odoo = v.version_odoo) AS modules, \
-          (SELECT count(*) FROM tv WHERE tv.version_odoo = v.prev_version) AS prev_modules, \
-          (SELECT count(*) FROM tv AS p WHERE p.version_odoo = v.prev_version AND EXISTS \
+          (SELECT count(*) FROM tw WHERE tw.version_odoo = v.version_odoo) AS modules, \
+          (SELECT count(*) FROM tw WHERE tw.version_odoo = v.prev_version) AS prev_modules, \
+          (SELECT count(*) FROM tw AS p WHERE p.version_odoo = v.prev_version AND EXISTS \
             (SELECT 1 FROM tv AS c WHERE c.version_odoo = v.version_odoo \
              AND c.technical_name = p.technical_name)) AS ported, \
-          (SELECT count(*) FROM tv AS p WHERE p.version_odoo = v.prev_version AND NOT EXISTS \
-            (SELECT 1 FROM tv AS c WHERE c.version_odoo = v.version_odoo \
-             AND c.technical_name = p.technical_name) \
-           AND EXISTS (SELECT 1 FROM pr WHERE pr.version_odoo = v.version_odoo \
-             AND pr.technical_name = p.technical_name)) AS in_progress \
+          (SELECT count(*) FROM gone_kind AS k WHERE k.version_odoo = v.version_odoo \
+           AND k.renamed) AS renamed, \
+          (SELECT count(*) FROM gone_kind AS k WHERE k.version_odoo = v.version_odoo \
+           AND NOT k.renamed AND k.in_pr) AS in_progress, \
+          (SELECT count(*) FROM tw AS c WHERE c.version_odoo = v.version_odoo AND NOT EXISTS \
+            (SELECT 1 FROM tv AS p WHERE p.version_odoo = v.prev_version \
+             AND p.technical_name = c.technical_name)) AS new_modules \
          FROM vers AS v ORDER BY v.version_odoo DESC"
     ))
     .load::<VersionCoverage>(conn)
@@ -729,11 +761,12 @@ pub struct TransitionModule {
     pub org_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub repository: String,
+    /// Whether this workspace has it at `from` (else only at `to`). Where
+    /// it exists anywhere: `versions`.
     #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub in_from: bool,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub in_to: bool,
-    /// Installable modules depending on it, at `from` (at `to` if it's new).
+    pub scope_from: bool,
+    /// Installable modules depending on it, at `from` (at `to` if the
+    /// workspace has it there only), in any workspace.
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub dependents: i64,
     /// Every version it's installable at, comma separated, in no set order.
@@ -744,9 +777,9 @@ pub struct TransitionModule {
     pub pr_versions: Option<String>,
 }
 
-/// Every installable module of `from` or `to`, the most depended-on first,
-/// with its life across all versions. Same name = same module, as in
-/// `version_coverage`: upstream renames/merges read as not migrated.
+/// Every installable module the workspace has at `from` or `to`, the most
+/// depended-on first, with its life across all versions and workspaces.
+/// Same name = same module here: the caller applies `openupgrade_rename`.
 pub fn version_transition(
     conn: &mut SqliteConnection,
     from: i32,
@@ -755,7 +788,7 @@ pub fn version_transition(
     // ponytail: a name in several repos at one version shows the first by
     // org/repo name; a per-repo answer would need rows per repo.
     diesel::sql_query(format!(
-        "WITH tv AS ({INSTALLABLE_NAMES}), pr AS ({MIGRATION_PR_NAMES}), \
+        "WITH tv AS ({INSTALLABLE_NAMES_ALL}), pr AS ({MIGRATION_PR_NAMES}), \
          src AS (SELECT m.technical_name, m.version_odoo, org.name AS org_name, repo.name AS repository, \
                  ROW_NUMBER() OVER (PARTITION BY m.technical_name, m.version_odoo \
                                     ORDER BY org.name, repo.name) AS rn \
@@ -763,21 +796,21 @@ pub fn version_transition(
                  INNER JOIN gh_repository AS repo ON repo.id = m.gh_repository_id \
                  INNER JOIN gh_organization AS org ON org.id = repo.gh_organization_id \
                  WHERE m.installable AND m.version_odoo IN (?1, ?2)), \
-         u AS (SELECT technical_name, MAX(version_odoo = ?1) AS in_from, MAX(version_odoo = ?2) AS in_to \
+         u AS (SELECT technical_name, MAX(version_odoo = ?1) AS scope_from \
                FROM src GROUP BY technical_name), \
          deps AS (SELECT dep.name, d.version_odoo, count(DISTINCT d.technical_name) AS n \
                   FROM dependency AS dep \
                   INNER JOIN dependency_type AS dt ON dt.id = dep.dependency_type_id AND dt.name = 'module' \
                   INNER JOIN dependency_module AS dm ON dm.dependency_id = dep.id \
-                  INNER JOIN module AS d ON d.id = dm.module_id \
+                  INNER JOIN main.module AS d ON d.id = dm.module_id \
                   WHERE d.version_odoo IN (?1, ?2) AND d.installable GROUP BY dep.name, d.version_odoo), \
          life AS (SELECT technical_name, group_concat(version_odoo) AS versions FROM tv GROUP BY technical_name), \
          prl AS (SELECT technical_name, group_concat(version_odoo) AS versions FROM pr GROUP BY technical_name) \
-         SELECT u.technical_name, s.org_name, s.repository, u.in_from, u.in_to, \
+         SELECT u.technical_name, s.org_name, s.repository, u.scope_from, \
           coalesce(deps.n, 0) AS dependents, life.versions, prl.versions AS pr_versions \
          FROM u \
          INNER JOIN src AS s ON s.technical_name = u.technical_name AND s.rn = 1 \
-           AND s.version_odoo = IIF(u.in_from, ?1, ?2) \
+           AND s.version_odoo = IIF(u.scope_from, ?1, ?2) \
          LEFT JOIN deps ON deps.name = u.technical_name AND deps.version_odoo = s.version_odoo \
          INNER JOIN life ON life.technical_name = u.technical_name \
          LEFT JOIN prl ON prl.technical_name = u.technical_name \
@@ -787,6 +820,28 @@ pub fn version_transition(
     .bind::<diesel::sql_types::Integer, _>(to)
     .load::<TransitionModule>(conn)
     .expect("DB error in module::version_transition")
+}
+
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct NamedModule {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub org_name: String,
+}
+
+/// Every installable module at `version_odoo` in any workspace, with the
+/// first organization (by name) that has it.
+pub fn installable_everywhere(conn: &mut SqliteConnection, version_odoo: i32) -> Vec<NamedModule> {
+    diesel::sql_query(
+        "SELECT m.technical_name, MIN(org.name) AS org_name FROM main.module AS m \
+         INNER JOIN main.gh_repository AS repo ON repo.id = m.gh_repository_id \
+         INNER JOIN main.gh_organization AS org ON org.id = repo.gh_organization_id \
+         WHERE m.installable AND m.version_odoo = ? GROUP BY m.technical_name",
+    )
+    .bind::<diesel::sql_types::Integer, _>(version_odoo)
+    .load::<NamedModule>(conn)
+    .expect("DB error in module::installable_everywhere")
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]

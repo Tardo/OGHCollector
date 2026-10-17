@@ -26,6 +26,7 @@ mod gitclient;
 mod golden;
 mod listen;
 mod migration;
+mod openupgrade;
 mod pull_requests;
 mod pypi;
 mod review;
@@ -447,6 +448,8 @@ async fn main() {
         odoo_ver,
     )
     .await;
+
+    openupgrade::sync(&mut conn, *odoo_ver).await;
 
     log::info!("Scanning '{}' repos for pull requests...", repo_infos.len());
     let mut budget = pull_requests::Budget {

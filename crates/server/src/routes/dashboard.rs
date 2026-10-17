@@ -22,7 +22,7 @@ use crate::routes::modules::{compute_modules_page_data, ActivePullRequestInfo};
 use crate::utils::get_minijinja_context;
 
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::models;
+use sqlitedb::{models, Pool};
 
 use crate::workspace::AreaPool;
 
@@ -50,6 +50,9 @@ pub struct VersionRow {
     pub prev_version: Option<String>,
     pub prev_modules: i64,
     pub ported: i64,
+    /// Renamed/merged upstream (OpenUpgrade): migrated, under another name.
+    pub renamed: i64,
+    /// `ported` + `renamed`.
     pub ported_pct: i64,
     pub in_progress: i64,
     pub in_progress_pct: i64,
@@ -173,7 +176,11 @@ fn collector_status(conn: &mut SqliteConnection) -> Option<CollectorStatus> {
     "#,
     convert = r#"{ workspace.to_string() }"#
 )]
-fn compute_dashboard_data(conn: &mut SqliteConnection, workspace: &str) -> DashboardData {
+fn compute_dashboard_data(
+    conn: &mut SqliteConnection,
+    all: &mut SqliteConnection, // every workspace, for `compute_migration_data`
+    workspace: &str,
+) -> DashboardData {
     let (modules_total, groups) = compute_modules_page_data(conn, workspace);
     let groups: BTreeMap<String, _> = groups
         .into_iter()
@@ -192,11 +199,12 @@ fn compute_dashboard_data(conn: &mut SqliteConnection, workspace: &str) -> Dashb
                 prev_version: c.prev_version.map(version_str),
                 prev_modules: c.prev_modules,
                 ported: c.ported,
-                ported_pct: pct(c.ported, c.prev_modules),
+                renamed: c.renamed,
+                ported_pct: pct(c.ported + c.renamed, c.prev_modules),
                 in_progress: c.in_progress,
                 in_progress_pct: pct(c.in_progress, c.prev_modules),
-                not_started: c.prev_modules - c.ported - c.in_progress,
-                new_modules: c.modules - c.ported,
+                not_started: c.prev_modules - c.ported - c.renamed - c.in_progress,
+                new_modules: c.new_modules,
                 ..Default::default()
             };
             if let Some(g) = groups.get(&version) {
@@ -236,10 +244,10 @@ fn compute_dashboard_data(conn: &mut SqliteConnection, workspace: &str) -> Dashb
             ..
         }) => {
             let versions = models::module::get_odoo_versions(conn);
-            compute_migration_data(conn, workspace, &versions, *prev, *version_odoo)
+            compute_migration_data(conn, all, workspace, &versions, *prev, *version_odoo)
                 .modules
                 .into_iter()
-                .filter(|m| m.status != "new")
+                .filter(|m| matches!(m.status, "pr" | "not_started"))
                 .take(10)
                 .collect()
         }
@@ -371,14 +379,16 @@ fn compute_dashboard_data(conn: &mut SqliteConnection, workspace: &str) -> Dashb
 #[get("/")]
 pub async fn route(
     pool: AreaPool,
+    all: web::Data<Pool>,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
     // Collector status stays out of the cache: it's cheap and must be fresh.
     let (data, collector) = web::block(move || {
         let mut conn = pool.get().unwrap();
+        let mut all = all.get().unwrap();
         (
-            compute_dashboard_data(&mut conn, pool.key()),
+            compute_dashboard_data(&mut conn, &mut all, pool.key()),
             collector_status(&mut conn),
         )
     })

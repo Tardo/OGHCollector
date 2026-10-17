@@ -44,7 +44,7 @@
     <div class="col-6 col-xl">
         <div class="stat-card">
             <div class="stat-card-label"><span class="material-icons" aria-hidden="true">trending_up</span> Migrated from {{ latest.prev_version }}</div>
-            <div class="stat-card-value">{{ latest.ported_pct }}% <small>{{ latest.ported }} / {{ latest.prev_modules }}</small></div>
+            <div class="stat-card-value">{{ latest.ported_pct }}% <small>{{ latest.ported + latest.renamed }} / {{ latest.prev_modules }}</small></div>
             <div class="dash-progress" aria-hidden="true"><span class="is-ported" style="width: {{ latest.ported_pct }}%"></span><span class="is-progress" style="width: {{ latest.in_progress_pct }}%"></span></div>
             <div class="stat-card-note">{{ latest.in_progress }} in a migration PR &middot; {{ latest.not_started }} not started</div>
         </div>
@@ -76,7 +76,7 @@
 <section aria-labelledby="versions-title">
     <div class="section-heading">
         <h2 id="versions-title">Odoo versions</h2>
-        <p>Installable modules. A module counts as migrated when its technical name exists in the next version.</p>
+        <p>Installable modules. A module counts as migrated when its technical name exists in the next version, or when OpenUpgrade records it renamed or merged into one that does.</p>
     </div>
     <div class="panel">
         <table class="table table-hover dash-versions">
@@ -100,7 +100,7 @@
                     </td>
                     <td>
                         {% if v.prev_modules %}
-                        <div class="dash-progress" title="{{ v.ported }} migrated, {{ v.in_progress }} in a migration PR, {{ v.not_started }} not started, out of {{ v.prev_modules }} in {{ v.prev_version }}" aria-hidden="true"><span class="is-ported" style="width: {{ v.ported_pct }}%"></span><span class="is-progress" style="width: {{ v.in_progress_pct }}%"></span></div>
+                        <div class="dash-progress" title="{{ v.ported + v.renamed }} migrated ({{ v.renamed }} renamed or merged upstream), {{ v.in_progress }} in a migration PR, {{ v.not_started }} not started, out of {{ v.prev_modules }} in {{ v.prev_version }}" aria-hidden="true"><span class="is-ported" style="width: {{ v.ported_pct }}%"></span><span class="is-progress" style="width: {{ v.in_progress_pct }}%"></span></div>
                         <small class="dash-progress-label"><a href="/migration?from={{ v.prev_version | urlencode }}&amp;to={{ v.version | urlencode }}" title="{{ v.prev_version }} &rarr; {{ v.version }}, by repository and module">{{ v.ported_pct }}% of {{ v.prev_version }}</a>{% if v.in_progress %} &middot; {{ v.in_progress }} in PR{% endif %}</small>
                         {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
                     </td>
@@ -136,9 +136,9 @@
     <section aria-labelledby="missing-title">
         <div class="section-heading">
             <h2 id="missing-title">In {{ latest.prev_version }}, not in {{ latest.version }}</h2>
-            <a href="/migration?from={{ latest.prev_version | urlencode }}&amp;to={{ latest.version | urlencode }}">All {{ (latest.prev_modules - latest.ported) | num }}, by repository</a>
+            <a href="/migration?from={{ latest.prev_version | urlencode }}&amp;to={{ latest.version | urlencode }}">All {{ (latest.in_progress + latest.not_started) | num }}, by repository</a>
         </div>
-        <p class="dash-caption">Ranked by the {{ latest.prev_version }} modules that depend on them. Upstream may have renamed or merged some.</p>
+        <p class="dash-caption">Ranked by the {{ latest.prev_version }} modules that depend on them. Renames and merges OpenUpgrade records are left out; others still read as missing.</p>
         {% if d.missing %}
         <table class="dash-rank">
             <thead><tr><th>Module</th><th>Source</th><th class="dash-num">Dependents</th></tr></thead>

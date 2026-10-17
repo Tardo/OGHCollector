@@ -122,11 +122,16 @@
     .material-icons { font-size: 1rem; }
 }
 
-.mig-new { font-weight: 600; color: var(--ommd-accent); }
+.mig-new, .mig-renamed { font-weight: 600; color: var(--ommd-accent); }
+.mig-renamed a { font-weight: 600; }
+
+// Only the OpenUpgrade part of a status may wrap: long module names.
+.mig-renamed, .mig-status small { white-space: normal; }
 .mig-ci { font-size: 0.75rem; font-weight: 600; color: var(--bs-danger-text-emphasis); }
 
-// One square per Odoo version, oldest first: installable (accent), open
-// migration PR (amber), neither (empty). The compared pair stands taller.
+// One square per Odoo version, oldest first: installable (accent), lives on
+// renamed/merged (accent outline), open migration PR (amber), neither
+// (empty). The compared pair stands taller.
 .mig-life {
     display: inline-flex;
     align-items: center;
@@ -143,6 +148,7 @@
 
     i[data-s="2"] { background-color: var(--ommd-accent-dim); }
     i[data-s="1"] { background-color: var(--bs-warning); }
+    i[data-s="3"] { box-shadow: inset 0 0 0 1.5px var(--ommd-accent-dim); }
     i.is-pair { height: 1rem; outline: 1px solid var(--bs-border-color); outline-offset: -1px; }
     i.is-pair[data-s] { outline: 0; }
 }

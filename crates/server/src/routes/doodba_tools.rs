@@ -266,9 +266,10 @@ pub async fn route_doodba_migration_plan(
     )
 }
 
-/// The open migration PR of each module most likely to merge. Also used by
-/// `/migration` over a workspace pool, where a PR of a repository outside
-/// the workspace has no repository row: skipped, not unwrapped.
+/// The open migration PR of each module most likely to merge (also
+/// `/migration`'s). Takes a connection that sees every repository: on a
+/// workspace one, a PR of another workspace would have no repository row
+/// (skipped, never unwrapped).
 pub(crate) fn get_pending_modules(
     conn: &mut SqliteConnection,
     technical_names: &[String],

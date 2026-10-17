@@ -26,6 +26,7 @@ pub mod module_record;
 pub mod module_security_warning;
 pub mod module_version;
 pub mod module_view;
+pub mod openupgrade_rename;
 pub mod pull_request;
 pub mod pull_request_history;
 pub mod pull_request_module;

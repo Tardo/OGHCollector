@@ -278,6 +278,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    openupgrade_rename (version_odoo, old_name) {
+        version_odoo -> Integer,
+        old_name -> Text,
+        new_name -> Text,
+        merged -> Bool,
+    }
+}
+
+diesel::table! {
     pull_request (id) {
         id -> BigInt,
         name -> Text,
@@ -382,6 +391,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     module_security_warning,
     module_version,
     module_view,
+    openupgrade_rename,
     pull_request,
     pull_request_history,
     pull_request_module,

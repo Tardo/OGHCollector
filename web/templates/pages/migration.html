@@ -15,12 +15,12 @@
 /migration?from={{ d.from | urlencode }}&amp;to={{ d.to | urlencode }}{% if status != 'pending' %}&amp;status={{ status }}{% endif %}{% if repo %}&amp;repo={{ repo | urlencode }}{% endif %}
 {%- endmacro %}
 {% macro progress(t) -%}
-<div class="dash-progress" title="{{ t.ported | num }} migrated, {{ t.pr | num }} in a migration PR, {{ t.not_started | num }} not started, out of {{ t.from_modules | num }}" aria-hidden="true"><span class="is-ported" style="width: {{ t.ported_pct }}%"></span><span class="is-progress" style="width: {{ t.pr_pct }}%"></span></div>
+<div class="dash-progress" title="{{ (t.ported + t.renamed) | num }} migrated ({{ t.renamed | num }} renamed or merged), {{ t.pr | num }} in a migration PR, {{ t.not_started | num }} not started, out of {{ t.from_modules | num }}" aria-hidden="true"><span class="is-ported" style="width: {{ t.ported_pct }}%"></span><span class="is-progress" style="width: {{ t.pr_pct }}%"></span></div>
 {%- endmacro %}
 
 <header class="page-header">
     <h1>Version migration</h1>
-    <p class="page-header-desc">Where the installable modules of one Odoo version stand in another. A module counts as migrated when its technical name exists there, so upstream renames and merges read as not started.</p>
+    <p class="page-header-desc">Where the installable modules of one Odoo version stand in another. A module counts as migrated when its technical name exists there, or when <a href="https://github.com/OCA/OpenUpgrade" target="_blank" rel="noopener">OpenUpgrade</a> records it renamed or merged into one that does. Renames it doesn't know of read as not started.</p>
     <div class="page-header-actions dev-only">
         <a class="btn btn-outline-secondary btn-sm" href="/doodba/migration"><span class="material-icons" aria-hidden="true">upgrade</span> Doodba migration plan</a>
     </div>
@@ -51,7 +51,7 @@
     <div class="fact">
         <span class="material-icons" aria-hidden="true">trending_up</span>
         <div class="fact-headline">{{ t.ported_pct }}%</div>
-        <div class="fact-caption">of {{ d.from }} is in {{ d.to }}: {{ t.ported | num }} of {{ t.from_modules | num }} modules</div>
+        <div class="fact-caption">of {{ d.from }} is in {{ d.to }}: {{ (t.ported + t.renamed) | num }} of {{ t.from_modules | num }} modules{% if t.renamed %}, <a href="{{ url('renamed', '') }}#modules">{{ t.renamed | num }} renamed or merged</a>{% endif %}</div>
     </div>
     <div class="fact is-pr">
         <span class="material-icons" aria-hidden="true">call_merge</span>
@@ -109,14 +109,14 @@
     </div>
     <div class="mig-toolbar">
         <ul class="nav nav-pills">
-            {% for key, label, count in [('pending', 'Pending', scope.pr + scope.not_started), ('not_started', 'Not started', scope.not_started), ('pr', 'In a PR', scope.pr), ('new', 'New in ' ~ d.to, scope.new)] %}
+            {% for key, label, count in [('pending', 'Pending', scope.pr + scope.not_started), ('not_started', 'Not started', scope.not_started), ('pr', 'In a PR', scope.pr), ('renamed', 'Renamed or merged', scope.renamed), ('new', 'New in ' ~ d.to, scope.new)] %}
             <li class="nav-item"><a class="nav-link{% if key == status %} active{% endif %}" href="{{ url(key, repo) }}#modules"{% if key == status %} aria-current="page"{% endif %}>{{ label }} <span class="mig-count">{{ count | num }}</span></a></li>
             {% endfor %}
         </ul>
         {% if repo %}<a class="mig-filter" href="{{ url(status, '') }}#modules" title="Show every repository">{{ repo }} <span class="material-icons" aria-hidden="true">close</span></a>{% endif %}
         <input type="search" class="form-control form-control-sm" id="migration_search" placeholder="Filter by module or repository" aria-label="Filter modules" autocomplete="off">
     </div>
-    <p class="dash-caption">Each square of <em>Versions</em> is an Odoo version, {{ d.versions[0] }} to {{ d.versions[-1] }}, the tall ones {{ d.from }} and {{ d.to }}: filled where the module is installable, amber where a migration PR is open. <em>Dependents</em> are the {{ status == 'new' and d.to or d.from }} modules that depend on it.</p>
+    <p class="dash-caption">Each square of <em>Versions</em> is an Odoo version, {{ d.versions[0] }} to {{ d.versions[-1] }}, the tall ones {{ d.from }} and {{ d.to }}: filled where the module is installable, outlined where it lives on under another name, amber where a migration PR is open. <em>Dependents</em> are the {{ status == 'new' and d.to or d.from }} modules that depend on it.</p>
     {% if rows %}
     <table class="dash-rank mig-modules" id="migration-modules">
         <thead>
@@ -133,11 +133,14 @@
             <tr data-search="{{ (m.technical_name ~ ' ' ~ m.org_name ~ '/' ~ m.repository) | lower }}">
                 <td class="dash-name"><a href="/module/{{ m.org_name | urlencode }}/{{ m.technical_name | urlencode }}" title="{{ m.technical_name }}">{{ m.technical_name }}</a></td>
                 <td class="dash-meta d-none d-md-table-cell">{{ m.org_name }}/{{ m.repository }}</td>
-                <td>
-                    {%- if m.pr %}<a class="dash-flag" href="{{ m.pr.url }}" target="_blank" rel="noopener" title="{{ m.pr.title }}">PR #{{ m.pr.prid }}</a>{% if m.pr.ci_status == 'failure' %} <span class="mig-ci" title="CI failing">CI</span>{% endif %}
+                <td class="mig-status">
+                    {%- set u = m.upstream %}
+                    {%- if m.status == 'renamed' %}<span class="mig-renamed" title="OpenUpgrade, {{ u.version }}">{{ u.kind == 'merged' and 'Merged into' or 'Renamed to' }} {% if u.org_name %}<a href="/module/{{ u.org_name | urlencode }}/{{ u.name | urlencode }}">{{ u.name }}</a>{% else %}{{ u.name }}{% endif %}</span>
+                    {%- elif m.pr %}<a class="dash-flag" href="{{ m.pr.url }}" target="_blank" rel="noopener" title="{{ m.pr.title }}">PR #{{ m.pr.prid }}</a>{% if m.pr.ci_status == 'failure' %} <span class="mig-ci" title="CI failing">CI</span>{% endif %}
                     {%- elif m.status == 'pr' %}<span class="dash-flag">PR open</span>
                     {%- elif m.status == 'new' %}<span class="mig-new">New</span>
-                    {%- else %}<span class="dash-meta">Not started</span>{% endif -%}
+                    {%- else %}<span class="dash-meta">Not started</span>{% endif %}
+                    {%- if u and m.status != 'renamed' %} <small class="dash-meta" title="OpenUpgrade, {{ u.version }}">&middot; {{ u.kind == 'replaces' and 'replaces' or (u.kind == 'merged' and 'merged into' or 'renamed to') }} {{ u.name }}</small>{% endif -%}
                 </td>
                 <td><span class="mig-life" role="img" aria-label="{{ m.life }}" title="{{ m.life }}">{% for c in m.cells %}<i{% if c %} data-s="{{ c }}"{% endif %}{% if loop.index0 == d.from_idx or loop.index0 == d.to_idx %} class="is-pair"{% endif %}></i>{% endfor %}</span></td>
                 <td class="dash-num d-none d-sm-table-cell">{{ meter(m.dependents, top_dependents) }}</td>
