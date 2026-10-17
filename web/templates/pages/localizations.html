@@ -1,0 +1,41 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Localizations" %}
+{% set meta_description = "Countries with Odoo localization modules (l10n_XX), per Odoo version." %}
+{% block base_head_content %}
+{{ super() }}
+    <link rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css">
+    <script type="module" src="/static/auto/localization.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+<header class="page-header">
+    <h1>Localizations</h1>
+    <p class="page-header-desc">Countries with directly associated <code>l10n_XX</code> modules. Choose a version and a country to list its modules.</p>
+</header>
+
+{% if localization_countries %}
+<div class="localization-panel">
+    <div class="globe-stage">
+        <canvas id="localization-globe" aria-hidden="true"></canvas>
+        <div class="globe-caption" id="globe-caption" aria-live="polite">Hover to pause · Drag to rotate · Select a highlighted country</div>
+    </div>
+    <div class="localization-sidebar">
+        <label for="localization-version">Odoo version</label>
+        <select id="localization-version" class="form-select form-select-sm" aria-label="Filter localization by Odoo version">
+            {% for version in localization_versions %}
+            <option value="{{ version }}"{% if loop.first %} selected{% endif %}>{{ version }}</option>
+            {% endfor %}
+        </select>
+        <p>Highlighted countries have localization modules in the selected version. Choose one to see its modules.</p>
+        <div class="localization-countries" aria-label="Countries with localization modules">
+            {% for country in localization_countries %}
+            <a href="/localization/{{ country.code | lower }}?version={{ localization_versions[0] | urlencode }}" data-country="{{ country.code }}" data-version="{{ country.version_odoo }}"{% if country.version_odoo != localization_default_version %} hidden{% endif %}><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<p class="text-body-secondary">No localization modules indexed yet.</p>
+{% endif %}
+{% endblock %}

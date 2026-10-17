@@ -88,6 +88,7 @@
                 <ul>
                     {{ nav_item("/modules", "extension", "Modules", page_name in ['modules', 'module', 'module_compare']) }}
                     {{ nav_item("/atlas", "hub", "Dependency atlas", page_name == 'atlas') }}
+                    {{ nav_item("/localization", "public", "Localizations", page_name == 'localization') }}
                     {{ nav_item("/committers", "groups", "Committers", page_name in ['committers', 'committer']) }}
                 </ul>
                 <div class="app-nav-group{{ not SCAN_ENABLED and ' dev-only' or '' }}">Security</div>

@@ -3,143 +3,256 @@
 {% set meta_title = "Overview" %}
 {% block base_head_content %}
 {{ super() }}
-
-    <link rel="preload" href="/static/auto/web/scss/components/module-counter.css" as="style" />
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css" as="style">
-    <script type="module" src="/static/auto/dashboard.mjs" async></script>
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/dashboard.css">
 {% endblock %}
 {% block content %}
 {{ super() }}
+{% set latest = d.versions[0] if d.versions else none %}
+{% set migrating = latest and latest.prev_version %}
 
-
-<template id="template-mirlo-module-counter">
-    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-counter.css" as="style" />
-    <div id="main_container">
-        <table>
-            <tbody>
-                <tr><td><select class="search_input" id="version" aria-label="Odoo version"></select></td></tr>
-                <tr><td><span id="counter">0</span> modules</td></tr>
-                <tr><td id="counter_org"></td></tr>
-            </tbody>
-        </table>
-        <hr/>
-        <div  class="section-title"><span>Top Authors (modules)</span></div>
-        <table>
-            <tbody>
-                <tr><td id="contrib_rank"></td></tr>
-            </tbody>
-        </table>
-        <hr/>
-        <div  class="section-title"><span>Top Committers (commits)</span></div>
-        <table>
-            <tbody>
-                <tr><td id="committer_rank"></td></tr>
-            </tbody>
-        </table>
-    </div>
-</template>
-
-{% set latest_count = modules_count | last if modules_count else none %}
 <header class="page-header">
     <h1>Overview</h1>
-    <p class="page-header-desc">Odoo modules indexed from {{ org_total }} organization{{ org_total != 1 and 's' or '' }}: metadata, dependencies, security findings and code analysis, kept up to date by the collector.</p>
+    <p class="page-header-desc">
+        {% if latest %}{{ d.modules_total }} modules in {{ d.repositories_total }} repositor{{ d.repositories_total != 1 and 'ies' or 'y' }} of {{ d.sources | length }} organization{{ d.sources | length != 1 and 's' or '' }}, Odoo {{ d.versions[-1].version }}{% if d.versions | length > 1 %} &ndash; {{ latest.version }}{% endif %}.
+        {% else %}Nothing indexed yet: run the collector for an organization and an Odoo version.{% endif %}
+    </p>
     <div class="page-header-actions">
         <a class="btn btn-outline-secondary btn-sm" href="/atlas"><span class="material-icons" aria-hidden="true">hub</span> Dependency atlas</a>
         <a class="btn btn-primary btn-sm" href="/modules"><span class="material-icons" aria-hidden="true">extension</span> Browse modules</a>
     </div>
 </header>
 
-<div class="row g-3 kpi-row">
-    <div class="col-6 col-xl-3">
-        <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> Modules</div>
-            <div class="stat-card-value">{{ modules_total }}</div>
-            <div class="stat-card-note">Distinct technical names</div>
-        </div>
-    </div>
-    <div class="col-6 col-xl-3">
-        <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">corporate_fare</span> Organizations</div>
-            <div class="stat-card-value">{{ org_total }}</div>
-            <div class="stat-card-note">GitHub / GitLab sources</div>
-        </div>
-    </div>
-    <div class="col-6 col-xl-3">
-        <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">layers</span> Odoo versions</div>
-            <div class="stat-card-value">{{ version_total }}</div>
-            <div class="stat-card-note">{% if modules_count %}{{ modules_count[0].version_odoo }} &ndash; {{ latest_count.version_odoo }}{% else %}None indexed yet{% endif %}</div>
-        </div>
-    </div>
-    <div class="col-6 col-xl-3">
-        <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">new_releases</span> Latest version</div>
-            <div class="stat-card-value">{{ latest_count.count if latest_count else 0 }}</div>
-            <div class="stat-card-note">{% if latest_count %}Modules for Odoo {{ latest_count.version_odoo }}{% else %}Run the collector to index modules{% endif %}</div>
-        </div>
-    </div>
-</div>
-
-{% if modules_count %}
-<div class="section-heading"><h2>By Odoo version</h2><p>Module counts, top authors and top committers. Each card can switch version.</p></div>
-<div class="row g-3 user-select-none" id="modules_count">
-    {% for c in modules_count[-3:] | reverse %}
-    <div class="col-lg-4 col-12">
-        <mirlo-module-counter class="w-100 h-100 d-inline-block stat-card" version="{{ c.version_odoo }}"></mirlo-module-counter>
-    </div>
-    {% endfor %}
-</div>
+{% if collector %}
+<p class="dash-status dev-only{% if collector.failing %} is-failing{% endif %}">
+    <span class="material-icons" aria-hidden="true">{{ collector.failing and 'error' or 'sync' }}</span>
+    <span><strong>Collector</strong> {{ collector.date }} &middot; {{ collector.message }}</span>
+    {% if collector.failing %}<strong class="text-danger">Last job failed: {{ collector.failing | join(', ') }}</strong>{% endif %}
+    <a href="/logs">System logs <span class="material-icons" aria-hidden="true">arrow_forward</span></a>
+</p>
 {% endif %}
 
-{% if localization_countries %}
-<section aria-labelledby="localization-title">
-    <div class="section-heading"><h2 id="localization-title">Localizations</h2><p>Countries with directly associated <code>l10n_XX</code> modules.</p></div>
-    <div class="localization-panel">
-        <div class="globe-stage">
-            <canvas id="localization-globe" aria-hidden="true"></canvas>
-            <div class="globe-caption" id="globe-caption" aria-live="polite">Hover to pause · Drag to rotate · Select a highlighted country</div>
+{% if latest %}
+<div class="row g-3">
+    <div class="col-6 col-xl">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">new_releases</span> Odoo {{ latest.version }}</div>
+            <div class="stat-card-value">{{ latest.modules }} <small>modules</small></div>
+            <div class="stat-card-note">{% if migrating %}{{ latest.ported }} from {{ latest.prev_version }} &middot; {{ latest.new_modules }} new{% else %}Installable modules{% endif %}</div>
         </div>
-        <div class="localization-sidebar">
-            <label for="localization-version">Odoo version</label>
-            <select id="localization-version" class="form-select form-select-sm" aria-label="Filter localization by Odoo version">
-                {% for version in localization_versions %}
-                <option value="{{ version }}"{% if loop.first %} selected{% endif %}>{{ version }}</option>
-                {% endfor %}
-            </select>
-            <p>Highlighted countries have localization modules in the selected version. Choose one to see its modules.</p>
-            <div class="localization-countries" aria-label="Countries with localization modules">
-                {% for country in localization_countries %}
-                <a href="/localization/{{ country.code | lower }}?version={{ localization_versions[0] | urlencode }}" data-country="{{ country.code }}" data-version="{{ country.version_odoo }}"{% if country.version_odoo != localization_default_version %} hidden{% endif %}><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
-                {% endfor %}
-            </div>
+    </div>
+    {% if migrating %}
+    <div class="col-6 col-xl">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">trending_up</span> Migrated from {{ latest.prev_version }}</div>
+            <div class="stat-card-value">{{ latest.ported_pct }}% <small>{{ latest.ported }} / {{ latest.prev_modules }}</small></div>
+            <div class="dash-progress" aria-hidden="true"><span class="is-ported" style="width: {{ latest.ported_pct }}%"></span><span class="is-progress" style="width: {{ latest.in_progress_pct }}%"></span></div>
+            <div class="stat-card-note">{{ latest.in_progress }} in a migration PR &middot; {{ latest.not_started }} not started</div>
         </div>
+    </div>
+    {% endif %}
+    <div class="col-6 col-xl">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">call_merge</span> Open migration PRs</div>
+            <div class="stat-card-value">{{ d.prs_total }}</div>
+            <div class="stat-card-note"><span class="{{ d.prs_rotten and 'text-warning-emphasis' or '' }}">{{ d.prs_rotten }} rotten</span> &middot; <span class="{{ d.prs_failing and 'text-danger-emphasis' or '' }}">{{ d.prs_failing }} failing CI</span></div>
+        </div>
+    </div>
+    <div class="col-6 col-xl dev-only">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">shield</span> Security findings</div>
+            <div class="stat-card-value">{{ d.security_errors }} <small>grave</small></div>
+            <div class="stat-card-note">{{ d.security_warnings }} minor &middot; static analysis</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl dev-only">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gpp_maybe</span> Vulnerabilities</div>
+            <div class="stat-card-value">{{ d.osv_advisories }} <small>advisories</small></div>
+            <div class="stat-card-note">In dependencies of {{ d.osv_modules }} module{{ d.osv_modules != 1 and 's' or '' }} &middot; <a href="/osv">details</a></div>
+        </div>
+    </div>
+</div>
+
+<section aria-labelledby="versions-title">
+    <div class="section-heading">
+        <h2 id="versions-title">Odoo versions</h2>
+        <p>Installable modules. A module counts as migrated when its technical name exists in the next version.</p>
+    </div>
+    <div class="panel">
+        <table class="table table-hover dash-versions">
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Modules</th>
+                    <th>From previous version</th>
+                    <th class="text-end">New</th>
+                    <th class="text-end">Migration PRs</th>
+                    <th class="text-end d-none d-lg-table-cell">Days to merge</th>
+                    <th class="text-end dev-only" title="Security findings: grave / minor">Findings</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in d.versions %}
+                <tr>
+                    <th scope="row">{% if v.has_tab %}<a href="/modules#modver-{{ v.version }}" title="Open PRs and findings for {{ v.version }}">{{ v.version }}</a>{% else %}{{ v.version }}{% endif %}</th>
+                    <td>
+                        <div class="dash-count"><span>{{ v.modules }}</span><span class="dash-bar" aria-hidden="true"><span style="width: {{ v.modules_pct }}%"></span></span></div>
+                    </td>
+                    <td>
+                        {% if v.prev_modules %}
+                        <div class="dash-progress" title="{{ v.ported }} migrated, {{ v.in_progress }} in a migration PR, {{ v.not_started }} not started, out of {{ v.prev_modules }} in {{ v.prev_version }}" aria-hidden="true"><span class="is-ported" style="width: {{ v.ported_pct }}%"></span><span class="is-progress" style="width: {{ v.in_progress_pct }}%"></span></div>
+                        <small class="dash-progress-label">{{ v.ported_pct }}% of {{ v.prev_version }}{% if v.in_progress %} &middot; {{ v.in_progress }} in PR{% endif %}</small>
+                        {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
+                    </td>
+                    <td class="text-end">{{ v.new_modules if v.prev_version else '' }}</td>
+                    <td class="text-end">
+                        {% if v.prs %}{{ v.prs }}
+                        {% if v.prs_rotten %}<span class="badge text-bg-warning" title="Quiet for longer than a typical merge at this version">{{ v.prs_rotten }} rotten</span>{% endif %}
+                        {% if v.prs_failing %}<span class="badge text-bg-danger" title="CI failing">{{ v.prs_failing }} CI</span>{% endif %}
+                        {% if v.duplicated %}<span class="badge text-bg-light border" title="Modules with more than one migration PR">{{ v.duplicated }} dup.</span>{% endif %}
+                        {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
+                    </td>
+                    <td class="text-end d-none d-lg-table-cell">{% if v.avg_days_open %}{{ v.avg_days_open | round | int }}{% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}</td>
+                    <td class="text-end dev-only">
+                        {% if v.security_errors or v.security_warnings %}
+                        {% if v.security_errors %}<span class="badge text-bg-danger" title="Grave findings">{{ v.security_errors }}</span>{% endif %}
+                        <span class="text-body-secondary" title="Minor findings">{{ v.security_warnings }}</span>
+                        {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </section>
-{% endif %}
 
-<div class="section-heading"><h2>Recently tracked</h2><a href="/modules">All modules <span class="material-icons" aria-hidden="true">arrow_forward</span></a></div>
-<div class="panel user-select-none" id="modules_latest">
-    <table class="table table-hover">
-        <thead>
-            <tr>
-                <th>Module</th>
-                <th class="text-center">Version</th>
-                <th class="d-none d-lg-table-cell">Organization</th>
-                <th class="d-none d-lg-table-cell text-end">Tracked</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for module in modules_latest %}
-            <tr>
-                <td><a href="/module/{{ module.org_name | urlencode }}/{{ module.technical_name | urlencode }}">{{ module.technical_name }}</a></td>
-                <td class="text-center"><span class="badge text-bg-light border">{{ module.version }}</span></td>
-                <td class="d-none d-lg-table-cell">{{ module.org_name }}</td>
-                <td class="d-none d-lg-table-cell text-end text-body-secondary">{{ module.create_date }}</td>
-            </tr>
-            {% else %}
-            <tr><td colspan="4" class="text-body-secondary">Nothing tracked yet &mdash; run the collector for an organization and Odoo version.</td></tr>
+{# A ranked value with its bar (100% = `top`, the first row's value). #}
+{% macro meter(value, top, kind="") -%}
+<span class="dash-meter{{ kind and ' is-' ~ kind or '' }}" aria-hidden="true"><span style="width: {{ (value * 100 // top) if top else 0 }}%"></span></span><span class="dash-val">{{ value }}</span>
+{%- endmacro %}
+{% macro module_link(org_name, technical_name) -%}
+<a href="/module/{{ org_name | urlencode }}/{{ technical_name | urlencode }}" title="{{ technical_name }}">{{ technical_name }}</a>
+{%- endmacro %}
+
+<div class="dash-report">
+    {% if migrating %}
+    <section aria-labelledby="missing-title">
+        <div class="section-heading">
+            <h2 id="missing-title">In {{ latest.prev_version }}, not in {{ latest.version }}</h2>
+            <a class="dev-only" href="/doodba/migration">Migration plan</a>
+        </div>
+        <p class="dash-caption">Ranked by the {{ latest.prev_version }} modules that depend on them. Upstream may have renamed or merged some.</p>
+        {% if d.missing %}
+        <table class="dash-rank">
+            <thead><tr><th>Module</th><th>Source</th><th class="dash-num">Dependents</th></tr></thead>
+            <tbody>
+                {% for m in d.missing %}
+                <tr>
+                    <td class="dash-name">{{ module_link(m.org_name, m.technical_name) }}</td>
+                    <td class="dash-meta">{{ m.org_name }}{% if m.in_progress %} &middot; <span class="dash-flag" title="A migration PR to {{ latest.version }} is open">PR open</span>{% endif %}</td>
+                    <td class="dash-num">{{ meter(m.dependents, d.missing[0].dependents) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="dash-caption">Every installable module of {{ latest.prev_version }} is in {{ latest.version }}.</p>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <section aria-labelledby="activity-title">
+        <div class="section-heading">
+            <h2 id="activity-title">Activity</h2>
+            <a href="/committers">Committers</a>
+        </div>
+        {% if d.activity %}
+        <p class="dash-caption">Commits by people per month, bots excluded.</p>
+        <div class="dash-chart" role="img" aria-label="Commits per month by people, last {{ d.activity | length }} months with activity">
+            {% for m in d.activity %}
+            <div class="dash-chart-col{% if m.partial %} is-partial{% endif %}{% if loop.last %} is-last{% endif %}" title="{{ m.label }}: {{ m.commits }} commits{% if m.partial %} (month in progress){% endif %}">
+                <span class="dash-chart-track"><span class="dash-chart-bar" style="height: {{ [m.pct, 2] | max }}%"></span></span>
+                <span class="dash-chart-label">{{ m.label[:3] }}</span>
+            </div>
             {% endfor %}
-        </tbody>
-    </table>
+        </div>
+        <table class="dash-rank">
+            <thead><tr><th>Committers &middot; {{ d.activity_month }}</th><th class="dash-num">Modules</th><th class="dash-num">Commits</th></tr></thead>
+            <tbody>
+                {% for c in d.top_committers %}
+                <tr>
+                    <td class="dash-name"><a href="/committer/{{ c.name | urlencode }}">{{ c.name }}</a></td>
+                    <td class="dash-num dash-meta">{{ c.modules_touched }}</td>
+                    <td class="dash-num">{{ meter(c.total_commits, d.top_committers[0].total_commits) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="dash-caption">No commit history collected yet.</p>
+        {% endif %}
+    </section>
+
+    {% if d.security_top %}
+    <section class="dev-only" aria-labelledby="security-title">
+        <div class="section-heading">
+            <h2 id="security-title">Grave findings, {{ d.security_top_versions }}</h2>
+            <a href="/modules">All findings</a>
+        </div>
+        <p class="dash-caption">Static analysis: a starting point for review, not confirmed issues.</p>
+        <table class="dash-rank">
+            <thead><tr><th>Module</th><th>Version</th><th class="dash-num">Grave</th></tr></thead>
+            <tbody>
+                {% for m in d.security_top %}
+                <tr>
+                    <td class="dash-name">{{ module_link(m.org_name, m.technical_name) }}</td>
+                    <td class="dash-meta">{{ m.version }}</td>
+                    <td class="dash-num">{{ meter(m.count, d.security_top[0].count, "danger") }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+
+    <section aria-labelledby="sources-title">
+        <div class="section-heading">
+            <h2 id="sources-title">Sources</h2>
+            <a href="/localization">Localizations</a>
+        </div>
+        <table class="dash-rank">
+            <thead><tr><th>Organization</th><th class="dash-num">Repos</th><th>Versions</th><th class="dash-num">Modules</th></tr></thead>
+            <tbody>
+                {% for s in d.sources %}
+                <tr>
+                    <td class="dash-name">{{ s.name }}</td>
+                    <td class="dash-num dash-meta">{{ s.repositories }}</td>
+                    <td class="dash-meta">{{ s.versions }}</td>
+                    <td class="dash-num">{{ meter(s.modules, d.sources[0].modules) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section aria-labelledby="newest-title">
+        <div class="section-heading">
+            <h2 id="newest-title">Recently tracked</h2>
+        </div>
+        <table class="dash-rank">
+            <thead><tr><th>Module</th><th>Source</th><th>Version</th><th class="dash-num">Tracked</th></tr></thead>
+            <tbody>
+                {% for m in d.newest %}
+                <tr>
+                    <td class="dash-name">{{ module_link(m.org_name, m.technical_name) }}</td>
+                    <td class="dash-meta">{{ m.org_name }}</td>
+                    <td class="dash-meta">{{ m.version }}</td>
+                    <td class="dash-num dash-meta">{{ m.create_date }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
 </div>
+{% endif %}
 {% endblock %}

@@ -14,7 +14,7 @@
         <h1>Localization: <span id="localization-country-name">{{ country_code }}</span></h1>
         <p class="page-header-desc">{{ modules | length }} module{{ modules | length != 1 and 's' or '' }} directly associated with {{ country_code }} {% if selected_version %}in Odoo {{ selected_version }}{% else %}across all indexed Odoo versions{% endif %} and organizations.</p>
         <div class="page-header-actions">
-            <a class="btn btn-outline-secondary btn-sm" href="/{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}#localization-title"><span class="material-icons" aria-hidden="true">public</span> Back to the globe</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/localization{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}"><span class="material-icons" aria-hidden="true">public</span> Back to the globe</a>
         </div>
     </header>
     <div class="panel localization-results-list">

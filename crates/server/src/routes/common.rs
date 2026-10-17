@@ -16,13 +16,6 @@ pub struct OdooVersionInfo {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ModuleCountInfo {
-    pub version: String,
-    pub count: i64,
-    pub org: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModuleListInfo {
     pub versions: Vec<String>,
     pub technical_name: String,
@@ -30,22 +23,6 @@ pub struct ModuleListInfo {
     pub description: Option<String>,
     pub category: Option<String>,
     pub org_name: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ContribRankInfo {
-    pub version: String,
-    pub count: i64,
-    pub contrib: String,
-    pub rank: i64,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct CommitterRankInfo {
-    pub version: String,
-    pub count: i64,
-    pub committer: String,
-    pub rank: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -65,17 +42,6 @@ fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<OdooVersionInfo> {
         .collect()
 }
 
-fn get_odoo_module_count(conn: &mut SqliteConnection) -> Vec<ModuleCountInfo> {
-    models::module::count_organization(conn)
-        .into_iter()
-        .map(|x| ModuleCountInfo {
-            version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-            count: x.count,
-            org: x.org_name,
-        })
-        .collect()
-}
-
 fn get_odoo_module_list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
     models::module::list(conn)
         .into_iter()
@@ -90,30 +56,6 @@ fn get_odoo_module_list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
             description: x.description,
             category: x.category,
             org_name: x.org_name,
-        })
-        .collect()
-}
-
-fn get_odoo_contributor_rank(conn: &mut SqliteConnection) -> Vec<ContribRankInfo> {
-    models::module::rank_contributor(conn)
-        .into_iter()
-        .map(|x| ContribRankInfo {
-            version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-            count: x.count,
-            contrib: x.contrib_name,
-            rank: x.rank,
-        })
-        .collect()
-}
-
-fn get_odoo_committer_rank(conn: &mut SqliteConnection) -> Vec<CommitterRankInfo> {
-    models::module::rank_committer(conn)
-        .into_iter()
-        .map(|x| CommitterRankInfo {
-            version: odoo_version_u8_to_string(&(x.version_odoo as u8)),
-            count: x.count,
-            committer: x.committer_name,
-            rank: x.rank,
         })
         .collect()
 }
@@ -169,36 +111,6 @@ pub async fn route_odoo_module_icon(
         Some(bytes) => Ok(HttpResponse::Ok().content_type("image/png").body(bytes)),
         None => Ok(HttpResponse::NotFound().finish()),
     }
-}
-
-#[get("/common/odoo/module/count")]
-pub async fn route_odoo_module_count(pool: AreaPool) -> Result<HttpResponse, AWError> {
-    let result = web::block(move || {
-        let mut conn = pool.get().unwrap();
-        get_odoo_module_count(&mut conn)
-    })
-    .await?;
-    Ok(HttpResponse::Ok().json(result))
-}
-
-#[get("/common/odoo/contributor/rank")]
-pub async fn route_odoo_contributor_rank(pool: AreaPool) -> Result<HttpResponse, AWError> {
-    let result = web::block(move || {
-        let mut conn = pool.get().unwrap();
-        get_odoo_contributor_rank(&mut conn)
-    })
-    .await?;
-    Ok(HttpResponse::Ok().json(result))
-}
-
-#[get("/common/odoo/committer/rank")]
-pub async fn route_odoo_committer_rank(pool: AreaPool) -> Result<HttpResponse, AWError> {
-    let result = web::block(move || {
-        let mut conn = pool.get().unwrap();
-        get_odoo_committer_rank(&mut conn)
-    })
-    .await?;
-    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/common/odoo/committer/list")]

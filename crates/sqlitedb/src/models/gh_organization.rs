@@ -42,6 +42,35 @@ pub fn count(conn: &mut SqliteConnection) -> i64 {
         .expect("DB error in gh_organization::count")
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct OrganizationSummary {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub repositories: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub modules: i64,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub min_version: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub max_version: i32,
+}
+
+/// Organizations with modules, the largest first.
+pub fn summary(conn: &mut SqliteConnection) -> Vec<OrganizationSummary> {
+    diesel::sql_query(
+        "SELECT org.name, count(DISTINCT repo.id) as repositories, \
+         count(DISTINCT mod.technical_name) as modules, \
+         MIN(mod.version_odoo) as min_version, MAX(mod.version_odoo) as max_version \
+         FROM gh_organization as org \
+         INNER JOIN gh_repository as repo ON repo.gh_organization_id = org.id \
+         INNER JOIN module as mod ON mod.gh_repository_id = repo.id \
+         GROUP BY org.id ORDER BY modules DESC",
+    )
+    .load::<OrganizationSummary>(conn)
+    .expect("DB error in gh_organization::summary")
+}
+
 pub fn add(conn: &mut SqliteConnection, name: &str) -> QueryResult<Model> {
     let inserted = diesel::insert_into(gh_organization::table)
         .values(NewGhOrganization { name })

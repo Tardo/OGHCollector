@@ -10,7 +10,6 @@ use super::{
     author, gh_organization, gh_repository, maintainer, module_author,
     module_code_analysis::ModuleAnalysisInfo, module_committer, module_committer_period,
     module_maintainer, module_model, module_record, module_version, module_view, system_event,
-    HUMAN_COMMITTER,
 };
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -181,40 +180,6 @@ pub struct ModuleCountInfo {
 pub struct ModuleDistinctCountInfo {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub count: i64,
-}
-
-#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
-pub struct ModuleCountByOrganizationInfo {
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub version_odoo: i32,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub count: i64,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub org_name: String,
-}
-
-#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
-pub struct ModuleRankContributorInfo {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub count: i64,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub version_odoo: i32,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub contrib_name: String,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub rank: i64,
-}
-
-#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
-pub struct ModuleRankCommitterInfo {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub count: i64,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub version_odoo: i32,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub committer_name: String,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub rank: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -664,51 +629,104 @@ pub fn count_distinct(conn: &mut SqliteConnection) -> i64 {
         .unwrap_or(0)
 }
 
-pub fn count_organization(conn: &mut SqliteConnection) -> Vec<ModuleCountByOrganizationInfo> {
-    diesel::sql_query(
-        "SELECT mod.version_odoo, count(*) as count, org.name as org_name \
-         FROM module as mod \
-         INNER JOIN gh_repository as repo ON mod.gh_repository_id = repo.id \
-         INNER JOIN gh_organization as org ON repo.gh_organization_id = org.id \
-         GROUP BY org.id, mod.version_odoo \
-         ORDER BY count DESC",
-    )
-    .load::<ModuleCountByOrganizationInfo>(conn)
-    .expect("DB error in module::count_organization")
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct VersionCoverage {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub prev_version: Option<i32>,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub modules: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub prev_modules: i64,
+    /// Modules of `prev_version` that also exist here.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub ported: i64,
+    /// Modules of `prev_version` not here yet, with an open migration PR here.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub in_progress: i64,
 }
 
-pub fn rank_contributor(conn: &mut SqliteConnection) -> Vec<ModuleRankContributorInfo> {
-    diesel::sql_query(
-        "SELECT * FROM (\
-           SELECT mod.version_odoo, count(*) as count, au.name as contrib_name, \
-                  RANK() OVER (PARTITION BY mod.version_odoo ORDER BY count(*) DESC) AS rank \
-           FROM module as mod \
-           INNER JOIN module_author as mod_au ON mod.id = mod_au.module_id \
-           INNER JOIN author as au ON mod_au.author_id = au.id \
-           WHERE au.name NOT LIKE '% (OCA)' AND au.name NOT LIKE 'OpenERP %' \
-                 AND au.name NOT LIKE 'Odoo %' \
-           GROUP BY au.id, mod.version_odoo \
-           ORDER BY count DESC \
-         ) WHERE rank <= 5 ORDER BY rank ASC",
-    )
-    .load::<ModuleRankContributorInfo>(conn)
-    .expect("DB error in module::rank_contributor")
-}
+// Installable modules by technical name: a module that exists at an Odoo
+// version (any org/repo) counts as ported there. Same name = same module is
+// a heuristic: upstream renames/merges read as "not ported".
+const INSTALLABLE_NAMES: &str =
+    "SELECT DISTINCT technical_name, version_odoo FROM module WHERE installable";
+const MIGRATION_PR_NAMES: &str = "SELECT DISTINCT pm.module_technical_name AS technical_name, \
+     pr.version_odoo FROM pull_request AS pr \
+     INNER JOIN pull_request_module AS pm ON pm.pull_request_id = pr.id AND pm.is_new \
+     INNER JOIN gh_repository AS repo ON repo.id = pr.gh_repository_id";
 
-pub fn rank_committer(conn: &mut SqliteConnection) -> Vec<ModuleRankCommitterInfo> {
+/// Per Odoo version (newest first), how many installable modules of the
+/// previous indexed version made it here, are being migrated (open migration
+/// PR) or not.
+pub fn version_coverage(conn: &mut SqliteConnection) -> Vec<VersionCoverage> {
     diesel::sql_query(format!(
-        "SELECT * FROM (\
-           SELECT mod.version_odoo, SUM(mod_com.commits) as count, com.name as committer_name, \
-                  RANK() OVER (PARTITION BY mod.version_odoo ORDER BY SUM(mod_com.commits) DESC) AS rank \
-           FROM module as mod \
-           INNER JOIN module_committer as mod_com ON mod.id = mod_com.module_id \
-           INNER JOIN committer as com ON mod_com.committer_id = com.id \
-           WHERE {HUMAN_COMMITTER} \
-           GROUP BY com.id, mod.version_odoo \
-         ) WHERE rank <= 5 ORDER BY rank ASC"
+        "WITH tv AS ({INSTALLABLE_NAMES}), pr AS ({MIGRATION_PR_NAMES}), \
+         vers AS (SELECT version_odoo, LAG(version_odoo) OVER (ORDER BY version_odoo) AS prev_version \
+                  FROM (SELECT DISTINCT version_odoo FROM tv)) \
+         SELECT v.version_odoo, v.prev_version, \
+          (SELECT count(*) FROM tv WHERE tv.version_odoo = v.version_odoo) AS modules, \
+          (SELECT count(*) FROM tv WHERE tv.version_odoo = v.prev_version) AS prev_modules, \
+          (SELECT count(*) FROM tv AS p WHERE p.version_odoo = v.prev_version AND EXISTS \
+            (SELECT 1 FROM tv AS c WHERE c.version_odoo = v.version_odoo \
+             AND c.technical_name = p.technical_name)) AS ported, \
+          (SELECT count(*) FROM tv AS p WHERE p.version_odoo = v.prev_version AND NOT EXISTS \
+            (SELECT 1 FROM tv AS c WHERE c.version_odoo = v.version_odoo \
+             AND c.technical_name = p.technical_name) \
+           AND EXISTS (SELECT 1 FROM pr WHERE pr.version_odoo = v.version_odoo \
+             AND pr.technical_name = p.technical_name)) AS in_progress \
+         FROM vers AS v ORDER BY v.version_odoo DESC"
     ))
-    .load::<ModuleRankCommitterInfo>(conn)
-    .expect("DB error in module::rank_committer")
+    .load::<VersionCoverage>(conn)
+    .expect("DB error in module::version_coverage")
+}
+
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct MissingModuleInfo {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub org_name: String,
+    /// Installable modules of `prev_version` that depend on it.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub dependents: i64,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub in_progress: bool,
+}
+
+/// Installable modules of `prev_version` absent from `version_odoo`, the
+/// most depended-on first: not necessarily pending ports, upstream may have
+/// renamed or merged them (see `version_coverage`).
+pub fn missing_in_version(
+    conn: &mut SqliteConnection,
+    version_odoo: i32,
+    prev_version: i32,
+    limit: i64,
+) -> Vec<MissingModuleInfo> {
+    diesel::sql_query(format!(
+        "WITH cur AS (SELECT DISTINCT technical_name FROM module \
+                      WHERE version_odoo = ?1 AND installable), \
+         pr AS ({MIGRATION_PR_NAMES} WHERE pr.version_odoo = ?1), \
+         missing AS (SELECT p.technical_name, MIN(org.name) AS org_name FROM module AS p \
+           INNER JOIN gh_repository AS repo ON repo.id = p.gh_repository_id \
+           INNER JOIN gh_organization AS org ON org.id = repo.gh_organization_id \
+           WHERE p.version_odoo = ?2 AND p.installable AND p.technical_name NOT IN cur \
+           GROUP BY p.technical_name) \
+         SELECT m.technical_name, m.org_name, \
+          (SELECT count(DISTINCT d.technical_name) FROM dependency AS dep \
+           INNER JOIN dependency_type AS dt ON dt.id = dep.dependency_type_id AND dt.name = 'module' \
+           INNER JOIN dependency_module AS dm ON dm.dependency_id = dep.id \
+           INNER JOIN module AS d ON d.id = dm.module_id \
+           WHERE dep.name = m.technical_name AND d.version_odoo = ?2 AND d.installable) AS dependents, \
+          m.technical_name IN (SELECT technical_name FROM pr) AS in_progress \
+         FROM missing AS m ORDER BY dependents DESC, m.technical_name LIMIT ?3"
+    ))
+    .bind::<diesel::sql_types::Integer, _>(version_odoo)
+    .bind::<diesel::sql_types::Integer, _>(prev_version)
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .load::<MissingModuleInfo>(conn)
+    .expect("DB error in module::missing_in_version")
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]

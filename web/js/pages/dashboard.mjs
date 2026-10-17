@@ -1,4 +1,3 @@
 // Copyright 2025 Alexandre D. Díaz
-import '@app/components/module-counter';
-import '@app/components/localization-globe';
+// The Overview is server-rendered: this entry only builds its sheet.
 import '@scss/pages/dashboard.scss';

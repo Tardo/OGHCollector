@@ -135,7 +135,7 @@ fn get_group(
     "#,
     convert = r#"{ _workspace.to_string() }"#
 )]
-fn compute_modules_page_data(
+pub(crate) fn compute_modules_page_data(
     conn: &mut SqliteConnection,
     _workspace: &str, // cache key only
 ) -> (i64, Vec<ModulesVersionGroup>) {

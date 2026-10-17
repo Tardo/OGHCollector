@@ -167,6 +167,36 @@ pub fn rank_by_period(
     }
 }
 
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct MonthCommits {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub year: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub month: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub commits: i64,
+}
+
+/// Human commits per month, the last `limit` months with any (oldest first).
+/// Joins `module` so a workspace pool filters it.
+pub fn monthly_commits(conn: &mut SqliteConnection, limit: i64) -> Vec<MonthCommits> {
+    let mut rows = diesel::sql_query(format!(
+        "SELECT mcp.year, mcp.month, SUM(mcp.commits) as commits \
+         FROM module_committer_period as mcp \
+         INNER JOIN committer as com ON mcp.committer_id = com.id \
+         INNER JOIN module as mod ON mod.id = mcp.module_id \
+         WHERE {HUMAN_COMMITTER} \
+         GROUP BY mcp.year, mcp.month \
+         ORDER BY mcp.year DESC, mcp.month DESC \
+         LIMIT ?"
+    ))
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .load::<MonthCommits>(conn)
+    .expect("DB error in module_committer_period::monthly_commits");
+    rows.reverse();
+    rows
+}
+
 #[derive(QueryableByName, Debug, Default)]
 pub struct HumanActivity {
     /// Most recent month with a non-bot commit, as `year * 12 + month - 1`.

@@ -35,3 +35,9 @@ document
 // fetch their content on first activation so a page tracking many Odoo
 // versions doesn't ship every version's PRs/security findings up front.
 initLazyTabPanes('versions-tab');
+
+// `/modules#modver-19.0` (links from the Overview's version table) opens that
+// version's tab. On `load`, so Bootstrap's tab handler (main bundle) is in.
+window.addEventListener('load', () => {
+  document.getElementById(`${location.hash.slice(1)}-tab`)?.click();
+});

@@ -15,6 +15,44 @@ pub struct LocalizationQuery {
     version: Option<String>,
 }
 
+/// The globe: countries with `l10n_XX` modules, per Odoo version.
+#[get("/localization")]
+pub async fn route_index(
+    pool: AreaPool,
+    tmpl_env: MiniJinjaRenderer,
+    req: HttpRequest,
+) -> Result<HttpResponse> {
+    let (countries, versions) = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        (
+            models::module::localization_countries_by_version(&mut conn),
+            models::module::get_odoo_versions(&mut conn),
+        )
+    })
+    .await?;
+    // Newest first: the selector's default.
+    let default_version = versions.first().copied();
+    let versions: Vec<_> = versions
+        .iter()
+        .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+        .collect();
+    let rendered = tmpl_env.render(
+        "pages/localizations.html",
+        context!(
+            ..get_minijinja_context(&req),
+            ..context!(
+                page_name => "localization",
+                localization_countries => countries,
+                localization_versions => versions,
+                localization_default_version => default_version,
+            )
+        ),
+    )?;
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(rendered.0))
+}
+
 #[get("/localization/{code}")]
 pub async fn route(
     pool: AreaPool,
