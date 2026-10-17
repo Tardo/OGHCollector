@@ -722,50 +722,96 @@ pub fn version_coverage(conn: &mut SqliteConnection) -> Vec<VersionCoverage> {
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
-pub struct MissingModuleInfo {
+pub struct TransitionModule {
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub technical_name: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub org_name: String,
-    /// Installable modules of `prev_version` that depend on it.
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository: String,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub in_from: bool,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub in_to: bool,
+    /// Installable modules depending on it, at `from` (at `to` if it's new).
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub dependents: i64,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub in_progress: bool,
+    /// Every version it's installable at, comma separated, in no set order.
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub versions: String,
+    /// Every version with an open migration PR for it, same format.
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub pr_versions: Option<String>,
 }
 
-/// Installable modules of `prev_version` absent from `version_odoo`, the
-/// most depended-on first: not necessarily pending ports, upstream may have
-/// renamed or merged them (see `version_coverage`).
-pub fn missing_in_version(
+/// Every installable module of `from` or `to`, the most depended-on first,
+/// with its life across all versions. Same name = same module, as in
+/// `version_coverage`: upstream renames/merges read as not migrated.
+pub fn version_transition(
     conn: &mut SqliteConnection,
-    version_odoo: i32,
-    prev_version: i32,
-    limit: i64,
-) -> Vec<MissingModuleInfo> {
+    from: i32,
+    to: i32,
+) -> Vec<TransitionModule> {
+    // ponytail: a name in several repos at one version shows the first by
+    // org/repo name; a per-repo answer would need rows per repo.
     diesel::sql_query(format!(
-        "WITH cur AS (SELECT DISTINCT technical_name FROM module \
-                      WHERE version_odoo = ?1 AND installable), \
-         pr AS ({MIGRATION_PR_NAMES} WHERE pr.version_odoo = ?1), \
-         missing AS (SELECT p.technical_name, MIN(org.name) AS org_name FROM module AS p \
-           INNER JOIN gh_repository AS repo ON repo.id = p.gh_repository_id \
-           INNER JOIN gh_organization AS org ON org.id = repo.gh_organization_id \
-           WHERE p.version_odoo = ?2 AND p.installable AND p.technical_name NOT IN cur \
-           GROUP BY p.technical_name) \
-         SELECT m.technical_name, m.org_name, \
-          (SELECT count(DISTINCT d.technical_name) FROM dependency AS dep \
-           INNER JOIN dependency_type AS dt ON dt.id = dep.dependency_type_id AND dt.name = 'module' \
-           INNER JOIN dependency_module AS dm ON dm.dependency_id = dep.id \
-           INNER JOIN module AS d ON d.id = dm.module_id \
-           WHERE dep.name = m.technical_name AND d.version_odoo = ?2 AND d.installable) AS dependents, \
-          m.technical_name IN (SELECT technical_name FROM pr) AS in_progress \
-         FROM missing AS m ORDER BY dependents DESC, m.technical_name LIMIT ?3"
+        "WITH tv AS ({INSTALLABLE_NAMES}), pr AS ({MIGRATION_PR_NAMES}), \
+         src AS (SELECT m.technical_name, m.version_odoo, org.name AS org_name, repo.name AS repository, \
+                 ROW_NUMBER() OVER (PARTITION BY m.technical_name, m.version_odoo \
+                                    ORDER BY org.name, repo.name) AS rn \
+                 FROM module AS m \
+                 INNER JOIN gh_repository AS repo ON repo.id = m.gh_repository_id \
+                 INNER JOIN gh_organization AS org ON org.id = repo.gh_organization_id \
+                 WHERE m.installable AND m.version_odoo IN (?1, ?2)), \
+         u AS (SELECT technical_name, MAX(version_odoo = ?1) AS in_from, MAX(version_odoo = ?2) AS in_to \
+               FROM src GROUP BY technical_name), \
+         deps AS (SELECT dep.name, d.version_odoo, count(DISTINCT d.technical_name) AS n \
+                  FROM dependency AS dep \
+                  INNER JOIN dependency_type AS dt ON dt.id = dep.dependency_type_id AND dt.name = 'module' \
+                  INNER JOIN dependency_module AS dm ON dm.dependency_id = dep.id \
+                  INNER JOIN module AS d ON d.id = dm.module_id \
+                  WHERE d.version_odoo IN (?1, ?2) AND d.installable GROUP BY dep.name, d.version_odoo), \
+         life AS (SELECT technical_name, group_concat(version_odoo) AS versions FROM tv GROUP BY technical_name), \
+         prl AS (SELECT technical_name, group_concat(version_odoo) AS versions FROM pr GROUP BY technical_name) \
+         SELECT u.technical_name, s.org_name, s.repository, u.in_from, u.in_to, \
+          coalesce(deps.n, 0) AS dependents, life.versions, prl.versions AS pr_versions \
+         FROM u \
+         INNER JOIN src AS s ON s.technical_name = u.technical_name AND s.rn = 1 \
+           AND s.version_odoo = IIF(u.in_from, ?1, ?2) \
+         LEFT JOIN deps ON deps.name = u.technical_name AND deps.version_odoo = s.version_odoo \
+         INNER JOIN life ON life.technical_name = u.technical_name \
+         LEFT JOIN prl ON prl.technical_name = u.technical_name \
+         ORDER BY dependents DESC, u.technical_name"
     ))
-    .bind::<diesel::sql_types::Integer, _>(version_odoo)
-    .bind::<diesel::sql_types::Integer, _>(prev_version)
-    .bind::<diesel::sql_types::BigInt, _>(limit)
-    .load::<MissingModuleInfo>(conn)
-    .expect("DB error in module::missing_in_version")
+    .bind::<diesel::sql_types::Integer, _>(from)
+    .bind::<diesel::sql_types::Integer, _>(to)
+    .load::<TransitionModule>(conn)
+    .expect("DB error in module::version_transition")
+}
+
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct RepositoryVersionCount {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub org_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub repository: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub modules: i64,
+}
+
+/// Installable modules per repository and Odoo version.
+pub fn repository_version_counts(conn: &mut SqliteConnection) -> Vec<RepositoryVersionCount> {
+    diesel::sql_query(
+        "SELECT org.name AS org_name, repo.name AS repository, m.version_odoo, \
+         count(DISTINCT m.technical_name) AS modules FROM module AS m \
+         INNER JOIN gh_repository AS repo ON repo.id = m.gh_repository_id \
+         INNER JOIN gh_organization AS org ON org.id = repo.gh_organization_id \
+         WHERE m.installable GROUP BY repo.id, m.version_odoo",
+    )
+    .load::<RepositoryVersionCount>(conn)
+    .expect("DB error in module::repository_version_counts")
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]

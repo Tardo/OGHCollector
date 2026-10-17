@@ -228,6 +228,7 @@ async fn main() -> std::io::Result<()> {
             .service(routes::localization::route)
             .service(routes::localization::route_modules)
             .service(routes::localization::route_index)
+            .service(routes::migration::route)
             .service(routes::modules::route)
             .service(routes::modules::route_tab)
             .service(routes::module::route)

@@ -1,10 +1,11 @@
 // Copyright Alexandre D. Díaz
 //! Overview (`/`): where each Odoo version stands (modules, migration from the
 //! previous version, open migration PRs, security findings), what's missing
-//! in the newest one, recent activity and the sources behind it. Per-version
-//! PR/security figures come from the `/modules` page data (same cache, same
-//! `is_new` semantics). Collector status reads `system_event`, which no
-//! workspace filters: the template shows it in dev mode only, uncached.
+//! in the newest one (the top of `/migration`'s list for that pair), recent
+//! activity and the sources behind it. Per-version PR/security figures come
+//! from the `/modules` page data (same cache, same `is_new` semantics).
+//! Collector status reads `system_event`, which no workspace filters: the
+//! template shows it in dev mode only, uncached.
 use std::collections::{BTreeMap, HashSet};
 
 use actix_web::{get, web, HttpRequest, Responder, Result};
@@ -16,6 +17,7 @@ use serde::Serialize;
 
 use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
+use crate::routes::migration::{compute_migration_data, MigrationModule};
 use crate::routes::modules::{compute_modules_page_data, ActivePullRequestInfo};
 use crate::utils::get_minijinja_context;
 
@@ -118,7 +120,7 @@ pub struct DashboardData {
     pub security_warnings: usize,
     pub osv_advisories: usize,
     pub osv_modules: usize,
-    pub missing: Vec<models::module::MissingModuleInfo>,
+    pub missing: Vec<MigrationModule>,
     pub security_top: Vec<FindingModule>,
     /// The versions `security_top` covers, e.g. "17.0 – 19.0".
     pub security_top_versions: String,
@@ -232,7 +234,15 @@ fn compute_dashboard_data(conn: &mut SqliteConnection, workspace: &str) -> Dashb
             version_odoo,
             prev_version: Some(prev),
             ..
-        }) => models::module::missing_in_version(conn, *version_odoo, *prev, 10),
+        }) => {
+            let versions = models::module::get_odoo_versions(conn);
+            compute_migration_data(conn, workspace, &versions, *prev, *version_odoo)
+                .modules
+                .into_iter()
+                .filter(|m| m.status != "new")
+                .take(10)
+                .collect()
+        }
         _ => Vec::new(),
     };
 
@@ -430,19 +440,5 @@ mod tests {
             })
             .collect();
         assert_eq!(summary, [(180, Some(170), 3, 1, 1), (170, None, 1, 0, 0)]);
-        assert!(module::missing_in_version(&mut conn, 180, 170, 10).is_empty());
-
-        // Backwards, 17.0 lacks two 18.0 modules: sale has one dependent.
-        let missing: Vec<_> = module::missing_in_version(&mut conn, 170, 180, 10)
-            .into_iter()
-            .map(|m| (m.technical_name, m.dependents, m.in_progress))
-            .collect();
-        assert_eq!(
-            missing,
-            [
-                ("sale".to_string(), 1, false),
-                ("sale_demo".to_string(), 0, false)
-            ]
-        );
     }
 }

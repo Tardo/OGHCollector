@@ -266,7 +266,10 @@ pub async fn route_doodba_migration_plan(
     )
 }
 
-fn get_pending_modules(
+/// The open migration PR of each module most likely to merge. Also used by
+/// `/migration` over a workspace pool, where a PR of a repository outside
+/// the workspace has no repository row: skipped, not unwrapped.
+pub(crate) fn get_pending_modules(
     conn: &mut SqliteConnection,
     technical_names: &[String],
     version_odoo: &u8,
@@ -280,12 +283,11 @@ fn get_pending_modules(
     prs.sort_by_key(|(_, pr)| pr.preference_key());
     let mut seen = HashSet::new();
     prs.into_iter()
-        .filter(|(module, _)| seen.insert(module.clone()))
-        .map(|(module, pr)| {
-            let repo = models::gh_repository::get_by_id(conn, &pr.gh_repository_id).unwrap();
-            let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id).unwrap();
+        .filter_map(|(module, pr)| {
+            let repo = models::gh_repository::get_by_id(conn, &pr.gh_repository_id)?;
+            let org = models::gh_organization::get_by_id(conn, &repo.gh_organization_id)?;
             let git = oghutils::git::clone_url(repo.url.as_deref(), &org.name, &repo.name);
-            MigrationPendingModuleInfo {
+            Some(MigrationPendingModuleInfo {
                 url: oghutils::git::pull_request_url(&git, pr.prid),
                 merge_ref: oghutils::git::pull_request_ref(&git, pr.prid),
                 age_days: models::pull_request::days_since(pr.created_at.as_deref()),
@@ -295,8 +297,9 @@ fn get_pending_modules(
                 organization: org.name,
                 prid: pr.prid,
                 title: pr.name,
-            }
+            })
         })
+        .filter(|info| seen.insert(info.technical_name.clone()))
         .collect()
 }
 

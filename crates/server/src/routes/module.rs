@@ -334,7 +334,7 @@ pub struct RouteModuleCompareRequest {
 
 // The two versions to compare: what was asked for when it parses and the
 // module has it, otherwise the module's two newest versions (oldest first).
-fn pick_compare_versions(
+pub(crate) fn pick_compare_versions(
     available_desc: &[i32],
     from: Option<&str>,
     to: Option<&str>,

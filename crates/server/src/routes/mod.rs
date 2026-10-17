@@ -14,6 +14,7 @@ pub mod feed;
 pub mod localization;
 pub mod logs;
 pub mod mcp_info;
+pub mod migration;
 pub mod module;
 pub mod modules;
 pub mod osv;

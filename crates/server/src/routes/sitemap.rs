@@ -15,6 +15,7 @@ use sqlitedb::{models, Pool};
 const STATIC_PATHS: &[&[&str]] = &[
     &[],
     &["modules"],
+    &["migration"],
     &["committers"],
     &["atlas"],
     &["localization"],

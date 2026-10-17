@@ -55,7 +55,7 @@
 
 {% set nav_sections = {
     "dashboard": "Overview",
-    "modules": "Explore", "module": "Explore", "module_compare": "Explore", "atlas": "Explore", "localization": "Explore",
+    "modules": "Explore", "module": "Explore", "module_compare": "Explore", "migration": "Explore", "atlas": "Explore", "localization": "Explore",
     "committers": "Explore", "committer": "Explore",
     "osv": "Security", "scan": "Security",
     "favorites": "Workspace", "pack": "Workspace",
@@ -87,6 +87,7 @@
                 <div class="app-nav-group">Explore</div>
                 <ul>
                     {{ nav_item("/modules", "extension", "Modules", page_name in ['modules', 'module', 'module_compare']) }}
+                    {{ nav_item("/migration", "compare_arrows", "Version migration", page_name == 'migration') }}
                     {{ nav_item("/atlas", "hub", "Dependency atlas", page_name == 'atlas') }}
                     {{ nav_item("/localization", "public", "Localizations", page_name == 'localization') }}
                     {{ nav_item("/committers", "groups", "Committers", page_name in ['committers', 'committer']) }}

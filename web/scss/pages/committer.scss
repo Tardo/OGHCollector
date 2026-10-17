@@ -10,39 +10,6 @@
     .page-header-desc a { font-weight: 600; text-decoration: none; }
 }
 
-// ---- Trivia: big-type facts ----
-
-.fact-strip {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-    gap: 1.25rem 1.5rem;
-}
-
-.fact {
-    min-width: 0;
-    padding-left: 0.9rem;
-    border-left: 2px solid var(--ommd-accent-dim);
-
-    > .material-icons { font-size: 1.15rem; color: var(--ommd-accent); }
-}
-
-.fact-headline {
-    margin: 0.15rem 0 0.3rem;
-    font: 600 clamp(1.25rem, 2vw, 1.6rem)/1.15 'Space Grotesk', 'DM Sans', system-ui, sans-serif;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-    color: var(--bs-emphasis-color);
-}
-
-.fact-caption {
-    font-size: 0.8rem;
-    line-height: 1.45;
-    color: var(--bs-secondary-color);
-    overflow-wrap: anywhere;
-
-    a { font-weight: 600; text-decoration: none; }
-}
-
 // ---- Commit calendar: years × months, one-hue ramp ----
 
 .heatmap {
@@ -81,18 +48,6 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-}
-
-.heatmap-cell {
-    display: block;
-    aspect-ratio: 1;
-    border-radius: 3px;
-    background-color: var(--bs-tertiary-bg);
-
-    &[data-l="1"] { background-color: color-mix(in oklab, var(--ommd-accent) 28%, var(--bs-tertiary-bg)); }
-    &[data-l="2"] { background-color: color-mix(in oklab, var(--ommd-accent) 50%, var(--bs-tertiary-bg)); }
-    &[data-l="3"] { background-color: color-mix(in oklab, var(--ommd-accent) 74%, var(--bs-tertiary-bg)); }
-    &[data-l="4"] { background-color: var(--ommd-accent); }
 }
 
 // Phones: the year totals keep their number, lose their bar.

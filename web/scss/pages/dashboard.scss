@@ -30,21 +30,6 @@
     }
 }
 
-// Migrated (accent) + in a migration PR (amber) out of the previous
-// version's modules; the empty track is "not started".
-.dash-progress {
-    display: flex;
-    height: 0.4rem;
-    margin: 0.45rem 0 0.35rem;
-    overflow: hidden;
-    background-color: var(--bs-tertiary-bg);
-    border-radius: 1rem;
-
-    > span { display: block; height: 100%; }
-    .is-ported { background-color: var(--ommd-accent); }
-    .is-progress { background-color: var(--bs-warning); }
-}
-
 .dash-versions {
     min-width: 720px;
     margin-bottom: 0;

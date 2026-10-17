@@ -1,0 +1,148 @@
+// Copyright 2026 Alexandre D. Díaz
+// Version migration (migration.html).
+@import "../components/report";
+
+.mig-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 1.75rem;
+
+    label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+    }
+
+    select { min-width: 7rem; margin-top: 0.25rem; }
+}
+
+.mig-swap {
+    display: inline-flex;
+    padding: 0.3rem;
+    color: var(--bs-secondary-color);
+    border-radius: var(--bs-border-radius);
+
+    &:hover { color: var(--ommd-accent); background: var(--ommd-glow); }
+}
+
+.fact.is-pr { border-left-color: var(--bs-warning); }
+.fact.is-pr > .material-icons { color: var(--bs-warning-text-emphasis); }
+.fact.is-missing { border-left-color: var(--bs-border-color); }
+.fact.is-missing > .material-icons, .fact.is-new > .material-icons { color: var(--bs-secondary-color); }
+.fact.is-new { border-left-style: dashed; }
+
+.mig-progress .dash-progress {
+    height: 0.55rem;
+    margin: 1.25rem 0 0;
+}
+
+// ---- Repositories: versions heatmap + the pair's bar ----
+
+// Its own scroll box, header pinned: ~150 rows shouldn't push the modules
+// list a page away.
+.mig-matrix-wrap {
+    max-height: min(34rem, 70vh);
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.5rem;
+    scrollbar-gutter: stable;
+}
+
+.mig-matrix {
+    thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding-top: 0.2rem;
+        background-color: var(--bs-body-bg);
+    }
+
+    .mig-v {
+        width: 1.45rem;
+        min-width: 1.45rem;
+        padding-left: 3px;
+        text-align: center;
+    }
+
+    th.mig-v { font-size: 0.62rem; letter-spacing: 0; }
+    th.mig-v.is-pair { color: var(--ommd-accent); }
+    td.mig-v { padding-top: 0.2rem; padding-bottom: 0.2rem; }
+    .heatmap-cell { width: 100%; }
+
+    .mig-bar-col { width: 9rem; min-width: 7rem; }
+    td.mig-bar-col .dash-progress { margin: 0; }
+    .dash-name { min-width: 11rem; }
+
+    tr.is-active td { background-color: var(--ommd-glow); }
+}
+
+// Phones: only the compared pair's columns, so the bar stays in view.
+@media (max-width: 575.98px) {
+    .mig-matrix {
+        .mig-v:not(.is-pair) { display: none; }
+        .dash-name { min-width: 0; }
+        .mig-bar-col { width: 4.5rem; min-width: 4.5rem; }
+    }
+}
+
+// ---- Modules ----
+
+.mig-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1rem;
+    margin-bottom: 1rem;
+
+    .nav-link { padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+    #migration_search { width: min(100%, 20rem); margin-left: auto; }
+}
+
+.mig-count {
+    margin-left: 0.2rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+}
+
+.mig-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--ommd-accent-dim);
+    border-radius: var(--bs-border-radius);
+
+    .material-icons { font-size: 1rem; }
+}
+
+.mig-new { font-weight: 600; color: var(--ommd-accent); }
+.mig-ci { font-size: 0.75rem; font-weight: 600; color: var(--bs-danger-text-emphasis); }
+
+// One square per Odoo version, oldest first: installable (accent), open
+// migration PR (amber), neither (empty). The compared pair stands taller.
+.mig-life {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 1rem;
+    vertical-align: middle;
+
+    i {
+        width: 0.5rem;
+        height: 0.6rem;
+        border-radius: 1px;
+        background-color: var(--bs-tertiary-bg);
+    }
+
+    i[data-s="2"] { background-color: var(--ommd-accent-dim); }
+    i[data-s="1"] { background-color: var(--bs-warning); }
+    i.is-pair { height: 1rem; outline: 1px solid var(--bs-border-color); outline-offset: -1px; }
+    i.is-pair[data-s] { outline: 0; }
+}

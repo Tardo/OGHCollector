@@ -1,5 +1,5 @@
 // Copyright Alexandre D. Díaz
-// Report sections (Overview, committer pages): `.section-heading` + caption +
+// Report sections (Overview, committer pages, version migration): `.section-heading` + caption +
 // a dense ranked table or a column chart on the page background, no card
 // chrome. Pair with the `meter` macro of `partials/report.html`.
 
@@ -170,4 +170,64 @@
 
     &.avatar-md { width: 2.25rem; height: 2.25rem; margin-right: 0.75rem; font-size: 0.8rem; }
     &.avatar-lg { width: 4.5rem; height: 4.5rem; margin: 0; font-size: 1.5rem; }
+}
+
+// Big-type facts: an icon, a headline figure, a caption; left accent rule.
+.fact-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+    gap: 1.25rem 1.5rem;
+}
+
+.fact {
+    min-width: 0;
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--ommd-accent-dim);
+
+    > .material-icons { font-size: 1.15rem; color: var(--ommd-accent); }
+}
+
+.fact-headline {
+    margin: 0.15rem 0 0.3rem;
+    font: 600 clamp(1.25rem, 2vw, 1.6rem)/1.15 'Space Grotesk', 'DM Sans', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    color: var(--bs-emphasis-color);
+}
+
+.fact-caption {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--bs-secondary-color);
+    overflow-wrap: anywhere;
+
+    a { font-weight: 600; text-decoration: none; }
+}
+
+// One-hue level ramp (`data-l` 0-4) for heatmap squares; size set by the page.
+.heatmap-cell {
+    display: block;
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background-color: var(--bs-tertiary-bg);
+
+    &[data-l="1"] { background-color: color-mix(in oklab, var(--ommd-accent) 28%, var(--bs-tertiary-bg)); }
+    &[data-l="2"] { background-color: color-mix(in oklab, var(--ommd-accent) 50%, var(--bs-tertiary-bg)); }
+    &[data-l="3"] { background-color: color-mix(in oklab, var(--ommd-accent) 74%, var(--bs-tertiary-bg)); }
+    &[data-l="4"] { background-color: var(--ommd-accent); }
+}
+
+// Migrated (accent) + in a migration PR (amber) out of the previous
+// version's modules; the empty track is "not started".
+.dash-progress {
+    display: flex;
+    height: 0.4rem;
+    margin: 0.45rem 0 0.35rem;
+    overflow: hidden;
+    background-color: var(--bs-tertiary-bg);
+    border-radius: 1rem;
+
+    > span { display: block; height: 100%; }
+    .is-ported { background-color: var(--ommd-accent); }
+    .is-progress { background-color: var(--bs-warning); }
 }

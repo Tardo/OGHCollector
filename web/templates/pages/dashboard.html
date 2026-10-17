@@ -101,7 +101,7 @@
                     <td>
                         {% if v.prev_modules %}
                         <div class="dash-progress" title="{{ v.ported }} migrated, {{ v.in_progress }} in a migration PR, {{ v.not_started }} not started, out of {{ v.prev_modules }} in {{ v.prev_version }}" aria-hidden="true"><span class="is-ported" style="width: {{ v.ported_pct }}%"></span><span class="is-progress" style="width: {{ v.in_progress_pct }}%"></span></div>
-                        <small class="dash-progress-label">{{ v.ported_pct }}% of {{ v.prev_version }}{% if v.in_progress %} &middot; {{ v.in_progress }} in PR{% endif %}</small>
+                        <small class="dash-progress-label"><a href="/migration?from={{ v.prev_version | urlencode }}&amp;to={{ v.version | urlencode }}" title="{{ v.prev_version }} &rarr; {{ v.version }}, by repository and module">{{ v.ported_pct }}% of {{ v.prev_version }}</a>{% if v.in_progress %} &middot; {{ v.in_progress }} in PR{% endif %}</small>
                         {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
                     </td>
                     <td class="text-end">{{ v.new_modules if v.prev_version else '' }}</td>
@@ -136,7 +136,7 @@
     <section aria-labelledby="missing-title">
         <div class="section-heading">
             <h2 id="missing-title">In {{ latest.prev_version }}, not in {{ latest.version }}</h2>
-            <a class="dev-only" href="/doodba/migration">Migration plan</a>
+            <a href="/migration?from={{ latest.prev_version | urlencode }}&amp;to={{ latest.version | urlencode }}">All {{ (latest.prev_modules - latest.ported) | num }}, by repository</a>
         </div>
         <p class="dash-caption">Ranked by the {{ latest.prev_version }} modules that depend on them. Upstream may have renamed or merged some.</p>
         {% if d.missing %}
@@ -146,7 +146,7 @@
                 {% for m in d.missing %}
                 <tr>
                     <td class="dash-name">{{ module_link(m.org_name, m.technical_name) }}</td>
-                    <td class="dash-meta">{{ m.org_name }}{% if m.in_progress %} &middot; <span class="dash-flag" title="A migration PR to {{ latest.version }} is open">PR open</span>{% endif %}</td>
+                    <td class="dash-meta">{{ m.org_name }}{% if m.pr %} &middot; <a class="dash-flag" href="{{ m.pr.url }}" target="_blank" rel="noopener" title="Migration PR to {{ latest.version }}: {{ m.pr.title }}">PR #{{ m.pr.prid }}</a>{% elif m.status == 'pr' %} &middot; <span class="dash-flag" title="A migration PR to {{ latest.version }} is open">PR open</span>{% endif %}</td>
                     <td class="dash-num">{{ meter(m.dependents, d.missing[0].dependents) }}</td>
                 </tr>
                 {% endfor %}
