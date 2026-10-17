@@ -1,9 +1,15 @@
 // Copyright Alexandre D. Díaz
+//! Vulnerabilities (`/osv`): the OSV advisories PyPI reports for the pinned
+//! Python dependencies of tracked modules, per Odoo version (one lazily
+//! loaded tab each), grouped by package. A package is its PEP 503 name, not
+//! the requirement string: `cryptography<37` and `cryptography==36.0.0` are
+//! one package with two pins, sharing most advisories.
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder, Result};
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use serde::Serialize;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
@@ -13,80 +19,190 @@ use sqlitedb::models;
 
 use crate::workspace::AreaPool;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+// Field order is the sort order (technical name first).
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OSVModuleRef {
-    pub org_name: String,
     pub technical_name: String,
+    pub org_name: String,
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct OSVInfo {
+#[derive(Debug, Serialize, Clone)]
+pub struct OSVAdvisory {
     pub osv_id: String,
+    pub summary: String,
     pub details: String,
     pub fixed_in: String,
-    pub modules: Vec<OSVModuleRef>,
+    // The package's pins (specifiers) this advisory was reported for.
+    pub pins: BTreeSet<String>,
+    // Lowercased text the page filter matches: package, ID, summary, modules.
+    pub search: String,
+}
+
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct OSVPackage {
+    pub name: String,
+    // Specifier (`<39`, `==36.0.0`) → modules requiring the package that way.
+    pub pins: BTreeMap<String, BTreeSet<OSVModuleRef>>,
+    pub advisories: Vec<OSVAdvisory>,
+    pub module_count: usize,
 }
 
 // One Odoo-version tab's worth of content, ordered newest-first like the
 // rest of the version-tabbed pages (see modules.rs).
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(Debug, Serialize, Clone, Default)]
 pub struct OSVVersionGroup {
     pub odoo_version: String,
-    pub packages: HashMap<String, Vec<OSVInfo>>,
+    pub packages: Vec<OSVPackage>,
     pub vuln_count: usize,
     pub package_count: usize,
     pub module_count: usize,
+    pub no_fix_count: usize,
+}
+
+// `cryptography>=38,<39` → (`cryptography`, `>=38,<39`).
+fn split_requirement(req: &str) -> (&str, &str) {
+    let at = req
+        .find(|c: char| "<>=!~;[( ".contains(c))
+        .unwrap_or(req.len());
+    (req[..at].trim(), req[at..].trim())
+}
+
+// PEP 503: `sentry_sdk`, `Sentry-SDK` and `sentry.sdk` are one package.
+fn package_key(name: &str) -> String {
+    name.to_lowercase()
+        .split(['-', '_', '.'])
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+// First line of prose of the Markdown details: GHSA texts open with a
+// `### Summary`-style heading, some with a code fence; NVD-derived (PYSEC)
+// ones with a "<package> is a ..." sentence, skipped.
+fn summary(details: &str, package: &str) -> String {
+    let mut in_fence = false;
+    let line = details
+        .lines()
+        .map(str::trim)
+        .find(|l| {
+            if l.starts_with("```") {
+                in_fence = !in_fence;
+                return false;
+            }
+            !in_fence && !l.is_empty() && !l.starts_with(['#', '|'])
+        })
+        .unwrap_or_default();
+    let intro = format!("{} is a", package.to_lowercase());
+    let line = match line.to_lowercase().starts_with(&intro) {
+        true => line.split_once(". ").map_or(line, |(_, rest)| rest),
+        false => line,
+    };
+    line.replace(['`', '*'], "")
+}
+
+// Highest of the listed fixed releases (`2.4.0, 1.10.13`), compared numerically.
+fn version_key(fixed_in: &str) -> Vec<u64> {
+    fixed_in
+        .split(',')
+        .map(|v| {
+            v.split(|c: char| !c.is_ascii_digit())
+                .filter_map(|n| n.parse().ok())
+                .collect::<Vec<u64>>()
+        })
+        .max()
+        .unwrap_or_default()
 }
 
 fn compute_osv_groups(conn: &mut SqliteConnection) -> Vec<OSVVersionGroup> {
-    let osv_infos = models::dependency_osv::get_osv_info(conn);
-    // Group package-first (not module-first): the same vulnerability is
-    // shared by every module depending on the vulnerable package, so
-    // grouping by module repeats each vuln once per affected module.
-    let mut res: BTreeMap<i32, HashMap<String, HashMap<String, OSVInfo>>> = BTreeMap::new();
-    let mut affected_modules: HashMap<i32, HashSet<(String, String)>> = HashMap::new();
-    for osv_info in osv_infos {
-        let version_odoo = osv_info.version_odoo;
-        affected_modules.entry(version_odoo).or_default().insert((
-            osv_info.org_name.clone(),
-            osv_info.module_technical_name.clone(),
-        ));
-        let by_ver = res.entry(version_odoo).or_default();
-        let by_pack = by_ver.entry(osv_info.name).or_default();
-        let entry = by_pack.entry(osv_info.osv_id.clone()).or_insert(OSVInfo {
-            osv_id: osv_info.osv_id,
-            details: osv_info.details,
-            fixed_in: osv_info.fixed_in,
-            modules: Vec::new(),
-        });
-        entry.modules.push(OSVModuleRef {
-            org_name: osv_info.org_name,
-            technical_name: osv_info.module_technical_name,
-            name: osv_info.module_name,
-        });
+    // version → package key → (package, its advisories by ID).
+    type ByPackage = BTreeMap<String, (OSVPackage, BTreeMap<String, OSVAdvisory>)>;
+    let mut res: BTreeMap<i32, ByPackage> = BTreeMap::new();
+    for row in models::dependency_osv::get_osv_info(conn) {
+        let (name, pin) = split_requirement(&row.name);
+        let (package, advisories) = res
+            .entry(row.version_odoo)
+            .or_default()
+            .entry(package_key(name))
+            .or_insert_with(|| {
+                let package = OSVPackage {
+                    name: name.to_string(),
+                    ..Default::default()
+                };
+                (package, BTreeMap::new())
+            });
+        package
+            .pins
+            .entry(pin.to_string())
+            .or_default()
+            .insert(OSVModuleRef {
+                technical_name: row.module_technical_name,
+                org_name: row.org_name,
+                name: row.module_name,
+            });
+        advisories
+            .entry(row.osv_id.clone())
+            .or_insert_with(|| OSVAdvisory {
+                osv_id: row.osv_id,
+                summary: summary(&row.details, name),
+                details: row.details,
+                fixed_in: row.fixed_in,
+                pins: BTreeSet::new(),
+                search: String::new(),
+            })
+            .pins
+            .insert(pin.to_string());
     }
 
     // Newest Odoo version first.
     res.into_iter()
         .rev()
-        .map(|(version_odoo, by_pack)| {
-            let vuln_count = by_pack.values().map(|by_id| by_id.len()).sum();
-            let package_count = by_pack.len();
-            let module_count = affected_modules
-                .get(&version_odoo)
-                .map(|m| m.len())
-                .unwrap_or_default();
-            let packages = by_pack
-                .into_iter()
-                .map(|(package_name, by_id)| (package_name, by_id.into_values().collect()))
-                .collect();
+        .map(|(version_odoo, by_package)| {
+            let mut modules = BTreeSet::new();
+            let mut packages = by_package
+                .into_values()
+                .map(|(mut package, advisories)| {
+                    let mut advisories = advisories
+                        .into_values()
+                        .map(|mut adv| {
+                            let affected = adv
+                                .pins
+                                .iter()
+                                .flat_map(|pin| &package.pins[pin])
+                                .map(|m| m.technical_name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            adv.search = format!(
+                                "{} {} {} {affected}",
+                                package.name, adv.osv_id, adv.summary
+                            )
+                            .to_lowercase();
+                            adv
+                        })
+                        .collect::<Vec<_>>();
+                    // No fix first, then the highest release to upgrade to.
+                    advisories.sort_by_key(|a| {
+                        (!a.fixed_in.is_empty(), Reverse(version_key(&a.fixed_in)))
+                    });
+                    package.advisories = advisories;
+                    let package_modules = package.pins.values().flatten().collect::<BTreeSet<_>>();
+                    package.module_count = package_modules.len();
+                    modules.extend(package_modules.into_iter().cloned());
+                    package
+                })
+                .collect::<Vec<_>>();
+            packages.sort_by_key(|p| Reverse(p.advisories.len()));
             OSVVersionGroup {
                 odoo_version: odoo_version_u8_to_string(&(version_odoo as u8)),
+                vuln_count: packages.iter().map(|p| p.advisories.len()).sum(),
+                package_count: packages.len(),
+                module_count: modules.len(),
+                no_fix_count: packages
+                    .iter()
+                    .flat_map(|p| &p.advisories)
+                    .filter(|a| a.fixed_in.is_empty())
+                    .count(),
                 packages,
-                vuln_count,
-                package_count,
-                module_count,
             }
         })
         .collect::<Vec<_>>()
@@ -144,4 +260,39 @@ pub async fn route_tab(
     Ok(HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_osv_helpers() {
+        assert_eq!(
+            split_requirement("cryptography>=38,<39"),
+            ("cryptography", ">=38,<39")
+        );
+        assert_eq!(split_requirement("pypdf ~= 3.1"), ("pypdf", "~= 3.1"));
+        assert_eq!(split_requirement("bokeh"), ("bokeh", ""));
+        assert_eq!(package_key("Sentry__SDK"), package_key("sentry.sdk"));
+        assert_eq!(package_key("pdfminer.six"), "pdfminer-six");
+        assert_eq!(
+            summary(
+                "### Summary\n\n```py\nx\n```\nCalling `load_pem` **crashes**.\nMore.",
+                "x"
+            ),
+            "Calling load_pem crashes."
+        );
+        assert_eq!(
+            summary(
+                "PyJWT is a JWT library. Prior to 2.12.0, crit is ignored.",
+                "pyjwt"
+            ),
+            "Prior to 2.12.0, crit is ignored."
+        );
+        assert_eq!(summary("", "x"), "");
+        assert!(version_key("2.4.0, 1.10.13") > version_key("2.3.9"));
+        assert!(version_key("6.12.0") > version_key("6.6.0"));
+        assert!(version_key("").is_empty());
+    }
 }

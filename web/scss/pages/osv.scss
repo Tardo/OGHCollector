@@ -1,36 +1,163 @@
 // Copyright 2025 Alexandre D. Díaz
-#toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75em;
-  margin-bottom: 1.25em;
-  padding: 0.75em 1em;
-  background-color: var(--bs-secondary-bg);
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.5rem;
+// Vulnerabilities (pages/osv.html, partials/osv_version_content.html).
+
+.osv-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1.25rem;
+
+    #osv_search { width: min(100%, 22rem); }
 }
 
-#osv_search {
-  flex: 1;
-  min-width: 16rem;
-  max-width: 24rem;
-  background-color: var(--bs-tertiary-bg);
-  color: var(--bs-body-color);
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.375rem;
-  padding: 0.35em 0.6em;
-  font: inherit;
-  font-size: 0.9rem;
-  outline: none;
+.osv-table {
+    font-variant-numeric: tabular-nums;
 
-  &:focus-visible {
-    outline: 2px solid var(--bs-primary);
-    outline-offset: 1px;
-  }
+    thead th { white-space: nowrap; }
+    tbody { border-top: 0; }
+    td { vertical-align: top; }
+
+    // Package group header: name + count, then each pin with its modules.
+    .osv-package-row th {
+        padding: 0.8rem 1rem 0.7rem;
+        font-size: 0.8rem;
+        font-weight: 400;
+        letter-spacing: normal;
+        text-transform: none;
+        background-color: var(--bs-tertiary-bg);
+    }
 }
 
+.osv-package-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+}
+
+.osv-package-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--bs-body-color);
+}
+
+.osv-package-count { color: var(--bs-secondary-color); }
+
+.osv-pins {
+    margin: 0.3rem 0 0;
+    padding: 0;
+    list-style: none;
+    line-height: 1.6;
+
+    code { margin-right: 0.35rem; color: var(--bs-body-color); }
+}
+
+.osv-id {
+    white-space: nowrap;
+
+    small {
+        display: block;
+        color: var(--bs-secondary-color);
+
+        code { color: inherit; }
+    }
+}
+
+// Takes the remaining width; the summary line truncates, open or closed.
+.osv-summary {
+    width: 100%;
+    max-width: 0;
+
+    summary {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+
+        &:hover { color: var(--ommd-accent); }
+
+        .material-icons {
+            margin-right: 0.25rem;
+            font-size: 1.1rem;
+            vertical-align: -0.3rem;
+            color: var(--bs-secondary-color);
+            transition: transform 0.15s;
+        }
+    }
+
+    details[open] summary .material-icons { transform: rotate(90deg); }
+}
+
+.osv-fix {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.osv-no-fix {
+    font-weight: 600;
+    color: var(--bs-danger-text-emphasis);
+}
+
+// Advisory Markdown: headings at body size, long texts scroll in place.
 .osv-details {
-  white-space: pre-wrap;
-  max-width: 70ch;
+    max-height: 28rem;
+    overflow: auto;
+    margin: 0.6rem 0 0.25rem 1.35rem;
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--bs-border-color);
+    font-size: 0.85rem;
+    line-height: 1.55;
+    white-space: normal;
+    overflow-wrap: anywhere;
+
+    h1, h2, h3, h4, h5, h6 {
+        margin: 0.9rem 0 0.35rem;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+
+    > :first-child { margin-top: 0; }
+    p:last-child { margin-bottom: 0; }
+
+    pre {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.8rem;
+        background-color: var(--bs-tertiary-bg);
+        border-radius: var(--bs-border-radius);
+        overflow-wrap: normal;
+    }
+}
+
+// Phones: ID and fix on one line, the summary full width below it.
+@media (max-width: 575.98px) {
+    .panel .osv-table {
+        min-width: 0;
+
+        thead { display: none; }
+        tbody, .osv-package-row th { display: block; }
+        .osv-package-row { display: block; }
+
+        tr[data-search] {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            border-bottom: 1px solid var(--bs-border-color-translucent);
+
+            td { border-bottom: 0; }
+        }
+
+        .osv-fix { grid-area: 1 / 2; }
+
+        .osv-summary {
+            grid-area: 2 / 1 / auto / -1;
+            min-width: 0;
+            max-width: none;
+            padding-top: 0;
+        }
+
+        .osv-details { margin-left: 0.4rem; }
+    }
 }

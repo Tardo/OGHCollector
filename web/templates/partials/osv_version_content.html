@@ -2,38 +2,83 @@
 {# Content of one Odoo-version tab-pane on pages/osv.html. Rendered eagerly
    for the active tab and via routes::osv::route_tab for the rest, fetched
    lazily on first tab activation so a page with many Odoo versions doesn't
-   ship every version's packages/vulnerabilities up front. #}
-<p class="text-body-secondary">{{ version.vuln_count }} vulnerabilit{{ 'y' if version.vuln_count == 1 else 'ies' }} across {{ version.package_count }} package{{ 's' if version.package_count != 1 else '' }}, affecting {{ version.module_count }} module{{ 's' if version.module_count != 1 else '' }}.</p>
-{% for package_name in version.packages %}
-<table class="table table-striped-columns">
-    <thead>
-        <tr class="table-active"><th colspan="4" class="fs-5">{{ package_name }}</th></tr>
-        <tr>
-            <th>ID</th>
-            <th class="text-nowrap">Fixed In</th>
-            <th>Affected modules <span class="text-body-secondary material-icons" style="cursor: help;" title="Modules whose dependency tree includes the vulnerable package. That doesn't necessarily mean the module uses the affected code: treat it as a starting point for review, not a confirmed impact." aria-label="About affected modules">info_outline</span></th>
-            <th>Details</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for osv in version.packages[package_name] %}
-        {% set module_names = osv.modules | map(attribute="technical_name") | join(" ") %}
-        <tr data-search="{{ (package_name + ' ' + osv.osv_id + ' ' + module_names) | lower }}">
-            <td class="text-nowrap"><a href="https://osv.dev/vulnerability/{{ osv.osv_id }}" target="_blank" rel="noopener noreferrer">{{ osv.osv_id }}</a></td>
-            <td class="text-nowrap text-center">{{ osv.fixed_in }}</td>
-            <td>
-            {% for mod in osv.modules %}
-                <a class="badge text-bg-secondary text-decoration-none me-1" href="/module/{{ mod.org_name }}/{{ mod.technical_name }}" title="{{ mod.name }}">{{ mod.technical_name }}</a>
+   ship every version's packages/advisories up front. One table, one
+   <tbody> per package (its pins and modules, then its advisories) so
+   osv.mjs can hide a package whose advisories all miss the filter. #}
+<div class="row g-3">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gpp_maybe</span> Advisories</div>
+            <div class="stat-card-value">{{ version.vuln_count }}</div>
+            <div class="stat-card-note">GHSA and PYSEC entries may describe the same issue</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> Packages</div>
+            <div class="stat-card-value">{{ version.package_count }}</div>
+            <div class="stat-card-note">Python dependencies with an advisory</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> Modules</div>
+            <div class="stat-card-value">{{ version.module_count }}</div>
+            <div class="stat-card-note">Declaring an affected version</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">report</span> No fix</div>
+            <div class="stat-card-value{{ ' text-danger-emphasis' if version.no_fix_count else '' }}">{{ version.no_fix_count }}</div>
+            <div class="stat-card-note">Advisories without a fixed release</div>
+        </div>
+    </div>
+</div>
+
+<div class="section-heading">
+    <h2>Advisories by package</h2>
+    <p>Most advisories first; within a package, no fix first, then the highest release to upgrade to.</p>
+</div>
+<div class="panel">
+    <table class="table osv-table">
+        <thead>
+            <tr><th>Advisory</th><th>Summary</th><th class="text-end">Fixed in</th></tr>
+        </thead>
+        {% for package in version.packages %}
+        <tbody class="osv-package">
+            <tr class="osv-package-row">
+                <th colspan="3" scope="rowgroup">
+                    <div class="osv-package-head">
+                        <span class="osv-package-name">{{ package.name }}</span>
+                        <span class="osv-package-count">{{ package.advisories | length }} advisor{{ 'y' if package.advisories | length == 1 else 'ies' }} &middot; {{ package.module_count }} module{{ 's' if package.module_count != 1 else '' }}</span>
+                    </div>
+                    <ul class="osv-pins">
+                        {% for pin, modules in package.pins | items %}
+                        <li><code>{{ pin or 'any' }}</code> {% for mod in modules %}<a href="/module/{{ mod.org_name | urlencode }}/{{ mod.technical_name | urlencode }}" title="{{ mod.name }} ({{ mod.org_name }})">{{ mod.technical_name }}</a>{{ ', ' if not loop.last else '' }}{% endfor %}</li>
+                        {% endfor %}
+                    </ul>
+                </th>
+            </tr>
+            {% for osv in package.advisories %}
+            <tr data-search="{{ osv.search }}">
+                <td class="osv-id">
+                    <a href="https://osv.dev/vulnerability/{{ osv.osv_id | urlencode }}" target="_blank" rel="noopener noreferrer">{{ osv.osv_id }}</a>
+                    {% if osv.pins | length < package.pins | length %}<small>only {% for pin in osv.pins %}<code>{{ pin or 'any' }}</code>{{ ', ' if not loop.last else '' }}{% endfor %}</small>{% endif %}
+                </td>
+                <td class="osv-summary">
+                    {% if osv.details %}
+                    <details>
+                        <summary title="Show details"><span class="material-icons" aria-hidden="true">chevron_right</span>{{ osv.summary or osv.osv_id }}</summary>
+                        <div class="osv-details">{{ osv.details | markdown }}</div>
+                    </details>
+                    {% else %}<span class="text-body-secondary">No description</span>{% endif %}
+                </td>
+                <td class="osv-fix">{% if osv.fixed_in %}{{ osv.fixed_in }}{% else %}<span class="osv-no-fix">No fix</span>{% endif %}</td>
+            </tr>
             {% endfor %}
-            </td>
-            <td>
-                <details>
-                    <summary>Show details</summary>
-                    <div class="osv-details">{{ osv.details }}</div>
-                </details>
-            </td>
-        </tr>
+        </tbody>
         {% endfor %}
-    </tbody>
-</table>
-{% endfor %}
+    </table>
+</div>
+<p class="osv-no-match text-body-secondary" hidden>No advisories match the filter in Odoo {{ version.odoo_version }}.</p>

@@ -3,13 +3,16 @@
 // Fetches `url` and swaps it in as `pane`'s content. `onSuccess` only fires
 // on a real 2xx response, so a caller tracking "still needs loading" state
 // (see initLazyTabPanes below) can retry later instead of getting stuck
-// after a transient failure.
+// after a transient failure. The pane then dispatches a bubbling
+// `lazy-tab-loaded`, for page code that post-processes tab content (osv.mjs
+// re-applies its filter).
 export function fetchIntoPane(pane, url, onSuccess) {
   fetch(url)
     .then(res => (res.ok ? res.text() : Promise.reject(res.status)))
     .then(html => {
       pane.innerHTML = html;
       onSuccess?.();
+      pane.dispatchEvent(new Event('lazy-tab-loaded', {bubbles: true}));
     })
     .catch(() => {
       pane.innerHTML = '<p class="text-danger">Failed to load this tab.</p>';

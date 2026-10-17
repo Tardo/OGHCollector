@@ -14,19 +14,22 @@
 
 <header class="page-header">
     <h1>Vulnerabilities</h1>
-    <p class="page-header-desc">Known security issues, from the <a href="https://osv.dev/" target="_blank" rel="noopener">Open Source Vulnerabilities</a> database, in the Python packages that tracked modules depend on — grouped by Odoo version and package.</p>
+    <p class="page-header-desc">Published advisories from the <a href="https://osv.dev/" target="_blank" rel="noopener">OSV</a> database for the pinned Python dependencies of tracked modules. A module is listed because it declares an affected version, not because it uses the affected code: a starting point for review. <a href="/about#vulnerabilities">How it's checked</a></p>
 </header>
 
 <div id="osv">
-    <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
-    {% for version in osv_info %}
-        <li class="nav-item" role="presentation">
-            <button class="nav-link {{ 'active' if loop.index == 1 else '' }}" id="osv-pills-{{ version.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#osv-pills-{{ version.odoo_version }}" type="button" role="tab" aria-controls="osv-pills-{{ version.odoo_version }}" aria-selected="true">{{ version.odoo_version }}</button>
-        </li>
-    {% endfor %}
-    </ul>
-    <div id="toolbar">
-        <input type="search" id="osv_search" placeholder="Filter by package, OSV ID or module..." autocomplete="off" autofocus>
+{% if not osv_info %}
+    <p class="text-body-secondary">No known advisories in the pinned Python dependencies of tracked modules.</p>
+{% else %}
+    <div class="osv-toolbar">
+        <ul class="nav nav-pills" id="pills-tab" role="tablist">
+        {% for version in osv_info %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if loop.first else '' }}" id="osv-pills-{{ version.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#osv-pills-{{ version.odoo_version }}" type="button" role="tab" aria-controls="osv-pills-{{ version.odoo_version }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ version.odoo_version }}</button>
+            </li>
+        {% endfor %}
+        </ul>
+        <input type="search" class="form-control form-control-sm" id="osv_search" placeholder="Filter by package, advisory or module" aria-label="Filter advisories" autocomplete="off" autofocus>
     </div>
     <div class="tab-content" id="pills-tabContent">
     {% for version in osv_info %}
@@ -36,13 +39,13 @@
         </div>
         {% else %}
         {# Fetched on demand (see osv.mjs) when this tab is first shown, to
-           avoid shipping every Odoo version's packages/vulnerabilities up
-           front. #}
+           avoid shipping every Odoo version's packages/advisories up front. #}
         <div class="tab-pane fade" id="osv-pills-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="osv-pills-{{ version.odoo_version }}-tab" tabindex="0" data-lazy-tab-url="/osv/tab/{{ version.odoo_version | urlencode }}">
             <p class="text-body-secondary">Loading&hellip;</p>
         </div>
         {% endif %}
     {% endfor %}
     </div>
+{% endif %}
 </div>
 {% endblock %}
