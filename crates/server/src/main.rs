@@ -145,6 +145,8 @@ async fn main() -> std::io::Result<()> {
         });
         env.add_filter("markdown", utils::markdown);
         env.add_filter("repo_files", |git: String| oghutils::git::files_url(&git));
+        env.add_filter("num", utils::num);
+        env.add_filter("avatar", utils::avatar);
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);

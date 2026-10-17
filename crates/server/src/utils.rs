@@ -2,7 +2,9 @@
 //! `utils::markdown` (`markdown` filter): module description → HTML via `pulldown-cmark`; raw HTML
 //! shown as text, URL scheme allowlist (http/https/mailto/relative), relative images resolved
 //! against the `repo_files` raw URL. Custom filters must also be registered in the template-test
-//! `Environment` (`routes/module.rs`).
+//! `Environment` (`routes/module.rs`) once a template it renders uses them. `num` (thousands
+//! separators) and `avatar` (initials + a name-derived hue, `partials/report.html`) are
+//! display-only filters.
 use actix_web::HttpRequest;
 use minijinja::{context, Value};
 use std::collections::HashMap;
@@ -153,6 +155,55 @@ pub fn markdown(text: Option<String>, img_base: Option<String>) -> Value {
     Value::from_safe_string(out)
 }
 
+/// `1234567` → `"1,234,567"`.
+pub fn thousands(n: i64) -> String {
+    let digits = n.unsigned_abs().to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3 + 1);
+    if n < 0 {
+        out.push('-');
+    }
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `num` filter: integers get thousands separators, anything else prints as is.
+pub fn num(value: Value) -> String {
+    i64::try_from(value.clone())
+        .map(thousands)
+        .unwrap_or_else(|_| value.to_string())
+}
+
+/// `avatar` filter: initials and a stable hue (0-359) for a committer name.
+/// A parenthesized suffix ("Name (ACME)") is ignored; one word gives two letters.
+pub fn avatar(name: String) -> Value {
+    let words: Vec<&str> = name
+        .split('(')
+        .next()
+        .unwrap_or_default()
+        .split(|c: char| c.is_whitespace() || "-_.".contains(c))
+        .filter(|w| w.chars().next().is_some_and(char::is_alphabetic))
+        .collect();
+    let initials: String = match words.as_slice() {
+        [] => name.chars().take(1).collect(),
+        [one] => one
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .take(2)
+            .collect(),
+        [first, .., last] => first.chars().take(1).chain(last.chars().take(1)).collect(),
+    };
+    // FNV-1a: stable across runs and platforms, unlike std's hasher.
+    let hash = name.bytes().fold(0x811c_9dc5_u32, |h, b| {
+        (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+    });
+    context!(initials => initials.to_uppercase(), hue => hash % 360)
+}
+
 pub fn get_base_url(req: &HttpRequest) -> String {
     let conn_info = req.connection_info();
     format!("{}://{}", conn_info.scheme(), conn_info.host())
@@ -182,7 +233,7 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{markdown, xml_escape};
+    use super::{avatar, markdown, num, xml_escape};
 
     #[test]
     fn test_markdown_is_sanitized() {
@@ -223,5 +274,26 @@ mod tests {
             xml_escape("a&b<c>\"d' \u{1b}[0m\tok"),
             "a&amp;b&lt;c&gt;&quot;d&apos; [0m\tok"
         );
+    }
+
+    #[test]
+    fn test_num_and_avatar() {
+        assert_eq!(num(19879.into()), "19,879");
+        assert_eq!(num((-1234567).into()), "-1,234,567");
+        assert_eq!(num(999.into()), "999");
+        assert_eq!(num(18.5.into()), "18.5");
+        let initials = |name: &str| {
+            avatar(name.into())
+                .get_attr("initials")
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(initials("Pedro M. Baeza"), "PB");
+        assert_eq!(initials("Stéphane Bidoul (ACSONE)"), "SB");
+        assert_eq!(initials("OCA-git-bot"), "OB");
+        assert_eq!(initials("eLBati"), "EL");
+        assert_eq!(initials("Yusuke1998"), "YU");
+        let hue = |name: &str| avatar(name.into()).get_attr("hue").unwrap();
+        assert_eq!(hue("Pedro M. Baeza"), hue("Pedro M. Baeza"));
     }
 }

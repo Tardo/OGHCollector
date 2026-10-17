@@ -1,6 +1,7 @@
 // Copyright Alexandre D. Díaz
 // Overview (dashboard.html) plus both localization pages (localizations.html,
 // localization.html link this same sheet).
+@import "../components/report";
 
 // ---- Overview ----
 
@@ -78,124 +79,6 @@
         border-radius: 1rem;
         opacity: 0.65;
     }
-}
-
-// Lower half: report sections (heading + caption + ranked table) on the page
-// background, no card chrome. As many columns as fit; dev-only sections
-// collapse away in user mode without leaving holes.
-.dash-report {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-    column-gap: 3rem;
-    align-items: start;
-}
-
-.dash-caption {
-    margin: -0.45rem 0 0.75rem;
-    font-size: 0.8rem;
-    color: var(--bs-secondary-color);
-}
-
-.dash-rank {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-    font-variant-numeric: tabular-nums;
-
-    th {
-        padding: 0 0 0.35rem;
-        border-bottom: 1px solid var(--bs-border-color);
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--bs-secondary-color);
-        white-space: nowrap;
-    }
-
-    td {
-        padding: 0.42rem 0;
-        border-bottom: 1px solid var(--bs-border-color-translucent);
-        white-space: nowrap;
-    }
-
-    th + th, td + td { padding-left: 1rem; }
-
-    a { font-weight: 600; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    // Takes the remaining width and truncates, whatever the other columns need.
-    .dash-name {
-        width: 100%;
-        max-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .dash-meta { color: var(--bs-secondary-color); }
-    .dash-num { text-align: right; }
-}
-
-// Inline proportional bar before a ranked value (100% = the first row).
-.dash-meter {
-    display: inline-block;
-    width: 4.5rem;
-    height: 0.3rem;
-    margin-right: 0.6rem;
-    vertical-align: middle;
-    background-color: var(--bs-tertiary-bg);
-
-    > span { display: block; height: 100%; background-color: var(--ommd-accent-dim); }
-    &.is-danger > span { background-color: var(--bs-danger); }
-}
-
-.dash-val {
-    display: inline-block;
-    min-width: 4ch;
-    text-align: right;
-}
-
-.dash-flag {
-    font-weight: 600;
-    color: var(--bs-warning-text-emphasis);
-}
-
-// Monthly commits: plain CSS bars on a baseline, the height is set inline (%).
-.dash-chart {
-    display: flex;
-    gap: 3px;
-    height: 6.5rem;
-    margin-bottom: 1.25rem;
-}
-
-.dash-chart-col {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-width: 0;
-
-    &.is-last .dash-chart-bar { background-color: var(--ommd-accent); opacity: 1; }
-    &.is-partial .dash-chart-bar { opacity: 0.45; }
-}
-
-.dash-chart-track {
-    display: flex;
-    flex: 1;
-    align-items: flex-end;
-    border-bottom: 1px solid var(--bs-border-color);
-}
-
-.dash-chart-bar {
-    width: 100%;
-    background-color: var(--ommd-accent-dim);
-    opacity: 0.7;
-}
-
-.dash-chart-label {
-    margin-top: 0.3rem;
-    font-size: 0.68rem;
-    text-align: center;
-    color: var(--bs-secondary-color);
 }
 
 // ---- Localization globe ----

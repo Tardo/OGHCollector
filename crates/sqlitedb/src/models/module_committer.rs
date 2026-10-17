@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::schema::module_committer;
 
 use super::module::CommitterActivity;
-use super::{committer, module, system_event};
+use super::{committer, module, system_event, HUMAN_COMMITTER};
 use oghutils::version::odoo_version_u8_to_string;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
@@ -114,6 +114,39 @@ pub fn get_activity_by_committer_name(
     .bind::<diesel::sql_types::Text, _>(committer_name)
     .load::<CommitterModuleActivity>(conn)
     .expect("DB error in module_committer::get_activity_by_committer_name")
+}
+
+#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
+pub struct SharedModules {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub shared: i64,
+}
+
+/// Other people (bots left out) who committed to the most of the same modules
+/// as `committer_name`, counted by technical name across versions.
+pub fn get_co_committers(
+    conn: &mut SqliteConnection,
+    committer_name: &str,
+    limit: i64,
+) -> Vec<SharedModules> {
+    diesel::sql_query(format!(
+        "SELECT com.name, COUNT(DISTINCT mod.technical_name) AS shared \
+         FROM module_committer AS mine \
+         INNER JOIN committer AS me ON me.id = mine.committer_id \
+         INNER JOIN module AS mod ON mod.id = mine.module_id \
+         INNER JOIN module_committer AS other ON other.module_id = mine.module_id \
+         INNER JOIN committer AS com ON com.id = other.committer_id \
+         WHERE me.name = ? AND com.id <> me.id AND {HUMAN_COMMITTER} \
+         GROUP BY com.id \
+         ORDER BY shared DESC, com.name \
+         LIMIT ?"
+    ))
+    .bind::<diesel::sql_types::Text, _>(committer_name)
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .load::<SharedModules>(conn)
+    .expect("DB error in module_committer::get_co_committers")
 }
 
 pub fn add(

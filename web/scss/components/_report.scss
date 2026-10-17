@@ -1,0 +1,173 @@
+// Copyright Alexandre D. Díaz
+// Report sections (Overview, committer pages): `.section-heading` + caption +
+// a dense ranked table or a column chart on the page background, no card
+// chrome. Pair with the `meter` macro of `partials/report.html`.
+
+// Two sections per row, a lone one centred, `.report-wide` on a row of its
+// own; one per row when the content can't fit two of ~420px. Flex, not grid:
+// a dev-only section hidden in user mode just drops out, leaving no hole.
+.dash-report {
+    container-type: inline-size;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    column-gap: 3rem;
+
+    > * { flex: 0 0 calc(50% - 1.5rem); min-width: 0; }
+    > .report-wide { flex-basis: 100%; }
+}
+
+@container (max-width: 900px) {
+    .dash-report > * { flex-basis: 100%; }
+}
+
+.dash-caption {
+    margin: -0.45rem 0 0.75rem;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+}
+
+.dash-rank {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+
+    th {
+        padding: 0 0 0.35rem;
+        border-bottom: 1px solid var(--bs-border-color);
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+        white-space: nowrap;
+    }
+
+    td {
+        padding: 0.42rem 0;
+        border-bottom: 1px solid var(--bs-border-color-translucent);
+        white-space: nowrap;
+    }
+
+    th + th, td + td { padding-left: 1rem; }
+
+    a { font-weight: 600; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    // Takes the remaining width and truncates, whatever the other columns need.
+    .dash-name {
+        width: 100%;
+        max-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dash-meta { color: var(--bs-secondary-color); }
+    .dash-num { text-align: right; }
+}
+
+// Inline proportional bar before a ranked value (100% = the first row).
+.dash-meter {
+    display: inline-block;
+    width: 4.5rem;
+    height: 0.3rem;
+    margin-right: 0.6rem;
+    vertical-align: middle;
+    background-color: var(--bs-tertiary-bg);
+
+    > span { display: block; height: 100%; background-color: var(--ommd-accent-dim); }
+    &.is-danger > span { background-color: var(--bs-danger); }
+}
+
+.dash-val {
+    display: inline-block;
+    min-width: 4ch;
+    text-align: right;
+}
+
+.dash-flag {
+    font-weight: 600;
+    color: var(--bs-warning-text-emphasis);
+}
+
+// Monthly commits: plain CSS bars on a baseline, the height is set inline (%).
+.dash-chart {
+    display: flex;
+    gap: 3px;
+    height: 6.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.dash-chart-col {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+
+    &.is-last, &.is-peak { .dash-chart-bar { background-color: var(--ommd-accent); opacity: 1; } }
+    &.is-partial .dash-chart-bar { opacity: 0.45; }
+}
+
+.dash-chart-track {
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.dash-chart-bar {
+    width: 100%;
+    background-color: var(--ommd-accent-dim);
+    opacity: 0.7;
+}
+
+.dash-chart-label {
+    margin-top: 0.3rem;
+    font-size: 0.68rem;
+    text-align: center;
+    color: var(--bs-secondary-color);
+}
+
+// Selective direct label: the value of one highlighted column, above its bar.
+.dash-chart-bar { position: relative; }
+
+.dash-chart-value {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    padding-bottom: 0.2rem;
+    transform: translateX(-50%);
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--bs-body-color);
+}
+
+// Initials on a name-derived hue (`avatar` macro). OKLCH keeps every hue at
+// the same perceived lightness, so no name gets a louder disc than another.
+.avatar {
+    --hue: 200;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.55rem;
+    height: 1.55rem;
+    margin-right: 0.55rem;
+    vertical-align: middle;
+    border-radius: 50%;
+    font: 600 0.6rem/1 'Space Grotesk', system-ui, sans-serif;
+    letter-spacing: 0.02em;
+    color: oklch(0.34 0.08 var(--hue));
+    background-color: oklch(0.9 0.045 var(--hue));
+
+    [data-bs-theme="dark"] & {
+        color: oklch(0.93 0.04 var(--hue));
+        background-color: oklch(0.42 0.075 var(--hue));
+    }
+
+    &.avatar-md { width: 2.25rem; height: 2.25rem; margin-right: 0.75rem; font-size: 0.8rem; }
+    &.avatar-lg { width: 4.5rem; height: 4.5rem; margin: 0; font-size: 1.5rem; }
+}

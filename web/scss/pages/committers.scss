@@ -1,7 +1,109 @@
 // Copyright 2026 Alexandre D. Díaz
-#committer_search {
-    margin-bottom: 5.5em;
+@import "../components/report";
+
+// The search component is absolute so its results overlay the page: hold
+// the input's height in the flow.
+.committers-search {
+    position: relative;
     z-index: 3;
+    height: 3.6rem;
+    margin-bottom: 1.5rem;
 }
 
-.longevity-table { min-width: 620px; }
+.stat-bar {
+    height: 0.35rem;
+    margin: 0.4rem 0 0.3rem;
+    overflow: hidden;
+    border-radius: 1rem;
+    background-color: var(--bs-tertiary-bg);
+
+    > span { display: block; height: 100%; background-color: var(--bs-secondary-color); opacity: 0.7; }
+}
+
+.arrivals-chart { height: 14rem; padding-top: 1rem; }
+
+// Veterans: one shared time axis, a bar from first to latest commit.
+.vet-timeline {
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.vet-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 15rem) minmax(0, 1fr) 3.5rem;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 0.32rem 0;
+    border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+.vet-axis {
+    padding-bottom: 0.35rem;
+    border-bottom-color: var(--bs-border-color);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+
+    .vet-track { height: 1rem; }
+}
+
+.vet-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+
+    a { font-weight: 600; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+}
+
+.vet-track {
+    position: relative;
+    height: 1.15rem;
+}
+
+.vet-tick {
+    position: absolute;
+    transform: translateX(-50%);
+}
+
+.vet-grid {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed var(--bs-border-color-translucent);
+}
+
+.vet-bar {
+    position: absolute;
+    top: 0.2rem;
+    bottom: 0.2rem;
+    display: flex;
+    align-items: center;
+    min-width: 2px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--ommd-accent-dim), var(--ommd-accent));
+
+    // Years inside the bar when it's long enough (always, for veterans).
+    > span {
+        padding: 0 0.5rem;
+        overflow: hidden;
+        white-space: nowrap;
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: var(--bs-body-bg);
+    }
+}
+
+.vet-years {
+    text-align: right;
+    font-weight: 600;
+}
+
+@media (max-width: 575.98px) {
+    .vet-row { grid-template-columns: minmax(0, 1fr) 3rem; gap: 0.25rem 0.75rem; }
+    .vet-track { grid-column: 1 / -1; grid-row: 2; }
+    .vet-axis .vet-track { grid-row: 1; }
+    .vet-axis > span:first-child, .vet-axis .vet-years { display: none; }
+}

@@ -1,50 +1,207 @@
 // Copyright 2026 Alexandre D. Díaz
-.activity-chart, .work-landscape {
-    margin: 2rem 0 3rem;
-}
+@import "../components/report";
 
-.activity-chart-row {
-    display: grid;
-    grid-template-columns: 3.5rem minmax(0, 1fr) 5rem;
-    align-items: center;
-    gap: 1rem;
-    margin: .5rem 0;
-    font-variant-numeric: tabular-nums;
-
-    strong { text-align: right; }
-}
-
-.activity-chart-track {
-    height: 1.25rem;
-    border-radius: .3rem;
-    background: var(--bs-border-color-translucent);
-    overflow: hidden;
-
-    span { display: block; height: 100%; border-radius: inherit; background: var(--ommd-accent); }
-}
-
-.landscape-repos {
+.committer-hero.page-header {
     display: flex;
-    flex-wrap: wrap;
-    gap: .5rem 1.5rem;
+    align-items: center;
+    gap: 1.25rem;
+
+    > div { min-width: 0; overflow-wrap: anywhere; }
+    .page-header-desc a { font-weight: 600; text-decoration: none; }
+}
+
+// ---- Trivia: big-type facts ----
+
+.fact-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+    gap: 1.25rem 1.5rem;
+}
+
+.fact {
+    min-width: 0;
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--ommd-accent-dim);
+
+    > .material-icons { font-size: 1.15rem; color: var(--ommd-accent); }
+}
+
+.fact-headline {
+    margin: 0.15rem 0 0.3rem;
+    font: 600 clamp(1.25rem, 2vw, 1.6rem)/1.15 'Space Grotesk', 'DM Sans', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    color: var(--bs-emphasis-color);
+}
+
+.fact-caption {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--bs-secondary-color);
+    overflow-wrap: anywhere;
+
+    a { font-weight: 600; text-decoration: none; }
+}
+
+// ---- Commit calendar: years × months, one-hue ramp ----
+
+.heatmap {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.heatmap-row {
+    display: grid;
+    grid-template-columns: 2.6rem repeat(12, minmax(0, 1.6rem)) minmax(7rem, 1fr);
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 3px;
+}
+
+.heatmap-head {
+    color: var(--bs-secondary-color);
+    font-size: 0.65rem;
+    text-align: center;
+}
+
+.heatmap-year { color: var(--bs-secondary-color); }
+
+// The year's bar stretches over whatever width the cells leave.
+.heatmap-total {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-left: 0.75rem;
+    white-space: nowrap;
+
+    .dash-meter { flex: 1; }
+}
+
+.heatmap-head .heatmap-total {
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.heatmap-cell {
+    display: block;
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background-color: var(--bs-tertiary-bg);
+
+    &[data-l="1"] { background-color: color-mix(in oklab, var(--ommd-accent) 28%, var(--bs-tertiary-bg)); }
+    &[data-l="2"] { background-color: color-mix(in oklab, var(--ommd-accent) 50%, var(--bs-tertiary-bg)); }
+    &[data-l="3"] { background-color: color-mix(in oklab, var(--ommd-accent) 74%, var(--bs-tertiary-bg)); }
+    &[data-l="4"] { background-color: var(--ommd-accent); }
+}
+
+// Phones: the year totals keep their number, lose their bar.
+@media (max-width: 575.98px) {
+    .heatmap-row { grid-template-columns: 2.4rem repeat(12, minmax(0, 1.45rem)) auto; }
+    .heatmap-total { padding-left: 0.25rem; }
+    .heatmap-total .dash-meter { display: none; }
+}
+
+.heatmap-legend {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 0.6rem;
+    padding-left: 2.6rem;
+    color: var(--bs-secondary-color);
+
+    .heatmap-cell { width: 0.8rem; }
+}
+
+// ---- Odoo versions ----
+
+.versions-chart {
+    height: 8.5rem;
+    padding-top: 1rem;
+
+    .dash-chart-label { font-size: 0.62rem; }
+}
+
+// ---- Repositories: share of commits, validated categorical slots ----
+// (dataviz reference palette, adjacent pairs CVD-checked on both surfaces;
+// light slots under 3:1 are relieved by the labelled table below the bar).
+
+.share-bar {
+    display: flex;
+    gap: 2px;
+    height: 0.8rem;
+    margin-bottom: 1rem;
+
+    > span { min-width: 2px; border-radius: 3px; }
+}
+
+.share-swatch {
+    display: inline-block;
+    width: 0.65rem;
+    height: 0.65rem;
+    margin-right: 0.55rem;
+    vertical-align: baseline;
+    border-radius: 2px;
+}
+
+$share-light: #2a78d6, #eb6834, #1baf7a, #eda100, #e87ba4, #008300;
+$share-dark: #3987e5, #d95926, #199e70, #c98500, #d55181, #008300;
+
+@for $i from 1 through length($share-light) {
+    .share-#{$i} { background-color: nth($share-light, $i); }
+
+    [data-bs-theme="dark"] .share-#{$i} { background-color: nth($share-dark, $i); }
+}
+
+.share-other { background-color: var(--bs-border-color); }
+
+// ---- People ----
+
+.peer-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+    gap: 0.9rem 1.5rem;
+    margin: 0;
     padding: 0;
     list-style: none;
-    font-size: .85rem;
 
-    li { display: flex; align-items: center; gap: .4rem; }
-    li span { flex: 0 0 .75rem; height: .75rem; border-radius: .2rem; }
+    li { display: flex; align-items: center; min-width: 0; }
+    li > span:last-child { min-width: 0; }
+
+    a {
+        display: block;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+    small { display: block; font-size: 0.75rem; color: var(--bs-secondary-color); }
 }
 
-.landscape-viewport { overflow-x: auto; }
+// ---- Modules: version span over the committer's own versions ----
 
-#committer-landscape {
-    display: block;
-    width: 100%;
-    min-width: 850px;
-    height: clamp(340px, 55vw, 560px);
-    border-radius: .75rem;
-    touch-action: none;
-    cursor: grab;
+.version-range {
+    position: relative;
+    display: inline-block;
+    width: 4.5rem;
+    height: 0.3rem;
+    margin-right: 0.6rem;
+    vertical-align: middle;
+    border-radius: 1rem;
+    background-color: var(--bs-tertiary-bg);
+    background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--versions) - 1px), var(--bs-body-bg) 0 calc(100% / var(--versions)));
 
-    &:active { cursor: grabbing; }
+    // Secondary ink, not the accent: it's a span, not a quantity like the
+    // commits meter next to it.
+    > span {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-radius: 1rem;
+        background-color: var(--bs-secondary-color);
+        opacity: 0.55;
+    }
 }

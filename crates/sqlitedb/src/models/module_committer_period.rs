@@ -120,51 +120,34 @@ pub struct PeriodRankEntry {
     pub modules_touched: i64,
 }
 
-/// Ranks committers by commits within a period. `month` is only applied when
-/// `year` is also set (a lone month with no year would be meaningless).
-pub fn rank_by_period(
+/// Ranks committers by commits from `from` to `to`, both `(year, month)` and
+/// inclusive (one month: `from == to`).
+pub fn rank_between(
     conn: &mut SqliteConnection,
-    year: i32,
-    month: Option<i32>,
+    from: (i32, i32),
+    to: (i32, i32),
     limit: i64,
 ) -> Vec<PeriodRankEntry> {
-    match month {
-        Some(m) => diesel::sql_query(format!(
-            "SELECT com.name as name, SUM(mcp.commits) as total_commits, \
-                    RANK() OVER (ORDER BY SUM(mcp.commits) DESC) as rank, \
-                    COUNT(*) OVER () as total_committers, \
-                    COUNT(DISTINCT mcp.module_id) as modules_touched \
-             FROM module_committer_period as mcp \
-             INNER JOIN committer as com ON mcp.committer_id = com.id \
-             INNER JOIN module as mod ON mod.id = mcp.module_id \
-             WHERE {HUMAN_COMMITTER} AND mcp.year = ? AND mcp.month = ? \
-             GROUP BY com.id \
-             ORDER BY total_commits DESC \
-             LIMIT ?"
-        ))
-        .bind::<diesel::sql_types::Integer, _>(year)
-        .bind::<diesel::sql_types::Integer, _>(m)
-        .bind::<diesel::sql_types::BigInt, _>(limit)
-        .load::<PeriodRankEntry>(conn)
-        .expect("DB error in module_committer_period::rank_by_period"),
-        None => diesel::sql_query(format!(
-            "SELECT com.name as name, SUM(mcp.commits) as total_commits, \
-                    RANK() OVER (ORDER BY SUM(mcp.commits) DESC) as rank, \
-                    COUNT(*) OVER () as total_committers, \
-                    COUNT(DISTINCT mcp.module_id) as modules_touched \
-             FROM module_committer_period as mcp \
-             INNER JOIN committer as com ON mcp.committer_id = com.id \
-             INNER JOIN module as mod ON mod.id = mcp.module_id \
-             WHERE {HUMAN_COMMITTER} AND mcp.year = ? \
-             GROUP BY com.id \
-             ORDER BY total_commits DESC \
-             LIMIT ?"
-        ))
-        .bind::<diesel::sql_types::Integer, _>(year)
-        .bind::<diesel::sql_types::BigInt, _>(limit)
-        .load::<PeriodRankEntry>(conn)
-        .expect("DB error in module_committer_period::rank_by_period"),
-    }
+    diesel::sql_query(format!(
+        "SELECT com.name as name, SUM(mcp.commits) as total_commits, \
+                RANK() OVER (ORDER BY SUM(mcp.commits) DESC) as rank, \
+                COUNT(*) OVER () as total_committers, \
+                COUNT(DISTINCT mod.technical_name) as modules_touched \
+         FROM module_committer_period as mcp \
+         INNER JOIN committer as com ON mcp.committer_id = com.id \
+         INNER JOIN module as mod ON mod.id = mcp.module_id \
+         WHERE {HUMAN_COMMITTER} AND (mcp.year, mcp.month) BETWEEN (?, ?) AND (?, ?) \
+         GROUP BY com.id \
+         ORDER BY total_commits DESC \
+         LIMIT ?"
+    ))
+    .bind::<diesel::sql_types::Integer, _>(from.0)
+    .bind::<diesel::sql_types::Integer, _>(from.1)
+    .bind::<diesel::sql_types::Integer, _>(to.0)
+    .bind::<diesel::sql_types::Integer, _>(to.1)
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .load::<PeriodRankEntry>(conn)
+    .expect("DB error in module_committer_period::rank_between")
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]

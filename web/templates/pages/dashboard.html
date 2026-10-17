@@ -126,10 +126,7 @@
     </div>
 </section>
 
-{# A ranked value with its bar (100% = `top`, the first row's value). #}
-{% macro meter(value, top, kind="") -%}
-<span class="dash-meter{{ kind and ' is-' ~ kind or '' }}" aria-hidden="true"><span style="width: {{ (value * 100 // top) if top else 0 }}%"></span></span><span class="dash-val">{{ value }}</span>
-{%- endmacro %}
+{% from "partials/report.html" import meter, avatar %}
 {% macro module_link(org_name, technical_name) -%}
 <a href="/module/{{ org_name | urlencode }}/{{ technical_name | urlencode }}" title="{{ technical_name }}">{{ technical_name }}</a>
 {%- endmacro %}
@@ -181,7 +178,7 @@
             <tbody>
                 {% for c in d.top_committers %}
                 <tr>
-                    <td class="dash-name"><a href="/committer/{{ c.name | urlencode }}">{{ c.name }}</a></td>
+                    <td class="dash-name">{{ avatar(c.name) }}<a href="/committer/{{ c.name | urlencode }}">{{ c.name }}</a></td>
                     <td class="dash-num dash-meta">{{ c.modules_touched }}</td>
                     <td class="dash-num">{{ meter(c.total_commits, d.top_committers[0].total_commits) }}</td>
                 </tr>

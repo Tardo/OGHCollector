@@ -1,218 +1,213 @@
 {# Copyright 2026 Alexandre D. Díaz #}
 {% set meta_title = committer_name %}
-{% set meta_description = (stats.total_commits ~ " tracked commits across " ~ stats.total_modules ~ " Odoo modules by " ~ committer_name ~ ".") if stats.versions else ("No commit data found for " ~ committer_name ~ ".") %}
-{% set meta_keywords = "Odoo, committer, contributor, commits, statistics, " ~ committer_name %}
+{% set meta_description = (stats.total_commits ~ " tracked commits across " ~ stats.total_modules ~ " Odoo modules by " ~ committer_name ~ ".") if stats.total_commits else ("No commit data found for " ~ committer_name ~ ".") %}
+{% set meta_keywords = "Odoo, committer, contributor, commits, " ~ committer_name %}
 {% extends "minimal_layout.html" %}
+{% from "partials/report.html" import meter, avatar %}
 {% block base_head_content %}
 {{ super() }}
 
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/committer.css" as="style">
-    <script type="module" src="/static/auto/committer.mjs" async></script>
 {% endblock %}
 {% block content %}
 {{ super() }}
 
+{% macro module_link(m) -%}
+<a href="/module/{{ m.organization | urlencode }}/{{ m.technical_name | urlencode }}" title="{{ m.name }}">{{ m.technical_name }}</a>
+{%- endmacro %}
+{% macro plural(n, word) %}{{ n | num }} {{ word }}{{ n != 1 and 's' or '' }}{% endmacro %}
+{% set t = stats.timeline %}
+{% set home = stats.repositories[0] if stats.repositories else none %}
+{% set month_names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] %}
 
-
-{% if not stats.versions %}
-<header class="page-header">
-    <h1>{{ committer_name }}</h1>
-    <p class="page-header-desc">No data found for this committer.</p>
+<header class="page-header committer-hero">
+    {{ avatar(committer_name, "lg") }}
+    <div>
+        <h1>{{ committer_name }}</h1>
+        <p class="page-header-desc">
+            {% if stats.total_commits %}{% if home %}Mostly in <a href="{{ home.url }}">{{ home.organization }}/{{ home.repository }}</a> ({{ home.share | round | int }}% of their commits){% endif %}{% if t %} &middot; {{ t.since }}{% if t.until != t.since %} &ndash; {{ t.until }}{% endif %}{% endif %}
+            {% else %}No commit data found for this committer.{% endif %}
+        </p>
+    </div>
 </header>
-{% else %}
-<header class="page-header">
-    <h1>{{ committer_name }}</h1>
-    <p class="page-header-desc">{{ stats.total_commits }} tracked commit{{ stats.total_commits != 1 and 's' or '' }} across {{ stats.total_modules }} module{{ stats.total_modules != 1 and 's' or '' }}{% if stats.fun_facts %} · {{ stats.fun_facts.first_seen }} – {{ stats.fun_facts.last_seen }}{% endif %}</p>
-</header>
 
-<div class="row mb-3 gx-sm-5 user-select-none mt-4" id="committer_stats">
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card text-center">
-            <div class="stat-card-label">Total Commits</div>
-            <div class="stat-card-value">{{ stats.total_commits }}</div>
-        </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card text-center">
-            <div class="stat-card-label">Modules Touched</div>
-            <div class="stat-card-value">{{ stats.total_modules }}</div>
-        </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card text-center">
-            <div class="stat-card-label">Repositories</div>
-            <div class="stat-card-value">{{ stats.total_repositories }}</div>
-        </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card text-center">
-            <div class="stat-card-label">Organizations</div>
-            <div class="stat-card-value">{{ stats.total_organizations }}</div>
-        </div>
-    </div>
-    <div class="col-lg-3 offset-lg-3 col-6 pb-3">
-        <div class="stat-card text-center">
-            <div class="stat-card-label">Lines Added</div>
-            <div class="stat-card-value text-success">+{{ stats.total_insertions }}</div>
-        </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card text-center">
-            <div class="stat-card-label">Lines Removed</div>
-            <div class="stat-card-value text-danger">-{{ stats.total_deletions }}</div>
-        </div>
-    </div>
-</div>
-
-<div class="row mb-3 gx-sm-5 user-select-none">
-    <div class="col-lg-6 col-12 pb-3">
+{% if stats.total_commits %}
+<div class="row g-3">
+    <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label">Most Active Odoo Version</div>
-            {% if stats.best_version %}
-            <div class="stat-card-value">{{ stats.best_version }}</div>
-            <div>{{ stats.best_version_commits }} commit{{ stats.best_version_commits != 1 and 's' or '' }}</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">commit</span> Commits</div>
+            <div class="stat-card-value">{{ stats.total_commits | num }}</div>
+            <div class="stat-card-note">In {{ stats.total_repositories | num }} repositor{{ stats.total_repositories != 1 and 'ies' or 'y' }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> Modules</div>
+            <div class="stat-card-value">{{ stats.total_modules | num }}</div>
+            <div class="stat-card-note">Of {{ plural(stats.total_organizations, "organization") }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">layers</span> Odoo versions</div>
+            <div class="stat-card-value">{{ stats.versions[0].version }}{% if stats.versions | length > 1 %} &ndash; {{ stats.versions[-1].version }}{% endif %}</div>
+            <div class="stat-card-note">Most commits in {{ stats.top_version }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">history</span> Contributing</div>
+            {% if t %}
+            <div class="stat-card-value">{{ t.active_span }}</div>
+            <div class="stat-card-note">Since {{ t.first_seen }}</div>
             {% else %}
-            <div>No data</div>
-            {% endif %}
-        </div>
-    </div>
-    <div class="col-lg-6 col-12 pb-3">
-        <div class="stat-card">
-            <div class="stat-card-label">Global Rank (by commits)</div>
-            {% if stats.global_rank %}
-            <div class="stat-card-value">#{{ stats.global_rank }} <span class="fs-6 text-body-secondary">of {{ stats.total_committers }} committers</span></div>
-            {% else %}
-            <div>Not ranked (excluded bot/automation account)</div>
+            <div class="stat-card-value">&mdash;</div>
+            <div class="stat-card-note">No dated commits</div>
             {% endif %}
         </div>
     </div>
 </div>
 
-{% if stats.fun_facts %}
-<h4>Fun Facts</h4>
-{% if stats.quijote_fun_fact %}
-<div class="row mb-3 gx-sm-5 user-select-none">
-    <div class="col-12">
-        <div class="stat-card">
-            <div class="stat-card-label">Trivia</div>
-            <div class="fs-5">{{ stats.quijote_fun_fact }}</div>
-            {% if stats.quijote_fun_fact_chars %}
-            <div class="text-body-secondary small">~{{ stats.quijote_fun_fact_chars }} characters estimated</div>
-            {% endif %}
+<section aria-labelledby="trivia-title">
+    <div class="section-heading"><h2 id="trivia-title">Trivia</h2></div>
+    <div class="fact-strip">
+        {% if stats.quijote %}
+        <div class="fact">
+            <span class="material-icons" aria-hidden="true">menu_book</span>
+            <div class="fact-headline">{{ stats.quijote.headline }}</div>
+            <div class="fact-caption">{{ stats.quijote.caption }}</div>
         </div>
-    </div>
-</div>
-{% endif %}
-
-<div class="row mb-3 gx-sm-5 user-select-none">
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card">
-            <div class="stat-card-label">First Module Touched</div>
-            <div class="fs-5"><a href="/module/{{ stats.fun_facts.first_module_organization | urlencode }}/{{ stats.fun_facts.first_module_technical_name | urlencode }}">{{ stats.fun_facts.first_module_name }}</a></div>
-            <div>{{ stats.fun_facts.first_seen }}</div>
+        {% endif %}
+        {% if t %}
+        <div class="fact">
+            <span class="material-icons" aria-hidden="true">flag</span>
+            <div class="fact-headline">{{ t.first_seen_short }}</div>
+            <div class="fact-caption">First commit seen, in <a href="/module/{{ t.first_module_organization | urlencode }}/{{ t.first_module_technical_name | urlencode }}" title="{{ t.first_module_name }}">{{ t.first_module_technical_name }}</a></div>
         </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card">
-            <div class="stat-card-label">Last Seen</div>
-            <div class="fs-5"><a href="/module/{{ stats.fun_facts.last_module_organization | urlencode }}/{{ stats.fun_facts.last_module_technical_name | urlencode }}">{{ stats.fun_facts.last_module_name }}</a></div>
-            <div>{{ stats.fun_facts.last_seen }}</div>
+        <div class="fact">
+            <span class="material-icons" aria-hidden="true">local_fire_department</span>
+            <div class="fact-headline">{{ t.busiest_month }}</div>
+            <div class="fact-caption">Busiest month ever: {{ plural(t.busiest_month_commits, "commit") }}</div>
         </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card">
-            <div class="stat-card-label">Busiest Month</div>
-            <div class="fs-5">{{ stats.fun_facts.busiest_period }}</div>
-            <div>{{ stats.fun_facts.busiest_period_commits }} commit{{ stats.fun_facts.busiest_period_commits != 1 and 's' or '' }}</div>
+        {% if t.favourite_month %}
+        <div class="fact">
+            <span class="material-icons" aria-hidden="true">event</span>
+            <div class="fact-headline">{{ t.favourite_month }}</div>
+            <div class="fact-caption">Favourite month: active in it {{ t.favourite_month_years }} of {{ t.calendar | length }} years</div>
         </div>
-    </div>
-    <div class="col-lg-3 col-6 pb-3">
-        <div class="stat-card">
-            <div class="stat-card-label">Active Span</div>
-            <div class="fs-5">{{ stats.fun_facts.active_span }}</div>
-            <div class="text-body-secondary small">Between first and last observed commit</div>
+        {% endif %}
+        {% endif %}
+        {% if stats.longest_followed %}
+        {% set m = stats.longest_followed %}
+        <div class="fact">
+            <span class="material-icons" aria-hidden="true">route</span>
+            <div class="fact-headline">{{ m.versions }} versions</div>
+            <div class="fact-caption">Longest-followed module: {{ module_link(m) }}, {{ m.first_version }} &rarr; {{ m.last_version }}</div>
         </div>
+        {% endif %}
     </div>
-</div>
-<div class="row mb-4 gx-sm-5">
-    <div class="col-md-6 pb-3"><div class="stat-card"><div class="stat-card-label">Months with commits</div><div class="fs-5">{{ stats.fun_facts.active_months }}</div><div class="text-body-secondary small">Across all indexed modules</div></div></div>
-    <div class="col-md-6 pb-3"><div class="stat-card"><div class="stat-card-label">Longest monthly streak</div><div class="fs-5">{{ stats.fun_facts.longest_streak }} month{{ stats.fun_facts.longest_streak != 1 and 's' or '' }}</div><div class="text-body-secondary small">Consecutive months with tracked commits</div></div></div>
-</div>
-{% endif %}
-
-{% if stats.activity_years %}
-<section class="activity-chart" aria-labelledby="activity-title">
-    <h2 class="h4" id="activity-title">Activity over time</h2>
-    <p class="text-body-secondary small">Tracked module commits per calendar year. Commits touching multiple modules may appear more than once.</p>
-    {% for year in stats.activity_years %}
-    <div class="activity-chart-row">
-        <span>{{ year.year }}</span>
-        <div class="activity-chart-track" role="img" aria-label="{{ year.year }}: {{ year.commits }} tracked commits"><span style="width: {{ year.commits * 100 / stats.busiest_year_commits if stats.busiest_year_commits else 0 }}%"></span></div>
-        <strong>{{ year.commits }}</strong>
-    </div>
-    {% endfor %}
-</section>
-{% endif %}
-
-<section class="work-landscape" aria-labelledby="landscape-title">
-    <h2 class="h4" id="landscape-title">Work landscape · 3D</h2>
-    <p class="text-body-secondary small">Odoo versions × repositories × tracked commits. The height of each column represents commits; drag to rotate. Shows every indexed version and up to 5 repositories with the most commits.</p>
-    <ul id="landscape-repos" class="landscape-repos" aria-label="Repositories shown in the 3D view"></ul>
-    <div class="landscape-viewport"><canvas id="committer-landscape" aria-label="3D view of commits by Odoo version and repository; the tables below provide the full data" role="img"></canvas></div>
-    <p id="landscape-caption" class="text-body-secondary small" aria-live="polite">Drag to rotate the landscape; hover over a column for details.</p>
 </section>
 
-<div class="row mb-3 gx-sm-5 user-select-none">
-    <div class="col-12">
-        <h4>Top Repositories</h4>
-        <table class="table table-striped table-striped-columns table-hover">
+<div class="dash-report">
+    {% if t %}
+    <section aria-labelledby="calendar-title">
+        <div class="section-heading"><h2 id="calendar-title">Commit calendar</h2></div>
+        <p class="dash-caption">Every month since the first commit. A commit that touches several modules counts once per module.</p>
+        <div class="heatmap">
+            <div class="heatmap-row heatmap-head" aria-hidden="true">
+                <span></span>
+                {% for name in month_names %}<span>{{ name[:1] }}</span>{% endfor %}
+                <span class="heatmap-total">Commits</span>
+            </div>
+            {% for y in t.calendar %}
+            <div class="heatmap-row">
+                <span class="heatmap-year">{{ y.year }}</span>
+                {% for cell in y.months %}<span class="heatmap-cell" data-l="{{ cell.level }}" title="{{ month_names[loop.index0] }} {{ y.year }}: {{ plural(cell.commits, 'commit') }}"></span>{% endfor %}
+                <span class="heatmap-total">{{ meter(y.commits, t.busiest_year_commits) }}</span>
+            </div>
+            {% endfor %}
+            <div class="heatmap-legend" aria-hidden="true">Less {% for l in range(5) %}<span class="heatmap-cell" data-l="{{ l }}"></span>{% endfor %} More</div>
+        </div>
+    </section>
+    {% endif %}
+
+    <div>
+        <section aria-labelledby="versions-title">
+            <div class="section-heading"><h2 id="versions-title">Odoo versions</h2></div>
+            <p class="dash-caption">Commits per version branch.</p>
+            <div class="dash-chart versions-chart" role="img" aria-label="Commits per Odoo version; most in {{ stats.top_version }}">
+                {% for v in stats.versions %}
+                <div class="dash-chart-col{% if v.version == stats.top_version %} is-peak{% endif %}" title="Odoo {{ v.version }}: {{ plural(v.commits, 'commit') }} in {{ plural(v.modules, 'module') }}">
+                    <span class="dash-chart-track"><span class="dash-chart-bar" style="height: {{ [v.pct, 1] | max }}%">{% if v.version == stats.top_version %}<span class="dash-chart-value">{{ v.commits | num }}</span>{% endif %}</span></span>
+                    <span class="dash-chart-label">{{ v.version }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section aria-labelledby="repos-title">
+            <div class="section-heading"><h2 id="repos-title">Repositories</h2></div>
+            <p class="dash-caption">Where their commits go{% if stats.total_repositories > stats.repositories | length %}: the top {{ stats.repositories | length }} of {{ stats.total_repositories | num }}{% endif %}.</p>
+            <div class="share-bar" role="img" aria-label="Share of commits per repository, listed below">
+                {% for r in stats.repositories %}<span class="share-{{ loop.index }}" style="flex-grow: {{ r.share }}" title="{{ r.organization }}/{{ r.repository }}: {{ r.share }}%"></span>{% endfor %}
+                {% if stats.other_share %}<span class="share-other" style="flex-grow: {{ stats.other_share }}" title="Other repositories: {{ stats.other_share }}%"></span>{% endif %}
+            </div>
+            <table class="dash-rank">
+                <thead><tr><th>Repository</th><th class="dash-num">Modules</th><th class="dash-num">Share</th><th class="dash-num">Commits</th></tr></thead>
+                <tbody>
+                    {% for r in stats.repositories %}
+                    <tr>
+                        <td class="dash-name"><span class="share-swatch share-{{ loop.index }}" aria-hidden="true"></span><a href="{{ r.url }}">{{ r.organization }}/{{ r.repository }}</a></td>
+                        <td class="dash-num dash-meta">{{ r.modules | num }}</td>
+                        <td class="dash-num dash-meta">{{ r.share | round | int if r.share >= 1 else "<1" }}%</td>
+                        <td class="dash-num">{{ r.commits | num }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if stats.other_share %}
+                    <tr>
+                        <td class="dash-name dash-meta"><span class="share-swatch share-other" aria-hidden="true"></span>{{ (stats.total_repositories - stats.repositories | length) | num }} more</td>
+                        <td></td>
+                        <td class="dash-num dash-meta">{{ stats.other_share | round | int if stats.other_share >= 1 else "<1" }}%</td>
+                        <td></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    {% if stats.co_committers %}
+    <section class="report-wide" aria-labelledby="peers-title">
+        <div class="section-heading"><h2 id="peers-title">Often in the same modules as</h2></div>
+        <p class="dash-caption">The people who committed to the most of the same modules.</p>
+        <ul class="peer-list">
+            {% for p in stats.co_committers %}
+            <li>
+                {{ avatar(p.name, "md") }}
+                <span><a href="/committer/{{ p.name | urlencode }}">{{ p.name }}</a><small>{{ plural(p.shared, "shared module") }}</small></span>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <section class="report-wide" aria-labelledby="modules-title">
+        <div class="section-heading"><h2 id="modules-title">Modules</h2></div>
+        <p class="dash-caption">Every Odoo version together; the bar marks the versions committed to, within their own {{ stats.versions[0].version }} &ndash; {{ stats.versions[-1].version }}.{% if stats.more_modules %} The {{ stats.modules | length }} with the most commits, of {{ (stats.modules | length + stats.more_modules) | num }}.{% endif %}</p>
+        <table class="dash-rank">
+            <thead><tr><th>Module</th><th class="d-none d-md-table-cell">Repository</th><th>Odoo</th><th class="dash-num">Commits</th></tr></thead>
             <tbody>
-                {% for repo in stats.top_repos %}
+                {% for m in stats.modules %}
                 <tr>
-                    <td class="col-1 text-center">#{{ loop.index }}</td>
-                    <td class="col-8"><a href="{{ repo.url }}">{{ repo.organization }}/{{ repo.repository }}</a></td>
-                    <td class="col-3 text-center">{{ repo.commits }} commit{{ repo.commits != 1 and 's' or '' }}</td>
+                    <td class="dash-name">{{ module_link(m) }}</td>
+                    <td class="dash-meta d-none d-md-table-cell">{{ m.organization }}/{{ m.repository }}</td>
+                    <td class="dash-meta"><span class="version-range" style="--versions: {{ stats.versions | length }}" aria-hidden="true"><span style="left: {{ m.left }}%; width: {{ m.width }}%"></span></span>{{ m.first_version }}{% if m.versions > 1 %} &ndash; {{ m.last_version }}{% endif %}</td>
+                    <td class="dash-num">{{ meter(m.commits, stats.modules[0].commits) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-    </div>
-</div>
-
-<h4>Modules Touched by Odoo Version</h4>
-<ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
-    {% for version in stats.versions %}
-    <li class="nav-item" role="presentation">
-        <button class="nav-link {{ loop.first and 'active' or '' }}" id="version-{{ version.odoo_version }}-tab" data-bs-toggle="pill" data-bs-target="#version-{{ version.odoo_version }}" type="button" role="tab" aria-controls="version-{{ version.odoo_version }}">{{ version.odoo_version }} <span class="badge text-bg-secondary">{{ version.modules | length }}</span></button>
-    </li>
-    {% endfor %}
-</ul>
-<div class="tab-content" id="versions-tabContent">
-    {% for version in stats.versions %}
-    <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="version-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="version-{{ version.odoo_version }}-tab" tabindex="0" data-odoo-version="{{ version.odoo_version }}">
-        <div class="mb-2">{{ version.total_commits }} commit{{ version.total_commits != 1 and 's' or '' }} in this version</div>
-        <table class="table table-striped table-striped-columns table-hover">
-            <thead>
-                <tr>
-                    <th>Module</th>
-                    <th class="d-none d-lg-table-cell">Repository</th>
-                    <th class="text-center">Commits</th>
-                    <th class="text-center d-none d-md-table-cell">Lines +/-</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for module in version.modules %}
-                <tr data-repo="{{ module.organization }}/{{ module.repository }}" data-commits="{{ module.commits }}">
-                    <td><a href="/module/{{ module.organization | urlencode }}/{{ module.technical_name | urlencode }}">{{ module.name }}</a></td>
-                    <td class="d-none d-lg-table-cell">{{ module.organization }}/{{ module.repository }}</td>
-                    <td class="text-center">{{ module.commits }}</td>
-                    <td class="text-center d-none d-md-table-cell"><span class="text-success">+{{ module.insertions }}</span> <span class="text-danger">-{{ module.deletions }}</span></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endfor %}
+    </section>
 </div>
 {% endif %}
 {% endblock %}

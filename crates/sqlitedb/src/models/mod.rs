@@ -921,17 +921,19 @@ mod tests {
         periods.insert((2024, 2), 3);
         super::module::add(&mut conn, &make_info(periods, 5)).unwrap();
 
-        let jan = super::module_committer_period::rank_by_period(&mut conn, 2024, Some(1), 10);
+        let jan = super::module_committer_period::rank_between(&mut conn, (2024, 1), (2024, 1), 10);
         assert_eq!(jan.len(), 1);
         assert_eq!(jan[0].name, "Dave");
         assert_eq!(jan[0].total_commits, 2);
 
-        let year = super::module_committer_period::rank_by_period(&mut conn, 2024, None, 10);
+        let year =
+            super::module_committer_period::rank_between(&mut conn, (2024, 1), (2024, 12), 10);
         assert_eq!(year.len(), 1);
         assert_eq!(year[0].total_commits, 5);
 
         assert!(
-            super::module_committer_period::rank_by_period(&mut conn, 2099, None, 10).is_empty()
+            super::module_committer_period::rank_between(&mut conn, (2099, 1), (2099, 12), 10)
+                .is_empty()
         );
 
         // Re-adding the same module with a different breakdown must replace, not
@@ -940,10 +942,12 @@ mod tests {
         new_periods.insert((2024, 3), 7);
         super::module::add(&mut conn, &make_info(new_periods, 7)).unwrap();
 
-        let march = super::module_committer_period::rank_by_period(&mut conn, 2024, Some(3), 10);
+        let march =
+            super::module_committer_period::rank_between(&mut conn, (2024, 3), (2024, 3), 10);
         assert_eq!(march[0].total_commits, 7);
         assert!(
-            super::module_committer_period::rank_by_period(&mut conn, 2024, Some(1), 10).is_empty()
+            super::module_committer_period::rank_between(&mut conn, (2024, 1), (2024, 1), 10)
+                .is_empty()
         );
     }
 
@@ -984,7 +988,7 @@ mod tests {
     }
 
     #[test]
-    fn test_longevity_ranks_span_and_deduplicates_months() {
+    fn test_activity_summary_spans_modules_and_flags_bots() {
         use super::module::CommitterActivity;
         let mut conn = setup_db();
         for (module_name, author, periods) in [
@@ -1008,15 +1012,33 @@ mod tests {
             );
             super::module::add(&mut conn, &info).unwrap();
         }
-        let ranked = super::committer::rank_longevity(&mut conn, 20);
-        assert_eq!(ranked.len(), 2);
-        assert_eq!(ranked[0].name, "Alice");
+        let mut summary = super::committer::activity_summary(&mut conn);
+        summary.sort_by(|a, b| a.name.cmp(&b.name));
+        let row = |s: &super::committer::CommitterSummary| {
+            (
+                s.name.clone(),
+                s.human,
+                s.commits,
+                s.modules,
+                s.first_month,
+                s.last_month,
+            )
+        };
         assert_eq!(
-            (ranked[0].first_seen.as_str(), ranked[0].last_seen.as_str()),
-            ("2020-01", "2024-01")
+            summary.iter().map(row).collect::<Vec<_>>(),
+            [
+                ("Alice".into(), true, 4, 2, 2020 * 12, 2024 * 12),
+                ("Bob".into(), true, 20, 1, 2023 * 12, 2024 * 12),
+                (
+                    "Odoo Translation Bot".into(),
+                    false,
+                    2,
+                    1,
+                    2010 * 12,
+                    2025 * 12
+                ),
+            ]
         );
-        assert_eq!((ranked[0].span_months, ranked[0].active_months), (48, 2));
-        assert_eq!((ranked[1].span_months, ranked[1].active_months), (12, 2));
     }
 
     #[test]

@@ -294,7 +294,12 @@ fn compute_dashboard_data(conn: &mut SqliteConnection, workspace: &str) -> Dashb
         .collect::<Vec<_>>();
     let (top_committers, activity_month) = match months.last() {
         Some(m) => (
-            models::module_committer_period::rank_by_period(conn, m.year, Some(m.month), 5),
+            models::module_committer_period::rank_between(
+                conn,
+                (m.year, m.month),
+                (m.year, m.month),
+                5,
+            ),
             activity.last().map(|a| a.label.clone()),
         ),
         None => (Vec::new(), None),

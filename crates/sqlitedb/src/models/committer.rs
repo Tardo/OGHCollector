@@ -34,99 +34,41 @@ pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
         .expect("DB error in committer::get_by_name")
 }
 
-#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
-pub struct GlobalRank {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub rank: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub total_commits: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub total_committers: i64,
-}
-
-pub fn get_global_rank_by_name(conn: &mut SqliteConnection, name: &str) -> Option<GlobalRank> {
-    diesel::sql_query(format!(
-        "SELECT rank, total_commits, total_committers FROM (\
-           SELECT com.name as committer_name, SUM(mod_com.commits) as total_commits, \
-                  RANK() OVER (ORDER BY SUM(mod_com.commits) DESC) as rank, \
-                  COUNT(*) OVER () as total_committers \
-           FROM module_committer as mod_com \
-           INNER JOIN committer as com ON mod_com.committer_id = com.id \
-           INNER JOIN module as mod ON mod.id = mod_com.module_id \
-           WHERE {HUMAN_COMMITTER} \
-           GROUP BY com.id \
-         ) WHERE committer_name = ?"
-    ))
-    .bind::<diesel::sql_types::Text, _>(name)
-    .load::<GlobalRank>(conn)
-    .expect("DB error in committer::get_global_rank_by_name")
-    .into_iter()
-    .next()
-}
-
-#[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
-pub struct GlobalRankEntry {
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub name: String,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub total_commits: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub rank: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub total_committers: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub modules_touched: i64,
-}
-
-pub fn rank_global(conn: &mut SqliteConnection, limit: i64) -> Vec<GlobalRankEntry> {
-    diesel::sql_query(format!(
-        "SELECT com.name as name, SUM(mod_com.commits) as total_commits, \
-                RANK() OVER (ORDER BY SUM(mod_com.commits) DESC) as rank, \
-                COUNT(*) OVER () as total_committers, \
-                COUNT(DISTINCT mod_com.module_id) as modules_touched \
-         FROM module_committer as mod_com \
-         INNER JOIN committer as com ON mod_com.committer_id = com.id \
-         INNER JOIN module as mod ON mod.id = mod_com.module_id \
-         WHERE {HUMAN_COMMITTER} \
-         GROUP BY com.id \
-         ORDER BY total_commits DESC \
-         LIMIT ?"
-    ))
-    .bind::<diesel::sql_types::BigInt, _>(limit)
-    .load::<GlobalRankEntry>(conn)
-    .expect("DB error in committer::rank_global")
-}
-
 #[derive(QueryableByName, Debug, Serialize)]
-pub struct LongevityEntry {
+pub struct CommitterSummary {
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub name: String,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub first_seen: String,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub last_seen: String,
+    /// Not a bot (`HUMAN_COMMITTER`).
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub human: bool,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub span_months: i64,
+    pub commits: i64,
+    /// Distinct technical names, whatever the Odoo version.
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub active_months: i64,
+    pub modules: i64,
+    /// First and last month with commits, as `year * 12 + month - 1`.
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub first_month: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub last_month: i32,
 }
 
-pub fn rank_longevity(conn: &mut SqliteConnection, limit: i64) -> Vec<LongevityEntry> {
+/// Every committer with dated activity, bots included (flagged), in one pass:
+/// the committers page ranks, filters and totals these rows in Rust instead of
+/// running one grouped scan per list.
+pub fn activity_summary(conn: &mut SqliteConnection) -> Vec<CommitterSummary> {
     diesel::sql_query(format!(
-        "SELECT com.name, MIN(printf('%04d-%02d', mcp.year, mcp.month)) AS first_seen, \
-         MAX(printf('%04d-%02d', mcp.year, mcp.month)) AS last_seen, \
-         MAX(mcp.year * 12 + mcp.month) - MIN(mcp.year * 12 + mcp.month) AS span_months, \
-         COUNT(DISTINCT mcp.year * 12 + mcp.month) AS active_months \
+        "SELECT com.name, {HUMAN_COMMITTER} AS human, SUM(mcp.commits) AS commits, \
+         COUNT(DISTINCT mod.technical_name) AS modules, \
+         MIN(mcp.year * 12 + mcp.month - 1) AS first_month, \
+         MAX(mcp.year * 12 + mcp.month - 1) AS last_month \
          FROM module_committer_period AS mcp \
          JOIN committer AS com ON com.id = mcp.committer_id \
          JOIN module AS mod ON mod.id = mcp.module_id \
-         WHERE {HUMAN_COMMITTER} \
-         GROUP BY com.id \
-         ORDER BY span_months DESC, active_months DESC, com.name ASC LIMIT ?"
+         GROUP BY com.id"
     ))
-    .bind::<diesel::sql_types::BigInt, _>(limit)
-    .load::<LongevityEntry>(conn)
-    .expect("DB error in committer::rank_longevity")
+    .load::<CommitterSummary>(conn)
+    .expect("DB error in committer::activity_summary")
 }
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]

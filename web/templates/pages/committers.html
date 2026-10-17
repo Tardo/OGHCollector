@@ -1,7 +1,8 @@
 {# Copyright 2026 Alexandre D. Díaz #}
 {% extends "minimal_layout.html" %}
+{% from "partials/report.html" import meter, avatar %}
 {% set meta_title = "Committers" %}
-{% set meta_description = "Committer rankings and statistics across all tracked Odoo module repositories." %}
+{% set meta_description = "The people behind the tracked Odoo modules: who commits most, the veterans and the newcomers." %}
 {% block base_head_content %}
 {{ super() }}
 
@@ -11,79 +12,142 @@
 {% block content %}
 {{ super() }}
 
+{% macro person(name) -%}
+{{ avatar(name) }}<a href="/committer/{{ name | urlencode }}">{{ name }}</a>
+{%- endmacro %}
 
 <header class="page-header">
     <h1>Committers</h1>
-    <p class="page-header-desc">The people behind the tracked modules.</p>
+    <p class="page-header-desc">The people behind the tracked modules: who's busy lately, who has been around the longest and who just arrived.</p>
 </header>
 
-<div class="position-relative mb-4" id="committer_search">
-    <mirlo-committer-search class="d-block w-100" />
+<div class="committers-search" id="committer_search">
+    <mirlo-committer-search class="d-block position-absolute w-100" />
 </div>
 
-<section class="mb-5" aria-labelledby="longevity-title">
-    <div class="section-heading"><h2 id="longevity-title">Longest observed contribution span</h2><p>First to last month with tracked commits; not necessarily uninterrupted activity.</p></div>
-    <div class="panel">
-        <table class="table table-striped table-hover longevity-table">
-            <thead><tr><th scope="col">#</th><th scope="col">Committer</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col">Span</th><th scope="col">Active months</th></tr></thead>
+{% if c.people %}
+<div class="row g-3">
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">groups</span> People</div>
+            <div class="stat-card-value">{{ c.people | num }}</div>
+            <div class="stat-card-note">With at least one tracked commit</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">bolt</span> Active lately</div>
+            <div class="stat-card-value">{{ c.active | num }} <small>{{ (c.active * 100 / c.people) | round | int }}%</small></div>
+            <div class="stat-card-note">Committed in the last 12 months</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">waving_hand</span> New faces</div>
+            <div class="stat-card-value">{{ c.new | num }}</div>
+            <div class="stat-card-note">First commit in the last 12 months</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="stat-card">
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">smart_toy</span> Robots</div>
+            <div class="stat-card-value">{{ c.bot_share }}% <small>of commits</small></div>
+            <div class="stat-bar" aria-hidden="true"><span style="width: {{ c.bot_share }}%"></span></div>
+            <div class="stat-card-note">Made by {{ c.bots }} bot{{ c.bots != 1 and 's' or '' }} (translations, CI, merges)</div>
+        </div>
+    </div>
+</div>
+
+<div class="dash-report">
+    <section aria-labelledby="recent-title">
+        <div class="section-heading"><h2 id="recent-title">Last 12 months</h2></div>
+        <p class="dash-caption">{{ c.window }}. A commit that touches several modules counts once per module.</p>
+        <table class="dash-rank">
+            <thead><tr><th>Committer</th><th class="dash-num">Modules</th><th class="dash-num">Commits</th></tr></thead>
             <tbody>
-                {% for committer in longest_active %}
+                {% for e in c.recent %}
                 <tr>
-                    <td>{{ loop.index }}</td>
-                    <td><a href="/committer/{{ committer.name | urlencode }}">{{ committer.name }}</a></td>
-                    <td>{{ committer.first_seen }}</td>
-                    <td>{{ committer.last_seen }}</td>
-                    <td><strong>{{ committer.span_months // 12 }}y {{ committer.span_months % 12 }}m</strong></td>
-                    <td>{{ committer.active_months }}</td>
+                    <td class="dash-name">{{ person(e.name) }}</td>
+                    <td class="dash-num dash-meta">{{ e.modules_touched | num }}</td>
+                    <td class="dash-num">{{ meter(e.total_commits, c.recent[0].total_commits) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-    </div>
-    {% if not longest_active %}<p>No dated commit activity tracked yet.</p>{% endif %}
-</section>
+    </section>
 
-<div class="row user-select-none mt-5" id="top_committers">
-    <div class="col-12">
-        <ul class="nav nav-pills mb-3" id="periods-tab" role="tablist">
-            {% for period in periods %}
-            <li class="nav-item" role="presentation">
-                <button class="nav-link {{ loop.first and 'active' or '' }}" id="period-{{ period.key }}-tab" data-bs-toggle="pill" data-bs-target="#period-{{ period.key }}" type="button" role="tab" aria-controls="period-{{ period.key }}">{{ period.label }}</button>
-            </li>
-            {% endfor %}
-        </ul>
-        <div class="tab-content" id="periods-tabContent">
-            {% for period in periods %}
-            <div class="tab-pane fade {{ loop.first and 'show active' or '' }}" id="period-{{ period.key }}" role="tabpanel" aria-labelledby="period-{{ period.key }}-tab" tabindex="0">
-                <div class="section-heading"><h2>Top {{ period.committers | length }} committers ({{ period.label }}, by commits)</h2><p>{{ period.total_committers }} human committer{{ period.total_committers != 1 and 's' or '' }} tracked this period</p></div>
-                <div class="panel">
-                <table class="table table-striped table-hover">
-                    <thead>
-                        <tr>
-                            <th class="text-center">Rank</th>
-                            <th>Committer</th>
-                            <th class="text-center">Commits</th>
-                            <th class="d-none d-lg-table-cell text-center">Modules Touched</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for committer in period.committers %}
-                        <tr>
-                            <td class="text-center">#{{ committer.rank }}</td>
-                            <td><a href="/committer/{{ committer.name | urlencode }}">{{ committer.name }}</a></td>
-                            <td class="text-center">{{ committer.total_commits }}</td>
-                            <td class="d-none d-lg-table-cell text-center">{{ committer.modules_touched }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                </div>
-                {% if not period.committers %}
-                <p>No commit activity tracked for this period.</p>
-                {% endif %}
+    <section aria-labelledby="alltime-title">
+        <div class="section-heading"><h2 id="alltime-title">All time</h2></div>
+        <p class="dash-caption">Every tracked branch, bots left out.</p>
+        <table class="dash-rank">
+            <thead><tr><th>Committer</th><th class="dash-num">Modules</th><th class="dash-num">Commits</th></tr></thead>
+            <tbody>
+                {% for e in c.all_time %}
+                <tr>
+                    <td class="dash-name">{{ person(e.name) }}</td>
+                    <td class="dash-num dash-meta">{{ e.modules | num }}</td>
+                    <td class="dash-num">{{ meter(e.commits, c.all_time[0].commits) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="report-wide" aria-labelledby="veterans-title">
+        <div class="section-heading"><h2 id="veterans-title">Veterans</h2></div>
+        <p class="dash-caption">The longest stretches between a first and a latest tracked commit. Not necessarily nonstop.</p>
+        <div class="vet-timeline">
+            <div class="vet-row vet-axis" aria-hidden="true">
+                <span></span>
+                <span class="vet-track">{% for t in c.ticks %}<span class="vet-tick" style="left: {{ t.left }}%">{{ t.year }}</span>{% endfor %}</span>
+                <span class="vet-years">Years</span>
+            </div>
+            {% for v in c.veterans %}
+            <div class="vet-row">
+                <span class="vet-name">{{ person(v.name) }}</span>
+                <span class="vet-track" title="{{ v.since }} – {{ v.until }}">{% for t in c.ticks %}<span class="vet-grid" style="left: {{ t.left }}%"></span>{% endfor %}<span class="vet-bar" style="left: {{ v.left }}%; width: {{ v.width }}%"><span>{{ v.since }} &ndash; {{ v.until }}</span></span></span>
+                <span class="vet-years">{{ v.span_years | round(1) }}</span>
             </div>
             {% endfor %}
         </div>
-    </div>
+    </section>
+
+    <section aria-labelledby="newcomers-title">
+        <div class="section-heading"><h2 id="newcomers-title">Newcomers</h2></div>
+        {% if c.newcomers %}
+        <p class="dash-caption">First tracked commit in the last 12 months{% if c.new > c.newcomers | length %}; the busiest {{ c.newcomers | length }} of {{ c.new }}{% endif %}.</p>
+        <table class="dash-rank">
+            <thead><tr><th>Committer</th><th>Since</th><th class="dash-num">Commits</th></tr></thead>
+            <tbody>
+                {% for n in c.newcomers %}
+                <tr>
+                    <td class="dash-name">{{ person(n.name) }}</td>
+                    <td class="dash-meta">{{ n.first_seen }}</td>
+                    <td class="dash-num">{{ meter(n.commits, c.newcomers[0].commits) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="dash-caption">Nobody new in the last 12 months.</p>
+        {% endif %}
+    </section>
+
+    <section aria-labelledby="arrivals-title">
+        <div class="section-heading"><h2 id="arrivals-title">Arrivals per year</h2></div>
+        <p class="dash-caption">People making their first tracked commit, by year.</p>
+        {% set peak = c.arrivals | map(attribute="people") | max %}
+        <div class="dash-chart arrivals-chart" role="img" aria-label="First-time committers per year, {{ c.arrivals[0].year }} to {{ c.arrivals[-1].year }}; the peak year had {{ peak }}">
+            {% for a in c.arrivals %}
+            <div class="dash-chart-col{% if a.people == peak %} is-peak{% endif %}{% if a.partial %} is-partial{% endif %}" title="{{ a.year }}: {{ a.people | num }} new committer{{ a.people != 1 and 's' or '' }}{% if a.partial %} (year in progress){% endif %}">
+                <span class="dash-chart-track"><span class="dash-chart-bar" style="height: {{ [a.pct, 1] | max if a.people else 0 }}%">{% if a.people == peak %}<span class="dash-chart-value">{{ a.people | num }}</span>{% endif %}</span></span>
+                <span class="dash-chart-label">&rsquo;{{ (a.year ~ "")[2:] }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
 </div>
+{% else %}
+<p class="text-body-secondary">No commit history collected yet.</p>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,9 @@
+{# Copyright Alexandre D. Díaz #}
+{# A ranked value with its bar (100% = `top`, the first row's value). #}
+{% macro meter(value, top, kind="") -%}
+<span class="dash-meter{{ kind and ' is-' ~ kind or '' }}" aria-hidden="true"><span style="width: {{ (value * 100 // top) if top else 0 }}%"></span></span><span class="dash-val">{{ value | num }}</span>
+{%- endmacro %}
+{# A committer's initials disc; size "" | "md" | "lg". #}
+{% macro avatar(name, size="") -%}
+{% set a = name | avatar %}<span class="avatar{{ size and ' avatar-' ~ size or '' }}" style="--hue: {{ a.hue }}" aria-hidden="true">{{ a.initials }}</span>
+{%- endmacro %}
