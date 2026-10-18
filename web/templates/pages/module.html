@@ -31,7 +31,18 @@
 <div class="page-header-desc module-upstream" title="Recorded by OpenUpgrade"><span class="material-icons" aria-hidden="true">call_merge</span>
     {%- if upstream.replaced > 5 %} <details><summary>Replaces {{ upstream.replaced }} modules renamed or merged into it</summary>{{ replaces }}</details>
     {%- else %} Replaces {{ replaces }}{% endif %}</div>
-{% endif %}{% endset %}
+{% endif %}
+{# Every repository with this technical name, any organization (oldest
+   first, → where it starts after the earlier ones ended); a name with
+   no data here still says where it is. #}
+{% if locations.repos | length > 1 or (locations.repos and not modules) %}
+<p class="page-header-desc module-upstream" title="Repositories with a module of this technical name (the same name, not necessarily the same code)"><span class="material-icons" aria-hidden="true">swap_horiz</span>
+    {%- for l in locations.repos %}{% if not loop.first %}{{ ' →' if l.moved else ' ·' }}{% endif %} {% if l.org != org %}<a href="/module/{{ l.org | urlencode }}/{{ technical_name | urlencode }}">{{ l.org }}/{{ l.repo }}</a>{% else %}{{ l.org }}/{{ l.repo }}{% endif %} <span title="{{ l.versions | join(', ') }}">{{ l.versions | first }}{% if l.versions | length > 1 %}–{{ l.versions | last }}{% endif %}</span>{% endfor %}</p>
+{% endif %}
+{% for c in locations.collisions %}
+<p class="page-header-desc module-upstream module-collision" title="Odoo loads one module per technical name: only one of these fits an addons path"><span class="material-icons" aria-hidden="true">warning</span>
+    Name collision in {{ c.versions | join(', ') }}: {{ c.locations | join(' and ') }} have <code>{{ technical_name }}</code>{% if c.core %}; {{ c.locations[0] }} (Odoo core) is the reference{% endif %}</p>
+{% endfor %}{% endset %}
 {% if not modules and not pull_request_count %}
 <header class="page-header module-page-header">
     <div>

@@ -244,6 +244,81 @@ fn get_module_upstream(conn: &mut SqliteConnection, technical_name: &str) -> Mod
     upstream
 }
 
+// A repository with a module of this technical name, in any organization:
+// the same name, not necessarily the same code.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ModuleLocation {
+    pub org: String,
+    pub repo: String,
+    pub versions: Vec<String>,
+    /// It starts after every earlier one ended (a move, not a collision).
+    pub moved: bool,
+}
+
+// Odoo versions where several repositories have the name: Odoo loads one
+// module per technical name, so only one of them fits an addons path.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ModuleCollision {
+    /// `org/repo`, the reference first: Odoo core, else who had it first.
+    pub locations: Vec<String>,
+    pub versions: Vec<String>,
+    /// The reference is Odoo core.
+    pub core: bool,
+}
+
+#[derive(Debug, Serialize, Default)]
+pub struct ModuleLocations {
+    /// Oldest first.
+    pub repos: Vec<ModuleLocation>,
+    pub collisions: Vec<ModuleCollision>,
+}
+
+fn module_locations(rows: &[models::module::ModuleInfo]) -> ModuleLocations {
+    let mut versions: HashMap<(&str, &str), Vec<i32>> = HashMap::new();
+    let mut shared: std::collections::BTreeMap<i32, Vec<(&str, &str)>> = Default::default();
+    for r in rows {
+        let key = (r.organization.as_str(), r.repository.as_str());
+        versions.entry(key).or_default().push(r.version_odoo);
+        shared.entry(r.version_odoo).or_default().push(key);
+    }
+    versions.values_mut().for_each(|v| v.sort_unstable());
+    let label = |v: &i32| odoo_version_u8_to_string(&(*v as u8));
+
+    let mut keys: Vec<(&str, &str)> = versions.keys().copied().collect();
+    keys.sort_by_key(|k| (versions[k][0], *k));
+    let mut ended: Option<i32> = None;
+    let repos = keys
+        .iter()
+        .map(|k| {
+            let vs = &versions[k];
+            let moved = ended.is_some_and(|e| vs[0] > e);
+            ended = ended.max(vs.last().copied());
+            ModuleLocation {
+                org: k.0.to_string(),
+                repo: k.1.to_string(),
+                versions: vs.iter().map(label).collect(),
+                moved,
+            }
+        })
+        .collect();
+
+    let mut collisions: Vec<ModuleCollision> = Vec::new();
+    for (v, mut keys) in shared.into_iter().filter(|(_, k)| k.len() > 1) {
+        // ponytail: core = org `odoo` (odoo/odoo, design-themes).
+        keys.sort_by_key(|k| (k.0 != "odoo", versions[k][0], *k));
+        let locations: Vec<String> = keys.iter().map(|(o, r)| format!("{o}/{r}")).collect();
+        match collisions.iter_mut().find(|c| c.locations == locations) {
+            Some(c) => c.versions.push(label(&v)),
+            None => collisions.push(ModuleCollision {
+                core: keys[0].0 == "odoo",
+                locations,
+                versions: vec![label(&v)],
+            }),
+        }
+    }
+    ModuleLocations { repos, collisions }
+}
+
 // Keyed by Odoo version (e.g. "17.0") for the template's per-tab
 // version-history dropdown; shared by `route` (active tab, eager) and
 // `route_tab` (one lazily-loaded tab).
@@ -294,6 +369,7 @@ pub async fn route(
         (pull_request_count, pull_requests),
         odoo_versions,
         upstream,
+        locations,
     ) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let modules = models::module::get_by_technical_name_organization_name(
@@ -337,12 +413,14 @@ pub async fn route(
             false => Vec::new(),
         };
         let upstream = get_module_upstream(&mut conn, &technical_name);
+        let locations = module_locations(&models::module::get_info(&mut conn, &technical_name));
         (
             module_infos,
             module_versions,
             (pull_request_count, pull_requests),
             odoo_versions,
             upstream,
+            locations,
         )
     })
     .await?;
@@ -368,6 +446,7 @@ pub async fn route(
                     pull_requests => pull_requests,
                     odoo_versions => odoo_versions,
                     upstream => upstream,
+                    locations => locations,
                 )
             ),
         )?
@@ -563,6 +642,79 @@ mod tests {
             Some((170, 180))
         );
         assert_eq!(pick_compare_versions(&[180], None, None), None);
+    }
+
+    // Real rows: moves between repos (same org or not) are a timeline,
+    // shared versions a collision with Odoo core as the reference.
+    #[test]
+    fn locations_tell_moves_and_collisions() {
+        let get = |rows: &[(&str, &str, &[i32])]| {
+            let rows: Vec<_> = rows
+                .iter()
+                .flat_map(|(org, repo, vs)| {
+                    vs.iter().map(|v| sqlitedb::models::module::ModuleInfo {
+                        technical_name: "m".into(),
+                        name: "m".into(),
+                        version_odoo: *v,
+                        organization: org.to_string(),
+                        repository: repo.to_string(),
+                        repository_url: None,
+                    })
+                })
+                .collect();
+            let l = super::module_locations(&rows);
+            let repos: Vec<_> = l
+                .repos
+                .iter()
+                .map(|r| {
+                    (
+                        format!("{}/{}", r.org, r.repo),
+                        r.versions.join(","),
+                        r.moved,
+                    )
+                })
+                .collect();
+            let collisions: Vec<_> = l
+                .collisions
+                .iter()
+                .map(|c| (c.locations.join(" "), c.versions.join(","), c.core))
+                .collect();
+            (repos, collisions)
+        };
+        let r = |name: &str, vs: &str, moved| (name.to_string(), vs.to_string(), moved);
+        // auth_totp: OCA → OCA → odoo, no overlap.
+        let (repos, collisions) = get(&[
+            ("odoo", "odoo", &[140, 150]),
+            ("OCA", "server-tools", &[80, 90, 100]),
+            ("OCA", "server-auth", &[110, 120]),
+        ]);
+        assert_eq!(
+            repos,
+            [
+                r("OCA/server-tools", "8.0,9.0,10.0", false),
+                r("OCA/server-auth", "11.0,12.0", true),
+                r("odoo/odoo", "14.0,15.0", true),
+            ]
+        );
+        assert!(collisions.is_empty());
+        // l10n_es: both from 6.1, Odoo core first.
+        let (repos, collisions) = get(&[
+            ("OCA", "l10n-spain", &[61, 70]),
+            ("odoo", "odoo", &[61, 70, 80]),
+        ]);
+        assert!(!repos[1].2);
+        assert_eq!(
+            collisions,
+            [("odoo/odoo OCA/l10n-spain".into(), "6.1,7.0".into(), true)]
+        );
+        // No core: who had it first is the reference.
+        let (_, collisions) = get(&[("OCA", "mail", &[180]), ("OCA", "social", &[170, 180])]);
+        assert_eq!(
+            collisions,
+            [("OCA/social OCA/mail".into(), "18.0".into(), false)]
+        );
+        let (repos, _) = get(&[("OCA", "web", &[170])]);
+        assert_eq!(repos, [r("OCA/web", "17.0", false)]);
     }
 
     // Both directions, chains followed; the other module links only when

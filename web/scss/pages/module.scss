@@ -16,6 +16,7 @@
         details, summary { display: inline; }
         summary { cursor: pointer; text-decoration: underline dotted; }
     }
+    .module-collision .material-icons { color: var(--bs-warning); }
 
     @media (max-width: 767.98px) {
         flex-wrap: wrap;
