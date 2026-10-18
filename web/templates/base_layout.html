@@ -43,10 +43,12 @@
         <script>
             document.documentElement.dataset.mode = localStorage.getItem('ommd_mode') || 'user';
             document.documentElement.dataset.sidebar = localStorage.getItem('ommd_sidebar') || 'expanded';
-            const ommd_theme = localStorage.getItem('ommd_theme');
-            if (ommd_theme) {
-                document.documentElement.dataset.bsTheme = ommd_theme;
+            {# Auto (no saved choice): light by day, dark by night on the visitor's clock; global, main.mjs reuses it #}
+            function ommdAutoTheme() {
+                const hour = new Date().getHours();
+                return hour >= 8 && hour < 20 ? 'light' : 'dark';
             }
+            document.documentElement.dataset.bsTheme = localStorage.getItem('ommd_theme') || ommdAutoTheme();
         </script>
         {# Global sheet first so page sheets (inside the block) override it #}
         <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css">

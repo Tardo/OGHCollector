@@ -154,7 +154,7 @@
                     {% for ws in WORKSPACES %}<option value="{{ ws }}"{% if ws == WORKSPACE %} selected{% endif %}>{{ ws }}</option>{% endfor %}
                 </select>
                 {% endif %}
-                <button type="button" class="app-icon-btn" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
+                <button type="button" class="app-icon-btn" id="theme-toggle" title="Theme: auto / light / dark" aria-label="Theme: auto / light / dark"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
                 <div class="form-check form-switch mode-switch" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
                     <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
                     <label class="form-check-label" for="dev-mode-switch">Dev<span class="d-none d-xl-inline"> mode</span></label>

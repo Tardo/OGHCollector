@@ -31,25 +31,36 @@ function initModeSwitch() {
   });
 }
 
-// Light/Dark theme toggle (data-bs-theme is set pre-paint in base_layout.html)
+// Auto/Light/Dark theme toggle (data-bs-theme is set pre-paint in base_layout.html;
+// auto = no saved choice, resolved by the time of day there)
+const THEME_ICONS = {
+  auto: 'brightness_auto',
+  light: 'light_mode',
+  dark: 'dark_mode',
+};
+const THEME_NEXT = {auto: 'light', light: 'dark', dark: 'auto'};
+
 function initThemeSwitch() {
   const theme_toggle = document.getElementById('theme-toggle');
   if (!theme_toggle) {
     return;
   }
   const icon = theme_toggle.querySelector('.theme-icon');
+  const choice = () => localStorage.getItem('ommd_theme') || 'auto';
   const syncIcon = () => {
-    icon.textContent =
-      document.documentElement.dataset.bsTheme === 'light'
-        ? 'light_mode'
-        : 'dark_mode';
+    icon.textContent = THEME_ICONS[choice()];
+    theme_toggle.title = `Theme: ${choice()} (click to change)`;
   };
   syncIcon();
   theme_toggle.addEventListener('click', () => {
-    const theme =
-      document.documentElement.dataset.bsTheme === 'light' ? 'dark' : 'light';
-    document.documentElement.dataset.bsTheme = theme;
-    localStorage.setItem('ommd_theme', theme);
+    const next = THEME_NEXT[choice()];
+    if (next === 'auto') {
+      localStorage.removeItem('ommd_theme');
+    } else {
+      localStorage.setItem('ommd_theme', next);
+    }
+    document.documentElement.dataset.bsTheme =
+      next === 'auto' ? window.ommdAutoTheme() : next;
     syncIcon();
     restartAnimation(icon, 'spin');
   });
