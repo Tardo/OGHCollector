@@ -355,8 +355,10 @@ pub trait GitClient {
             log::error!("'{repo_name}': HEAD is not at '{origin_branch}' - skipping");
             return None;
         }
-        match git_run(&clone_path, &["symbolic-ref", "--short", "-q", "HEAD"]) {
-            Ok(b) if b == branch => {}
+        // Full ref, not `--short`: a tag named like the branch (OCA's `6.1`)
+        // makes git shorten it to `heads/6.1`.
+        match git_run(&clone_path, &["symbolic-ref", "-q", "HEAD"]) {
+            Ok(b) if b == format!("refs/heads/{branch}") => {}
             other => {
                 log::error!(
                     "'{repo_name}': checked out {other:?}, requested '{branch}' - skipping"
@@ -493,5 +495,40 @@ mod tests {
         assert!(get("GIT_CONFIG_VALUE_1").is_some_and(|h| !h.contains("tok")));
         assert_eq!(get("OGHCOLLECTOR_GIT_TOKEN"), Some("tok"));
         assert!(git_auth_env("https://github.com/OCA/web.git", "x", "").is_empty());
+    }
+
+    #[test]
+    fn a_tag_named_like_the_branch_does_not_fail_the_checkout() {
+        use super::GitClient;
+        use crate::clients::github::GithubClient;
+        let dir = std::env::temp_dir().join(format!("ogh-tag-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let origin = dir.join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        let git = |args: &[&str]| {
+            duct::cmd(
+                "git",
+                ["-c", "user.name=T", "-c", "user.email=t@t"]
+                    .iter()
+                    .chain(args),
+            )
+            .dir(&origin)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null") // no commit signing
+            .stdout_null()
+            .run()
+            .unwrap();
+        };
+        git(&["init", "-q", "-b", "6.1"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&["tag", "6.1"]); // OCA/account-financial-reporting has both
+        let client = GithubClient::new("", "");
+        let (url, dest) = (origin.to_str().unwrap(), dir.to_str().unwrap());
+        // First call clones, second one takes the update path.
+        for _ in 0..2 {
+            assert!(client
+                .clone_or_update_repo("org", "repo", url, "6.1", dest)
+                .is_some());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
