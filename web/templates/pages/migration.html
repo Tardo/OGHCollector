@@ -109,14 +109,14 @@
     </div>
     <div class="mig-toolbar">
         <ul class="nav nav-pills">
-            {% for key, label, count in [('pending', 'Pending', scope.pr + scope.not_started), ('not_started', 'Not started', scope.not_started), ('pr', 'In a PR', scope.pr), ('renamed', 'Renamed or merged', scope.renamed), ('new', 'New in ' ~ d.to, scope.new)] %}
+            {% for key, label, count in [('pending', 'Pending', scope.pr + scope.not_started), ('not_started', 'Not started', scope.not_started), ('pr', 'In a PR', scope.pr), ('renamed', 'Renamed or merged', scope.renamed), ('new', 'Not in ' ~ d.from, scope.new), ('first', 'New in ' ~ d.to, scope.first)] %}
             <li class="nav-item"><a class="nav-link{% if key == status %} active{% endif %}" href="{{ url(key, repo) }}#modules"{% if key == status %} aria-current="page"{% endif %}>{{ label }} <span class="mig-count">{{ count | num }}</span></a></li>
             {% endfor %}
         </ul>
         {% if repo %}<a class="mig-filter" href="{{ url(status, '') }}#modules" title="Show every repository">{{ repo }} <span class="material-icons" aria-hidden="true">close</span></a>{% endif %}
         <input type="search" class="form-control form-control-sm" id="migration_search" placeholder="Filter by module or repository" aria-label="Filter modules" autocomplete="off">
     </div>
-    <p class="dash-caption">Each square of <em>Versions</em> is an Odoo version, {{ d.versions[0] }} to {{ d.versions[-1] }}, the tall ones {{ d.from }} and {{ d.to }}: filled where the module is installable, outlined where it lives on under another name, amber where a migration PR is open. <em>Dependents</em> are the {{ status == 'new' and d.to or d.from }} modules that depend on it.</p>
+    <p class="dash-caption">Each square of <em>Versions</em> is an Odoo version, {{ d.versions[0] }} to {{ d.versions[-1] }}, the tall ones {{ d.from }} and {{ d.to }}: filled where the module is installable, outlined where it lives on under another name, amber where a migration PR is open. <em>Dependents</em> are the {{ status in ['new', 'first'] and d.to or d.from }} modules that depend on it.{% if status == 'first' %} <em>New in {{ d.to }}</em>: at no indexed version before it, under this name or one OpenUpgrade renamed into it.{% endif %}</p>
     {% if rows %}
     <table class="dash-rank mig-modules" id="migration-modules">
         <thead>

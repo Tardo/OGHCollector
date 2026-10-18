@@ -1,7 +1,8 @@
 // Copyright Alexandre D. Díaz
 //! Version migration (`/migration?from=17.0&to=18.0`): where the installable
 //! modules of one Odoo version stand in another (migrated, renamed or merged
-//! upstream, in an open migration PR, not started, or new there), per
+//! upstream, in an open migration PR, not started, or new there, and of
+//! those, the ones no earlier indexed version has: `first`), per
 //! repository (its module count at every version) and per module (the
 //! versions it exists at). Same name = same module unless OpenUpgrade
 //! records a rename/merge on the way (`openupgrade_rename`, followed through
@@ -53,6 +54,9 @@ pub struct MigrationModule {
     /// `renamed` (or merged) | `pr` | `not_started` | `new`.
     pub status: &'static str,
     pub dependents: i64,
+    /// `new` and at no indexed version before `to`, nor what OpenUpgrade
+    /// renamed or merged into it.
+    pub first: bool,
     /// Per indexed version (ascending): 2 installable, 3 lives on renamed or
     /// merged, 1 open migration PR, 0 neither.
     pub cells: Vec<u8>,
@@ -83,13 +87,16 @@ pub struct Tally {
     pub pr: i64,
     pub not_started: i64,
     pub new: i64,
+    /// Of `new`, those `first` there.
+    pub first: i64,
     /// Migrated under its name or another: `ported` + `renamed`.
     pub ported_pct: i64,
     pub pr_pct: i64,
 }
 
 impl Tally {
-    fn add(&mut self, status: &str) {
+    fn add(&mut self, status: &str, first: bool) {
+        self.first += first as i64;
         match status {
             "new" => self.new += 1,
             "ported" => self.ported += 1,
@@ -255,11 +262,14 @@ pub fn compute_migration_data(
             (false, _) if present.contains(&from) => continue,
             (false, _) => "new",
         };
-        tally.add(status);
+        let first = status == "new"
+            && !present.iter().any(|v| *v < to)
+            && !replaces.contains_key(m.technical_name.as_str());
+        tally.add(status, first);
         repo_tally
             .entry((m.org_name.clone(), m.repository.clone()))
             .or_default()
-            .add(status);
+            .add(status, first);
         if status == "ported" {
             continue;
         }
@@ -311,6 +321,7 @@ pub fn compute_migration_data(
             repository: m.repository.clone(),
             status,
             dependents: m.dependents,
+            first,
             pr: None,
             upstream,
         });
@@ -390,7 +401,7 @@ pub struct RouteMigrationRequest {
     from: Option<String>,
     to: Option<String>,
     /// `pending` (default: `pr` + `not_started`), `pr`, `not_started`,
-    /// `renamed`, `new`.
+    /// `renamed`, `new`, `first` (of `new`, at no earlier version).
     status: Option<String>,
     /// `org/repository`.
     repo: Option<String>,
@@ -427,7 +438,7 @@ pub async fn route(
     let status = info
         .status
         .as_deref()
-        .filter(|s| ["renamed", "pr", "not_started", "new"].contains(s))
+        .filter(|s| ["renamed", "pr", "not_started", "new", "first"].contains(s))
         .unwrap_or("pending");
     let repo = info.repo.filter(|r| !r.is_empty());
     let rows: Vec<&MigrationModule> = data
@@ -435,6 +446,7 @@ pub async fn route(
         .flat_map(|d| &d.modules)
         .filter(|m| match status {
             "pending" => matches!(m.status, "pr" | "not_started"),
+            "first" => m.first,
             s => m.status == s,
         })
         .filter(|m| {
@@ -721,6 +733,40 @@ mod tests {
             (sale.status, u.kind, u.name.as_str()),
             ("new", "replaces", "sale_old")
         );
+    }
+
+    // New in 18.0 but already at 16.0: not in 17.0, yet not new in 18.0.
+    #[test]
+    fn first_skips_modules_of_earlier_versions() {
+        let (db, pool) = demo("migration-first");
+        let mut write = sqlitedb::new_write_pool(&db.path).get().unwrap();
+        add_module(&mut write, "back", 160, "web");
+        add_module(&mut write, "back", 180, "web");
+        let mut conn = pool.get().unwrap();
+        let versions = module::get_odoo_versions(&mut conn);
+        let d = super::compute_migration_data(
+            &mut conn,
+            &mut pool.get().unwrap(),
+            "first",
+            &versions,
+            170,
+            180,
+        );
+        // sale has a dependent, the rest go by name.
+        let new: Vec<_> = d
+            .modules
+            .iter()
+            .map(|m| (m.technical_name.as_str(), m.status, m.first))
+            .collect();
+        assert_eq!(
+            new,
+            [
+                ("sale", "new", true),
+                ("back", "new", false),
+                ("sale_demo", "new", true)
+            ]
+        );
+        assert_eq!((d.tally.new, d.tally.first), (3, 2));
     }
 
     #[test]
