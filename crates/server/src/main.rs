@@ -30,6 +30,7 @@ use minijinja_autoreload::AutoReloader;
 use std::path::PathBuf;
 
 use config::SERVER_CONFIG;
+use middlewares::head::head_as_get;
 use middlewares::not_found;
 use middlewares::trusted_proxy::strip_untrusted_forwarded_headers;
 use sqlitedb::Pool;
@@ -276,6 +277,8 @@ async fn main() -> std::io::Result<()> {
                 }
             })
             .configure(|cfg| configure_v1(cfg, SERVER_CONFIG.get_semantic_search_enabled()))
+            // Innermost: the access log still shows HEAD.
+            .wrap(middleware::from_fn(head_as_get))
             .wrap(
                 DefaultHeaders::new()
                     .add((
