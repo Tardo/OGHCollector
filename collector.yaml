@@ -32,11 +32,20 @@
 #             pr_comment, pr_edit, pr_review, pr_open, apprise); the rest
 #             only log what they would do (default: none)
 #
+# A repo whose branch has a Doodba layout (odoo/custom/src/repos.yaml and
+# addons.yaml) is also stored as a project (server: `projects_enabled`):
+# template drift, repos.yaml patches, addons, lint hooks, dependencies and
+# their PyPI advisories. No key needed; `template: doodba` collects their
+# private addons too, plus the modules at the root of the plain addon repos
+# of the same group. Patches that are GitHub PRs get their state (merged,
+# closed) in a GitLab job only when a GitHub token is set too.
+#
 # Unknown keys are errors. JSON or TOML with the same keys also work
 # (`--config collector.json`).
 templates:
   openerp: [addons, openerp/addons]
   odoo: [addons, odoo/addons]
+  doodba: [., odoo/custom/src/private]
 
 sources:
   - source: odoo/odoo
@@ -53,3 +62,8 @@ sources:
   #   versions: [18.0]
   #   workspaces: [mycompany]
   #   pull_requests: full
+  # - source: MyProjects  # a group of Doodba projects, one branch per Odoo version
+  #   git: GL
+  #   base_url: https://mygitlabinstance.com/api/v4/
+  #   template: doodba
+  #   versions: [16.0, 17.0, 18.0]

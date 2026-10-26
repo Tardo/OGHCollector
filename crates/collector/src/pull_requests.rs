@@ -236,7 +236,12 @@ pub async fn collect(c: &RepoPrs<'_>, conn: &mut SqliteConnection, budget: &mut 
     }
     let mut merged_prids: Vec<i64> = Vec::with_capacity(closed.len());
     for pr in &closed {
-        if let Some(true) = c.git.is_pull_request_merged(full_path, &pr.prid).await {
+        if c.git
+            .pull_request_state(full_path, &pr.prid)
+            .await
+            .as_deref()
+            == Some("merged")
+        {
             merged_prids.push(pr.prid);
         }
     }

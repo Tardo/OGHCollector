@@ -16,7 +16,7 @@ macro_rules! api {
                 .app_data(web::Data::new(pool.clone()))
                 .app_data(web::Data::new(Workspaces::new(fixture.path.clone(), pool)))
                 .service(crate::routes::atlas::route_atlas_data)
-                .configure(|cfg| crate::configure_v1(cfg, true)),
+                .configure(|cfg| crate::configure_v1(cfg, true, true)),
         )
         .await;
         (fixture, app)
@@ -36,6 +36,8 @@ async fn a_bad_odoo_version_is_a_400() {
         "/v1/semantic-search?q=invoices&odoo_version=v17",
         "/v1/compare/web_widget_demo?from=v17&to=18.0",
         "/v1/license-check?odoo_version=v17&modules=sale_demo",
+        "/v1/projects?odoo_version=v17",
+        "/v1/project/acme/client-a/v17",
         "/atlas/data/v17",
     ] {
         let response =
@@ -185,4 +187,82 @@ async fn the_api_answers_from_the_db() {
         nodes,
         ["o_sale", "o_sale_demo", "o_web_widget_demo", "p_requests"]
     );
+}
+
+#[actix_web::test]
+async fn doodba_projects_answer_from_the_db() {
+    let (_db, app) = api!("api-projects");
+    let call = |uri: &'static str| {
+        let app = &app;
+        async move {
+            let response =
+                awtest::call_service(app, awtest::TestRequest::get().uri(uri).to_request()).await;
+            let status = response.status();
+            let body = serde_json::from_slice::<Value>(&awtest::read_body(response).await).unwrap();
+            (status, body)
+        }
+    };
+
+    let (status, list) = call("/v1/projects").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        list,
+        json!([{
+            "organization": "acme",
+            "repository": "client-a",
+            "odoo_version": "18.0",
+            "last_commit_date": "2026-10-01T10:00:00+02:00",
+            "template_commit": "v9.0.0",
+            "template_behind": 1,
+            "addons": 2,
+            "patches": 2,
+            "patches_done": 1,
+            "advisories": 1,
+            "exposed_credentials": 1,
+        }])
+    );
+    for (uri, count) in [
+        ("/v1/projects?module=sale_demo", 1),
+        ("/v1/projects?module=sale", 0),
+        ("/v1/projects?org=acme&odoo_version=18", 1),
+        ("/v1/projects?odoo_version=17.0", 0),
+    ] {
+        let (_, list) = call(uri).await;
+        assert_eq!(list.as_array().unwrap().len(), count, "{uri}");
+    }
+
+    let (status, project) = call("/v1/project/acme/client-a/18.0").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        keys(&project),
+        [
+            "addons",
+            "advisories",
+            "answers",
+            "base_image",
+            "dependencies",
+            "exposed_credentials",
+            "last_commit_date",
+            "linters",
+            "next_odoo_version",
+            "odoo_version",
+            "organization",
+            "repos",
+            "repository",
+            "template_behind",
+            "template_commit",
+            "template_commit_date",
+            "template_pending",
+            "template_src",
+        ]
+    );
+    assert_eq!(
+        project["addons"][0],
+        json!({"repo": "sale-workflow", "technical_name": "sale_demo", "organization": "OCA", "in_next_version": false})
+    );
+    assert_eq!(project["repos"][0]["patches"][0]["state"], "merged");
+    assert_eq!(project["advisories"][0]["id"], "PYSEC-2014-14");
+
+    let (status, _) = call("/v1/project/acme/client-a/17.0").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

@@ -129,6 +129,7 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `workflow_editor_enabled` | bool | Show the `/workflows` editor (see [Workflows](#workflows)) and its nav link. **It publishes the `workflows:` section of the collector config** (prompts, AI hosts, `api_key_env` names, Apprise `url`s: write their keys as `${...}` [secrets](#workflow-secrets)), never its sources or actions, nor any secret's value | `false` |
 | `collector_config` | string | Collector config the editor reads the workflows from (`config` crate path, extension optional) | `collector` |
 | `scan_enabled` | bool | Enable the live instance scanner. Disabled by default because it creates outbound requests; enable it only behind the access controls appropriate for your deployment. | `false` |
+| `projects_enabled` | bool | Enable the Doodba projects pages (`/projects`), their `/v1/projects` and `/v1/project/{org}/{repo}/{version}` API and the "Used by N Doodba projects" line on module pages: the template drift, aggregated repos, patches (with their PR/MR state upstream), addons, linters, dependencies, PyPI advisories of the pip pins and credentials found in the files of every collected Doodba project. Disabled by default: it describes your private deployments, enable it only behind access controls (MCP: `OGHCOLLECTOR_PROJECTS_ENABLED`). | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
 | `trusted_proxies` | list of strings | IPs/CIDRs (e.g. your reverse proxy's address, or the Docker network subnet) allowed to set `X-Forwarded-For`/`Forwarded`; honored only when the request's direct TCP peer matches one of these, otherwise the headers are stripped and the real peer address is used instead. Needed for correct client IPs in access logs (and `REQ_BASE_URL` scheme/host) behind Traefik/nginx/etc. | `[]` |
 | `seo_enabled` | bool | Allow search engines/social previews to index and share the site: `/robots.txt` returns `Allow: /` instead of `Disallow: /`, and pages get a canonical link plus Open Graph/Twitter Card meta tags. Off by default so nothing is shared/indexed until explicitly opted in. | `false` |
@@ -710,7 +711,9 @@ services:
 > give `oghmcp` the same treatment.
 >
 > `scan_instance` is disabled in MCP unless `OGHCOLLECTOR_SCAN_ENABLED=true`. Enable it only where
-> access to the endpoint is controlled, as it makes outbound requests.
+> access to the endpoint is controlled, as it makes outbound requests. Likewise
+> `list_doodba_projects`/`get_doodba_project` need `OGHCOLLECTOR_PROJECTS_ENABLED=true`: they name
+> your client projects.
 
 ---
 
@@ -782,6 +785,7 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `DATABASE_URL` | Diesel CLI | SQLite connection string (local, non-Docker development only) |
 | `OGHCOLLECTOR_DB_PATH` | server, mcp, migrate | Path to the SQLite database (default `data/data.db`); the MCP's first CLI argument takes precedence. The collector always writes to `data/data.db`. |
 | `OGHCOLLECTOR_SCAN_ENABLED` | server, mcp | Enable live instance scans. Disabled by default. |
+| `OGHCOLLECTOR_PROJECTS_ENABLED` | mcp | Enable the Doodba project tools (`list_doodba_projects`, `get_doodba_project`). Disabled by default (the server's switch is `projects_enabled`). |
 | `OGHCOLLECTOR_MCP_BIND_ADDR` | mcp | HTTP bind address (default `0.0.0.0:8081`) |
 | `OGHCOLLECTOR_MCP_ALLOWED_HOSTS` | mcp | Comma-separated `Host` header allowlist (default `localhost,127.0.0.1,::1`) |
 | `OGHCOLLECTOR_MCP_CACHE_TTL` | mcp | Overrides `cache_ttl` from `mcp.yaml` (default `3600`) |

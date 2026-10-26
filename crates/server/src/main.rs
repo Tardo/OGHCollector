@@ -70,7 +70,11 @@ fn resolve_db_path() -> PathBuf {
     })
 }
 
-fn configure_v1(cfg: &mut web::ServiceConfig, semantic_search_enabled: bool) {
+fn configure_v1(
+    cfg: &mut web::ServiceConfig,
+    semantic_search_enabled: bool,
+    projects_enabled: bool,
+) {
     cfg.service(
         web::scope(routes::api::v1::PATH)
             .service(routes::api::v1::module::route)
@@ -84,6 +88,11 @@ fn configure_v1(cfg: &mut web::ServiceConfig, semantic_search_enabled: bool) {
             .configure(|scope_cfg| {
                 if semantic_search_enabled {
                     scope_cfg.service(routes::api::v1::search::route_semantic);
+                }
+                if projects_enabled {
+                    scope_cfg
+                        .service(routes::api::v1::project::route)
+                        .service(routes::api::v1::project::route_project);
                 }
             }),
     );
@@ -271,12 +280,24 @@ async fn main() -> std::io::Result<()> {
                 }
             })
             .configure(|cfg| {
+                if SERVER_CONFIG.get_projects_enabled() {
+                    cfg.service(routes::projects::route)
+                        .service(routes::projects::route_project);
+                }
+            })
+            .configure(|cfg| {
                 if SERVER_CONFIG.get_scan_enabled() {
                     cfg.service(routes::scan::route)
                         .service(routes::scan::route_run);
                 }
             })
-            .configure(|cfg| configure_v1(cfg, SERVER_CONFIG.get_semantic_search_enabled()))
+            .configure(|cfg| {
+                configure_v1(
+                    cfg,
+                    SERVER_CONFIG.get_semantic_search_enabled(),
+                    SERVER_CONFIG.get_projects_enabled(),
+                )
+            })
             // Innermost: the access log still shows HEAD.
             .wrap(middleware::from_fn(head_as_get))
             .wrap(
@@ -315,9 +336,9 @@ mod tests {
     use actix_web::{http::header, test as awtest, test::TestRequest, App};
 
     #[actix_web::test]
-    async fn semantic_search_is_served_under_v1_only_when_enabled() {
+    async fn optional_v1_routes_are_served_only_when_enabled() {
         let enabled =
-            awtest::init_service(App::new().configure(|cfg| configure_v1(cfg, true))).await;
+            awtest::init_service(App::new().configure(|cfg| configure_v1(cfg, true, false))).await;
         // Missing q is rejected by the handler's query extractor before it needs a DB/model.
         let request = TestRequest::get().uri("/v1/semantic-search").to_request();
         let response = awtest::call_service(&enabled, request).await;
@@ -330,10 +351,21 @@ mod tests {
         assert_eq!(response.status(), actix_web::http::StatusCode::NOT_FOUND);
 
         let disabled =
-            awtest::init_service(App::new().configure(|cfg| configure_v1(cfg, false))).await;
-        let request = TestRequest::get().uri("/v1/semantic-search").to_request();
-        let response = awtest::call_service(&disabled, request).await;
-        assert_eq!(response.status(), actix_web::http::StatusCode::NOT_FOUND);
+            awtest::init_service(App::new().configure(|cfg| configure_v1(cfg, false, false))).await;
+        // Client project names: `projects_enabled` only.
+        for uri in [
+            "/v1/semantic-search",
+            "/v1/projects",
+            "/v1/project/a/b/18.0",
+        ] {
+            let request = TestRequest::get().uri(uri).to_request();
+            let response = awtest::call_service(&disabled, request).await;
+            assert_eq!(
+                response.status(),
+                actix_web::http::StatusCode::NOT_FOUND,
+                "{uri}"
+            );
+        }
     }
 
     #[test]

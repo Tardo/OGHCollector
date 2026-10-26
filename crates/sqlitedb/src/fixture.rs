@@ -9,7 +9,10 @@ use std::path::PathBuf;
 use diesel::sqlite::SqliteConnection;
 
 use crate::models::module::{CommitterActivity, ManifestInfo};
-use crate::models::{dependency_module, dependency_type, module, module_version};
+use crate::models::{
+    dependency_module, dependency_type, doodba_project, gh_organization, gh_repository, module,
+    module_version,
+};
 use crate::Pool;
 
 /// The seeded DB file, deleted on drop.
@@ -142,4 +145,32 @@ fn seed(conn: &mut SqliteConnection) {
             dependency_module::add(conn, &python_type.id, dep, &m.id).unwrap();
         }
     }
+    // A Doodba project (no modules of its own) enabling two of them.
+    let org = gh_organization::add(conn, "acme").unwrap();
+    let repo = gh_repository::add(conn, &org.id, "client-a").unwrap();
+    let project = doodba_project::Model {
+        gh_repository_id: repo.id,
+        version_odoo: 180,
+        last_commit_date: "2026-10-01T10:00:00+02:00".to_string(),
+        template_src: Some("https://github.com/Tecnativa/doodba-copier-template.git".to_string()),
+        template_commit: Some("v9.0.0".to_string()),
+        template_commit_date: Some("2026-01-01T10:00:00+02:00".to_string()),
+        template_behind: Some(1),
+        template_log: r#"["abc1234 Bump pre-commit hooks"]"#.to_string(),
+        answers: r#"{"postgres_version":"16"}"#.to_string(),
+        base_image: Some("ghcr.io/tecnativa/doodba:18.0-onbuild".to_string()),
+        repos: r#"[{"path":"web","target":"origin 18.0","remotes":{"origin":"https://github.com/OCA/web.git"},
+            "patches":[{"remote":"origin","ref":"refs/pull/1/head","state":"merged"},{"remote":"origin","ref":"18.0-fix"}]}]"#
+            .to_string(),
+        linters: r#"[{"repo":"https://github.com/OCA/pylint-odoo","rev":"v9.0.0"}]"#.to_string(),
+        dependencies: r#"{"pip":["requests==2.0.0"]}"#.to_string(),
+        exposed: r#"["odoo/custom/src/repos.yaml forge.example"]"#.to_string(),
+        advisories: r#"[{"package":"requests","version":"2.0.0","id":"PYSEC-2014-14","fixed_in":"2.3.0","summary":"Leaks credentials."}]"#
+            .to_string(),
+    };
+    let addons = [
+        ("web".to_string(), "web_widget_demo".to_string()),
+        ("sale-workflow".to_string(), "sale_demo".to_string()),
+    ];
+    doodba_project::replace(conn, repo.id, 180, Some((&project, &addons))).unwrap();
 }

@@ -216,7 +216,7 @@ impl GitClient for GitlabClient {
         None
     }
 
-    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {
+    async fn pull_request_state(&self, full_path: &str, number: &i64) -> Option<String> {
         let mr = self
             .request_json(&format!(
                 "projects/{}/merge_requests/{number}",
@@ -224,7 +224,11 @@ impl GitClient for GitlabClient {
             ))
             .await
             .ok()?;
-        Some(mr["state"].as_str() == Some("merged"))
+        // `opened`, `closed`, `merged`, `locked` (closing).
+        match mr["state"].as_str()? {
+            "opened" | "locked" => Some("open".to_string()),
+            state => Some(state.to_string()),
+        }
     }
 }
 

@@ -52,6 +52,30 @@ struct NewDependencyOsv<'a> {
     fixed_in: &'a str,
 }
 
+/// First line of prose of the Markdown details: GHSA texts open with a
+/// `### Summary`-style heading, some with a code fence; NVD-derived (PYSEC)
+/// ones with a "<package> is a ..." sentence, skipped.
+pub fn summary(details: &str, package: &str) -> String {
+    let mut in_fence = false;
+    let line = details
+        .lines()
+        .map(str::trim)
+        .find(|l| {
+            if l.starts_with("```") {
+                in_fence = !in_fence;
+                return false;
+            }
+            !in_fence && !l.is_empty() && !l.starts_with(['#', '|'])
+        })
+        .unwrap_or_default();
+    let intro = format!("{} is a", package.to_lowercase());
+    let line = match line.to_lowercase().starts_with(&intro) {
+        true => line.split_once(". ").map_or(line, |(_, rest)| rest),
+        false => line,
+    };
+    line.replace(['`', '*'], "")
+}
+
 fn get_by_dep_mod_id_osv_id_impl(
     conn: &mut SqliteConnection,
     dep_mod_id: &i64,

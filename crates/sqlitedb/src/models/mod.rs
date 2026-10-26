@@ -5,6 +5,7 @@ pub mod dependency;
 pub mod dependency_module;
 pub mod dependency_osv;
 pub mod dependency_type;
+pub mod doodba_project;
 pub mod gh_organization;
 pub mod gh_repository;
 pub mod gh_repository_workspace;

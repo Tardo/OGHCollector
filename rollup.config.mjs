@@ -20,6 +20,7 @@ export default [
       'web/js/pages/localization.mjs',
       'web/js/pages/osv.mjs',
       'web/js/pages/migration.mjs',
+      'web/js/pages/projects.mjs',
       'web/js/pages/doodba_tools/converter.mjs',
       'web/js/pages/doodba_tools/dependency-resolver.mjs',
       'web/js/pages/doodba_tools/migration-plan.mjs',

@@ -962,6 +962,7 @@ dependencies = [
  "subtle",
  "tokio",
  "urlencoding",
+ "yaml-rust2",
 ]
 
 [[package]]

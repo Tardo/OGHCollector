@@ -20,6 +20,7 @@ mod analyzer;
 mod anygitclient;
 mod clients;
 mod config;
+mod doodba;
 mod embeddings;
 mod gitclient;
 #[cfg(test)]
@@ -446,6 +447,17 @@ async fn main() {
         &repo_infos,
         &gh_repo_ids,
         odoo_ver,
+    )
+    .await;
+
+    doodba::collect(
+        &mut conn,
+        &git_client,
+        &pypi_client,
+        &repo_infos,
+        &gh_repo_ids,
+        *odoo_ver,
+        config.get_repos_path(),
     )
     .await;
 

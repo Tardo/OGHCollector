@@ -16,6 +16,7 @@ use crate::utils::get_minijinja_context;
 
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models;
+use sqlitedb::models::dependency_osv::summary;
 
 use crate::workspace::AreaPool;
 
@@ -75,30 +76,6 @@ fn package_key(name: &str) -> String {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-")
-}
-
-// First line of prose of the Markdown details: GHSA texts open with a
-// `### Summary`-style heading, some with a code fence; NVD-derived (PYSEC)
-// ones with a "<package> is a ..." sentence, skipped.
-fn summary(details: &str, package: &str) -> String {
-    let mut in_fence = false;
-    let line = details
-        .lines()
-        .map(str::trim)
-        .find(|l| {
-            if l.starts_with("```") {
-                in_fence = !in_fence;
-                return false;
-            }
-            !in_fence && !l.is_empty() && !l.starts_with(['#', '|'])
-        })
-        .unwrap_or_default();
-    let intro = format!("{} is a", package.to_lowercase());
-    let line = match line.to_lowercase().starts_with(&intro) {
-        true => line.split_once(". ").map_or(line, |(_, rest)| rest),
-        false => line,
-    };
-    line.replace(['`', '*'], "")
 }
 
 // Highest of the listed fixed releases (`2.4.0, 1.10.13`), compared numerically.

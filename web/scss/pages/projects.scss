@@ -1,0 +1,92 @@
+// Copyright 2026 Alexandre D. Díaz
+// Doodba projects (projects.html, project.html).
+@import "../components/report";
+
+.fact.is-warn { border-left-color: var(--bs-warning); }
+.fact.is-warn > .material-icons { color: var(--bs-warning-text-emphasis); }
+.fact.is-danger { border-left-color: var(--bs-danger); }
+.fact.is-danger > .material-icons { color: var(--bs-danger-text-emphasis); }
+.dash-flag.is-danger { color: var(--bs-danger-text-emphasis); }
+
+// `.page-header .page-header-desc` sets its own color.
+.page-header .prj-alert {
+    color: var(--bs-danger-text-emphasis);
+
+    .material-icons {
+        margin-right: 0.3rem;
+        font-size: 1.1em;
+        vertical-align: -0.15em;
+    }
+}
+
+.prj-version {
+    margin-left: 0.35rem;
+    font-weight: 400;
+    color: var(--bs-secondary-color);
+}
+
+.prj-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1rem;
+    margin-bottom: 0.75rem;
+
+    .dash-caption { margin: 0; }
+    #projects_search { width: min(100%, 20rem); margin-left: auto; }
+}
+
+// The drift figure, then its square.
+.prj-behind {
+    .heatmap-cell {
+        display: inline-block;
+        width: 0.8rem;
+        margin-left: 0.35rem;
+        vertical-align: -0.1rem;
+    }
+}
+
+.prj-fleet .dash-name { min-width: 11rem; }
+
+// Long lists (lint revs) scroll in place, header pinned.
+.prj-scroll {
+    max-height: min(30rem, 60vh);
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    thead th {
+        position: sticky;
+        top: 0;
+        background-color: var(--bs-body-bg);
+    }
+}
+
+.mig-progress .dash-progress {
+    height: 0.55rem;
+    margin: 1.25rem 0 0;
+}
+
+.prj-ok { font-weight: 600; color: var(--ommd-accent); }
+
+.prj-log {
+    max-height: 22rem;
+    padding: 0;
+    margin: 0;
+    overflow: auto;
+    font-size: 0.85rem;
+    list-style: none;
+
+    li {
+        padding: 0.3rem 0;
+        border-bottom: 1px solid var(--bs-border-color-translucent);
+    }
+
+    code { margin-right: 0.4rem; }
+}
+
+.prj-deps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+}

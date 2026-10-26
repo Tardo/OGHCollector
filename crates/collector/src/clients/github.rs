@@ -192,12 +192,15 @@ impl GitClient for GithubClient {
         self.get_commit_ci_status(full_path, sha).await
     }
 
-    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {
+    async fn pull_request_state(&self, full_path: &str, number: &i64) -> Option<String> {
         let pull = self
             .request_json(&format!("repos/{full_path}/pulls/{number}"))
             .await
             .ok()?;
-        pull["merged"].as_bool()
+        match pull["merged"].as_bool()? {
+            true => Some("merged".to_string()),
+            false => pull["state"].as_str().map(str::to_string),
+        }
     }
 }
 

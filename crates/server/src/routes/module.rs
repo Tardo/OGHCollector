@@ -6,8 +6,10 @@ use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use serde::{Deserialize, Serialize};
 
+use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
+use crate::workspace::AreaPool;
 
 use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
 use sqlitedb::{models, Pool};
@@ -351,11 +353,31 @@ fn build_module_context(
     (module_infos, module_versions)
 }
 
+/// The Doodba projects (of the workspace) enabling the module, per Odoo
+/// version, newest first: (version, [(org, repo)]).
+fn module_projects(
+    conn: &mut SqliteConnection,
+    org: &str,
+    technical_name: &str,
+) -> Vec<(String, Vec<(String, String)>)> {
+    let mut out: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    for row in models::doodba_project::using_module(conn, technical_name, Some(org)) {
+        let version = row.odoo_version();
+        let project = (row.org_name, row.repository);
+        match out.last_mut() {
+            Some((v, projects)) if *v == version => projects.push(project),
+            _ => out.push((version, vec![project])),
+        }
+    }
+    out
+}
+
 #[get("/module/{org}/{technical_name}")]
 pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
     pool: web::Data<Pool>,
+    area: AreaPool,
     path: web::Path<(String, String)>,
     info: web::Query<RouteModulePageRequest>,
 ) -> Result<impl Responder> {
@@ -370,6 +392,7 @@ pub async fn route(
         odoo_versions,
         upstream,
         locations,
+        used_by,
     ) = web::block(move || {
         let mut conn = pool.get().unwrap();
         let modules = models::module::get_by_technical_name_organization_name(
@@ -377,6 +400,11 @@ pub async fn route(
             &technical_name,
             &org,
         );
+        // Client project names: only where the projects pages are on.
+        let used_by = match SERVER_CONFIG.get_projects_enabled() {
+            true => module_projects(&mut area.get().unwrap(), &org, &technical_name),
+            false => Vec::new(),
+        };
         let merged_versions: HashSet<i32> = modules.iter().map(|m| m.version_odoo).collect();
 
         let mut distinct_versions: Vec<i32> = merged_versions.iter().copied().collect();
@@ -421,6 +449,7 @@ pub async fn route(
             odoo_versions,
             upstream,
             locations,
+            used_by,
         )
     })
     .await?;
@@ -447,6 +476,8 @@ pub async fn route(
                     odoo_versions => odoo_versions,
                     upstream => upstream,
                     locations => locations,
+                    used_by_count => used_by.iter().map(|(_, p)| p.len()).sum::<usize>(),
+                    used_by => used_by,
                 )
             ),
         )?

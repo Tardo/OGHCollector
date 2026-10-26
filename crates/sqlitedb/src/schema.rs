@@ -48,6 +48,35 @@ diesel::table! {
 }
 
 diesel::table! {
+    doodba_project (gh_repository_id, version_odoo) {
+        gh_repository_id -> BigInt,
+        version_odoo -> Integer,
+        last_commit_date -> Text,
+        template_src -> Nullable<Text>,
+        template_commit -> Nullable<Text>,
+        template_commit_date -> Nullable<Text>,
+        template_behind -> Nullable<Integer>,
+        template_log -> Text,
+        answers -> Text,
+        base_image -> Nullable<Text>,
+        repos -> Text,
+        linters -> Text,
+        dependencies -> Text,
+        exposed -> Text,
+        advisories -> Text,
+    }
+}
+
+diesel::table! {
+    doodba_project_addon (gh_repository_id, version_odoo, repo, technical_name) {
+        gh_repository_id -> BigInt,
+        version_odoo -> Integer,
+        repo -> Text,
+        technical_name -> Text,
+    }
+}
+
+diesel::table! {
     gh_organization (id) {
         id -> BigInt,
         name -> Text,
@@ -355,6 +384,8 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(doodba_project -> gh_repository (gh_repository_id));
+diesel::joinable!(doodba_project_addon -> gh_repository (gh_repository_id));
 diesel::joinable!(gh_repository_workspace -> gh_repository (gh_repository_id));
 diesel::joinable!(module_controller -> module_version (module_version_id));
 diesel::joinable!(module_embedding -> module (module_id));
@@ -372,6 +403,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     dependency_module,
     dependency_osv,
     dependency_type,
+    doodba_project,
+    doodba_project_addon,
     gh_organization,
     gh_repository,
     gh_repository_workspace,

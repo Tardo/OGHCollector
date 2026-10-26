@@ -27,6 +27,7 @@ urlencoding.workspace = true
 base64.workspace = true
 chrono.workspace = true
 config.workspace = true
+yaml-rust2 = "0.11"
 minijinja = { workspace = true, features = ["json"] }
 axum.workspace = true
 hmac.workspace = true

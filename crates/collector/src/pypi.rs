@@ -1,4 +1,13 @@
 // Copyright Alexandre D. Díaz
+/// An OSV advisory PyPI reports for a release.
+#[derive(Debug)]
+pub struct Vulnerability {
+    pub id: String,
+    pub details: String,
+    /// The fixed releases, `, `-joined.
+    pub fixed_in: String,
+}
+
 #[derive(Debug)]
 pub struct PypiClient {
     client: reqwest::Client,
@@ -46,6 +55,31 @@ impl PypiClient {
     ) -> Result<serde_json::Value, reqwest::Error> {
         let res = self.request_json(package, version).await?;
         Ok(res)
+    }
+
+    /// The advisories of `package` `version` (PyPI's `vulnerabilities`).
+    pub async fn vulnerabilities(
+        &self,
+        package: &str,
+        version: &str,
+    ) -> Result<Vec<Vulnerability>, reqwest::Error> {
+        let info = self.get_package_info(package, Some(version)).await?;
+        let vulns = info["vulnerabilities"].as_array().into_iter().flatten();
+        Ok(vulns
+            .filter_map(|vuln| {
+                Some(Vulnerability {
+                    id: vuln["id"].as_str()?.to_string(),
+                    details: vuln["details"].as_str().unwrap_or("").to_string(),
+                    fixed_in: vuln["fixed_in"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(serde_json::Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                })
+            })
+            .collect())
     }
 
     pub async fn get_nearest_version(

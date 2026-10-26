@@ -96,10 +96,10 @@ impl GitClient for AnyGitClient {
         }
     }
 
-    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool> {
+    async fn pull_request_state(&self, full_path: &str, number: &i64) -> Option<String> {
         match self {
-            AnyGitClient::Github(c) => c.is_pull_request_merged(full_path, number).await,
-            AnyGitClient::Gitlab(c) => c.is_pull_request_merged(full_path, number).await,
+            AnyGitClient::Github(c) => c.pull_request_state(full_path, number).await,
+            AnyGitClient::Gitlab(c) => c.pull_request_state(full_path, number).await,
         }
     }
 }

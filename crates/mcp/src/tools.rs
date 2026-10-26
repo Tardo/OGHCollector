@@ -10,7 +10,11 @@
 //! 500 entries, TTL from `config.rs`; `semantic_search_modules` is not (free-text queries rarely
 //! repeat). Every `odoo_version` param goes through `odoo_version` first: bad input is
 //! `invalid_params` (an empty answer would read as "no such module" to an LLM). The contract (tool
-//! names, required params, answer fields) is pinned by `tools_tests.rs`.
+//! names, required params, answer fields) is pinned by `tools_tests.rs`. Two tools are off unless
+//! their env flag is set, since an MCP deployment has no auth: `scan_instance`
+//! (`OGHCOLLECTOR_SCAN_ENABLED`, a scanning service) and the Doodba project tools
+//! (`OGHCOLLECTOR_PROJECTS_ENABLED`, client project names; `doodba_project::Summary`/`Report`, the
+//! server's `/v1` answers).
 use std::collections::HashMap;
 
 use cached::{proc_macro::cached, stores::TimedSizedCache};
@@ -49,11 +53,33 @@ fn odoo_version(raw: &str) -> Result<u8, McpError> {
     })
 }
 
-fn live_scan_enabled() -> bool {
+fn env_flag(name: &str) -> bool {
     matches!(
-        std::env::var("OGHCOLLECTOR_SCAN_ENABLED").as_deref(),
+        std::env::var(name).as_deref(),
         Ok("1" | "true" | "TRUE" | "yes" | "YES")
     )
+}
+
+const PROJECTS_DISABLED: &str = "Doodba project tools are disabled. Set OGHCOLLECTOR_PROJECTS_ENABLED=true after applying appropriate access controls: they name client projects.";
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListDoodbaProjectsParams {
+    /// Only the projects of this organization/group, e.g. "acme".
+    pub org: Option<String>,
+    /// Only the projects (branches) of this Odoo version, e.g. "17.0".
+    pub odoo_version: Option<String>,
+    /// A module's technical name: only the projects whose addons.yaml enables it.
+    pub module: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetDoodbaProjectParams {
+    /// Organization/group of the project's repository, from list_doodba_projects.
+    pub org: String,
+    /// The project's repository name.
+    pub repo: String,
+    /// Odoo version (branch) of the project, e.g. "17.0".
+    pub odoo_version: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1088,12 +1114,17 @@ fn json_result<T: Serialize>(value: &T) -> Result<CallToolResult, McpError> {
 #[derive(Clone)]
 pub struct OghMcp {
     pool: Pool,
+    /// `OGHCOLLECTOR_PROJECTS_ENABLED`.
+    projects: bool,
 }
 
 #[tool_router]
 impl OghMcp {
     pub fn new(pool: Pool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            projects: env_flag("OGHCOLLECTOR_PROJECTS_ENABLED"),
+        }
     }
 
     #[tool(
@@ -1616,12 +1647,94 @@ impl OghMcp {
         &self,
         Parameters(params): Parameters<ScanInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
-        if !live_scan_enabled() {
+        if !env_flag("OGHCOLLECTOR_SCAN_ENABLED") {
             return json_result(&serde_json::json!({
                 "error": "Live scanning is disabled. Set OGHCOLLECTOR_SCAN_ENABLED=true after applying appropriate access controls."
             }));
         }
         let report = oghscan::scan_instance(&params.url).await;
+        json_result(&report)
+    }
+
+    #[tool(
+        description = "List the Doodba projects collected (repositories generated from a \
+                        doodba-copier-template, one entry per repository and Odoo version / \
+                        branch), optionally only those of an organization, an Odoo version, or \
+                        that enable a given module in addons.yaml (\"which projects use \
+                        account_banking_mandate?\"). Each entry: how many template commits the \
+                        project is behind (template_behind; null = unknown), addons enabled, \
+                        patches merged in repos.yaml and how many of their PRs/MRs are merged \
+                        or closed upstream (patches_done: candidates to drop), PyPI advisories \
+                        on its pinned pip dependencies, and how many places in its files hold \
+                        credentials (exposed_credentials: should be 0). Follow up with \
+                        get_doodba_project for one project's detail. Disabled unless \
+                        OGHCOLLECTOR_PROJECTS_ENABLED=true."
+    )]
+    async fn list_doodba_projects(
+        &self,
+        Parameters(params): Parameters<ListDoodbaProjectsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.projects {
+            return json_result(&serde_json::json!({"error": PROJECTS_DISABLED}));
+        }
+        let version_odoo = params
+            .odoo_version
+            .as_deref()
+            .map(odoo_version)
+            .transpose()?;
+        let pool = self.pool.clone();
+        let summaries = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            let rows = match &params.module {
+                Some(module) => models::doodba_project::using_module(&mut conn, module, None),
+                None => models::doodba_project::list(&mut conn),
+            };
+            rows.iter()
+                .filter(|r| params.org.as_ref().is_none_or(|org| *org == r.org_name))
+                .filter(|r| version_odoo.is_none_or(|v| v as i32 == r.project.version_odoo))
+                .map(|r| r.summary())
+                .collect::<Vec<_>>()
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        json_result(&summaries)
+    }
+
+    #[tool(
+        description = "One Doodba project (as listed by list_doodba_projects) whole: template \
+                        source, commit and drift with the pending template commits (what a \
+                        `copier update` brings), repos.yaml repositories with their remotes and \
+                        patches (each PR/MR patch with its upstream state: open, closed or \
+                        merged), addons.yaml addons with the organization each resolves to \
+                        (null = not collected) and whether it exists in the next Odoo version \
+                        (by name or an OpenUpgrade rename) - a migration readiness check -, \
+                        pre-commit hook revisions, system dependencies (apt, pip, ...), PyPI \
+                        advisories of the exact pip pins, the files holding credentials (file \
+                        and host only), base image and allowlisted copier answers. Null when \
+                        there's no such project. Disabled unless \
+                        OGHCOLLECTOR_PROJECTS_ENABLED=true."
+    )]
+    async fn get_doodba_project(
+        &self,
+        Parameters(params): Parameters<GetDoodbaProjectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.projects {
+            return json_result(&serde_json::json!({"error": PROJECTS_DISABLED}));
+        }
+        let version_odoo = odoo_version(&params.odoo_version)? as i32;
+        let pool = self.pool.clone();
+        let report = tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .expect("failed to get a DB connection from the pool");
+            let row =
+                models::doodba_project::get(&mut conn, &params.org, &params.repo, version_odoo)?;
+            Some(models::doodba_project::report(&mut conn, &row))
+        })
+        .await
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         json_result(&report)
     }
 }
@@ -1657,7 +1770,9 @@ impl ServerHandler for OghMcp {
                  in a module between two Odoo versions, review_module_licenses before \
                  recommending a set of modules (effective license, proprietary dependencies, \
                  conflicts), and get_committer_activity to check what else a specific person \
-                 has committed to, e.g. to gauge whether they're still active."
+                 has committed to, e.g. to gauge whether they're still active. Where enabled, \
+                 list_doodba_projects and get_doodba_project answer about the Doodba projects \
+                 (deployments) collected: template drift, patches, addons, advisories."
                     .to_string(),
             )
     }

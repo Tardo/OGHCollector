@@ -59,7 +59,7 @@
     "committers": "Explore", "committer": "Explore",
     "osv": "Security", "scan": "Security",
     "favorites": "Workspace", "pack": "Workspace",
-    "doodba_converter": "Doodba", "doodba_dep_resolver": "Doodba", "doodba_migration_plan": "Doodba",
+    "projects": "Doodba", "project": "Doodba", "doodba_converter": "Doodba", "doodba_dep_resolver": "Doodba", "doodba_migration_plan": "Doodba",
     "api": "Developer", "mcp_info": "Developer", "logs": "Developer", "workflows": "Developer"
 } %}
 {% set page_title = meta_title if meta_title is defined else "Overview" %}
@@ -103,11 +103,14 @@
                 <ul>
                     {{ nav_item("/favorites", "star", "Favorites & packs", page_name in ['favorites', 'pack']) }}
                 </ul>
-                <div class="app-nav-group dev-only">Doodba</div>
-                <ul class="dev-only">
-                    {{ nav_item("/doodba/converter", "swap_horiz", "Converter", page_name == 'doodba_converter') }}
-                    {{ nav_item("/doodba/dependency-resolver", "account_tree", "Dependency resolver", page_name == 'doodba_dep_resolver') }}
-                    {{ nav_item("/doodba/migration", "upgrade", "Migration plan", page_name == 'doodba_migration_plan') }}
+                <div class="app-nav-group{{ not PROJECTS_ENABLED and ' dev-only' or '' }}">Doodba</div>
+                <ul>
+                    {% if PROJECTS_ENABLED %}
+                    {{ nav_item("/projects", "inventory_2", "Projects", page_name in ['projects', 'project']) }}
+                    {% endif %}
+                    {{ nav_item("/doodba/converter", "swap_horiz", "Converter", page_name == 'doodba_converter', "dev-only") }}
+                    {{ nav_item("/doodba/dependency-resolver", "account_tree", "Dependency resolver", page_name == 'doodba_dep_resolver', "dev-only") }}
+                    {{ nav_item("/doodba/migration", "upgrade", "Migration plan", page_name == 'doodba_migration_plan', "dev-only") }}
                 </ul>
                 <div class="app-nav-group dev-only">Developer</div>
                 <ul class="dev-only">

@@ -26,6 +26,7 @@ pub struct OGHServerConfig {
     seo_enabled: bool,
     semantic_search_enabled: bool,
     health_score_enabled: bool,
+    projects_enabled: bool,
 }
 
 impl OGHServerConfig {
@@ -80,6 +81,7 @@ impl OGHServerConfig {
         let seo_enabled = settings.get_bool("seo_enabled").unwrap_or(false);
         let semantic_search_enabled = settings.get_bool("semantic_search_enabled").unwrap_or(true);
         let health_score_enabled = settings.get_bool("health_score_enabled").unwrap_or(true);
+        let projects_enabled = settings.get_bool("projects_enabled").unwrap_or(false);
         OGHServerConfig {
             bind_address,
             port,
@@ -100,6 +102,7 @@ impl OGHServerConfig {
             seo_enabled,
             semantic_search_enabled,
             health_score_enabled,
+            projects_enabled,
         }
     }
 
@@ -174,6 +177,10 @@ impl OGHServerConfig {
 
     pub fn get_scan_enabled(&self) -> bool {
         self.scan_enabled
+    }
+
+    pub fn get_projects_enabled(&self) -> bool {
+        self.projects_enabled
     }
 
     pub fn get_mcp_url(&self) -> &String {

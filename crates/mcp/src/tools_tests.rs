@@ -45,6 +45,7 @@ fn tool_names_and_required_params_are_stable() {
             &["from_version", "technical_name", "to_version"][..],
         ),
         ("get_committer_activity", &["name"]),
+        ("get_doodba_project", &["odoo_version", "org", "repo"]),
         ("get_module", &["odoo_version", "technical_name"]),
         (
             "get_module_code_analysis",
@@ -55,6 +56,7 @@ fn tool_names_and_required_params_are_stable() {
             &["odoo_version", "technical_name"],
         ),
         ("get_module_docs", &["odoo_version", "technical_name"]),
+        ("list_doodba_projects", &[]),
         ("list_module_versions", &["odoo_version", "technical_name"]),
         ("list_modules_by_criteria", &["odoo_version"]),
         ("list_repository_modules", &["org", "repo"]),
@@ -81,6 +83,10 @@ fn tool_names_and_required_params_are_stable() {
 #[tokio::test]
 async fn a_bad_odoo_version_is_invalid_params() {
     let (_db, mcp) = mcp("mcp-bad-version");
+    let mcp = OghMcp {
+        projects: true,
+        ..mcp
+    };
     let bad = "v17";
     let module = json!({"technical_name": "sale_demo", "odoo_version": bad});
     let calls = [
@@ -134,6 +140,18 @@ async fn a_bad_odoo_version_is_invalid_params() {
             "compare_module_versions",
             mcp.compare_module_versions(params(
                 json!({"technical_name": "web_widget_demo", "from_version": bad, "to_version": "18.0"}),
+            ))
+            .await,
+        ),
+        (
+            "list_doodba_projects",
+            mcp.list_doodba_projects(params(json!({"odoo_version": bad})))
+                .await,
+        ),
+        (
+            "get_doodba_project",
+            mcp.get_doodba_project(params(
+                json!({"org": "acme", "repo": "client-a", "odoo_version": bad}),
             ))
             .await,
         ),
@@ -309,4 +327,67 @@ async fn tools_answer_from_the_db() {
         .await,
     );
     assert_eq!(none, json!([]));
+}
+
+#[tokio::test]
+async fn doodba_project_tools_are_off_unless_enabled() {
+    let (_db, mcp) = mcp("mcp-projects");
+    let project = || json!({"org": "acme", "repo": "client-a", "odoo_version": "18.0"});
+    let off = OghMcp {
+        projects: false,
+        ..mcp.clone()
+    };
+    let refused = json_of(off.list_doodba_projects(params(json!({}))).await);
+    assert!(refused["error"]
+        .as_str()
+        .unwrap()
+        .contains("OGHCOLLECTOR_PROJECTS_ENABLED"));
+    let refused = json_of(off.get_doodba_project(params(project())).await);
+    assert!(refused["error"].is_string());
+
+    let on = OghMcp {
+        projects: true,
+        ..mcp
+    };
+    let list = json_of(
+        on.list_doodba_projects(params(json!({"module": "web_widget_demo"})))
+            .await,
+    );
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(
+        keys(&list[0]),
+        [
+            "addons",
+            "advisories",
+            "exposed_credentials",
+            "last_commit_date",
+            "odoo_version",
+            "organization",
+            "patches",
+            "patches_done",
+            "repository",
+            "template_behind",
+            "template_commit",
+        ]
+    );
+    let none = json_of(on.list_doodba_projects(params(json!({"org": "OCA"}))).await);
+    assert_eq!(none, json!([]));
+
+    let one = json_of(on.get_doodba_project(params(project())).await);
+    assert_eq!(one["repository"], "client-a");
+    assert_eq!(
+        one["template_pending"],
+        json!(["abc1234 Bump pre-commit hooks"])
+    );
+    assert_eq!(
+        one["exposed_credentials"],
+        json!(["odoo/custom/src/repos.yaml forge.example"])
+    );
+    let missing = json_of(
+        on.get_doodba_project(params(
+            json!({"org": "acme", "repo": "client-a", "odoo_version": "17.0"}),
+        ))
+        .await,
+    );
+    assert_eq!(missing, Value::Null);
 }

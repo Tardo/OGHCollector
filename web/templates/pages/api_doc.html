@@ -159,6 +159,15 @@
                 <a class="nav-link" href="#license-check">License check</a>
             </div>
         </div>
+        {% if PROJECTS_ENABLED %}
+        <div>
+            <div class="api-toc-group">Doodba projects</div>
+            <div class="nav flex-column">
+                <a class="nav-link" href="#projects">Projects</a>
+                <a class="nav-link" href="#project">Project</a>
+            </div>
+        </div>
+        {% endif %}
         <div>
             <div class="api-toc-group">Integrations</div>
             <div class="nav flex-column">
@@ -714,6 +723,86 @@ ITEM_DIFF = {
             proprietary module on GPL/AGPL code). Handy in CI &mdash; fail the build when a finding has
             <code>"severity": "error"</code>. A heuristic based on manifest licenses, not legal advice.
         {% endcall %}
+
+        {% if PROJECTS_ENABLED %}
+        <div class="section-heading"><h2>Doodba projects</h2></div>
+
+        {% call endpoint(
+            "projects", "Projects", "GET", "/v1/projects",
+            [
+                ["org", "query", "string", false, "Only the projects of this organization/group"],
+                ["odoo_version", "query", "string", false, "Only the projects (branches) of this Odoo version, e.g. <code>17.0</code>"],
+                ["module", "query", "string", false, "A technical name: only the projects whose <code>addons.yaml</code> enables it"]
+            ],
+            "/v1/projects?module=web_responsive",
+            "[
+    {
+        \"organization\": \"acme\",
+        \"repository\": \"client-a\",
+        \"odoo_version\": \"17.0\",
+        \"last_commit_date\": \"2026-10-01T10:00:00+02:00\",
+        \"template_commit\": \"v9.0.0\",
+        \"template_behind\": 12,
+        \"addons\": 84,
+        \"patches\": 3,
+        \"patches_done\": 1,
+        \"advisories\": 2,
+        \"exposed_credentials\": 0
+    }
+]",
+            "[
+    {
+        \"organization\": string,
+        \"repository\": string,
+        \"odoo_version\": string,
+        \"last_commit_date\": string,
+        \"template_commit\": string|null,
+        \"template_behind\": integer|null,
+        \"addons\": integer,
+        \"patches\": integer,
+        \"patches_done\": integer,
+        \"advisories\": integer,
+        \"exposed_credentials\": integer
+    }
+]"
+        ) %}
+            The Doodba projects collected, one per repository and Odoo version (branch): template commits
+            behind (<code>null</code> = unknown), addons enabled, patches merged in <code>repos.yaml</code> and how
+            many of their PRs/MRs are merged or closed upstream, PyPI advisories of the pinned pip dependencies,
+            and how many places in the project files hold credentials.
+        {% endcall %}
+
+        {% call endpoint(
+            "project", "Project", "GET", "/v1/project/{org}/{repository}/{odoo_version}",
+            [
+                ["org", "path", "string", true, "The organization/group"],
+                ["repository", "path", "string", true, "The project's repository"],
+                ["odoo_version", "path", "string", true, "The Odoo version (branch), e.g. <code>17.0</code>"]
+            ],
+            "/v1/project/acme/client-a/17.0",
+            "{
+    \"organization\": \"acme\",
+    \"repository\": \"client-a\",
+    \"odoo_version\": \"17.0\",
+    \"template_behind\": 12,
+    \"template_pending\": [\"abc1234 Bump pre-commit hooks\"],
+    \"repos\": [{\"path\": \"web\", \"target\": \"origin 17.0\", \"remotes\": {\"origin\": \"https://github.com/OCA/web.git\"},
+               \"patches\": [{\"remote\": \"origin\", \"ref\": \"refs/pull/2779/head\", \"state\": \"merged\"}]}],
+    \"addons\": [{\"repo\": \"web\", \"technical_name\": \"web_responsive\", \"organization\": \"OCA\", \"in_next_version\": true}],
+    \"next_odoo_version\": \"18.0\",
+    \"advisories\": [{\"package\": \"requests\", \"version\": \"2.25.0\", \"id\": \"GHSA-9wx4-h78v-vm56\", \"fixed_in\": \"2.32.0\", \"summary\": \"...\"}],
+    \"exposed_credentials\": [],
+    \"...\": \"template_src, template_commit, template_commit_date, last_commit_date, base_image, answers, linters, dependencies\"
+}"
+        ) %}
+            One project whole: the template commits a <code>copier update</code> would bring, each repository of
+            <code>repos.yaml</code> with its patches (a PR/MR patch carries its upstream <code>state</code>:
+            <code>open</code>, <code>closed</code> or <code>merged</code>), the addons with the organization each
+            resolves to (<code>null</code> = not collected) and whether it exists in the next Odoo version, lint hook
+            revisions, system dependencies, advisories and the files holding credentials (file and host, never
+            the credential). <code>404</code> when there's no such project.
+        {% endcall %}
+        {% endif %}
 
         <div class="section-heading"><h2>Integrations</h2></div>
 

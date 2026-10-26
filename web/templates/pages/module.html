@@ -62,6 +62,10 @@
         <h1>{{ modules[0].name if modules else technical_name }}</h1>
         <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
         {{ upstream_lines }}
+        {% if used_by %}
+        <div class="page-header-desc module-upstream" title="Doodba projects whose addons.yaml enables it"><span class="material-icons" aria-hidden="true">inventory_2</span>
+            <details><summary>Used by {{ used_by_count }} Doodba project{{ 's' if used_by_count != 1 }}</summary> {% for version, projects in used_by %}{% if not loop.first %} &middot; {% endif %}{{ version }}: {% for o, r in projects %}<a href="/project/{{ o | urlencode }}/{{ r | urlencode }}/{{ version | urlencode }}">{{ o }}/{{ r }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endfor %}</details></div>
+        {% endif %}
     </div>
     <div class="module-header-actions">
     <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" title="Atom feed: new versions, migration PRs, findings and committers of this module"><span class="material-icons" aria-hidden="true">rss_feed</span> Follow</a>

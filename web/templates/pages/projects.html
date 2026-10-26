@@ -1,0 +1,153 @@
+{# Copyright 2026 Alexandre D. Díaz #}
+{% extends "minimal_layout.html" %}
+{% set meta_title = "Doodba projects" %}
+{% set meta_description = "The Doodba projects collected: template drift, Postgres, addons, patches carried in repos.yaml, pip advisories, credentials in project files and lint hook revisions, per project and across the fleet." %}
+{% block base_head_content %}
+{{ super() }}
+    <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/projects.css">
+    <script type="module" src="/static/auto/projects.mjs" async></script>
+{% endblock %}
+{% block content %}
+{{ super() }}
+{% from "partials/report.html" import meter %}
+
+<header class="page-header">
+    <h1>Doodba projects</h1>
+    <p class="page-header-desc">Every collected branch with a Doodba layout (<code>repos.yaml</code> and <code>addons.yaml</code>). <em>Behind</em> counts the commits on the template's default branch since the one the project was last generated or updated from (copier's <code>_commit</code>). Lint hooks are compared with the newest revision the fleet runs for the same Odoo version.</p>
+</header>
+
+{% if not fleet %}
+<p class="text-body-secondary">No Doodba project collected yet: add the organization or group that holds them to <code>collector.yaml</code> (the <code>doodba</code> template also collects their private addons).</p>
+{% else %}
+<section class="fact-strip" aria-label="Summary">
+    <div class="fact">
+        <span class="material-icons" aria-hidden="true">inventory_2</span>
+        <div class="fact-headline">{{ fleet | length | num }}</div>
+        <div class="fact-caption">projects (one per repository and Odoo version)</div>
+    </div>
+    <div class="fact is-warn">
+        <span class="material-icons" aria-hidden="true">history</span>
+        <div class="fact-headline">{{ (fleet | length) - current - unknown }}</div>
+        <div class="fact-caption">behind the template, {{ current | num }} on its latest commit{% if unknown %}, {{ unknown | num }} on a commit it doesn't have{% endif %}</div>
+    </div>
+    <div class="fact is-warn">
+        <span class="material-icons" aria-hidden="true">call_merge</span>
+        <div class="fact-headline">{{ patches | num }}</div>
+        <div class="fact-caption">patches (PRs, branches) merged in by {{ patched | num }} projects{% if patches_done %}; {{ patches_done | num }} of their PRs are merged or closed upstream{% endif %}</div>
+    </div>
+    <div class="fact{% if advisories %} is-warn{% endif %}">
+        <span class="material-icons" aria-hidden="true">bug_report</span>
+        <div class="fact-headline">{{ advisories | num }}</div>
+        <div class="fact-caption">PyPI advisories on the pinned pip dependencies of {{ advised | num }} project{{ 's' if advised != 1 }}</div>
+    </div>
+    <div class="fact{% if exposed %} is-danger{% endif %}">
+        <span class="material-icons" aria-hidden="true">key</span>
+        <div class="fact-headline">{{ exposed | num }}</div>
+        <div class="fact-caption">project{{ 's' if exposed != 1 }} with credentials written in their files (repos.yaml, pip.txt...)</div>
+    </div>
+    <div class="fact">
+        <span class="material-icons" aria-hidden="true">rule</span>
+        <div class="fact-headline">{{ lint_outdated | num }}</div>
+        <div class="fact-caption">projects with a lint hook older than the fleet's newest</div>
+    </div>
+</section>
+
+<section aria-labelledby="projects-title">
+    <div class="section-heading">
+        <h2 id="projects-title">Projects</h2>
+    </div>
+    <div class="prj-toolbar">
+        <p class="dash-caption">Furthest behind the template first. The square is shaded against the furthest behind.</p>
+        <input type="search" class="form-control form-control-sm" id="projects_search" placeholder="Filter by project or version" aria-label="Filter projects" autocomplete="off">
+    </div>
+    <table class="dash-rank prj-fleet" id="projects-table">
+        <thead>
+            <tr>
+                <th>Project</th>
+                <th>Odoo</th>
+                <th class="d-none d-md-table-cell">Template</th>
+                <th class="dash-num">Behind</th>
+                <th class="dash-num d-none d-sm-table-cell">Postgres</th>
+                <th class="dash-num d-none d-lg-table-cell">Addons</th>
+                <th class="dash-num">Patches</th>
+                <th class="d-none d-sm-table-cell">Security</th>
+                <th class="d-none d-lg-table-cell">Lint</th>
+                <th class="d-none d-md-table-cell">Last commit</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in fleet %}
+            <tr data-search="{{ (f.org_name ~ '/' ~ f.repository ~ ' ' ~ f.version) | lower }}">
+                <td class="dash-name"><a href="/project/{{ f.org_name | urlencode }}/{{ f.repository | urlencode }}/{{ f.version | urlencode }}" title="{{ f.org_name }}/{{ f.repository }}"><span class="dash-meta">{{ f.org_name }}/</span>{{ f.repository }}</a></td>
+                <td>{{ f.version }}</td>
+                <td class="d-none d-md-table-cell"><code>{{ f.template_commit or '-' }}</code>{% if f.template_date %} <span class="dash-meta">{{ f.template_date }}</span>{% endif %}</td>
+                <td class="dash-num prj-behind">{% if f.behind is none %}<span class="dash-meta" title="{{ f.template_commit and 'The template has no commit ' ~ f.template_commit or 'No template recorded' }}">?</span>{% else %}{{ f.behind | num }} <span class="heatmap-cell" data-l="{{ f.level }}" aria-hidden="true"></span>{% endif %}</td>
+                <td class="dash-num d-none d-sm-table-cell">{{ f.postgres or '-' }}</td>
+                <td class="dash-num d-none d-lg-table-cell">{{ f.addons | num }}</td>
+                <td class="dash-num">{% if f.patches %}<span class="dash-flag">{{ f.patches }}</span>{% if f.patches_done %} <span class="dash-meta" title="Their PR/MR is merged or closed upstream">{{ f.patches_done }} done</span>{% endif %}{% else %}<span class="dash-meta">0</span>{% endif %}</td>
+                <td class="d-none d-sm-table-cell">{% if f.exposed %}<span class="dash-flag is-danger" title="Credentials written in its project files">credentials</span> {% endif %}{% if f.advisories %}<span class="dash-flag" title="PyPI advisories on its pinned pip dependencies">{{ f.advisories }} advisories</span>{% endif %}{% if not f.exposed and not f.advisories %}<span class="dash-meta">-</span>{% endif %}</td>
+                <td class="d-none d-lg-table-cell">{% if f.lint_behind %}<span class="dash-flag" title="{% for hook, rev, newest in f.lint_behind %}{{ hook }} {{ rev }}, newest {{ newest }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">{{ f.lint_behind | length }} behind</span>{% else %}<span class="dash-meta">current</span>{% endif %}</td>
+                <td class="dash-meta d-none d-md-table-cell">{{ f.last_commit or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="dash-caption" id="projects-no-match" hidden>No project matches the filter.</p>
+</section>
+
+<div class="dash-report">
+    <section aria-labelledby="templates-title">
+        <div class="section-heading">
+            <h2 id="templates-title">Template versions</h2>
+        </div>
+        <p class="dash-caption">The template commits projects were generated or last updated from, newest first.</p>
+        <table class="dash-rank">
+            <thead>
+                <tr>
+                    <th>Commit</th>
+                    <th class="dash-num">Behind</th>
+                    <th class="dash-num">Projects</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in templates %}
+                <tr>
+                    <td class="dash-name" title="{{ t.src }}"><code>{{ t.commit }}</code> <span class="dash-meta">{{ t.date or 'not in the template' }} &middot; {{ t.src }}</span></td>
+                    <td class="dash-num">{{ t.behind is none and '?' or (t.behind | num) }}</td>
+                    <td class="dash-num">{{ meter(t.projects, top_projects) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section aria-labelledby="lint-title">
+        <div class="section-heading">
+            <h2 id="lint-title">Lint hooks</h2>
+        </div>
+        <p class="dash-caption">Revisions of each <code>.pre-commit-config.yaml</code> hook per Odoo version; the newest the fleet runs is in bold.</p>
+        <div class="prj-scroll">
+            <table class="dash-rank">
+                <thead>
+                    <tr>
+                        <th>Hook</th>
+                        <th>Odoo</th>
+                        <th>Revision</th>
+                        <th class="dash-num">Projects</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in lint_revs %}
+                    <tr>
+                        <td class="dash-name" title="{{ l.hook }}">{{ l.hook }}</td>
+                        <td>{{ l.version }}</td>
+                        <td>{% if l.newest %}<strong>{{ l.rev[:12] }}</strong>{% else %}<span class="dash-flag">{{ l.rev[:12] }}</span>{% endif %}</td>
+                        <td class="dash-num">{{ meter(l.projects, top_lint) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endif %}
+{% endblock %}

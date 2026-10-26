@@ -1323,34 +1323,16 @@ async fn check_osv(ctx: &ModuleCtx<'_, '_>, conn: &mut SqliteConnection, pypi: &
                 }
             }
         }
-        let info = match pypi.get_package_info(&package, Some(&version)).await {
-            Ok(info) => info,
+        let vulns = match pypi.vulnerabilities(&package, &version).await {
+            Ok(vulns) => vulns,
             Err(err) => {
                 log::warn!("Can't query PyPI for '{package}': {err}. Skipping OSV check...");
                 continue;
             }
         };
-        for vuln in info["vulnerabilities"].as_array().into_iter().flatten() {
-            let Some(vuln_id) = vuln["id"].as_str() else {
-                continue;
-            };
-            let fixed_in = vuln["fixed_in"]
-                .as_array()
-                .map(|v| {
-                    v.iter()
-                        .filter_map(Value::as_str)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_default();
-            models::dependency_osv::add(
-                conn,
-                dep_id,
-                vuln_id,
-                vuln["details"].as_str().unwrap_or(""),
-                &fixed_in,
-            )
-            .unwrap();
+        for vuln in vulns {
+            models::dependency_osv::add(conn, dep_id, &vuln.id, &vuln.details, &vuln.fixed_in)
+                .unwrap();
         }
     }
 }

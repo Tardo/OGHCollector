@@ -461,12 +461,13 @@ pub trait GitClient {
         .map(|_| ())
     }
 
-    /// Whether a PR/MR that's no longer open was actually merged - one extra
-    /// GET per newly-closed PR, called right before `delete_outdated` so the
-    /// "avg. time open before close" stat only counts merged PRs, not rejections.
-    /// `None` on a lookup failure (network/rate-limit/404): treated as "not merged"
-    /// by the caller, so a transient error undercounts rather than pollutes.
-    async fn is_pull_request_merged(&self, full_path: &str, number: &i64) -> Option<bool>;
+    /// A PR/MR's state: `open`, `closed` or `merged` - one GET. Asked for each
+    /// newly-closed PR right before `delete_outdated`, so the "avg. time open
+    /// before close" stat only counts merged PRs, not rejections, and for
+    /// doodba's repos.yaml patches. `None` on a lookup failure
+    /// (network/rate-limit/404): "not merged" to the PR caller, so a transient
+    /// error undercounts rather than pollutes.
+    async fn pull_request_state(&self, full_path: &str, number: &i64) -> Option<String>;
 }
 
 #[cfg(test)]

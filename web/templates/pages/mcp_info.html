@@ -201,6 +201,15 @@
         </dl>
     </section>
     <section class="panel">
+        <div class="panel-header"><h3>Doodba projects</h3></div>
+        <dl class="panel-body mcp-tool-list">
+            <dt>list_doodba_projects</dt>
+            <dd>The Doodba projects collected, optionally of an organization, an Odoo version or using a module: template drift, patches and how many of their PRs are merged or closed, pip advisories, credentials in their files.</dd>
+            <dt>get_doodba_project</dt>
+            <dd>One project whole: pending template commits, repos.yaml patches with their upstream state, addons and whether each exists in the next Odoo version, lint hooks, dependencies and advisories. Both off unless the MCP server sets <code>OGHCOLLECTOR_PROJECTS_ENABLED</code>.</dd>
+        </dl>
+    </section>
+    <section class="panel">
         <div class="panel-header"><h3>Live instance</h3></div>
         <dl class="panel-body mcp-tool-list">
             <dt>scan_instance</dt>
