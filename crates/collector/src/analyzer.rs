@@ -1282,7 +1282,7 @@ def load(path):
 /// collector::security and collector::migration. Stored per module, so a
 /// module is re-analyzed when this changes even if its branch never gets
 /// another commit. Bump it whenever any of those three change.
-pub const ANALYSIS_VERSION: i32 = 1;
+pub const ANALYSIS_VERSION: i32 = 2;
 
 #[derive(Debug, Default)]
 pub struct GitInfo {

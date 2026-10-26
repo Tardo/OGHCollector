@@ -8,9 +8,10 @@
 //! rules; calibrate changes with analyzer.rs's ignored `calibrate` test.
 //!
 //! Static security checks over the analyzed records (lax `ir.model.access` grants, permissive
-//! `ir.rule` domains correlated with the module's own ACLs, privilege-escalation ACLs), HTTP
-//! controllers (CSRF disabled on authenticated endpoints, `.sudo()` in public routes, mass
-//! assignment of the raw request payload) and code-level facts (SQL injection: grave only when the
+//! `ir.rule` domains correlated with the module's own ACLs, privilege-escalation ACLs, portal/public
+//! read of a model whose stored fields hold credentials), HTTP controllers (CSRF disabled on
+//! authenticated endpoints, `.sudo()` in public routes, mass assignment of the raw request
+//! payload) and code-level facts (SQL injection: grave only when the
 //! formatted value is caller-controlled — a parameter of an RPC-callable model method or route, the
 //! request payload, or the context —, eval/exec, pickle/unsafe YAML, `shell=True`, `verify=False`,
 //! user-writable `Html(sanitize=False)`). `test_*`/"Tests"-category modules are skipped. Every
@@ -313,6 +314,141 @@ pub fn is_test_module(technical_name: &str, category: &str) -> bool {
             .any(|c| matches!(c.trim().to_lowercase().as_str(), "test" | "tests"))
 }
 
+/// Credential-like field names. Not credentials: `access_token`
+/// (portal.mixin's per-record share link, already held by whoever reads the
+/// record), hashes, and the Maps key every website page ships.
+fn is_secret_field_name(name: &str) -> bool {
+    let t: Vec<&str> = name.split('_').collect();
+    let pair = |a: &str, b: &str| t.windows(2).any(|w| w == [a, b]);
+    name != "google_maps_api_key"
+        && !pair("access", "token")
+        && !t.iter().any(|w| matches!(*w, "crypt" | "hash" | "hashed"))
+        && (t
+            .iter()
+            .any(|w| matches!(*w, "secret" | "password" | "passwd" | "token" | "apikey"))
+            || pair("api", "key")
+            || pair("private", "key"))
+}
+
+/// A record rule of this module that limits `group` (or, global, everyone)
+/// to the user's own records on `model`: each user then reads only their
+/// own secrets (core survey's answer tokens). Multi-company domains
+/// (`user.company_id`, `company_ids`) don't count.
+fn restricted_to_own(records: &[RecordAnalysisInfo], model: &str, group: &str) -> bool {
+    records.iter().any(|r| {
+        r.model == "ir.rule"
+            && !perm_explicit_false(r, "active")
+            && !perm_explicit_false(r, "perm_read")
+            && field_str(r, "model_id").is_some_and(|m| local_id(m) == model)
+            && field_str(r, "groups").is_none_or(|gs| {
+                matches!(gs, "[]" | "False" | "[(5,)]" | "[(6, 0, [])]")
+                    || gs
+                        .split(['\'', '"'])
+                        .any(|g| local_id(g) == local_id(group))
+            })
+            && field_str(r, "domain_force").is_some_and(|d| {
+                d.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+                    .any(|t| {
+                        t == "uid"
+                            || matches!(
+                                t.strip_prefix("user.").and_then(|r| r.split('.').next()),
+                                Some("id" | "partner_id" | "commercial_partner_id")
+                            )
+                    })
+            })
+    })
+}
+
+/// Read access for portal/public (or for everyone) on a model whose own
+/// fields hold credentials with no `groups=`: any portal user gets them with
+/// a plain `search_read` (OCA mail_gateway's bot `token`, fixed in 0fd2edc).
+/// Read-only grants are otherwise silent (normal for portal), so this is the
+/// one place that looks at what the readable model contains. Left out, to
+/// keep it near noise-free: wizards, computed/related fields, fields another
+/// field's inverse writes (OCA keychain stores ciphertext that way), models
+/// that override `read()` (core res.users masks its password there) and
+/// grants a rule narrows to the user's own records.
+pub fn analyze_secret_reads(
+    records: &[RecordAnalysisInfo],
+    models: &[ModelAnalysisInfo],
+) -> Vec<SecurityWarningInfo> {
+    let mut out = Vec::new();
+    for rec in records {
+        if rec.model != "ir.model.access"
+            || perm_explicit_false(rec, "active")
+            || !perm(rec, "perm_read")
+        {
+            continue;
+        }
+        let group = field_str(rec, "group_id").map(strip_ref);
+        if group.is_some_and(|g| !is_core_id(g, &PUBLIC_GROUP_XML_IDS)) {
+            continue;
+        }
+        let Some(model_ref) = field_str(rec, "model_id").map(local_id) else {
+            continue;
+        };
+        if restricted_to_own(records, model_ref, group.unwrap_or("base.group_portal")) {
+            continue;
+        }
+        let same_model = |m: &&ModelAnalysisInfo| {
+            model_ref == format!("model_{}", m.model_name.replace('.', "_"))
+        };
+        let mut secrets: Vec<String> = models
+            .iter()
+            .filter(same_model)
+            .filter(|m| {
+                !matches!(
+                    m.attrs
+                        .as_ref()
+                        .and_then(|a| a.get("kind"))
+                        .and_then(|k| k.as_str()),
+                    Some("TransientModel" | "AbstractModel")
+                ) && !m.methods.iter().any(|me| me.name == "read")
+            })
+            .flat_map(|m| {
+                let has = |a: &Option<serde_json::Value>, k: &str| {
+                    a.as_ref().is_some_and(|a| a.get(k).is_some())
+                };
+                m.fields.iter().filter(move |f| {
+                    matches!(f.field_type.as_str(), "Char" | "Text")
+                        && is_secret_field_name(&f.name)
+                        && !["groups", "compute", "related"]
+                            .iter()
+                            .any(|k| has(&f.attrs, k))
+                        // Written by a sibling's inverse (keychain's
+                        // clear_password -> password): stored transformed.
+                        && !m.fields.iter().any(|o| {
+                            o.name != f.name && o.name.contains(&f.name) && has(&o.attrs, "inverse")
+                        })
+                })
+            })
+            .map(|f| f.name.clone())
+            .collect();
+        if secrets.is_empty() {
+            continue;
+        }
+        secrets.sort();
+        secrets.dedup();
+        let model_label = models
+            .iter()
+            .find(same_model)
+            .map_or(model_ref, |m| m.model_name.as_str());
+        let who = group.map_or("every user (portal/public included)".to_string(), |g| {
+            format!("'{g}'")
+        });
+        out.push(warning(
+            rec,
+            SEVERITY_ERROR,
+            "acl-public-read-secret",
+            format!(
+                "ACL grants read on '{model_label}' to {who}, and its credential fields ({}) have no `groups=`: those users can read them over RPC. Restrict the fields with `groups=` or drop the grant. CWE-200.",
+                secrets.join(", ")
+            ),
+        ));
+    }
+    out
+}
+
 /// Every security finding for one analyzed module.
 pub fn analyze_module(
     technical_name: &str,
@@ -322,7 +458,11 @@ pub fn analyze_module(
     if is_test_module(technical_name, category) {
         return Vec::new();
     }
+    let secrets = analyze_secret_reads(&analysis.records, &analysis.models);
     let mut out = analyze_records(&analysis.records);
+    // Same ACL: the credential finding says everything acl-global-read does.
+    out.retain(|w| w.code != "acl-global-read" || !secrets.iter().any(|s| s.xml_id == w.xml_id));
+    out.extend(secrets);
     out.extend(analyze_controllers(&analysis.controllers));
     out.extend(analyze_facts(&analysis.security_facts));
     out.extend(analyze_models(&analysis.models));
@@ -1046,5 +1186,66 @@ mod tests {
         ] {
             assert!(analyze_models(&[field(attrs)]).is_empty());
         }
+    }
+
+    #[test]
+    fn test_portal_read_of_stored_credentials_is_grave() {
+        // OCA mail_gateway before 0fd2edc: portal could read the bot token.
+        let model = |name: &str, attrs: serde_json::Value| ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            fields: vec![sqlitedb::models::module_code_analysis::FieldAnalysisInfo {
+                name: name.to_string(),
+                field_type: "Char".to_string(),
+                relation: None,
+                attrs: Some(attrs),
+            }],
+            ..Default::default()
+        };
+        let portal = access_csv("base.group_portal", ["1", "0", "0", "0"]);
+        let found = analyze_secret_reads(
+            std::slice::from_ref(&portal),
+            &[model("token", serde_json::json!({}))],
+        );
+        assert_eq!(found[0].code, "acl-public-read-secret");
+        assert_eq!(found[0].severity, SEVERITY_ERROR);
+        // Not stored credentials, or restricted per field.
+        for (name, attrs) in [
+            ("access_token", serde_json::json!({})),
+            ("password_crypt", serde_json::json!({})),
+            (
+                "token",
+                serde_json::json!({"groups": "'base.group_system'"}),
+            ),
+            ("token", serde_json::json!({"compute": "'_c'"})),
+        ] {
+            let m = model(name, attrs);
+            assert!(analyze_secret_reads(std::slice::from_ref(&portal), &[m]).is_empty());
+        }
+        {
+            // OCA keychain: the stored password is clear_password's encrypted form.
+            let mut m = model("password", serde_json::json!({}));
+            let mut clear = m.fields[0].clone();
+            clear.name = "clear_password".to_string();
+            clear.attrs = Some(
+                serde_json::json!({"compute": "'_compute_password'", "inverse": "'_inverse_set_password'"}),
+            );
+            m.fields.push(clear);
+            assert!(analyze_secret_reads(std::slice::from_ref(&portal), &[m]).is_empty());
+        }
+        let token = [model("token", serde_json::json!({}))];
+        // Internal users only.
+        let internal = access_csv("base.group_user", ["1", "0", "0", "0"]);
+        assert!(analyze_secret_reads(&[internal], &token).is_empty());
+        // A rule narrows portal to its own records; a multi-company one doesn't.
+        let mut own = rule(
+            "[('create_uid', '=', user.id)]",
+            Some("[(4, ref('base.group_portal'))]"),
+        );
+        own.fields.as_mut().unwrap()["model_id"] = serde_json::json!("ref('model_res_partner')");
+        assert!(analyze_secret_reads(&[portal.clone(), own], &token).is_empty());
+        let mut company = rule("[('company_id', 'child_of', [user.company_id.id])]", None);
+        company.fields.as_mut().unwrap()["model_id"] =
+            serde_json::json!("ref('model_res_partner')");
+        assert_eq!(analyze_secret_reads(&[portal, company], &token).len(), 1);
     }
 }
