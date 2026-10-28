@@ -7,14 +7,20 @@
 //! "error" (shown prominently on ommd.info) is kept for high-precision
 //! rules; calibrate changes with analyzer.rs's ignored `calibrate` test.
 //!
-//! Static security checks over the analyzed records (lax `ir.model.access` grants, permissive
+//! Static security checks over the analyzed records (lax `ir.model.access` grants — minor on the
+//! module's abstract models, its wizards that don't call sudo(), or when a global rule keeps users to
+//! their own rows —, permissive
 //! `ir.rule` domains correlated with the module's own ACLs, privilege-escalation ACLs, portal/public
-//! read of a model whose stored fields hold credentials), HTTP controllers (CSRF disabled on
-//! authenticated endpoints, `.sudo()` in public routes, mass assignment of the raw request
-//! payload) and code-level facts (SQL injection: grave only when the
-//! formatted value is caller-controlled — a parameter of an RPC-callable model method or route, the
-//! request payload, or the context —, eval/exec, pickle/unsafe YAML, `shell=True`, `verify=False`,
-//! user-writable `Html(sanitize=False)`). `test_*`/"Tests"-category modules are skipped. Every
+//! read of credentials — fields of a model the module opens to them, or added to `res.company`/
+//! `website` —, users created with a fixed password), HTTP controllers (CSRF disabled on
+//! authenticated endpoints, grave only when they refuse GET and reach the database, mass assignment
+//! of the raw request payload) and code-level facts (SQL injection: grave only when the formatted
+//! value is caller-controlled — a parameter of an RPC-callable model method or route, the request
+//! payload, or the context, unless it went through the ORM's query builders —, caller input picking
+//! records under `sudo()` in a route or RPC method that checks no access, and an RPC method writing
+//! its caller's whole dict under `sudo()` (grave), eval/exec, pickle/unsafe YAML, `shell=True`,
+//! `verify=False`, user-writable `Html(sanitize=False)`). `test_*`/"Tests"-category modules are
+//! skipped, and so are records from the manifest's `demo` files. Every
 //! finding is stored in `module_security_warning`; grave ones (`error`) are shown on the module
 //! detail page, minor ones (`warning`) are counted there and also logged as a `system_event` the
 //! first time they appear for a version snapshot. The analyzer also extracts every `http.route`
@@ -215,6 +221,42 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
     }
 }
 
+/// A user that (non-demo) data creates with a fixed password: every database
+/// installing the module gets that login with a known password. base's own
+/// `user_admin` is the exception (the database manager sets its password
+/// when it creates the database); another module writing `base.user_admin`
+/// resets the admin's password, and is reported. So is a user whose groups
+/// the record empties (`[(5,)]`): a login with no rights, like 7.0's
+/// portal_anonymous user.
+fn check_user_password(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
+    let fixed = ["password", "new_password"].iter().any(|f| {
+        field_str(rec, f).is_some_and(|v| {
+            !v.starts_with("ref(") && !matches!(v, "False" | "None" | "''" | "\"\"")
+        })
+    });
+    let no_groups = ["groups_id", "group_ids"].iter().any(|f| {
+        field_str(rec, f).is_some_and(|v| {
+            let v: String = v.chars().filter(|c| !c.is_whitespace()).collect();
+            matches!(
+                v.as_str(),
+                "[(5,)]" | "[(6,0,[])]" | "[Command.set([])]" | "[Command.clear()]"
+            )
+        })
+    });
+    if !fixed || no_groups || rec.xml_id == "user_admin" || perm_explicit_false(rec, "active") {
+        return;
+    }
+    let login = field_str(rec, "login").unwrap_or(&rec.xml_id);
+    out.push(warning(
+        rec,
+        SEVERITY_ERROR,
+        "data-user-password",
+        format!(
+            "Data (not demo) gives user '{login}' a fixed password: every database installing this module has that login with a password anyone can read here. Create it without a password (or inactive) and let an admin set one. CWE-798."
+        ),
+    ));
+}
+
 /// `model_x` / `module.model_x` / `ref('module.model_x')` -> `model_x`.
 fn local_id(value: &str) -> &str {
     let v = strip_ref(value);
@@ -306,9 +348,11 @@ fn check_rule(
 /// only exist for their own test suites and are never installed in
 /// production; their deliberately loose ACLs used to be ~70% of all grave
 /// findings. A `_test` suffix is not used: `account_test`/`payment_test`
-/// are real, installable modules.
+/// are real, installable modules. OCA's `*_demo` modules (`base_rest_demo`,
+/// `role_policy_demo`) are showcases of another module, skipped too.
 pub fn is_test_module(technical_name: &str, category: &str) -> bool {
     technical_name.starts_with("test_")
+        || technical_name.ends_with("_demo")
         || category
             .split('/')
             .any(|c| matches!(c.trim().to_lowercase().as_str(), "test" | "tests"))
@@ -316,11 +360,12 @@ pub fn is_test_module(technical_name: &str, category: &str) -> bool {
 
 /// Credential-like field names. Not credentials: `access_token`
 /// (portal.mixin's per-record share link, already held by whoever reads the
-/// record), hashes, and the Maps key every website page ships.
+/// record), hashes, and the browser keys (Google Maps, Google Fonts) the
+/// website's own JS sends to Google.
 fn is_secret_field_name(name: &str) -> bool {
     let t: Vec<&str> = name.split('_').collect();
     let pair = |a: &str, b: &str| t.windows(2).any(|w| w == [a, b]);
-    name != "google_maps_api_key"
+    !matches!(name, "google_maps_api_key" | "google_font_api_key")
         && !pair("access", "token")
         && !t.iter().any(|w| matches!(*w, "crypt" | "hash" | "hashed"))
         && (t
@@ -330,21 +375,28 @@ fn is_secret_field_name(name: &str) -> bool {
             || pair("private", "key"))
 }
 
-/// A record rule of this module that limits `group` (or, global, everyone)
-/// to the user's own records on `model`: each user then reads only their
-/// own secrets (core survey's answer tokens). Multi-company domains
-/// (`user.company_id`, `company_ids`) don't count.
-fn restricted_to_own(records: &[RecordAnalysisInfo], model: &str, group: &str) -> bool {
+/// A record rule of this module that limits `group` (None: a global rule,
+/// so everyone) to the user's own records on `model` for operation `perm`:
+/// each user then reads only their own secrets (core survey's answer
+/// tokens), or edits only their own rows (core ir.ui.view.custom).
+/// Multi-company domains (`user.company_id`, `company_ids`) don't count.
+fn restricted_to_own(
+    records: &[RecordAnalysisInfo],
+    model: &str,
+    group: Option<&str>,
+    perm: &str,
+) -> bool {
     records.iter().any(|r| {
         r.model == "ir.rule"
             && !perm_explicit_false(r, "active")
-            && !perm_explicit_false(r, "perm_read")
+            && !perm_explicit_false(r, perm)
             && field_str(r, "model_id").is_some_and(|m| local_id(m) == model)
             && field_str(r, "groups").is_none_or(|gs| {
                 matches!(gs, "[]" | "False" | "[(5,)]" | "[(6, 0, [])]")
-                    || gs
-                        .split(['\'', '"'])
-                        .any(|g| local_id(g) == local_id(group))
+                    || group.is_some_and(|group| {
+                        gs.split(['\'', '"'])
+                            .any(|g| local_id(g) == local_id(group))
+                    })
             })
             && field_str(r, "domain_force").is_some_and(|d| {
                 d.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
@@ -359,20 +411,69 @@ fn restricted_to_own(records: &[RecordAnalysisInfo], model: &str, group: &str) -
     })
 }
 
-/// Read access for portal/public (or for everyone) on a model whose own
-/// fields hold credentials with no `groups=`: any portal user gets them with
-/// a plain `search_read` (OCA mail_gateway's bot `token`, fixed in 0fd2edc).
-/// Read-only grants are otherwise silent (normal for portal), so this is the
-/// one place that looks at what the readable model contains. Left out, to
-/// keep it near noise-free: wizards, computed/related fields, fields another
-/// field's inverse writes (OCA keychain stores ciphertext that way), models
-/// that override `read()` (core res.users masks its password there) and
-/// grants a rule narrows to the user's own records.
+/// The stored credential fields of one model class: none for wizards or
+/// models that override `read()` (core res.users masks its password there);
+/// computed/related fields and fields another field's inverse writes (OCA
+/// keychain stores ciphertext that way) aren't stored credentials.
+fn secret_fields(m: &ModelAnalysisInfo) -> Vec<String> {
+    let kind = m
+        .attrs
+        .as_ref()
+        .and_then(|a| a.get("kind"))
+        .and_then(|k| k.as_str());
+    if matches!(kind, Some("TransientModel" | "AbstractModel"))
+        || m.methods.iter().any(|me| me.name == "read")
+    {
+        return Vec::new();
+    }
+    let has =
+        |a: &Option<serde_json::Value>, k: &str| a.as_ref().is_some_and(|a| a.get(k).is_some());
+    m.fields
+        .iter()
+        .filter(|f| {
+            matches!(f.field_type.as_str(), "Char" | "Text")
+                && is_secret_field_name(&f.name)
+                && !["groups", "compute", "related"]
+                    .iter()
+                    .any(|k| has(&f.attrs, k))
+                && !m.fields.iter().any(|o| {
+                    o.name != f.name && o.name.contains(&f.name) && has(&o.attrs, "inverse")
+                })
+        })
+        .map(|f| f.name.clone())
+        .collect()
+}
+
+/// Core models every user can read (portal and public included) whatever
+/// module adds fields to them: core's own access rights grant it, in every
+/// version. l10n_ro_edi kept its eFactura secret on res.company until
+/// Odoo's 095e7c996e.
+const EVERYONE_READABLE_MODELS: [&str; 2] = ["res.company", "website"];
+
+/// Credentials readable by portal/public users through `search_read`
+/// (OCA mail_gateway's bot `token`, fixed in 0fd2edc): a read grant of this
+/// module for portal/public (or for everyone) on a model whose fields hold
+/// them with no `groups=`, or such fields added to an
+/// `EVERYONE_READABLE_MODELS` model. Read-only grants are otherwise silent
+/// (normal for portal), so this is the one place that looks at what the
+/// readable model contains. Grants a rule narrows to the user's own records
+/// don't count.
 pub fn analyze_secret_reads(
     records: &[RecordAnalysisInfo],
     models: &[ModelAnalysisInfo],
 ) -> Vec<SecurityWarningInfo> {
     let mut out = Vec::new();
+    let mut reported: Vec<&str> = Vec::new();
+    let secrets_of = |name: &str| {
+        let mut secrets: Vec<String> = models
+            .iter()
+            .filter(|m| m.model_name == name)
+            .flat_map(secret_fields)
+            .collect();
+        secrets.sort();
+        secrets.dedup();
+        secrets
+    };
     for rec in records {
         if rec.model != "ir.model.access"
             || perm_explicit_false(rec, "active")
@@ -387,52 +488,25 @@ pub fn analyze_secret_reads(
         let Some(model_ref) = field_str(rec, "model_id").map(local_id) else {
             continue;
         };
-        if restricted_to_own(records, model_ref, group.unwrap_or("base.group_portal")) {
+        if restricted_to_own(
+            records,
+            model_ref,
+            Some(group.unwrap_or("base.group_portal")),
+            "perm_read",
+        ) {
             continue;
         }
-        let same_model = |m: &&ModelAnalysisInfo| {
-            model_ref == format!("model_{}", m.model_name.replace('.', "_"))
-        };
-        let mut secrets: Vec<String> = models
+        let Some(model) = models
             .iter()
-            .filter(same_model)
-            .filter(|m| {
-                !matches!(
-                    m.attrs
-                        .as_ref()
-                        .and_then(|a| a.get("kind"))
-                        .and_then(|k| k.as_str()),
-                    Some("TransientModel" | "AbstractModel")
-                ) && !m.methods.iter().any(|me| me.name == "read")
-            })
-            .flat_map(|m| {
-                let has = |a: &Option<serde_json::Value>, k: &str| {
-                    a.as_ref().is_some_and(|a| a.get(k).is_some())
-                };
-                m.fields.iter().filter(move |f| {
-                    matches!(f.field_type.as_str(), "Char" | "Text")
-                        && is_secret_field_name(&f.name)
-                        && !["groups", "compute", "related"]
-                            .iter()
-                            .any(|k| has(&f.attrs, k))
-                        // Written by a sibling's inverse (keychain's
-                        // clear_password -> password): stored transformed.
-                        && !m.fields.iter().any(|o| {
-                            o.name != f.name && o.name.contains(&f.name) && has(&o.attrs, "inverse")
-                        })
-                })
-            })
-            .map(|f| f.name.clone())
-            .collect();
+            .find(|m| model_ref == format!("model_{}", m.model_name.replace('.', "_")))
+        else {
+            continue;
+        };
+        let secrets = secrets_of(&model.model_name);
         if secrets.is_empty() {
             continue;
         }
-        secrets.sort();
-        secrets.dedup();
-        let model_label = models
-            .iter()
-            .find(same_model)
-            .map_or(model_ref, |m| m.model_name.as_str());
+        reported.push(&model.model_name);
         let who = group.map_or("every user (portal/public included)".to_string(), |g| {
             format!("'{g}'")
         });
@@ -441,10 +515,28 @@ pub fn analyze_secret_reads(
             SEVERITY_ERROR,
             "acl-public-read-secret",
             format!(
-                "ACL grants read on '{model_label}' to {who}, and its credential fields ({}) have no `groups=`: those users can read them over RPC. Restrict the fields with `groups=` or drop the grant. CWE-200.",
+                "ACL grants read on '{}' to {who}, and its credential fields ({}) have no `groups=`: those users can read them over RPC. Restrict the fields with `groups=` or drop the grant. CWE-200.",
+                model.model_name,
                 secrets.join(", ")
             ),
         ));
+    }
+    for name in EVERYONE_READABLE_MODELS {
+        let secrets = secrets_of(name);
+        if secrets.is_empty() || reported.contains(&name) {
+            continue;
+        }
+        out.push(SecurityWarningInfo {
+            severity: SEVERITY_ERROR.to_string(),
+            code: "acl-public-read-secret".to_string(),
+            message: format!(
+                "Adds credential fields ({}) with no `groups=` to '{name}', which every user (portal/public included) can read under core's access rights: they can read them over RPC. Restrict the fields with `groups=` (e.g. base.group_system). CWE-200.",
+                secrets.join(", ")
+            ),
+            xml_id: Some(name.to_string()),
+            file: None,
+            line: None,
+        });
     }
     out
 }
@@ -458,8 +550,16 @@ pub fn analyze_module(
     if is_test_module(technical_name, category) {
         return Vec::new();
     }
-    let secrets = analyze_secret_reads(&analysis.records, &analysis.models);
-    let mut out = analyze_records(&analysis.records);
+    // Demo files never reach a production database.
+    let records: Vec<RecordAnalysisInfo> = analysis
+        .records
+        .iter()
+        .filter(|r| !r.demo)
+        .cloned()
+        .collect();
+    let secrets = analyze_secret_reads(&records, &analysis.models);
+    let mut out = analyze_records(&records);
+    demote_scratch_and_own_grants(&mut out, &records, &analysis.models);
     // Same ACL: the credential finding says everything acl-global-read does.
     out.retain(|w| w.code != "acl-global-read" || !secrets.iter().any(|s| s.xml_id == w.xml_id));
     out.extend(secrets);
@@ -467,6 +567,54 @@ pub fn analyze_module(
     out.extend(analyze_facts(&analysis.security_facts));
     out.extend(analyze_models(&analysis.models));
     out
+}
+
+/// Grave groupless/portal write grants that can't reach anyone's business
+/// records become minor: on a wizard (TransientModel: per-request scratch
+/// rows; the ORM still checks the records its buttons act on, unless they
+/// use sudo()) or an AbstractModel (no table) of this module, or on a model
+/// a global rule of this module narrows to the user's own rows (core
+/// ir.ui.view.custom).
+fn demote_scratch_and_own_grants(
+    out: &mut [SecurityWarningInfo],
+    records: &[RecordAnalysisInfo],
+    models: &[ModelAnalysisInfo],
+) {
+    let id = |m: &ModelAnalysisInfo| format!("model_{}", m.model_name.replace('.', "_"));
+    // Any class of the model calling sudo() keeps its wizard grave
+    // (sale_invoice_plan's wizard invoices the order in its context that way).
+    let escalates: Vec<String> = models.iter().filter(|m| m.calls_sudo).map(id).collect();
+    let scratch: Vec<String> = models
+        .iter()
+        .filter(|m| {
+            match m
+                .attrs
+                .as_ref()
+                .and_then(|a| a.get("kind"))
+                .and_then(|k| k.as_str())
+            {
+                Some("AbstractModel") => true,
+                Some("TransientModel") => !escalates.contains(&id(m)),
+                _ => false,
+            }
+        })
+        .map(id)
+        .collect();
+    for w in out.iter_mut().filter(|w| {
+        w.severity == SEVERITY_ERROR
+            && matches!(w.code.as_str(), "acl-global-write" | "acl-public-write")
+    }) {
+        let model = records
+            .iter()
+            .find(|r| r.model == "ir.model.access" && w.xml_id.as_deref() == Some(&r.xml_id))
+            .and_then(|r| field_str(r, "model_id"))
+            .map(local_id);
+        if model.is_some_and(|m| {
+            scratch.iter().any(|s| s == m) || restricted_to_own(records, m, None, "perm_write")
+        }) {
+            w.severity = SEVERITY_WARNING.to_string();
+        }
+    }
 }
 
 fn fact_warning(
@@ -518,6 +666,21 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<SecurityWarningInfo> {
                 SEVERITY_WARNING,
                 "shell-injection",
                 format!("`{snippet}` runs a shell command built at runtime: pass an argument list without `shell=True`. CWE-78."),
+            ),
+            "rpc_sudo_input" => (
+                SEVERITY_WARNING,
+                "rpc-sudo-input",
+                format!("`{snippet}`: a public model method (callable over RPC by any logged-in user, portal included) hands its caller's input to sudo(), and checks no access itself: the caller picks records or values past access rights. Check access first (`check_access_rule`, `has_group`) or drop sudo(). CWE-639."),
+            ),
+            "rpc_sudo_write" => (
+                SEVERITY_ERROR,
+                "rpc-sudo-write",
+                format!("`{snippet}`: a public model method (callable over RPC by any logged-in user, portal included) writes the values dict its caller sent under sudo(), and checks no access itself: the caller sets any field on records they couldn't write. Whitelist the fields and check access, or drop sudo(). CWE-269."),
+            ),
+            "route_sudo_input" => (
+                SEVERITY_WARNING,
+                "route-sudo-input",
+                format!("`{snippet}`: an HTTP route hands request input to sudo() to pick records, and checks no access itself (`_document_check_access`, a token compared with `consteq`): whoever reaches the route can open other users' records. CWE-639."),
             ),
             "tls_verify_disabled" => (
                 SEVERITY_WARNING,
@@ -575,6 +738,7 @@ pub fn analyze_records(records: &[RecordAnalysisInfo]) -> Vec<SecurityWarningInf
         match rec.model.as_str() {
             "ir.model.access" => check_access(rec, &mut out),
             "ir.rule" => check_rule(rec, records, &mut out),
+            "res.users" => check_user_password(rec, &mut out),
             _ => {}
         }
     }
@@ -620,12 +784,25 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                     .any(|m| !matches!(m.as_str(), "GET" | "HEAD" | "OPTIONS" | "TRACE")));
         if ctrl.csrf == Some(false) && csrf_relevant {
             if auth == Some("user") {
+                // Odoo never CSRF-checks GET, so on a route that also answers
+                // GET the flag removes no protection; and a handler that
+                // can't reach the database only changes the session.
+                let answers_get =
+                    ctrl.methods.is_empty() || ctrl.methods.iter().any(|m| m == "GET");
+                let grave = !answers_get && !ctrl.session_only;
+                let why = if answers_get {
+                    " It also answers GET, which Odoo never CSRF-checks: review it as a state change over GET."
+                } else if ctrl.session_only {
+                    " Its handler doesn't reach the database (session only)."
+                } else {
+                    " Restore CSRF or verify an independent request-authentication mechanism prevents cross-site actions."
+                };
                 out.push(controller_warning(
                     ctrl,
-                    SEVERITY_ERROR,
+                    if grave { SEVERITY_ERROR } else { SEVERITY_WARNING },
                     "route-user-csrf-off",
                     format!(
-                        "HTTP endpoint '{}.{}' disables CSRF protection for unsafe methods with session authentication. Restore CSRF or verify an independent request-authentication mechanism prevents cross-site actions.",
+                        "HTTP endpoint '{}.{}' disables CSRF protection for unsafe methods with session authentication.{why}",
                         ctrl.class_name, ctrl.name
                     ),
                 ));
@@ -652,20 +829,6 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                     ctrl.class_name,
                     ctrl.name,
                     if grave { " without access-rights checks (public route or sudo)" } else { "" }
-                ),
-            ));
-        }
-        if is_public && ctrl.uses_sudo {
-            out.push(controller_warning(
-                ctrl,
-                SEVERITY_WARNING,
-                "route-public-sudo",
-                format!(
-                    "Endpoint '{}.{}' (auth=\"{}\") calls .sudo(). Check authorization before each privileged operation and validate user-controlled record IDs.{}",
-                    ctrl.class_name,
-                    ctrl.name,
-                    auth.unwrap_or("?"),
-                    if ctrl.checks_token_access { " _document_check_access is present, but its coverage is not verified." } else { "" }
                 ),
             ));
         }
@@ -706,6 +869,45 @@ mod tests {
         assert_eq!(found[0].severity, SEVERITY_ERROR);
         assert!(found[0].message.contains("write"));
         assert_eq!(found[0].xml_id.as_deref(), Some("acl_test"));
+    }
+
+    #[test]
+    fn test_global_write_on_wizards_or_own_rows_is_minor() {
+        let grave = |a: &ModuleAnalysisInfo| {
+            analyze_module("m", "", a)
+                .iter()
+                .any(|w| w.code == "acl-global-write" && w.severity == SEVERITY_ERROR)
+        };
+        let mut a = ModuleAnalysisInfo {
+            records: vec![access_csv("", ["1", "1", "1", "1"])],
+            ..Default::default()
+        };
+        assert!(grave(&a));
+        // A wizard (or AbstractModel) of this module: scratch rows.
+        a.models = vec![ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            attrs: Some(serde_json::json!({"kind": "TransientModel"})),
+            ..Default::default()
+        }];
+        assert!(!grave(&a));
+        // ...unless any class of it escalates with sudo().
+        a.models.push(ModelAnalysisInfo {
+            model_name: "res.partner".to_string(),
+            calls_sudo: true,
+            ..Default::default()
+        });
+        assert!(grave(&a));
+        // A global rule narrowing it to the user's own rows (core ir.ui.view.custom).
+        a.models.clear();
+        let mut own = rule("[('user_id','=',user.id)]", None);
+        own.fields.as_mut().unwrap()["model_id"] = serde_json::json!("model_res_partner");
+        a.records.push(own.clone());
+        assert!(!grave(&a));
+        // One binding portal only leaves internal users unrestricted.
+        own.fields.as_mut().unwrap()["groups"] =
+            serde_json::json!("[(4, ref('base.group_portal'))]");
+        a.records[1] = own;
+        assert!(grave(&a));
     }
 
     #[test]
@@ -1005,6 +1207,16 @@ mod tests {
         assert_eq!(found[0].code, "route-public-csrf-off");
         assert_eq!(found[0].severity, SEVERITY_WARNING);
 
+        // Also answers GET (no `methods`, or GET listed), or a session-only
+        // handler: the flag opens nothing a GET wouldn't, minor.
+        for methods in [&[][..], &["GET", "POST"][..]] {
+            let found = analyze_controllers(&[route(Some("user"), Some(false), methods, false)]);
+            assert_eq!(found[0].severity, SEVERITY_WARNING, "{methods:?}");
+        }
+        let mut beacon = route(Some("user"), Some(false), &["POST"], false);
+        beacon.session_only = true;
+        assert_eq!(analyze_controllers(&[beacon])[0].severity, SEVERITY_WARNING);
+
         // GET-only route: csrf=False is irrelevant, no finding.
         assert!(
             analyze_controllers(&[route(Some("user"), Some(false), &["GET"], false)]).is_empty()
@@ -1014,28 +1226,12 @@ mod tests {
     }
 
     #[test]
-    fn test_public_sudo_requires_review_even_with_a_token_check() {
-        let found = analyze_controllers(&[route(Some("public"), None, &[], true)]);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].code, "route-public-sudo");
-        assert_eq!(found[0].severity, SEVERITY_WARNING);
-
-        // auth="none" is inventory, not a finding on its own.
-        let found = analyze_controllers(&[route(Some("none"), None, &[], true)]);
-        let codes: Vec<&str> = found.iter().map(|w| w.code.as_str()).collect();
-        assert_eq!(codes, vec!["route-public-sudo"]);
-        assert!(analyze_controllers(&[route(Some("none"), None, &[], false)]).is_empty());
-
-        // sudo behind an authenticated route: normal, clean.
-        assert!(analyze_controllers(&[route(Some("user"), None, &[], true)]).is_empty());
-        // A token check may protect another record or only one branch.
-        let mut portal = route(Some("public"), None, &[], true);
-        portal.checks_token_access = true;
-        let found = analyze_controllers(&[portal]);
-        assert_eq!(found.len(), 1);
-        assert!(found[0].message.contains("coverage is not verified"));
-        // Unknown auth (inherited-route override): no guessing, clean.
-        assert!(analyze_controllers(&[route(None, None, &[], true)]).is_empty());
+    fn test_sudo_in_a_route_alone_is_not_a_finding() {
+        // Only request input reaching sudo() is (`route_sudo_input`, a fact
+        // from the extractor): public routes read config with sudo everywhere.
+        for auth in [Some("public"), Some("none"), Some("user"), None] {
+            assert!(analyze_controllers(&[route(auth, None, &[], true)]).is_empty());
+        }
     }
 
     #[test]
@@ -1079,6 +1275,7 @@ mod tests {
             ("test_mail", "Hidden"),
             ("l10n_x_edi_tests", "Hidden/Tests"),
             ("profiler", "Tests"),
+            ("role_policy_demo", "Tools"),
         ] {
             assert!(
                 analyze_module(name, category, &analysis).is_empty(),
@@ -1129,6 +1326,9 @@ mod tests {
             fact("unsafe_deserialization"),
             fact("shell_injection"),
             fact("tls_verify_disabled"),
+            fact("rpc_sudo_write"),
+            fact("rpc_sudo_input"),
+            fact("route_sudo_input"),
             fact("unknown"),
         ]);
         let got: Vec<(&str, &str)> = found
@@ -1144,6 +1344,9 @@ mod tests {
                 ("unsafe-deserialization", SEVERITY_WARNING),
                 ("shell-injection", SEVERITY_WARNING),
                 ("tls-verify-disabled", SEVERITY_WARNING),
+                ("rpc-sudo-write", SEVERITY_ERROR),
+                ("rpc-sudo-input", SEVERITY_WARNING),
+                ("route-sudo-input", SEVERITY_WARNING),
             ]
         );
         assert_eq!(found[0].xml_id.as_deref(), Some("X.method"));
@@ -1186,6 +1389,51 @@ mod tests {
         ] {
             assert!(analyze_models(&[field(attrs)]).is_empty());
         }
+    }
+
+    #[test]
+    fn test_fixed_password_users_only_in_non_demo_data() {
+        let user = |xml_id: &str, fields: serde_json::Value| RecordAnalysisInfo {
+            xml_id: xml_id.to_string(),
+            model: "res.users".to_string(),
+            fields: Some(fields),
+            ..Default::default()
+        };
+        let sentinel = user(
+            "user_sentinel",
+            serde_json::json!({"login": "sentinel", "password": "sentinel"}),
+        );
+        let found = analyze_records(std::slice::from_ref(&sentinel));
+        assert_eq!(found[0].code, "data-user-password");
+        assert_eq!(found[0].severity, SEVERITY_ERROR);
+        assert!(!found[0].message.contains("password 'sentinel'"));
+        // Another module resetting the admin's password is reported too.
+        let reset = user("base.user_admin", serde_json::json!({"password": "x"}));
+        assert_eq!(analyze_records(&[reset]).len(), 1);
+        for quiet in [
+            user(
+                "user_admin",
+                serde_json::json!({"login": "admin", "password": "admin"}),
+            ),
+            user("public_user", serde_json::json!({"login": "public"})),
+            user("u", serde_json::json!({"password": "x", "active": "False"})),
+            user("u", serde_json::json!({"new_password": "False"})),
+            user(
+                "anonymous_user",
+                serde_json::json!({"password": "anonymous", "groups_id": "[(5,)]"}),
+            ),
+        ] {
+            assert!(analyze_records(&[quiet]).is_empty());
+        }
+        // Demo files never reach production: analyze_module drops them.
+        let analysis = ModuleAnalysisInfo {
+            records: vec![RecordAnalysisInfo {
+                demo: true,
+                ..sentinel
+            }],
+            ..Default::default()
+        };
+        assert!(analyze_module("m", "Sales", &analysis).is_empty());
     }
 
     #[test]
@@ -1247,5 +1495,11 @@ mod tests {
         company.fields.as_mut().unwrap()["model_id"] =
             serde_json::json!("ref('model_res_partner')");
         assert_eq!(analyze_secret_reads(&[portal, company], &token).len(), 1);
+        // No grant of its own: res.company is readable by everyone in core.
+        let mut on_company = model("l10n_ro_edi_client_secret", serde_json::json!({}));
+        on_company.model_name = "res.company".to_string();
+        let found = analyze_secret_reads(&[], &[on_company]);
+        assert_eq!(found[0].xml_id.as_deref(), Some("res.company"));
+        assert_eq!(found[0].severity, SEVERITY_ERROR);
     }
 }

@@ -3,7 +3,9 @@
 //! Odoo `__manifest__.py` files, extracts `ManifestInfo`.
 //!
 //! Also embeds the Python extractor (`ANALYZER_PY_SRC`, stdlib-only, Python 3.8-compatible) that
-//! emits raw `migration_facts`/`security_facts` (no judging) plus views/models/records/controllers.
+//! emits raw `migration_facts`/`security_facts` (no judging) plus views/models/records/controllers;
+//! records carry `demo` (their file is in the manifest's `demo`/`demo_xml`, read with
+//! `ast.literal_eval`: PR heads are untrusted).
 //! `ANALYSIS_VERSION` is stored per module (`module.analysis_version`) and is part of the "skip
 //! unchanged module" test, so **bump it whenever the extractor, `security.rs` or `migration.rs`
 //! change** — otherwise modules without new commits keep stale findings. An `#[ignore]`d
@@ -337,6 +339,7 @@ def _analyze_python_source(tree):
                 "attrs": model_attrs or None,
                 "fields": fields,
                 "methods": methods,
+                "calls_sudo": _calls_method(node, "sudo"),
             }
         )
     return out
@@ -484,6 +487,11 @@ def _analyze_migration_facts(tree, rel_path):
 # Interpolating any of these into SQL is safe: psycopg2.sql / odoo.tools.SQL
 # composables and numeric casts can't carry attacker-controlled SQL text.
 SQL_SAFE_CALLS = {"Identifier", "SQL", "Literal", "AsIs", "identifier", "int", "float", "len", "bool"}
+# The ORM's query builders: they validate field names, operators and order
+# specs (regex_order) and keep values as query parameters, so their output is
+# safe to splice whatever the caller sent (core 16 account's cumulated
+# balance orders and filters by the context through them).
+ORM_SQL_BUILDERS = {"_where_calc", "_generate_order_by", "_generate_order_by_inner", "_order_to_sql", "get_sql"}
 # Names a model method can't receive from an RPC caller.
 NON_RPC_PARAMS = {"self", "cls", "cr", "registry", "env"}
 # Markers for an already-reviewed hit: pylint's own check names, bandit's
@@ -577,6 +585,15 @@ def _risky_parts(node):
     return [node]
 
 
+def _orm_built(node):
+    # `self._where_calc(...)`, `query.get_sql()` or `", ".join(<one of them>)`.
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr in ORM_SQL_BUILDERS:
+            return True
+        return node.func.attr == "join" and len(node.args) == 1 and _orm_built(node.args[0])
+    return False
+
+
 def _is_request_payload(node):
     # The raw client payload of an HTTP request.
     r = _expr_repr(node) or ""
@@ -594,17 +611,17 @@ def _caller_names(node):
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and id(n) not in bases}
 
 
-def _is_client_controlled(node, params):
+def _is_client_controlled(node, params, context=True):
     # Values an RPC/HTTP caller sets directly: the method's own parameters
     # (any public model method is callable over RPC), the request payload and
     # the context (also sent by the client).
     if _caller_names(node) & params:
         return True
+    prefixes = ("request.httprequest", "request.get_json_data", "request.jsonrequest")
+    if context:
+        prefixes += ("self._context", "self.env.context")
     for n in ast.walk(node):
-        r = _expr_repr(n) or ""
-        if _is_request_payload(n) or r.startswith(
-            ("self._context", "self.env.context", "request.httprequest", "request.get_json_data", "request.jsonrequest")
-        ):
+        if _is_request_payload(n) or (_expr_repr(n) or "").startswith(prefixes):
             return True
     return False
 
@@ -627,6 +644,39 @@ def _suppressed(lines, node, scope=None):
     )
 
 
+def _caller_params(owner, func):
+    # Only parameters of an RPC/route-reachable method count as
+    # client-controlled; @api.private (17.0+) opts a method out of RPC.
+    exposed = (
+        _is_model_class(owner)
+        and not func.name.startswith("_")
+        and not any((_expr_repr(d) or "").endswith("private") for d in func.decorator_list)
+    )
+    params = _function_params(func) if exposed or _route_decorator(func) else set()
+    # `assert mode in (...)` / `if mode not in ALLOWED: raise` is an
+    # allow-list check: that parameter can't carry arbitrary values.
+    return params - {
+        n.left.id
+        for n in ast.walk(func)
+        if isinstance(n, ast.Compare)
+        and isinstance(n.left, ast.Name)
+        and any(isinstance(op, (ast.In, ast.NotIn)) for op in n.ops)
+    }
+
+
+def _assignments(func):
+    # name -> every value assigned to it in the function (one-hop tracking).
+    assigned = {}
+    for n in ast.walk(func):
+        if isinstance(n, ast.Assign):
+            for t in n.targets:
+                if isinstance(t, ast.Name):
+                    assigned.setdefault(t.id, []).append(n.value)
+        elif isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name):
+            assigned.setdefault(n.target.id, []).append(n.value)
+    return assigned
+
+
 def _analyze_sql_injection(tree, rel_path, lines):
     facts = []
     for owner in ast.walk(tree):
@@ -635,31 +685,8 @@ def _analyze_sql_injection(tree, rel_path, lines):
         for func in owner.body:
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            # Only parameters of an RPC/route-reachable method count as
-            # client-controlled; @api.private (17.0+) opts a method out of RPC.
-            exposed = (
-                _is_model_class(owner)
-                and not func.name.startswith("_")
-                and not any((_expr_repr(d) or "").endswith("private") for d in func.decorator_list)
-            )
-            params = _function_params(func) if exposed or _route_decorator(func) else set()
-            # `assert mode in (...)` / `if mode not in ALLOWED: raise` is an
-            # allow-list check: that parameter can't carry arbitrary SQL.
-            params -= {
-                n.left.id
-                for n in ast.walk(func)
-                if isinstance(n, ast.Compare)
-                and isinstance(n.left, ast.Name)
-                and any(isinstance(op, (ast.In, ast.NotIn)) for op in n.ops)
-            }
-            assigned = {}
-            for n in ast.walk(func):
-                if isinstance(n, ast.Assign):
-                    for t in n.targets:
-                        if isinstance(t, ast.Name):
-                            assigned.setdefault(t.id, []).append(n.value)
-                elif isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name):
-                    assigned.setdefault(n.target.id, []).append(n.value)
+            params = _caller_params(owner, func)
+            assigned = _assignments(func)
             for n in ast.walk(func):
                 if not (isinstance(n, ast.Call) and n.args):
                     continue
@@ -688,11 +715,15 @@ def _analyze_sql_injection(tree, rel_path, lines):
                     continue
                 # Also one hop for each spliced value (`where = kw['x']`).
                 tainted = any(
-                    _is_client_controlled(v, params)
-                    or any(
-                        _is_client_controlled(src, params)
-                        for name in _caller_names(v)
-                        for src in assigned.get(name, [])
+                    not _orm_built(v)
+                    and (
+                        _is_client_controlled(v, params)
+                        or any(
+                            _is_client_controlled(src, params)
+                            for name in _caller_names(v)
+                            for src in assigned.get(name, [])
+                            if not _orm_built(src)
+                        )
                     )
                     for v in risky
                 )
@@ -705,6 +736,167 @@ def _analyze_sql_injection(tree, rel_path, lines):
                         "line": n.lineno,
                     }
                 )
+    return facts
+
+
+# Behind .sudo(), records a caller picks (browse/search) or values a caller
+# passes whole (write/create) skip record rules and access rights.
+SUDO_PICK_CALLS = {"browse", "search", "search_read", "search_fetch"}
+SUDO_WRITE_CALLS = {"write", "create"}
+# Ways input reaches a call unchanged: casts, `kw.get("id")`, indexing.
+PASS_THROUGH_CALLS = {"int", "str", "float", "list", "tuple", "set", "get", "split", "strip"}
+# A search on an unguessable or public key authenticates the caller (a
+# capability link) or reads reference data; one scoped to the current user
+# only finds their own records.
+CAPABILITY_RE = re.compile(r"token|uuid|hash|secret|signature|key|code|endpoint", re.I)
+
+
+def _direct_input(node, params):
+    # Caller input reaching `node` as is, not the result of some other call.
+    if isinstance(node, ast.Name):
+        return node.id in params
+    if _is_request_payload(node) or (_expr_repr(node) or "").startswith(
+        ("request.get_json_data", "request.jsonrequest")
+    ):
+        return True
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return any(_direct_input(e, params) for e in node.elts)
+    if isinstance(node, ast.Subscript):
+        return _direct_input(node.value, params)
+    if isinstance(node, ast.BinOp):
+        return _direct_input(node.left, params) or _direct_input(node.right, params)
+    if isinstance(node, ast.IfExp):
+        return _direct_input(node.body, params) or _direct_input(node.orelse, params)
+    if isinstance(node, ast.BoolOp):
+        return any(_direct_input(v, params) for v in node.values)
+    if isinstance(node, ast.Call):
+        f = node.func
+        name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+        if name in PASS_THROUGH_CALLS:
+            return (isinstance(f, ast.Attribute) and _direct_input(f.value, params)) or any(
+                _direct_input(a, params) for a in node.args
+            )
+    return False
+
+
+# In an if/assert test: ownership (the current user, the session), a token or
+# the published flag is checked before the record is used.
+OWNERSHIP_MARKERS = ("env.user", "env.uid", "session", "token", "published")
+
+
+def _checks_access(func):
+    # Calls an access check (check_access_rule, has_access, _document_check_
+    # access, _assert_portal_write_access, has_group, consteq, a token/hash/
+    # signature check/validate/verify helper) or tests
+    # ownership (`order.id == request.session.get(...)`, `x.user_id ==
+    # request.env.user`, `partner.website_published`).
+    for n in ast.walk(func):
+        if isinstance(n, ast.Call):
+            name = (_expr_repr(n.func) or "").split(".")[-1]
+            if name in ("has_group", "user_has_groups", "consteq") or (
+                any(w in name for w in ("access", "token", "hash", "signature"))
+                and any(w in name for w in ("check", "assert", "has_", "valid", "verify"))
+            ):
+                return True
+        if isinstance(n, (ast.If, ast.IfExp, ast.Assert, ast.While)) and any(
+            m in (_expr_repr(x) or "") for x in ast.walk(n.test) for m in OWNERSHIP_MARKERS
+        ):
+            return True
+    return False
+
+
+def _picks_by_id(domain, params):
+    # The caller picks the records: the whole domain is theirs, or it
+    # filters `id` on their value. Filtering other fields reads reference data.
+    if isinstance(domain, ast.Name) and domain.id in params:
+        return True
+    return any(
+        isinstance(t, ast.Tuple)
+        and len(t.elts) == 3
+        and isinstance(t.elts[0], ast.Constant)
+        and t.elts[0].value == "id"
+        and _direct_input(t.elts[2], params)
+        for t in ast.walk(domain)
+    )
+
+
+def _scoped_domain(node):
+    for n in ast.walk(node):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and CAPABILITY_RE.search(n.value):
+            return True
+        if any(x in (_expr_repr(n) or "") for x in ("env.user", "env.uid", "session.uid", "self._uid")):
+            return True
+    return False
+
+
+def _analyze_sudo_input(tree, rel_path, lines):
+    # Caller input that reaches a .sudo() call in an RPC-callable model method
+    # or an HTTP route, in a function that checks no access itself: the caller
+    # picks records (or passes the whole values dict) past access rights.
+    # One fact per function. The context doesn't count here (wizards browse
+    # active_ids under sudo everywhere), nor do overrides (`super().<same>`:
+    # ORM/framework entry points, whose base checks access).
+    facts = []
+    for owner in ast.walk(tree):
+        if not isinstance(owner, ast.ClassDef):
+            continue
+        for func in owner.body:
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            route = _route_decorator(func) is not None
+            params = _caller_params(owner, func)
+            if not (params or route) or _checks_access(func):
+                continue
+            if not route and any(
+                isinstance(n, ast.Attribute)
+                and n.attr == func.name
+                and isinstance(n.value, ast.Call)
+                and getattr(n.value.func, "id", None) == "super"
+                for n in ast.walk(func)
+            ):
+                continue
+            assigned = _assignments(func)
+
+            def sources(v):
+                return [v] + (assigned.get(v.id, []) if isinstance(v, ast.Name) else [])
+
+            for n in ast.walk(func):
+                if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.args):
+                    continue
+                attr, arg = n.func.attr, n.args[0]
+                if not any(
+                    isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute) and x.func.attr == "sudo"
+                    for x in ast.walk(n.func.value)
+                ):
+                    continue
+                kind = "route_sudo_input" if route else "rpc_sudo_input"
+                if attr == "browse":
+                    hit = any(_direct_input(src, params) for src in sources(arg))
+                elif attr in SUDO_PICK_CALLS:
+                    srcs = sources(arg)
+                    hit = any(_picks_by_id(src, params) for src in srcs) and not any(
+                        _scoped_domain(src) for src in srcs
+                    )
+                elif attr in SUDO_WRITE_CALLS and not route:
+                    # The whole dict a caller sent, not values picked from it.
+                    kind = "rpc_sudo_write"
+                    hit = isinstance(arg, ast.Name) and any(
+                        (isinstance(src, ast.Name) and src.id in params) or _is_request_payload(src)
+                        for src in sources(arg)
+                    )
+                else:
+                    continue
+                if hit and not _suppressed(lines, n, func):
+                    facts.append(
+                        {
+                            "kind": kind,
+                            "context": f"{owner.name}.{func.name}",
+                            "detail": _truncate(lines[n.lineno - 1].strip()) if n.lineno <= len(lines) else None,
+                            "file": rel_path,
+                            "line": n.lineno,
+                        }
+                    )
+                    break
     return facts
 
 
@@ -794,6 +986,22 @@ def _route_decorator(func_node):
     return None
 
 
+def _session_only(func):
+    # No `env` (request.env, self.env) and no call to the controller's own
+    # or parent's methods: the handler can't touch the database (core 20's
+    # device-fingerprint beacon only updates the session).
+    for n in ast.walk(func):
+        if isinstance(n, ast.Attribute) and n.attr == "env":
+            return False
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+            base = n.func.value
+            if (isinstance(base, ast.Name) and base.id == "self") or (
+                isinstance(base, ast.Call) and getattr(base.func, "id", None) == "super"
+            ):
+                return False
+    return True
+
+
 def _calls_method(func_node, method_name):
     for n in ast.walk(func_node):
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == method_name:
@@ -859,6 +1067,7 @@ def _analyze_controllers(tree, rel_path):
                     # record access on _document_check_access(..., access_token).
                     "checks_token_access": _calls_method(stmt, "_document_check_access"),
                     "mass_assignment": _safe(_mass_assignment, stmt, default=False),
+                    "session_only": _safe(_session_only, stmt, default=False),
                     "signature": _signature(stmt),
                     "docstring": _truncate(ast.get_docstring(stmt, clean=True)),
                     "file": rel_path,
@@ -1173,6 +1382,23 @@ def _analyze_data_csv(text, model, rel_path):
     return out
 
 
+def _demo_files(module_path):
+    # Files the manifest loads only as demo data (`demo`; `demo_xml` up to
+    # 8.0). literal_eval, never eval: PR heads come from anyone's fork.
+    for name in ("__manifest__.py", "__openerp__.py"):
+        path = os.path.join(module_path, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                manifest = ast.literal_eval(fh.read())
+            return {
+                os.path.normpath(f).replace(os.sep, "/")
+                for key in ("demo", "demo_xml")
+                for f in manifest.get(key) or []
+                if isinstance(f, str)
+            }
+    return set()
+
+
 def analyze_module(module_path):
     views = []
     models = []
@@ -1207,6 +1433,7 @@ def analyze_module(module_path):
                 migration_facts.extend(_safe(_analyze_migration_facts, tree, rel_path))
                 security_facts.extend(_safe(_analyze_sql_injection, tree, rel_path, lines))
                 security_facts.extend(_safe(_analyze_dangerous_calls, tree, rel_path, lines))
+                security_facts.extend(_safe(_analyze_sudo_input, tree, rel_path, lines))
             elif filename.endswith(".xml"):
                 try:
                     with open(full_path, "rb") as fh:
@@ -1233,6 +1460,10 @@ def analyze_module(module_path):
     # The module folder name is its technical name, so refs like
     # "my_module.view_x" from inside my_module resolve locally too.
     _resolve_inherited_view_types(views, os.path.basename(os.path.normpath(module_path)))
+    # A manifest literal_eval can't read: no demo info, records kept as data.
+    demo = _safe(_demo_files, module_path, default=set())
+    for r in records:
+        r["demo"] = r["file"] in demo
     # Pre-Odoo-10 manifest naming - cheap to check once per module, no walk needed.
     if os.path.isfile(os.path.join(module_path, "__openerp__.py")):
         migration_facts.append(
@@ -1282,7 +1513,7 @@ def load(path):
 /// collector::security and collector::migration. Stored per module, so a
 /// module is re-analyzed when this changes even if its branch never gets
 /// another commit. Bump it whenever any of those three change.
-pub const ANALYSIS_VERSION: i32 = 2;
+pub const ANALYSIS_VERSION: i32 = 4;
 
 #[derive(Debug, Default)]
 pub struct GitInfo {
@@ -2116,6 +2347,12 @@ class PartnerKindController(http.Controller):
         .unwrap();
         // Dotless stem: not a model name, must be ignored entirely.
         fs::write(security_dir.join("fixtures.csv"), "id,name\nnope,Nope\n").unwrap();
+        // `./` prefix: compared normalized against the records' paths.
+        fs::write(
+            dir.join("__manifest__.py"),
+            "# comment\n{'name': 'X', 'demo': ['./security/res.groups.csv']}\n",
+        )
+        .unwrap();
 
         let analyzer = OGHCollectorAnalyzer::new(&17u8);
         let result = analyzer.analyze_module_source(&dir);
@@ -2384,6 +2621,7 @@ class PartnerKindController(http.Controller):
         // CSV rows: file is module-relative, line is header(1) + row offset.
         assert_eq!(access.file.as_deref(), Some("security/ir.model.access.csv"));
         assert_eq!(access.line, Some(2));
+        assert!(!access.demo);
 
         // Groups created via res.groups.csv must surface like the XML ones.
         let csv_group = result
@@ -2395,6 +2633,7 @@ class PartnerKindController(http.Controller):
         let csv_group_fields = csv_group.fields.as_ref().unwrap();
         assert_eq!(csv_group_fields["name"], "Partner Kind (CSV)");
         assert_eq!(csv_group_fields["implied_ids:id"], "base.group_user");
+        assert!(csv_group.demo);
 
         // fixtures.csv has no dot in its stem - not an Odoo data file.
         assert!(result.records.iter().all(|r| r.xml_id != "nope"));
@@ -2690,12 +2929,34 @@ class Thing(models.Model):
     def _private(self, where):
         self.env.cr.execute("SELECT 1 WHERE %s" % where)  # R3
         self.env.cr.execute("SELECT 1 WHERE n = %s" % self.env.context.get("n"))  # T3
+        query = self._where_calc(list(self.env.context.get("domain") or []))
+        order = ", ".join(self._generate_order_by_inner(self._table, self.env.context.get("order"), query))
+        sql = "SELECT 1 ORDER BY %s" % order
+        self.env.cr.execute(sql)  # R4
+
+    def set_values(self, vals):
+        self.sudo().write(vals)  # S1
+
+    def peek(self, partner_id):
+        return self.env["res.partner"].sudo().browse(int(partner_id)).name  # S2
+
+    def peek_checked(self, partner_id):
+        self.check_access_rights("read")
+        return self.env["res.partner"].sudo().browse(partner_id).name
+
+    def write(self, vals):
+        self.sudo().mapped("child_ids").write(vals)
+        return super().write(vals)
 
 
 class Ctl(http.Controller):
     @http.route("/x/update", auth="public", csrf=False, methods=["POST"])
     def update(self, **kw):
         request.env["x.thing"].sudo().browse(1).write(kw)
+
+    @http.route("/x/beacon", auth="user", csrf=False, methods=["POST"])
+    def beacon(self, fp):
+        update_fingerprint(request.session, request, fp)
 
     @http.route("/x/safe", auth="user")
     def safe(self, **kw):
@@ -2705,6 +2966,21 @@ class Ctl(http.Controller):
     @http.route("/x/find", auth="public")
     def find(self, q=None):
         request.env.cr.execute("SELECT 1 WHERE n = '%s'" % q)  # T4
+
+    @http.route("/x/doc/<int:doc_id>", auth="user")
+    def doc(self, doc_id, **kw):
+        return request.env["x.thing"].sudo().browse(doc_id).name  # S3
+
+    @http.route("/x/mine/<int:doc_id>", auth="user")
+    def mine(self, doc_id):
+        doc = request.env["x.thing"].sudo().browse(doc_id)
+        if doc.user_id != request.env.user:
+            raise ValueError()
+
+    @http.route("/x/token", auth="public")
+    def by_token(self, token, stage):
+        request.env["x.stage"].sudo().search([("job_ids", "=", stage)])
+        return request.env["x.thing"].sudo().search([("id", "=", 1), ("access_token", "=", token)])
 
 
 def helpers(data, cmd):
@@ -2742,6 +3018,10 @@ def helpers(data, cmd):
             ("R1", "sql_injection"),
             ("R2", "sql_injection"),
             ("R3", "sql_injection"),
+            ("R4", "sql_injection"),
+            ("S1", "rpc_sudo_write"),
+            ("S2", "rpc_sudo_input"),
+            ("S3", "route_sudo_input"),
             ("T1", "sql_injection_tainted"),
             ("T2", "sql_injection_tainted"),
             ("T3", "sql_injection_tainted"),
@@ -2761,6 +3041,13 @@ def helpers(data, cmd):
             .find(|c| c.name == "update")
             .unwrap();
         assert!(update.mass_assignment);
+        assert!(!update.session_only);
+        let beacon = result
+            .controllers
+            .iter()
+            .find(|c| c.name == "beacon")
+            .unwrap();
+        assert!(beacon.session_only);
         // Reassigned (filtered) kwargs before write: not mass assignment.
         let safe = result
             .controllers

@@ -52,6 +52,11 @@ pub struct ModelAnalysisInfo {
     pub attrs: Option<serde_json::Value>,
     pub fields: Vec<FieldAnalysisInfo>,
     pub methods: Vec<MethodAnalysisInfo>,
+    // The class calls sudo() somewhere: a wizard whose buttons escalate can
+    // reach records its (possibly groupless) access right shouldn't. Judged
+    // by collector::security, not persisted.
+    #[serde(default)]
+    pub calls_sudo: bool,
 }
 
 // Every other record a module touches - security groups (res.groups),
@@ -75,6 +80,10 @@ pub struct RecordAnalysisInfo {
     pub file: Option<String>,
     #[serde(default)]
     pub line: Option<i32>,
+    // From a file the manifest lists under `demo`: never loaded in a
+    // production database. Not stored (judging-time only).
+    #[serde(default)]
+    pub demo: bool,
 }
 
 // One HTTP endpoint the module exposes (a method decorated with http.route).
@@ -108,6 +117,11 @@ pub struct ControllerAnalysisInfo {
     // into write()/create(). Judged by collector::security, not persisted.
     #[serde(default)]
     pub mass_assignment: bool,
+    // The handler never reaches the database (no `env`, no call to its own
+    // or its parent's methods): it can only change the session. Judged by
+    // collector::security, not persisted.
+    #[serde(default)]
+    pub session_only: bool,
     #[serde(default)]
     pub signature: String,
     #[serde(default)]

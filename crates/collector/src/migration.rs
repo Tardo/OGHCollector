@@ -330,6 +330,7 @@ mod tests {
             class_name: "XReport".to_string(),
             inherit_from: vec![],
             is_new_model: true,
+            calls_sudo: false,
             docstring: None,
             attrs: Some(attrs),
             fields: vec![],

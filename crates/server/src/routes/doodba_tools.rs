@@ -114,7 +114,8 @@ pub async fn route_doodba_dependency_resolver(
 
 // Same shape as ModuleDependencyInfoResponse plus `repos` (repo name ->
 // organization) and `repo_urls` (repo name -> clone URL), needed to emit a
-// doodba repos.yaml (git remotes), and the license review of the whole set.
+// doodba repos.yaml (git remotes), the license review of the whole set, and
+// the requested modules it found no row for at that version.
 #[derive(Debug, Serialize)]
 pub struct DoodbaAddonsResponse {
     pub odoo: HashMap<String, Vec<String>>,
@@ -123,6 +124,117 @@ pub struct DoodbaAddonsResponse {
     pub repos: HashMap<String, String>,
     pub repo_urls: HashMap<String, String>,
     pub license_review: LicenseReport,
+    pub unresolved: Vec<UnresolvedModule>,
+}
+
+// A requested module with no row at the requested version, and why. Gone
+// there (`renamed`/`merged` per OpenUpgrade, `lost` = last seen before it,
+// `later` = only after it) means the page drops it; `pending` (open
+// migration PR/MR), `not_collected` (its repository has nothing at that
+// version, so we can't judge) and `unknown` (never seen) keep it as written.
+#[derive(Debug, Serialize)]
+pub struct UnresolvedModule {
+    pub technical_name: String,
+    pub status: &'static str,
+    /// renamed/merged: what it is at the requested version.
+    pub into: Option<String>,
+    /// renamed/merged: when it stopped being itself; otherwise the newest
+    /// version it was seen at.
+    pub odoo_version: Option<String>,
+    /// `org/repo`: the PR's, or where it was last seen.
+    pub repository: Option<String>,
+    /// pending: the PR/MR.
+    pub url: Option<String>,
+}
+
+fn get_unresolved(
+    conn: &mut SqliteConnection,
+    requested: &[String],
+    found: &[models::module::Model],
+    odoo_ver: u8,
+) -> Vec<UnresolvedModule> {
+    let mut skip: HashSet<&str> = found.iter().map(|m| m.technical_name.as_str()).collect();
+    let names: Vec<String> = requested
+        .iter()
+        .filter(|n| skip.insert(n.as_str()))
+        .cloned()
+        .collect();
+    if names.is_empty() {
+        return vec![];
+    }
+    let version = odoo_ver as i32;
+    let pending: HashMap<String, MigrationPendingModuleInfo> =
+        get_pending_modules(conn, &names, &odoo_ver)
+            .into_iter()
+            .map(|p| (p.technical_name.clone(), p))
+            .collect();
+    let last_seen: HashMap<String, (models::module::ModuleRepositoryInfo, i32)> =
+        models::module::get_last_seen_by_technical_names(conn, &names)
+            .into_iter()
+            .map(|(info, v)| (info.technical_name.clone(), (info, v)))
+            .collect();
+    let renames = models::openupgrade_rename::all(conn);
+    // ponytail: installable counts of every repo, enough to tell "collected at this version"
+    let collected: HashSet<(String, String)> = models::module::repository_version_counts(conn)
+        .into_iter()
+        .filter(|r| r.version_odoo == version)
+        .map(|r| (r.org_name, r.repository))
+        .collect();
+    let version_string = |v: i32| Some(odoo_version_u8_to_string(&(v as u8)));
+
+    names
+        .into_iter()
+        .map(|technical_name| {
+            let mut module = UnresolvedModule {
+                technical_name,
+                status: "unknown",
+                into: None,
+                odoo_version: None,
+                repository: None,
+                url: None,
+            };
+            if let Some(pr) = pending.get(&module.technical_name) {
+                module.status = "pending";
+                module.repository = Some(format!("{}/{}", pr.organization, pr.repository_name));
+                module.url = Some(pr.url.clone());
+                return module;
+            }
+            let seen = last_seen.get(&module.technical_name);
+            // OpenUpgrade's renames/merges after it was last seen, followed
+            // up to the requested version.
+            let mut after = seen.map_or(0, |(_, v)| *v);
+            let mut name = module.technical_name.as_str();
+            let mut first = None;
+            while let Some(r) = renames
+                .iter()
+                .filter(|r| {
+                    r.old_name == name && r.version_odoo > after && r.version_odoo <= version
+                })
+                .min_by_key(|r| r.version_odoo)
+            {
+                first.get_or_insert(r);
+                name = &r.new_name;
+                after = r.version_odoo;
+            }
+            if let Some(r) = first {
+                module.status = if r.merged { "merged" } else { "renamed" };
+                module.into = Some(name.to_string());
+                module.odoo_version = version_string(r.version_odoo);
+            } else if let Some((info, v)) = seen {
+                let repo = (info.organization.clone(), info.repository_name.clone());
+                module.status = if !collected.contains(&repo) {
+                    "not_collected"
+                } else if *v < version {
+                    "lost"
+                } else {
+                    "later"
+                };
+                module.repository = Some(format!("{}/{}", repo.0, repo.1));
+                module.odoo_version = version_string(*v);
+            }
+            module
+        })
+        .collect()
 }
 
 // One walk over the union of the requested modules' closures. Groups by repo
@@ -134,8 +246,9 @@ fn get_doodba_addons_full(
     odoo_version: &str,
 ) -> DoodbaAddonsResponse {
     let odoo_ver = odoo_version_string_to_u8(odoo_version);
-    let modules: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
-    let modules = models::module::get_by_technical_name_odoo_version(conn, &modules, &odoo_ver);
+    let names: Vec<String> = mods.iter().map(|x| x.as_str().to_string()).collect();
+    let modules = models::module::get_by_technical_name_odoo_version(conn, &names, &odoo_ver);
+    let unresolved = get_unresolved(conn, &names, &modules, odoo_ver);
     let closure = models::dependency::get_full_dependency_info_many(conn, &modules);
     let root_ids: Vec<i64> = modules.iter().map(|m| m.id).collect();
 
@@ -184,6 +297,7 @@ fn get_doodba_addons_full(
         repos,
         repo_urls,
         license_review: closure.license_review(&root_ids),
+        unresolved,
     }
 }
 
@@ -801,6 +915,62 @@ mod tests {
         assert_eq!(step.missing[0].repository_name, "repo-dep");
         assert_eq!(step.missing[0].organization, "OCA");
         assert_eq!(step.unknown, vec!["dep_ghost".to_string()]);
+    }
+
+    // Every requested module with no row at the requested version is
+    // reported, never silently kept: gone there (renamed, trail lost, only
+    // later) or still to judge (open PR, repo not collected, never seen).
+    #[test]
+    fn test_dependency_resolver_reports_unresolved_modules() {
+        let mut conn = setup_db();
+        make_module(&mut conn, "present", "OCA", "repoA", 170);
+        make_module(&mut conn, "renamed_old", "OCA", "repoA", 160);
+        make_module(&mut conn, "gone", "OCA", "repoA", 160);
+        make_module(&mut conn, "newer", "OCA", "repoA", 180);
+        make_module(&mut conn, "uncollected", "OCA", "repoZ", 160);
+        make_pending_pr(&mut conn, "ported", "OCA", "repoP", 170, 7);
+        models::openupgrade_rename::replace_for_version(
+            &mut conn,
+            170,
+            &[("renamed_old".into(), "renamed_new".into(), false)],
+        )
+        .unwrap();
+
+        let mods = [
+            "present",
+            "renamed_old",
+            "gone",
+            "newer",
+            "uncollected",
+            "ported",
+            "ghost",
+            "gone",
+        ]
+        .map(|n| Text(n.to_string()));
+        let result = get_doodba_addons_full(&mut conn, &mods, "17.0");
+        let status: Vec<(&str, &str)> = result
+            .unresolved
+            .iter()
+            .map(|u| (u.technical_name.as_str(), u.status))
+            .collect();
+        assert_eq!(
+            status,
+            vec![
+                ("renamed_old", "renamed"),
+                ("gone", "lost"),
+                ("newer", "later"),
+                ("uncollected", "not_collected"),
+                ("ported", "pending"),
+                ("ghost", "unknown"),
+            ]
+        );
+        assert_eq!(result.unresolved[0].into.as_deref(), Some("renamed_new"));
+        assert_eq!(result.unresolved[1].odoo_version.as_deref(), Some("16.0"));
+        assert_eq!(
+            result.unresolved[1].repository.as_deref(),
+            Some("OCA/repoA")
+        );
+        assert!(result.unresolved[4].url.is_some());
     }
 
     // Odoo core (org "odoo", e.g. `base`/`web`/`mail`) is tracked like any

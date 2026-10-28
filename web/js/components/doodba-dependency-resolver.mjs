@@ -10,6 +10,9 @@ import {
 import {renderLicenseReview} from '@app/utils/license-review';
 import '@scss/components/doodba-dependency-resolver.scss';
 
+// UnresolvedModule statuses meaning the module is gone at that version.
+const DROPPED = new Set(['renamed', 'merged', 'lost', 'later']);
+
 class DoodbaDependencyResolver extends Component {
   #el_search_select_ver = null;
   #el_drag_panel = null;
@@ -18,6 +21,7 @@ class DoodbaDependencyResolver extends Component {
   #el_result_pip = null;
   #el_result_bin = null;
   #el_license = null;
+  #el_unresolved = null;
   #el_save = null;
 
   onSetup() {
@@ -58,6 +62,7 @@ class DoodbaDependencyResolver extends Component {
     this.#el_result_pip = this.queryId('doodba_dep_resolver_result_pip');
     this.#el_result_bin = this.queryId('doodba_dep_resolver_result_bin');
     this.#el_license = this.queryId('doodba_dep_resolver_license');
+    this.#el_unresolved = this.queryId('doodba_dep_resolver_unresolved');
     this.#el_save = this.queryId('doodba_dep_resolver_save');
   }
 
@@ -105,31 +110,26 @@ class DoodbaDependencyResolver extends Component {
     this.#el_save.style.display = '';
   }
 
-  #makeYaml(data, yaml_data) {
-    const data_mods = Object.values(data).flat();
-    const yaml_mods = Object.values(yaml_data).flat();
-    const diff_mods = yaml_mods.filter(x => !data_mods.includes(x));
-    const san_diff_mods = [];
-    const mods_entries = Object.entries(yaml_data);
-    for (const mod_name of diff_mods) {
-      let found = false;
-      for (const [repo_name, mod_names] of mods_entries) {
-        if (mod_names.includes(mod_name)) {
-          found = true;
-          if (!Object.hasOwn(data, repo_name)) {
-            data[repo_name] = [mod_name];
-          } else {
-            data[repo_name].push(mod_name);
-          }
-          break;
+  // Resolved modules (and their dependencies) go under the repo the server
+  // found them in. Anything else from the input stays under its own key as
+  // written (wildcards, ENV, open PRs, repos we don't collect), except the
+  // modules the server says are gone at this version: those are dropped and
+  // noted at the top.
+  #makeYaml(data, yaml_data, dropped) {
+    const resolved = new Set(Object.values(data).flat());
+    for (const [repo_name, mod_names] of Object.entries(yaml_data)) {
+      if (!Array.isArray(mod_names)) {
+        // An emptied repo key is null: never over what was resolved there.
+        if (mod_names) {
+          data[repo_name] ??= mod_names;
+        }
+        continue;
+      }
+      for (const mod_name of mod_names) {
+        if (!resolved.has(mod_name) && !dropped.has(mod_name)) {
+          (data[repo_name] ??= []).push(mod_name);
         }
       }
-      if (!found) {
-        san_diff_mods.push(mod_name);
-      }
-    }
-    if (san_diff_mods.length > 0) {
-      data['_UNKNOWN_'] = diff_mods;
     }
 
     const sortedGroupedData = Object.keys(data)
@@ -138,7 +138,72 @@ class DoodbaDependencyResolver extends Component {
         acc[key] = data[key];
         return acc;
       }, {});
-    return yaml.dump(sortedGroupedData, {indent: 2});
+    const notes = [...dropped.values()].map(note => `# removed: ${note}\n`);
+    return notes.join('') + yaml.dump(sortedGroupedData, {indent: 2});
+  }
+
+  // Why a requested module has no row at `odoo_ver` (see the server's
+  // UnresolvedModule).
+  #unresolvedReason(mod, odoo_ver) {
+    const where = mod.repository ? ` (${mod.repository})` : '';
+    switch (mod.status) {
+      case 'renamed':
+        return `renamed to ${mod.into} in ${mod.odoo_version}`;
+      case 'merged':
+        return `merged into ${mod.into} in ${mod.odoo_version}`;
+      case 'lost':
+        return `not in ${odoo_ver}, last seen in ${mod.odoo_version}${where}`;
+      case 'later':
+        return `not in ${odoo_ver}, newest in ${mod.odoo_version}${where}`;
+      case 'pending':
+        return `not merged in ${odoo_ver} yet, only an open PR/MR${where}: kept, merge it in repos.yaml`;
+      case 'not_collected':
+        return `its repository${where} isn't collected for ${odoo_ver}: kept as written`;
+      default:
+        return 'not found in any collected repository (private repo, fork or typo?): kept as written';
+    }
+  }
+
+  // Plain DOM in the closed shadow root, reusing the license review panel's
+  // look (web/scss/components/_license-review.scss).
+  #renderUnresolved(unresolved, dropped, odoo_ver) {
+    this.#el_unresolved.textContent = '';
+    if (!unresolved.length) {
+      return;
+    }
+    const section = document.createElement('section');
+    section.className = 'license-review';
+    section.dataset.worst = dropped.size ? 'warning' : 'info';
+    const head = document.createElement('div');
+    head.className = 'license-review-head';
+    const icon = document.createElement('span');
+    icon.className = 'material-icons';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = 'report';
+    const title = document.createElement('strong');
+    title.textContent = `${unresolved.length} module(s) not found in ${odoo_ver}`;
+    head.append(icon, title);
+    const list = document.createElement('ul');
+    for (const mod of unresolved) {
+      const item = document.createElement('li');
+      const name = document.createElement('code');
+      name.textContent = mod.technical_name;
+      item.append(
+        name,
+        ` — ${dropped.has(mod.technical_name) ? 'removed: ' : ''}${this.#unresolvedReason(mod, odoo_ver)}`,
+      );
+      if (mod.url) {
+        const link = document.createElement('a');
+        link.href = mod.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = 'PR/MR';
+        item.append(' (', link, ')');
+      }
+      list.append(item);
+    }
+    section.append(head, list);
+    this.#el_unresolved.append(section);
   }
 
   #fillOdooVersionsSearchOptions() {
@@ -174,8 +239,11 @@ class DoodbaDependencyResolver extends Component {
         this.getFetchData('odoo_versions')[0].value;
       const formData = new FormData();
       formData.append('odoo_version', odoo_ver);
+      // Module names only: not wildcards ("*", "web_*") nor ENV/ONLY maps.
       Object.values(yaml_data)
+        .filter(Array.isArray)
         .flat()
+        .filter(name => typeof name === 'string' && !/[*?[]/.test(name))
         .forEach(mod_name => formData.append('modules', mod_name));
       const data = await getService('requests').post(
         '/doodba/dependency-resolver/addons',
@@ -187,13 +255,22 @@ class DoodbaDependencyResolver extends Component {
         throw new Error(`Server responded with ${data.status}`);
       }
       const json_data = await data.json();
-      const yaml_txt = this.#makeYaml(json_data.odoo, yaml_data);
+      const dropped = new Map(
+        json_data.unresolved
+          .filter(mod => DROPPED.has(mod.status))
+          .map(mod => [
+            mod.technical_name,
+            `${mod.technical_name}: ${this.#unresolvedReason(mod, odoo_ver)}`,
+          ]),
+      );
+      const yaml_txt = this.#makeYaml(json_data.odoo, yaml_data, dropped);
       this.#showResults(
         yaml_txt,
         json_data.pip.join('\n'),
         json_data.bin.join('\n'),
       );
       renderLicenseReview(this.#el_license, json_data.license_review);
+      this.#renderUnresolved(json_data.unresolved, dropped, odoo_ver);
       this.#el_search_select_ver.disabled = true;
       setDragPanelProcessing(this.#el_drag_panel, false);
     } catch (_err) {

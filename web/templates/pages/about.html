@@ -139,24 +139,28 @@
             usually risky; only a manual review can confirm a real vulnerability. <strong>Grave</strong> is reserved
             for high-precision rules; both kinds are counted on the module page, and grave ones are listed in detail
             there in Dev mode. Modules named <code>test_*</code> or in a "Tests" category are skipped: they only exist for
-            Odoo's own test suites.
+            Odoo's own test suites; so are OCA's <code>*_demo</code> showcase modules. So are records from the files a manifest lists under <code>demo</code>: they never
+            reach a production database.
         </p>
         <div class="table-responsive">
         <table class="table table-sm">
             <thead><tr><th>Code</th><th>Flags</th><th>Severity</th></tr></thead>
             <tbody>
-                <tr><td class="text-nowrap"><code>acl-global-write</code></td><td>Access right with no group (applies to every user, portal and public included) granting write or delete.</td><td>Grave; minor when it only grants create or its id/name says it's meant to be global</td></tr>
+                <tr><td class="text-nowrap"><code>acl-global-write</code></td><td>Access right with no group (applies to every user, portal and public included) granting write or delete.</td><td>Grave; minor when it only grants create, its id/name says it's meant to be global, the model is an abstract model or a wizard (without <code>sudo()</code>) of the module, or a global rule of the module limits it to the user's own records</td></tr>
                 <tr><td class="text-nowrap"><code>acl-global-read</code></td><td>Access right with no group granting read.</td><td>Minor</td></tr>
-                <tr><td class="text-nowrap"><code>acl-public-read-secret</code></td><td>Read access for portal, public or every user on a model whose stored fields look like credentials (token, secret, password, API/private key) with no <code>groups=</code>. Not counted: <code>access_token</code>, hashes, wizards, fields another field's inverse writes (stored encrypted), models overriding <code>read()</code>, grants a rule narrows to the user's own records.</td><td>Grave</td></tr>
-                <tr><td class="text-nowrap"><code>acl-public-write</code></td><td>Access right granting write or delete to the portal or public group.</td><td>Grave; minor when create-only or explicitly named for that audience</td></tr>
+                <tr><td class="text-nowrap"><code>acl-public-read-secret</code></td><td>Read access for portal, public or every user on a model whose stored fields look like credentials (token, secret, password, API/private key) with no <code>groups=</code>, or such fields added to <code>res.company</code> or <code>website</code>, which core lets every user read. Not counted: Google Maps/Fonts browser keys, <code>access_token</code>, hashes, wizards, fields another field's inverse writes (stored encrypted), models overriding <code>read()</code>, grants a rule narrows to the user's own records.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>acl-public-write</code></td><td>Access right granting write or delete to the portal or public group.</td><td>Grave; minor when create-only, explicitly named for that audience, on an abstract model or a wizard (without <code>sudo()</code>) of the module, or limited to the user's own records by a global rule</td></tr>
                 <tr><td class="text-nowrap"><code>acl-privilege-escalation</code></td><td>Write access to users, groups, record rules, access rights, models or fields for a group that isn't an administrator group.</td><td>Grave</td></tr>
                 <tr><td class="text-nowrap"><code>rule-public-bypass</code></td><td>Always-true record rule for portal/public, unless this module's own access rights deny that group everything.</td><td>Grave</td></tr>
                 <tr><td class="text-nowrap"><code>rule-group-bypass</code></td><td>Always-true record rule for another non-manager group.</td><td>Minor</td></tr>
-                <tr><td class="text-nowrap"><code>route-user-csrf-off</code></td><td>Logged-in HTTP endpoint accepting state-changing methods with CSRF disabled.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>route-user-csrf-off</code></td><td>Logged-in HTTP endpoint accepting state-changing methods with CSRF disabled.</td><td>Grave; minor when the route also answers GET (Odoo never CSRF-checks GET, so the flag removes nothing) or its handler doesn't reach the database</td></tr>
                 <tr><td class="text-nowrap"><code>route-public-csrf-off</code></td><td>Public endpoint with CSRF disabled (normal for webhooks).</td><td>Minor</td></tr>
                 <tr><td class="text-nowrap"><code>route-mass-assignment</code></td><td>Endpoint passing the raw request payload to <code>create()</code>/<code>write()</code>.</td><td>Grave on public or <code>sudo()</code> routes, minor otherwise</td></tr>
-                <tr><td class="text-nowrap"><code>route-public-sudo</code></td><td>Public endpoint using <code>sudo()</code>.</td><td>Minor</td></tr>
-                <tr><td class="text-nowrap"><code>sql-injection</code></td><td>SQL built by string formatting from a value the caller controls directly: an argument of an RPC-callable method or route, the request payload or the context.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>route-sudo-input</code></td><td>Route handing request input (an id, a domain on <code>id</code>) to <code>sudo().browse()</code>/<code>search()</code>, with no access check in the handler (<code>_document_check_access</code>, a token, a test on the current user, the session or the published flag): whoever reaches it may open other users' records.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>rpc-sudo-input</code></td><td>Public model method (callable over RPC by any logged-in user) picking records under <code>sudo()</code> with its caller's input, with no access check. Overrides of ORM/framework methods are left out.</td><td>Minor</td></tr>
+                <tr><td class="text-nowrap"><code>rpc-sudo-write</code></td><td>Public model method writing the whole values dict its caller sent under <code>sudo()</code>, with no access check: privilege escalation.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>data-user-password</code></td><td>Non-demo data creating a user with a fixed password (or setting another module's user's): every database installing the module gets that login. Core's bootstrap <code>admin</code> and users created with no groups are exempt.</td><td>Grave</td></tr>
+                <tr><td class="text-nowrap"><code>sql-injection</code></td><td>SQL built by string formatting from a value the caller controls directly: an argument of an RPC-callable method or route, the request payload or the context. What the ORM's query builders return (<code>_where_calc</code>, order generation) doesn't count: they validate names and keep values as parameters.</td><td>Grave</td></tr>
                 <tr><td class="text-nowrap"><code>sql-injection-review</code></td><td>SQL built by string formatting from any other value.</td><td>Minor</td></tr>
                 <tr><td class="text-nowrap"><code>code-eval</code></td><td><code>eval</code>/<code>exec</code> on non-literal input.</td><td>Minor</td></tr>
                 <tr><td class="text-nowrap"><code>unsafe-deserialization</code></td><td><code>pickle</code> or unsafe YAML loading.</td><td>Minor</td></tr>
@@ -169,6 +173,12 @@
         <p class="mb-0">
             Effective access also depends on other modules, global rules, field restrictions and Python checks that
             a single module's files can't show, which is why even grave findings are worded as review priorities.
+        </p>
+        <p class="mb-0 mt-2">
+            When a grave finding disappears between two commits analyzed with the same rules, the logs record a
+            <em>possible security fix</em> with both commits: upstream fixes often ship without an advisory, so
+            installations of that branch should be updated. A file the analyzer fails to parse also drops its
+            findings, so verify the diff.
         </p>
     </div>
 </section>

@@ -498,6 +498,31 @@ pub fn register_security_warning(
     add(conn, "security", SEVERITY_WARNING, &msg)
 }
 
+/// A grave finding that newer code no longer has, under the same rules:
+/// most likely fixed upstream without an advisory. Worded as a lead to
+/// verify (a file that failed to parse also drops its findings), with both
+/// commits so the change can be diffed.
+#[allow(clippy::too_many_arguments)]
+pub fn register_security_fix(
+    conn: &mut SqliteConnection,
+    module_technical_name: &str,
+    module_name: &str,
+    module_version_odoo: &str,
+    code: &str,
+    xml_id: Option<&str>,
+    old_commit: &str,
+    new_commit: &str,
+) -> QueryResult<Model> {
+    let source = xml_id.map(|x| format!(" ('{x}')")).unwrap_or_default();
+    let short = |c: &str| c.chars().take(10).collect::<String>();
+    let msg = format!(
+        "Possible security fix in '{module_technical_name}' ({module_name}) [{module_version_odoo}]: grave finding '{code}'{source} is gone between commits {} and {}. Verify the change and update installations of this branch.",
+        short(old_commit),
+        short(new_commit)
+    );
+    add(conn, "security", SEVERITY_SUCCESS, &msg)
+}
+
 pub fn register_new_osv_vulnerability(
     conn: &mut SqliteConnection,
     dep_name: &str,

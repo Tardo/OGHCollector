@@ -1154,6 +1154,7 @@ mod tests {
             class_name: "ResPartner".to_string(),
             inherit_from: vec!["res.partner".to_string()],
             is_new_model: false,
+            calls_sudo: false,
             docstring: Some("Extends res.partner with x_foo.".to_string()),
             attrs: Some(serde_json::json!({"kind": "Model"})),
             fields: vec![FieldAnalysisInfo {
@@ -1212,6 +1213,7 @@ mod tests {
             class_name: "ResPartner".to_string(),
             inherit_from: vec!["res.partner".to_string()],
             is_new_model: false,
+            calls_sudo: false,
             docstring: None,
             attrs: None,
             fields: vec![],
@@ -1266,6 +1268,7 @@ mod tests {
             class_name: "ResPartner".to_string(),
             inherit_from: vec!["res.partner".to_string()],
             is_new_model: false,
+            calls_sudo: false,
             docstring: Some("v1 docstring".to_string()),
             attrs: None,
             fields: vec![FieldAnalysisInfo {
@@ -1301,6 +1304,7 @@ mod tests {
             class_name: "ResPartner".to_string(),
             inherit_from: vec!["res.partner".to_string()],
             is_new_model: false,
+            calls_sudo: false,
             docstring: Some("v2 docstring".to_string()),
             attrs: None,
             fields: vec![],

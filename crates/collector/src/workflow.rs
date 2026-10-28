@@ -24,7 +24,8 @@
 //! info + the stored row → `Found`), then each of the source's workflows runs from a fresh
 //! `ModuleCtx`. Nodes: `if` (minijinja `compile_expression` over `ModuleCtx::view`),
 //! `read_manifest`, `git_stats`, `analyze_code`, `security`, `migration_notes`, `store_module`
-//! (module::add + snapshot/warnings/notes only for what was computed + version-mismatch event +
+//! (module::add + snapshot/warnings/notes only for what was computed + version-mismatch event + a
+//! possible-security-fix event per grave finding newer code no longer has under the same stamp +
 //! `sync_dependencies`), `osv`, `log` (minijinja template → `system_event::add`). Nodes compute
 //! their prerequisites lazily. `validate` = types, per-type fields, refs, cycles, expressions,
 //! `after` names; `Engine::new` also rejects two storing workflows on one source, an `after` the
@@ -1197,6 +1198,12 @@ fn store_module(
 
     if let Some(analysis) = &ctx.analysis {
         // Only this version_module's snapshot is rebuilt; earlier ones stay.
+        let new_snapshot = models::module_version::get_by_module_id_version_module(
+            conn,
+            &module.id,
+            &info.version_module,
+        )
+        .is_none();
         let snapshot =
             models::module_version::get_or_create(conn, &module.id, &info.version_module).unwrap();
         let (id, version_id) = (&module.id, &snapshot.id);
@@ -1208,11 +1215,12 @@ fn store_module(
         if let Some(warnings) = &ctx.security {
             // Every finding is stored; minor ones also leave an event, only
             // when new for this version snapshot (re-analysis doesn't re-log).
-            let known: HashSet<(String, Option<String>)> =
-                models::module_security_warning::get_by_module_version_id(conn, version_id)
-                    .into_iter()
-                    .map(|w| (w.code, w.xml_id))
-                    .collect();
+            let stored =
+                models::module_security_warning::get_by_module_version_id(conn, version_id);
+            let known: HashSet<(String, Option<String>)> = stored
+                .iter()
+                .map(|w| (w.code.clone(), w.xml_id.clone()))
+                .collect();
             for w in warnings.iter().filter(|w| {
                 w.severity != SEVERITY_ERROR && !known.contains(&(w.code.clone(), w.xml_id.clone()))
             }) {
@@ -1224,6 +1232,43 @@ fn store_module(
                     w.xml_id.as_deref(),
                     &w.message,
                 );
+            }
+            // Grave findings gone with newer code, under the same rules and
+            // analyses (stamp): the first run after a rules change is skipped,
+            // it would count whatever a rule stopped reporting as fixed. A new
+            // snapshot (version bump) compares with the previous one.
+            if let Some(before) = f.stored.as_ref().filter(|m| {
+                m.analysis_version == ctx.stamp && m.last_commit_hash != info.last_commit_hash
+            }) {
+                let previous = if new_snapshot {
+                    models::module_version::get_by_module_id(conn, id)
+                        .into_iter()
+                        .filter(|v| v.id < *version_id)
+                        .max_by_key(|v| v.id)
+                        .map(|v| {
+                            models::module_security_warning::get_by_module_version_id(conn, &v.id)
+                        })
+                        .unwrap_or_default()
+                } else {
+                    stored
+                };
+                for w in previous.iter().filter(|w| {
+                    w.severity == SEVERITY_ERROR
+                        && !warnings
+                            .iter()
+                            .any(|n| n.code == w.code && n.xml_id == w.xml_id)
+                }) {
+                    let _ = system_event::register_security_fix(
+                        conn,
+                        &module.technical_name,
+                        &module.name,
+                        &odoo_ver_str,
+                        &w.code,
+                        w.xml_id.as_deref(),
+                        &before.last_commit_hash,
+                        &info.last_commit_hash,
+                    );
+                }
             }
             models::module_security_warning::replace_for_module(conn, id, version_id, warnings)
                 .unwrap();
@@ -1624,6 +1669,65 @@ mod tests {
             "new=false unchanged=true",
         ];
         assert_eq!(probes(conn), expect.map(|e| format!("m {e}")));
+    }
+
+    #[tokio::test]
+    async fn a_grave_finding_gone_with_a_new_commit_is_reported_as_a_fix() {
+        let f = crate::golden::Fixture::new("fix");
+        f.write(
+            "m/__manifest__.py",
+            "{'name': 'M', 'version': '18.0.1.0.0'}",
+        );
+        let user = r#"<odoo><record id="user_x" model="res.users"><field name="login">x</field><field name="password">x</field></record></odoo>"#;
+        f.write("m/data/users.xml", user);
+        f.commit("one");
+        let pool = f.db();
+        let conn = &mut pool.get().unwrap();
+        let defs = with_built_in(&HashMap::new());
+        let fixes = |conn: &mut SqliteConnection| {
+            crate::golden::snapshot(conn)
+                .lines()
+                .filter(|l| l.contains("Possible security fix"))
+                .count()
+        };
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        // Analyzed by other rules: not comparable, no event.
+        let stored =
+            models::module::get_by_technical_name_odoo_version_organization_name_repository_name(
+                conn, "m", &180, "org", "repo",
+            );
+        models::module::set_analysis_version(conn, &stored[0].id, analyzer::ANALYSIS_VERSION - 1)
+            .unwrap();
+        f.write("m/data/users.xml", "<odoo/>");
+        f.commit("two");
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        assert_eq!(fixes(conn), 0);
+        // Same rules: the finding is back, then fixed again.
+        f.write("m/data/users.xml", user);
+        f.commit("three");
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        f.write("m/data/users.xml", "<odoo/>");
+        f.commit("four");
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        assert_eq!(fixes(conn), 1);
+        // Fixed with a version bump: the new snapshot compares with the
+        // previous one, once; later commits compare with the new snapshot.
+        f.write("m/data/users.xml", user);
+        f.commit("five");
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        f.write(
+            "m/__manifest__.py",
+            "{'name': 'M', 'version': '18.0.1.0.1'}",
+        );
+        f.write("m/data/users.xml", "<odoo/>");
+        f.commit("six");
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        assert_eq!(fixes(conn), 2);
+        f.write("m/models.py", "x = 1\n");
+        f.commit("seven");
+        probe_run(&f, conn, &defs, &[DEFAULT]).await;
+        assert_eq!(fixes(conn), 2);
     }
 
     #[tokio::test]

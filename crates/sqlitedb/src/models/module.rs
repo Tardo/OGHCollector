@@ -1124,6 +1124,19 @@ pub fn get_repository_org_by_technical_names(
     conn: &mut SqliteConnection,
     modules: &[String],
 ) -> Vec<ModuleRepositoryInfo> {
+    get_last_seen_by_technical_names(conn, modules)
+        .into_iter()
+        .map(|(info, _)| info)
+        .collect()
+}
+
+/// The same newest row per technical_name, with its Odoo version: where and
+/// when the dependency resolver last saw a module it can't find at the
+/// requested version.
+pub fn get_last_seen_by_technical_names(
+    conn: &mut SqliteConnection,
+    modules: &[String],
+) -> Vec<(ModuleRepositoryInfo, i32)> {
     use crate::schema::{gh_organization, gh_repository};
     if modules.is_empty() {
         return vec![];
@@ -1139,18 +1152,24 @@ pub fn get_repository_org_by_technical_names(
             module::technical_name,
             gh_repository::name,
             gh_organization::name,
+            module::version_odoo,
         ))
-        .load::<(String, String, String)>(conn)
-        .expect("DB error in module::get_repository_org_by_technical_names");
+        .load::<(String, String, String, i32)>(conn)
+        .expect("DB error in module::get_last_seen_by_technical_names");
 
     let mut seen = std::collections::HashSet::new();
     rows.into_iter()
-        .filter(|(technical_name, _, _)| seen.insert(technical_name.clone()))
+        .filter(|(technical_name, _, _, _)| seen.insert(technical_name.clone()))
         .map(
-            |(technical_name, repository_name, organization)| ModuleRepositoryInfo {
-                technical_name,
-                repository_name,
-                organization,
+            |(technical_name, repository_name, organization, version_odoo)| {
+                (
+                    ModuleRepositoryInfo {
+                        technical_name,
+                        repository_name,
+                        organization,
+                    },
+                    version_odoo,
+                )
             },
         )
         .collect()
