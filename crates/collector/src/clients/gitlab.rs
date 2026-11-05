@@ -59,7 +59,7 @@ impl GitClient for GitlabClient {
         let res = self
             .request_json(
                 format!(
-                    "groups/{}/projects?sort=updated_desc&per_page={}&page={}&simple=true",
+                    "groups/{}/projects?order_by=last_activity_at&sort=desc&per_page={}&page={}&simple=true",
                     urlencoding::encode(org_name),
                     per_page,
                     page
