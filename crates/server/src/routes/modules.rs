@@ -14,7 +14,7 @@ use crate::utils::get_minijinja_context;
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models;
 
-use crate::workspace::AreaPool;
+use crate::workspace::OwnAreaPool;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ActivePullRequestInfo {
@@ -283,7 +283,7 @@ pub(crate) fn compute_modules_page_data(
 
 #[get("/modules")]
 pub async fn route(
-    pool: AreaPool,
+    pool: OwnAreaPool,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
@@ -313,7 +313,7 @@ pub async fn route(
 #[get("/modules/tab/{odoo_version}")]
 pub async fn route_tab(
     tmpl_env: MiniJinjaRenderer,
-    pool: AreaPool,
+    pool: OwnAreaPool,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let odoo_version = path.into_inner();

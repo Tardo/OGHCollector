@@ -24,7 +24,7 @@ use crate::utils::get_minijinja_context;
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
 
-use crate::workspace::AreaPool;
+use crate::workspace::OwnAreaPool;
 
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -378,7 +378,7 @@ fn compute_dashboard_data(
 
 #[get("/")]
 pub async fn route(
-    pool: AreaPool,
+    pool: OwnAreaPool,
     all: web::Data<Pool>,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,

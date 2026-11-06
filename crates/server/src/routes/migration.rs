@@ -29,7 +29,7 @@ use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::routes::doodba_tools::{get_pending_modules, MigrationPendingModuleInfo};
 use crate::routes::module::pick_compare_versions;
 use crate::utils::get_minijinja_context;
-use crate::workspace::AreaPool;
+use crate::workspace::OwnAreaPool;
 
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
@@ -409,7 +409,7 @@ pub struct RouteMigrationRequest {
 
 #[get("/migration")]
 pub async fn route(
-    pool: AreaPool,
+    pool: OwnAreaPool,
     all: web::Data<Pool>,
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
@@ -610,7 +610,7 @@ mod tests {
             diesel::sql_query(sql).execute(&mut write).unwrap();
         }
 
-        let ws = sqlitedb::new_workspace_read_pool(&db.path, 2, "oca");
+        let ws = sqlitedb::new_workspace_read_pool(&db.path, 2, "oca", false);
         let mut conn = ws.get().unwrap();
         let versions = module::get_odoo_versions(&mut conn);
         let d = super::compute_migration_data(

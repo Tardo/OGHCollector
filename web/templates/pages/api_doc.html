@@ -92,7 +92,7 @@
 
 <header class="page-header">
     <h1>REST API <span class="api-version">v1</span></h1>
-    <p class="page-header-desc">Read-only JSON endpoints exposing the same module, repository and search data as this site. No authentication, no API key &mdash; just curl.</p>
+    <p class="page-header-desc">Read-only JSON endpoints exposing the same module, repository and search data as this site. No API key &mdash; just curl (<a href="#api-auth">behind a proxy with auth?</a>).</p>
     {% if MCP_INFO_ENABLED %}
     <div class="page-header-actions">
         <a class="btn btn-sm btn-outline-secondary" href="/mcp">Using an LLM? See the MCP endpoint</a>
@@ -124,7 +124,24 @@
         <dt>Not found</dt>
         <dd><code>null</code> for a single object, <code>[]</code> for a list.</dd>
     </div>
+    <div>
+        <dt>Authentication</dt>
+        <dd>None of its own. Behind a proxy with HTTP Basic auth (e.g. Traefik <code>basicAuth</code>), <a href="#api-auth">add credentials</a> to every request.</dd>
+    </div>
 </dl>
+
+<div class="code-panel" id="api-auth">
+    <div class="code-panel-bar"><span>Behind Basic auth</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+    <pre><code># curl: -u builds the Authorization header; keep the password out of shell history
+curl -s -u 'user:password' '{{ REQ_BASE_URL }}/v1/module/web_responsive' | jq
+
+# or read it from ~/.netrc (machine HOST login user password pass), then:
+curl -s --netrc '{{ REQ_BASE_URL }}/v1/module/web_responsive' | jq
+
+# any HTTP client: send the header "Authorization: Basic base64(user:password)"
+curl -s -H "Authorization: Basic $(printf '%s' 'user:password' | base64)" '{{ REQ_BASE_URL }}/v1/module/web_responsive'</code></pre>
+</div>
+<p class="text-body-secondary small mt-2">Atom feeds and README badges are fetched by readers and by GitHub's image proxy, which can't authenticate: exempt those routes from the proxy's auth if you embed them.</p>
 
 <div class="api-layout">
     <nav class="api-toc" id="api-toc" aria-label="Endpoints">

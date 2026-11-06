@@ -4,7 +4,8 @@
 //! workspace's repositories/modules (`sqlitedb::new_workspace_read_pool`).
 //! Listing pages (dashboard, modules, search, atlas, committers, OSV...) take
 //! `AreaPool`; module pages, dependency closures, tools, feeds and badges keep
-//! `web::Data<Pool>` (everything), so a dependency on a module of another
+//! `web::Data<Pool>` (everything); `OwnAreaPool` (overview, modules, migration) drops the
+//! shared repositories too, leaving only the workspace's own, so a dependency on a module of another
 //! workspace still resolves and its page still opens.
 use actix_web::{dev::Payload, error::ErrorInternalServerError, web, FromRequest, HttpRequest};
 use cached::{proc_macro::cached, stores::TimedCache};
@@ -21,7 +22,7 @@ pub const COOKIE: &str = "workspace";
 pub struct Workspaces {
     db_path: String,
     global: Pool,
-    pools: Mutex<HashMap<String, Pool>>,
+    pools: Mutex<HashMap<(String, bool), Pool>>,
 }
 
 impl Workspaces {
@@ -37,19 +38,20 @@ impl Workspaces {
         names(&self.global)
     }
 
-    fn pool(&self, ws: Option<&str>) -> Pool {
+    fn pool(&self, ws: Option<&str>, own: bool) -> Pool {
         let Some(ws) = ws else {
             return self.global.clone();
         };
         self.pools
             .lock()
             .unwrap()
-            .entry(ws.to_string())
+            .entry((ws.to_string(), own))
             .or_insert_with(|| {
                 sqlitedb::new_workspace_read_pool(
                     &self.db_path,
                     *SERVER_CONFIG.get_db_pool_max_size(),
                     ws,
+                    own,
                 )
             })
             .clone()
@@ -77,13 +79,13 @@ pub fn current(req: &HttpRequest) -> Option<String> {
 /// Read pool of the visitor's workspace (every repository without one).
 pub struct AreaPool {
     pool: Pool,
-    workspace: Option<String>,
+    key: String,
 }
 
 impl AreaPool {
     /// For cache keys of data read through this pool.
     pub fn key(&self) -> &str {
-        self.workspace.as_deref().unwrap_or("")
+        &self.key
     }
 }
 
@@ -105,8 +107,39 @@ impl FromRequest for AreaPool {
         };
         let workspace = current(req);
         ready(Ok(AreaPool {
-            pool: workspaces.pool(workspace.as_deref()),
-            workspace,
+            pool: workspaces.pool(workspace.as_deref(), false),
+            key: workspace.unwrap_or_default(),
         }))
+    }
+}
+
+/// Like `AreaPool`, but inside a workspace only its own repositories, not the
+/// shared ones (modules and migration: "what is mine"). No workspace = all.
+pub struct OwnAreaPool(AreaPool);
+
+impl Deref for OwnAreaPool {
+    type Target = AreaPool;
+    fn deref(&self) -> &AreaPool {
+        &self.0
+    }
+}
+
+impl FromRequest for OwnAreaPool {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        let Some(workspaces) = req.app_data::<web::Data<Workspaces>>() else {
+            return ready(Err(ErrorInternalServerError("Workspaces not configured")));
+        };
+        let workspace = current(req);
+        // Own-only views differ from the shared ones: distinct cache key.
+        let key = workspace
+            .as_ref()
+            .map_or(String::new(), |w| format!("{w}\0own"));
+        ready(Ok(OwnAreaPool(AreaPool {
+            pool: workspaces.pool(workspace.as_deref(), true),
+            key,
+        })))
     }
 }

@@ -18,7 +18,7 @@
     <p class="page-header-desc">
         Give an LLM client the module search, dependency-graph, code-analysis and maintenance data of this site
         through the <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">Model Context Protocol</a>.
-        Read-only, no API key.
+        Read-only, no API key of its own (<a href="#mcp-auth">behind a proxy with auth? see below</a>).
     </p>
     <div class="page-header-actions">
         <a class="btn btn-sm btn-outline-secondary" href="/api">Plain HTTP? See the REST API</a>
@@ -151,6 +151,90 @@
             </p>
         </div>
 
+    </div>
+</div>
+
+<div class="section-heading">
+    <h2 id="mcp-auth">Behind authentication</h2>
+    <p>If this endpoint sits behind a reverse proxy with HTTP Basic auth (e.g. Traefik <code>basicAuth</code>), send an <code>Authorization</code> header.</p>
+</div>
+<div class="panel mcp-clients">
+    <div class="panel-body">
+        <p class="mcp-step">Build the header value once and keep it in an environment variable, not in files you commit:</p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><span>Terminal</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>export OGH_MCP_AUTH="Basic $(printf '%s' 'user:password' | base64)"</code></pre>
+        </div>
+
+        <p class="mcp-step"><strong>Claude Code</strong></p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><span>Terminal</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>claude mcp add --transport http oghcollector {{ MCP_URL }} \
+  --header "Authorization: $OGH_MCP_AUTH"</code></pre>
+        </div>
+        <p class="mcp-note">Or in <code>.mcp.json</code>; <code>${OGH_MCP_AUTH}</code> is expanded from each user's environment, so the secret stays out of git:</p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><code>.mcp.json</code><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>{
+  "mcpServers": {
+    "oghcollector": {
+      "type": "http",
+      "url": "{{ MCP_URL }}",
+      "headers": { "Authorization": "${OGH_MCP_AUTH}" }
+    }
+  }
+}</code></pre>
+        </div>
+
+        <p class="mcp-step"><strong>Cursor</strong> &mdash; <code>mcp.json</code>:</p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><code>mcp.json</code><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>{
+  "mcpServers": {
+    "oghcollector": {
+      "url": "{{ MCP_URL }}",
+      "headers": { "Authorization": "${env:OGH_MCP_AUTH}" }
+    }
+  }
+}</code></pre>
+        </div>
+
+        <p class="mcp-step"><strong>VS Code</strong> &mdash; <code>mcp.json</code>; VS Code asks for the value once and stores it:</p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><code>mcp.json</code><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>{
+  "inputs": [
+    { "type": "promptString", "id": "ogh-auth", "description": "Authorization header (Basic ...)", "password": true }
+  ],
+  "servers": {
+    "oghcollector": {
+      "type": "http",
+      "url": "{{ MCP_URL }}",
+      "headers": { "Authorization": "${input:ogh-auth}" }
+    }
+  }
+}</code></pre>
+        </div>
+
+        <p class="mcp-step"><strong>Other clients / local</strong> &mdash; pass the header to <code>mcp-remote</code>. The value goes through <code>env</code> so the space in <code>Basic &hellip;</code> doesn't break the argument list:</p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><span>Client config (stdio)</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>{
+  "mcpServers": {
+    "oghcollector": {
+      "command": "npx",
+      "args": ["mcp-remote", "{{ MCP_URL }}", "--header", "Authorization:${OGH_MCP_AUTH}"],
+      "env": { "OGH_MCP_AUTH": "Basic dXNlcjpwYXNzd29yZA==" }
+    }
+  }
+}</code></pre>
+        </div>
+
+        <p class="mcp-callout">
+            Claude Desktop / claude.ai custom connectors can't send a Basic auth header (they support no auth or OAuth only).
+            Use the <code>mcp-remote</code> config above with Claude Desktop, or exempt the <code>/mcp</code> route from
+            the proxy's auth and restrict it another way (IP allowlist).
+        </p>
     </div>
 </div>
 

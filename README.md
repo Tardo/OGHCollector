@@ -542,6 +542,9 @@ fine; entries with the same `source` share the union). Names are letters, digits
 - Picking one limits the listings to that workspace's repositories **plus every repository without
   `workspaces`** (OCA, Odoo...): dashboard, modules, search (including semantic search), atlas,
   committers and committer pages, OSV, localization and the `/v1/search*` and `/v1/repository` API.
+- Exception: **overview, modules and migration** list *only* the workspace's own repositories (the shared
+  ones are left out), so you can keep what is yours apart from OCA/Odoo. Migration still judges
+  "exists at the other version" against every workspace.
 - Module pages, dependency trees, license review, Doodba tools, badges, feeds, `/logs` and the
   sitemap always see everything, so a dependency on another workspace's module still resolves and
   its page opens. The MCP endpoint isn't filtered either.

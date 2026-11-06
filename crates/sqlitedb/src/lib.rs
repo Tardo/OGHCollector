@@ -40,7 +40,7 @@ impl CustomizeConnection<SqliteConnection, R2d2Error> for WriteCustomizer {
 // Customizes connections for read-only access, optionally scoped to one
 // workspace (see `new_workspace_read_pool`).
 #[derive(Debug)]
-struct ReadCustomizer(Option<String>);
+struct ReadCustomizer(Option<(String, bool)>);
 
 impl CustomizeConnection<SqliteConnection, R2d2Error> for ReadCustomizer {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), R2d2Error> {
@@ -48,8 +48,8 @@ impl CustomizeConnection<SqliteConnection, R2d2Error> for ReadCustomizer {
         conn.batch_execute("PRAGMA busy_timeout = 5000;")
             .map_err(R2d2Error::QueryError)?;
         // TEMP objects can't be created once query_only is on.
-        if let Some(ws) = &self.0 {
-            conn.batch_execute(&workspace_views(ws))
+        if let Some((ws, own)) = &self.0 {
+            conn.batch_execute(&workspace_views(ws, *own))
                 .map_err(R2d2Error::QueryError)?;
         }
         conn.batch_execute("PRAGMA query_only = ON;")
@@ -64,13 +64,18 @@ impl CustomizeConnection<SqliteConnection, R2d2Error> for ReadCustomizer {
 /// Queries that must see everything (dependency closures across workspaces)
 /// use the plain read pool instead. A repository without
 /// `gh_repository_workspace` rows is in every workspace.
-fn workspace_views(ws: &str) -> String {
+fn workspace_views(ws: &str, own: bool) -> String {
     let ws = ws.replace('\'', "''");
+    // `own`: only repositories explicitly assigned to `ws`, not the shared ones.
+    let shared = if own {
+        ""
+    } else {
+        "NOT EXISTS (SELECT 1 FROM main.gh_repository_workspace AS w \
+                           WHERE w.gh_repository_id = r.id) OR "
+    };
     format!(
         "CREATE TEMP VIEW gh_repository AS SELECT * FROM main.gh_repository AS r \
-         WHERE NOT EXISTS (SELECT 1 FROM main.gh_repository_workspace AS w \
-                           WHERE w.gh_repository_id = r.id) \
-            OR EXISTS (SELECT 1 FROM main.gh_repository_workspace AS w \
+         WHERE {shared}EXISTS (SELECT 1 FROM main.gh_repository_workspace AS w \
                        WHERE w.gh_repository_id = r.id AND w.workspace = '{ws}'); \
          CREATE TEMP VIEW gh_organization AS SELECT * FROM main.gh_organization \
          WHERE id IN (SELECT gh_organization_id FROM temp.gh_repository); \
@@ -110,11 +115,13 @@ pub fn new_read_pool(db_path: &str, max_size: u32) -> Pool {
 
 /// Read pool whose connections only see the repositories (and their
 /// organizations and modules) of workspace `ws`: see `workspace_views`.
-pub fn new_workspace_read_pool(db_path: &str, max_size: u32, ws: &str) -> Pool {
+///
+/// `own`: leave out the repositories shared by every workspace (OCA, Odoo...).
+pub fn new_workspace_read_pool(db_path: &str, max_size: u32, ws: &str, own: bool) -> Pool {
     let manager = ConnectionManager::<SqliteConnection>::new(db_path);
     Pool::builder()
         .max_size(max_size)
-        .connection_customizer(Box::new(ReadCustomizer(Some(ws.to_string()))))
+        .connection_customizer(Box::new(ReadCustomizer(Some((ws.to_string(), own)))))
         .build(manager)
         .unwrap_or_else(|e| panic!("Failed to create read pool for {db_path} ({ws}): {e}"))
 }
@@ -177,10 +184,15 @@ mod tests {
             names.sort();
             names
         };
-        let x = super::new_workspace_read_pool(db, 1, "x");
+        let x = super::new_workspace_read_pool(db, 1, "x", false);
         assert_eq!(names(&x), ["mod_a", "mod_c"]);
-        let y = super::new_workspace_read_pool(db, 1, "y");
+        let y = super::new_workspace_read_pool(db, 1, "y", false);
         assert_eq!(names(&y), ["mod_b", "mod_c"]);
+        // `own`: the repository without workspaces (mod_c) is left out.
+        assert_eq!(
+            names(&super::new_workspace_read_pool(db, 1, "x", true)),
+            ["mod_a"]
+        );
         let global = super::new_read_pool(db, 1);
         assert_eq!(names(&global), ["mod_a", "mod_b", "mod_c"]);
         // The plain pool (module pages, closures) still resolves the dependency
