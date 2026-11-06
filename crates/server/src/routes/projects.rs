@@ -112,6 +112,63 @@ struct FleetRow {
     exposed: usize,
     lint_behind: Vec<(String, String, String)>,
     last_commit: Option<String>,
+    /// Next indexed Odoo version and how many of the collected addons are
+    /// already there / have a migration PR (`ready_tracked` = collected ones).
+    next: Option<String>,
+    ready: usize,
+    in_pr: usize,
+    ready_tracked: usize,
+    /// What the administrator should do here, worst first.
+    issues: Vec<Issue>,
+    score: i32,
+    /// Space-separated problem tags, what the filter chips match.
+    flags: String,
+}
+
+#[derive(Serialize, Clone)]
+struct Issue {
+    severity: &'static str,
+    text: String,
+}
+
+/// One patch (PR/MR or branch) carried by projects, for the whole fleet.
+#[derive(Serialize)]
+struct FleetPatch {
+    repo: String,
+    git_ref: String,
+    url: Option<String>,
+    state: Option<String>,
+    projects: Vec<ProjectRef>,
+}
+
+/// (organization, repository, Odoo version) of a project.
+type ProjectRef = (String, String, String);
+
+/// A repos.yaml entry that two projects of one Odoo version configure differently.
+#[derive(Serialize)]
+struct RepoDrift {
+    version: String,
+    repo: String,
+    variants: Vec<(String, Vec<ProjectRef>)>,
+}
+
+/// An addon several projects enable.
+#[derive(Serialize)]
+struct SharedAddonView {
+    repo: String,
+    technical_name: String,
+    version: String,
+    projects: Vec<ProjectRef>,
+}
+
+/// One advisory with every project that pins the affected package.
+#[derive(Serialize)]
+struct FleetAdvisory {
+    package: String,
+    id: String,
+    fixed_in: String,
+    summary: String,
+    projects: Vec<(String, String, String, String)>,
 }
 
 #[derive(Serialize)]
@@ -140,10 +197,45 @@ pub async fn route(
     req: HttpRequest,
 ) -> Result<impl Responder> {
     // The lint baseline is the whole fleet's, as on the project page.
-    let (rows, newest) = web::block(move || {
+    let (rows, newest, readiness, shared) = web::block(move || {
         let rows = doodba_project::list(&mut pool.get().unwrap());
-        let newest = newest_revs(&doodba_project::list(&mut all.get().unwrap()));
-        (rows, newest)
+        let mut conn = all.get().unwrap();
+        let newest = newest_revs(&doodba_project::list(&mut conn));
+        let versions = models::module::get_odoo_versions(&mut conn);
+        let shared = doodba_project::all_addons(&mut pool.get().unwrap());
+        // (next version, in next, with a migration PR, collected addons)
+        let readiness: Vec<(Option<i32>, usize, usize, usize)> = rows
+            .iter()
+            .map(|r| {
+                let p = &r.project;
+                let next = versions
+                    .iter()
+                    .copied()
+                    .filter(|v| *v > p.version_odoo)
+                    .min();
+                let Some(n) = next else {
+                    return (None, 0, 0, 0);
+                };
+                let addons =
+                    doodba_project::addons(&mut conn, p.gh_repository_id, p.version_odoo, next);
+                let tracked: Vec<_> = addons
+                    .iter()
+                    .filter(|a| a.technical_name != "*" && a.org_name.is_some())
+                    .collect();
+                let missing: Vec<String> = tracked
+                    .iter()
+                    .filter(|a| a.in_next == 0)
+                    .map(|a| a.technical_name.clone())
+                    .collect();
+                let pending = get_pending_modules(&mut conn, &missing, &(n as u8));
+                let in_pr = missing
+                    .iter()
+                    .filter(|m| pending.iter().any(|pr| &pr.technical_name == *m))
+                    .count();
+                (next, tracked.len() - missing.len(), in_pr, tracked.len())
+            })
+            .collect();
+        (rows, newest, readiness, shared)
     })
     .await?;
     let top_behind = rows
@@ -154,10 +246,82 @@ pub async fn route(
 
     let mut fleet: Vec<FleetRow> = rows
         .iter()
-        .map(|r| {
+        .zip(readiness)
+        .map(|(r, (next, ready, in_pr, ready_tracked))| {
             let behind = r.project.template_behind;
             let summary = r.summary();
+            let lint = lint_behind(r, &newest);
+            let mut issues = Vec::new();
+            let mut flags = Vec::new();
+            let mut score = 0;
+            let elsewhere = r.exposed_elsewhere().len();
+            if elsewhere > 0 {
+                issues.push(Issue {
+                    severity: "danger",
+                    text: format!(
+                        "Credentials written outside repos.yaml in {elsewhere} place{}: move them to secrets",
+                        if elsewhere == 1 { "" } else { "s" }
+                    ),
+                });
+                flags.push("credentials");
+                score += 100;
+            } else if summary.exposed_credentials > 0 {
+                issues.push(Issue {
+                    severity: "info",
+                    text: "Token in repos.yaml (usual for a shared read token)".to_string(),
+                });
+            }
+            if summary.advisories > 0 {
+                issues.push(Issue {
+                    severity: "danger",
+                    text: format!(
+                        "{} PyPI advisories on pinned pip dependencies: bump the pins",
+                        summary.advisories
+                    ),
+                });
+                flags.push("advisories");
+                score += 50 + summary.advisories.min(20) as i32;
+            }
+            if summary.patches_done > 0 {
+                issues.push(Issue {
+                    severity: "warn",
+                    text: format!(
+                        "{} patch{} merged or closed upstream: drop from repos.yaml",
+                        summary.patches_done,
+                        if summary.patches_done == 1 { "" } else { "es" }
+                    ),
+                });
+                flags.push("patches-done");
+                score += 30;
+            }
+            if let Some(b) = behind.filter(|b| *b > 0) {
+                issues.push(Issue {
+                    severity: "warn",
+                    text: format!("{b} commits behind the template: copier update"),
+                });
+                flags.push("behind");
+                score += 20;
+            }
+            if !lint.is_empty() {
+                issues.push(Issue {
+                    severity: "info",
+                    text: format!(
+                        "{} lint hook{} behind the fleet's newest",
+                        lint.len(),
+                        if lint.len() == 1 { "" } else { "s" }
+                    ),
+                });
+                flags.push("lint");
+                score += 10;
+            }
             FleetRow {
+                next: next.map(version_str),
+                ready,
+                in_pr,
+                ready_tracked,
+                issues,
+                score,
+                flags: flags.join(" "),
                 org_name: r.org_name.clone(),
                 repository: r.repository.clone(),
                 version: version_str(r.project.version_odoo),
@@ -173,14 +337,147 @@ pub async fn route(
                 patches: summary.patches,
                 patches_done: summary.patches_done,
                 advisories: summary.advisories,
-                exposed: summary.exposed_credentials,
-                lint_behind: lint_behind(r, &newest),
+                exposed: r.exposed_elsewhere().len(),
+                lint_behind: lint,
                 last_commit: day(Some(&r.project.last_commit_date)),
             }
         })
         .collect();
     // Most template work first; unknown drift last.
     fleet.sort_by_key(|f| std::cmp::Reverse(f.behind.unwrap_or(-1)));
+
+    let mut queue: Vec<&FleetRow> = fleet.iter().filter(|f| f.score > 0).collect();
+    queue.sort_by_key(|f| std::cmp::Reverse(f.score));
+    queue.truncate(10);
+
+    let mut patch_map: BTreeMap<(String, String), FleetPatch> = BTreeMap::new();
+    let mut adv_map: BTreeMap<(String, String), FleetAdvisory> = BTreeMap::new();
+    for r in &rows {
+        let who = |extra: String| {
+            (
+                r.org_name.clone(),
+                r.repository.clone(),
+                version_str(r.project.version_odoo),
+                extra,
+            )
+        };
+        for repo in r.repos() {
+            for p in &repo.patches {
+                let remote = repo.remotes.get(&p.remote);
+                let key = (
+                    remote
+                        .map(|u| strip_credentials_url(u))
+                        .unwrap_or_else(|| p.remote.clone()),
+                    p.git_ref.clone(),
+                );
+                let e = patch_map.entry(key.clone()).or_insert_with(|| FleetPatch {
+                    repo: format!(
+                        "{} @ {}",
+                        repo.path.rsplit('/').next().unwrap_or(&repo.path),
+                        key.0
+                    ),
+                    git_ref: p.git_ref.clone(),
+                    url: remote.and_then(|u| patch_url(u, p)),
+                    state: p.state.clone(),
+                    projects: Vec::new(),
+                });
+                // The state is per fetch; keep the most decisive one.
+                if e.state.is_none() || p.is_done() {
+                    e.state = p.state.clone();
+                }
+                let w = who(String::new());
+                e.projects.push((w.0, w.1, w.2));
+            }
+        }
+        for a in r.advisories() {
+            let w = who(a.version.clone());
+            adv_map
+                .entry((a.package.clone(), a.id.clone()))
+                .or_insert_with(|| FleetAdvisory {
+                    package: a.package.clone(),
+                    id: a.id.clone(),
+                    fixed_in: a.fixed_in.clone(),
+                    summary: a.summary.clone(),
+                    projects: Vec::new(),
+                })
+                .projects
+                .push(w);
+        }
+    }
+    // Same repos.yaml entry, same Odoo version, different target or patches.
+    let mut drift_map: BTreeMap<(i32, String), BTreeMap<String, Vec<ProjectRef>>> = BTreeMap::new();
+    for r in &rows {
+        for repo in r.repos() {
+            let mut refs: Vec<&str> = repo.patches.iter().map(|p| p.git_ref.as_str()).collect();
+            refs.sort();
+            let sig = format!(
+                "{}{}",
+                repo.target.as_deref().unwrap_or("default branch"),
+                if refs.is_empty() {
+                    String::new()
+                } else {
+                    format!(" + {}", refs.join(", "))
+                }
+            );
+            drift_map
+                .entry((r.project.version_odoo, repo.path.clone()))
+                .or_default()
+                .entry(sig)
+                .or_default()
+                .push((
+                    r.org_name.clone(),
+                    r.repository.clone(),
+                    version_str(r.project.version_odoo),
+                ));
+        }
+    }
+    let mut repo_drift: Vec<RepoDrift> = drift_map
+        .into_iter()
+        .filter(|(_, v)| v.len() > 1)
+        .map(|((v, repo), variants)| {
+            let mut variants: Vec<_> = variants.into_iter().collect();
+            variants.sort_by_key(|(_, p)| std::cmp::Reverse(p.len()));
+            RepoDrift {
+                version: version_str(v),
+                repo,
+                variants,
+            }
+        })
+        .collect();
+    repo_drift.sort_by(|a, b| {
+        (std::cmp::Reverse(rev_key(&a.version)), &a.repo)
+            .cmp(&(std::cmp::Reverse(rev_key(&b.version)), &b.repo))
+    });
+
+    let mut shared_map: BTreeMap<(i32, String, String), Vec<ProjectRef>> = BTreeMap::new();
+    for a in shared {
+        shared_map
+            .entry((a.version_odoo, a.repo, a.technical_name))
+            .or_default()
+            .push((a.org_name, a.repository, version_str(a.version_odoo)));
+    }
+    let mut shared_addons: Vec<SharedAddonView> = shared_map
+        .into_iter()
+        .filter(|(_, p)| p.len() > 1)
+        .map(|((v, repo, technical_name), projects)| SharedAddonView {
+            repo,
+            technical_name,
+            version: version_str(v),
+            projects,
+        })
+        .collect();
+    shared_addons.sort_by_key(|a| std::cmp::Reverse(a.projects.len()));
+    shared_addons.truncate(50);
+
+    let mut fleet_patches: Vec<FleetPatch> = patch_map.into_values().collect();
+    fleet_patches.sort_by_key(|p| {
+        (
+            std::cmp::Reverse(matches!(p.state.as_deref(), Some("merged" | "closed"))),
+            std::cmp::Reverse(p.projects.len()),
+        )
+    });
+    let mut fleet_advisories: Vec<FleetAdvisory> = adv_map.into_values().collect();
+    fleet_advisories.sort_by_key(|a| std::cmp::Reverse(a.projects.len()));
 
     let mut templates: BTreeMap<(String, String), TemplateVersion> = BTreeMap::new();
     for r in &rows {
@@ -252,8 +549,20 @@ pub async fn route(
                 advised => fleet.iter().filter(|f| f.advisories > 0).count(),
                 exposed => fleet.iter().filter(|f| f.exposed > 0).count(),
                 lint_outdated => fleet.iter().filter(|f| !f.lint_behind.is_empty()).count(),
+                by_version => {
+                    let mut counts = std::collections::BTreeMap::new();
+                    for f in &fleet {
+                        counts.entry(rev_key(&f.version)).or_insert((f.version.clone(), 0)).1 += 1;
+                    }
+                    counts.into_values().rev().collect::<Vec<_>>()
+                },
                 top_projects => templates.iter().map(|t| t.projects).max().unwrap_or(0),
                 top_lint => lint_revs.iter().map(|l| l.projects).max().unwrap_or(0),
+                queue,
+                repo_drift,
+                shared_addons,
+                fleet_patches,
+                fleet_advisories,
                 fleet,
                 templates,
                 lint_revs,
@@ -278,6 +587,17 @@ struct AddonView {
     org_name: Option<String>,
     in_next: bool,
     pr: Option<crate::routes::doodba_tools::MigrationPendingModuleInfo>,
+}
+
+/// A remote without the `user:token@` part, so it can be shown and grouped on.
+fn strip_credentials_url(url: &str) -> String {
+    match url.split_once("://") {
+        Some((scheme, rest)) => format!(
+            "{scheme}://{}",
+            rest.rsplit_once('@').map_or(rest, |(_, h)| h)
+        ),
+        None => url.to_string(),
+    }
 }
 
 /// Web link of a PR/MR merged as a patch, from its remote.
@@ -400,10 +720,11 @@ pub async fn route_project(
                 patches_done => patches.iter().filter(|p| matches!(p.state.as_deref(), Some("merged" | "closed"))).count(),
                 advisories => row.advisories(),
                 // "<file> <host>"
-                exposed => row.exposed().iter().map(|e| {
+                exposed => row.exposed_elsewhere().iter().map(|e| {
                     let (file, host) = e.split_once(' ').unwrap_or((e, ""));
                     (file.to_string(), host.to_string())
                 }).collect::<Vec<_>>(),
+                repos_token => row.exposed().len() > row.exposed_elsewhere().len(),
                 p => row,
                 repos,
                 patches,
@@ -453,4 +774,49 @@ mod tests {
             None
         );
     }
+}
+
+fn csv_field(v: &str) -> String {
+    // Quote, and neutralise spreadsheet formulas.
+    let v = if v.starts_with(['=', '+', '-', '@']) {
+        format!("'{v}")
+    } else {
+        v.to_string()
+    };
+    format!("\"{}\"", v.replace('"', "\"\""))
+}
+
+/// The fleet as CSV, one project per line, for spreadsheets and scripts.
+#[get("/projects.csv")]
+pub async fn route_csv(pool: AreaPool) -> Result<impl Responder> {
+    let rows = web::block(move || doodba_project::list(&mut pool.get().unwrap())).await?;
+    let mut out = String::from(
+        "organization,repository,odoo_version,template_commit,template_behind,addons,patches,patches_done,advisories,exposed_credentials,last_commit_date\n",
+    );
+    for r in &rows {
+        let s = r.summary();
+        let line = [
+            csv_field(&r.org_name),
+            csv_field(&r.repository),
+            csv_field(&version_str(r.project.version_odoo)),
+            csv_field(r.project.template_commit.as_deref().unwrap_or("")),
+            s.template_behind.map_or(String::new(), |b| b.to_string()),
+            s.addons.to_string(),
+            s.patches.to_string(),
+            s.patches_done.to_string(),
+            s.advisories.to_string(),
+            s.exposed_credentials.to_string(),
+            csv_field(&r.project.last_commit_date),
+        ]
+        .join(",");
+        out.push_str(&line);
+        out.push('\n');
+    }
+    Ok(actix_web::HttpResponse::Ok()
+        .content_type("text/csv; charset=utf-8")
+        .insert_header((
+            "Content-Disposition",
+            "attachment; filename=\"doodba-projects.csv\"",
+        ))
+        .body(out))
 }

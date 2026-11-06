@@ -16,7 +16,10 @@
     <p class="page-header-desc">Doodba project of <strong>{{ p.org_name }}</strong>, branch <code>{{ version }}</code>{% if last_commit %}, last commit {{ last_commit }}{% endif %}.</p>
     {% if exposed %}
     <p class="page-header-desc prj-alert"><span class="material-icons" aria-hidden="true">key</span>
-        Credentials written in {% for file, host in exposed %}<code>{{ file }}</code> (for {{ host }}){{ ', ' if not loop.last }}{% endfor %}. Rotate them: anyone who can read the repository has them. git-aggregator expands <code>$VARIABLES</code> in repos.yaml (that's how <code>$ODOO_VERSION</code> works), so a token can come from the build environment instead.</p>
+        Credentials written in {% for file, host in exposed %}<code>{{ file }}</code> (for {{ host }}){{ ', ' if not loop.last }}{% endfor %}. Outside repos.yaml: move them to secrets and rotate them, anyone who can read the repository has them. git-aggregator expands <code>$VARIABLES</code> in repos.yaml (that's how <code>$ODOO_VERSION</code> works), so a token can come from the build environment instead.</p>
+    {% endif %}
+    {% if repos_token %}
+    <p class="page-header-desc"><span class="material-icons" aria-hidden="true">key</span> Token in <code>repos.yaml</code>: usual for a read-only token shared by the team; check it can only read.</p>
     {% endif %}
     <div class="page-header-actions">
         <a class="btn btn-outline-secondary btn-sm" href="{{ repo_url }}/tree/{{ version | urlencode }}" target="_blank" rel="noopener"><span class="material-icons" aria-hidden="true">code</span> Repository</a>

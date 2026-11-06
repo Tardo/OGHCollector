@@ -43,7 +43,7 @@
     <div class="fact{% if exposed %} is-danger{% endif %}">
         <span class="material-icons" aria-hidden="true">key</span>
         <div class="fact-headline">{{ exposed | num }}</div>
-        <div class="fact-caption">project{{ 's' if exposed != 1 }} with credentials written in their files (repos.yaml, pip.txt...)</div>
+        <div class="fact-caption">project{{ 's' if exposed != 1 }} with credentials written outside repos.yaml (pip.txt...); a token in repos.yaml is usual</div>
     </div>
     <div class="fact">
         <span class="material-icons" aria-hidden="true">rule</span>
@@ -52,40 +52,75 @@
     </div>
 </section>
 
+{% if queue %}
+<section aria-labelledby="queue-title">
+    <div class="section-heading">
+        <h2 id="queue-title">Needs attention</h2>
+    </div>
+    <p class="dash-caption">Projects with the most pressing work first: credentials outside repos.yaml, then advisories, patches to drop, template updates and lint.</p>
+    <ul class="prj-queue">
+        {% for f in queue %}
+        <li>
+            <a class="prj-queue-name" href="/project/{{ f.org_name | urlencode }}/{{ f.repository | urlencode }}/{{ f.version | urlencode }}"><span class="dash-meta">{{ f.org_name }}/</span>{{ f.repository }} <span class="dash-meta">{{ f.version }}</span></a>
+            <ul class="prj-issues">
+                {% for i in f.issues %}<li><span class="dash-flag{{ ' is-danger' if i.severity == 'danger' }}">{{ i.text }}</span></li>{% endfor %}
+            </ul>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
 <section aria-labelledby="projects-title">
     <div class="section-heading">
         <h2 id="projects-title">Projects</h2>
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="/projects.csv" download>Export CSV</a>
     </div>
     <div class="prj-toolbar">
         <p class="dash-caption">Furthest behind the template first. The square is shaded against the furthest behind.</p>
         <input type="search" class="form-control form-control-sm" id="projects_search" placeholder="Filter by project or version" aria-label="Filter projects" autocomplete="off">
     </div>
+    <ul class="nav nav-pills mb-3" id="projects-versions" aria-label="Filter by Odoo version">
+        <li class="nav-item"><button type="button" class="nav-link active" data-version="">All <span class="badge text-bg-secondary">{{ fleet | length }}</span></button></li>
+        {% for v, n in by_version %}
+        <li class="nav-item"><button type="button" class="nav-link" data-version="{{ v }}">{{ v }} <span class="badge text-bg-secondary">{{ n }}</span></button></li>
+        {% endfor %}
+    </ul>
+    <div class="prj-chips" id="projects-flags" role="group" aria-label="Filter by problem">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-flag="credentials" aria-pressed="false">Credentials</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-flag="advisories" aria-pressed="false">Advisories</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-flag="patches-done" aria-pressed="false">Patches to drop</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-flag="behind" aria-pressed="false">Behind template</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-flag="lint" aria-pressed="false">Lint behind</button>
+    </div>
     <table class="dash-rank prj-fleet" id="projects-table">
         <thead>
             <tr>
-                <th>Project</th>
-                <th>Odoo</th>
+                <th data-sort="name">Project</th>
+                <th data-sort="version">Odoo</th>
                 <th class="d-none d-md-table-cell">Template</th>
-                <th class="dash-num">Behind</th>
+                <th class="dash-num" data-sort="behind">Behind</th>
                 <th class="dash-num d-none d-sm-table-cell">Postgres</th>
-                <th class="dash-num d-none d-lg-table-cell">Addons</th>
-                <th class="dash-num">Patches</th>
-                <th class="d-none d-sm-table-cell">Security</th>
+                <th class="dash-num d-none d-lg-table-cell" data-sort="addons">Addons</th>
+                <th class="dash-num d-none d-lg-table-cell" data-sort="ready" title="Collected addons already in the next Odoo version">Next version</th>
+                <th class="dash-num" data-sort="patches">Patches</th>
+                <th class="d-none d-sm-table-cell" data-sort="score">Security</th>
                 <th class="d-none d-lg-table-cell">Lint</th>
-                <th class="d-none d-md-table-cell">Last commit</th>
+                <th class="d-none d-md-table-cell" data-sort="last">Last commit</th>
             </tr>
         </thead>
         <tbody>
             {% for f in fleet %}
-            <tr data-search="{{ (f.org_name ~ '/' ~ f.repository ~ ' ' ~ f.version) | lower }}">
+            <tr data-version="{{ f.version }}" data-flags="{{ f.flags }}" data-name="{{ (f.org_name ~ '/' ~ f.repository) | lower }}" data-behind="{{ f.behind if f.behind is not none else -1 }}" data-addons="{{ f.addons }}" data-ready="{{ (f.ready * 1000 // f.ready_tracked) if f.ready_tracked else -1 }}" data-patches="{{ f.patches }}" data-score="{{ f.score }}" data-last="{{ f.last_commit or '' }}" data-search="{{ (f.org_name ~ '/' ~ f.repository ~ ' ' ~ f.version) | lower }}">
                 <td class="dash-name"><a href="/project/{{ f.org_name | urlencode }}/{{ f.repository | urlencode }}/{{ f.version | urlencode }}" title="{{ f.org_name }}/{{ f.repository }}"><span class="dash-meta">{{ f.org_name }}/</span>{{ f.repository }}</a></td>
                 <td>{{ f.version }}</td>
                 <td class="d-none d-md-table-cell"><code>{{ f.template_commit or '-' }}</code>{% if f.template_date %} <span class="dash-meta">{{ f.template_date }}</span>{% endif %}</td>
                 <td class="dash-num prj-behind">{% if f.behind is none %}<span class="dash-meta" title="{{ f.template_commit and 'The template has no commit ' ~ f.template_commit or 'No template recorded' }}">?</span>{% else %}{{ f.behind | num }} <span class="heatmap-cell" data-l="{{ f.level }}" aria-hidden="true"></span>{% endif %}</td>
                 <td class="dash-num d-none d-sm-table-cell">{{ f.postgres or '-' }}</td>
                 <td class="dash-num d-none d-lg-table-cell">{{ f.addons | num }}</td>
+                <td class="dash-num d-none d-lg-table-cell">{% if f.next and f.ready_tracked %}<span title="{{ f.ready }} of {{ f.ready_tracked }} collected addons exist in {{ f.next }}{% if f.in_pr %}; {{ f.in_pr }} more have a migration PR{% endif %}">{{ f.ready }}/{{ f.ready_tracked }}{% if f.in_pr %} <span class="dash-meta">+{{ f.in_pr }} PR</span>{% endif %}</span> <span class="dash-meta">&rarr; {{ f.next }}</span>{% else %}<span class="dash-meta">-</span>{% endif %}</td>
                 <td class="dash-num">{% if f.patches %}<span class="dash-flag">{{ f.patches }}</span>{% if f.patches_done %} <span class="dash-meta" title="Their PR/MR is merged or closed upstream">{{ f.patches_done }} done</span>{% endif %}{% else %}<span class="dash-meta">0</span>{% endif %}</td>
-                <td class="d-none d-sm-table-cell">{% if f.exposed %}<span class="dash-flag is-danger" title="Credentials written in its project files">credentials</span> {% endif %}{% if f.advisories %}<span class="dash-flag" title="PyPI advisories on its pinned pip dependencies">{{ f.advisories }} advisories</span>{% endif %}{% if not f.exposed and not f.advisories %}<span class="dash-meta">-</span>{% endif %}</td>
+                <td class="d-none d-sm-table-cell">{% if f.exposed %}<span class="dash-flag is-danger" title="Credentials written outside repos.yaml">credentials</span> {% endif %}{% if f.advisories %}<span class="dash-flag" title="PyPI advisories on its pinned pip dependencies">{{ f.advisories }} advisories</span>{% endif %}{% if not f.exposed and not f.advisories %}<span class="dash-meta">-</span>{% endif %}</td>
                 <td class="d-none d-lg-table-cell">{% if f.lint_behind %}<span class="dash-flag" title="{% for hook, rev, newest in f.lint_behind %}{{ hook }} {{ rev }}, newest {{ newest }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">{{ f.lint_behind | length }} behind</span>{% else %}<span class="dash-meta">current</span>{% endif %}</td>
                 <td class="dash-meta d-none d-md-table-cell">{{ f.last_commit or '-' }}</td>
             </tr>
@@ -94,6 +129,100 @@
     </table>
     <p class="dash-caption" id="projects-no-match" hidden>No project matches the filter.</p>
 </section>
+
+<div class="dash-report">
+    <section aria-labelledby="fpatches-title">
+        <div class="section-heading">
+            <h2 id="fpatches-title">Patches across the fleet</h2>
+        </div>
+        <p class="dash-caption">Each PR, MR or branch merged in through <code>repos.yaml</code>, with the projects carrying it. Merged or closed upstream first: those can go.</p>
+        <div class="prj-scroll">
+            <table class="dash-rank">
+                <thead><tr><th>Patch</th><th>State</th><th>Projects</th></tr></thead>
+                <tbody>
+                    {% for p in fleet_patches %}
+                    <tr>
+                        <td class="dash-name" title="{{ p.repo }} {{ p.git_ref }}">{% if p.url %}<a href="{{ p.url }}" rel="noopener">{{ p.git_ref }}</a>{% else %}{{ p.git_ref }}{% endif %} <span class="dash-meta">{{ p.repo }}</span></td>
+                        <td>{% if p.state in ['merged', 'closed'] %}<span class="dash-flag">{{ p.state }}</span>{% else %}<span class="dash-meta">{{ p.state or '-' }}</span>{% endif %}</td>
+                        <td class="dash-meta">{% for o, r, v in p.projects %}<a href="/project/{{ o | urlencode }}/{{ r | urlencode }}/{{ v | urlencode }}">{{ r }} {{ v }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="dash-meta">No patches carried.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section aria-labelledby="fadv-title">
+        <div class="section-heading">
+            <h2 id="fadv-title">Advisories by package</h2>
+        </div>
+        <p class="dash-caption">PyPI advisories on exact pip pins, with the projects to bump.</p>
+        <div class="prj-scroll">
+            <table class="dash-rank">
+                <thead><tr><th>Package</th><th>Fixed in</th><th>Projects</th></tr></thead>
+                <tbody>
+                    {% for a in fleet_advisories %}
+                    <tr>
+                        <td class="dash-name" title="{{ a.summary }}"><strong>{{ a.package }}</strong> <span class="dash-meta">{{ a.id }}</span></td>
+                        <td>{{ a.fixed_in or '-' }}</td>
+                        <td class="dash-meta">{% for o, r, v, pin in a.projects %}<a href="/project/{{ o | urlencode }}/{{ r | urlencode }}/{{ v | urlencode }}">{{ r }} {{ v }}</a> ({{ pin }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="dash-meta">No advisories.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div class="dash-report">
+    <section aria-labelledby="drift-title">
+        <div class="section-heading">
+            <h2 id="drift-title">Repository drift</h2>
+        </div>
+        <p class="dash-caption">The same <code>repos.yaml</code> entry configured differently in projects of one Odoo version (target branch or patches).</p>
+        <div class="prj-scroll">
+            <table class="dash-rank">
+                <thead><tr><th>Repository</th><th>Odoo</th><th>Variants</th></tr></thead>
+                <tbody>
+                    {% for d in repo_drift %}
+                    <tr>
+                        <td class="dash-name" title="{{ d.repo }}">{{ d.repo }}</td>
+                        <td>{{ d.version }}</td>
+                        <td>{% for sig, ps in d.variants %}<div><code>{{ sig }}</code> <span class="dash-meta">{% for o, r, v in ps %}<a href="/project/{{ o | urlencode }}/{{ r | urlencode }}/{{ v | urlencode }}">{{ r }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span></div>{% endfor %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="dash-meta">No drift.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section aria-labelledby="shared-title">
+        <div class="section-heading">
+            <h2 id="shared-title">Shared addons</h2>
+        </div>
+        <p class="dash-caption">Addons enabled by several projects of the same Odoo version: what a change there would reach.</p>
+        <div class="prj-scroll">
+            <table class="dash-rank">
+                <thead><tr><th>Addon</th><th>Odoo</th><th class="dash-num">Projects</th></tr></thead>
+                <tbody>
+                    {% for a in shared_addons %}
+                    <tr>
+                        <td class="dash-name" title="{{ a.projects | map(attribute=1) | join(', ') }}">{{ a.technical_name }} <span class="dash-meta">{{ a.repo }}</span></td>
+                        <td>{{ a.version }}</td>
+                        <td class="dash-num">{{ a.projects | length }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="dash-meta">No shared addons.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 
 <div class="dash-report">
     <section aria-labelledby="templates-title">

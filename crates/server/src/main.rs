@@ -282,6 +282,7 @@ async fn main() -> std::io::Result<()> {
             .configure(|cfg| {
                 if SERVER_CONFIG.get_projects_enabled() {
                     cfg.service(routes::projects::route)
+                        .service(routes::projects::route_csv)
                         .service(routes::projects::route_project);
                 }
             })

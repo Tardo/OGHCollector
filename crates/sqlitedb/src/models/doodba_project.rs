@@ -207,6 +207,34 @@ pub fn using_module(
     .expect("DB error in doodba_project::using_module")
 }
 
+/// An enabled addon of one project, for fleet-wide "who shares what".
+#[derive(QueryableByName, Debug, Clone, Serialize)]
+pub struct SharedAddon {
+    #[diesel(sql_type = Text)]
+    pub repo: String,
+    #[diesel(sql_type = Text)]
+    pub technical_name: String,
+    #[diesel(sql_type = Integer)]
+    pub version_odoo: i32,
+    #[diesel(sql_type = Text)]
+    pub org_name: String,
+    #[diesel(sql_type = Text)]
+    pub repository: String,
+}
+
+/// Every named, non-private addon of every project the pool sees.
+pub fn all_addons(conn: &mut SqliteConnection) -> Vec<SharedAddon> {
+    diesel::sql_query(
+        "SELECT a.repo, a.technical_name, a.version_odoo, o.name AS org_name, r.name AS repository
+         FROM doodba_project_addon a
+         JOIN gh_repository r ON r.id = a.gh_repository_id
+         JOIN gh_organization o ON o.id = r.gh_organization_id
+         WHERE a.repo != 'private' AND a.technical_name != '*'",
+    )
+    .load(conn)
+    .expect("DB error in doodba_project::all_addons")
+}
+
 impl Row {
     pub fn repos(&self) -> Vec<Repo> {
         serde_json::from_str(&self.project.repos).unwrap_or_default()
@@ -218,6 +246,13 @@ impl Row {
 
     pub fn advisories(&self) -> Vec<Advisory> {
         serde_json::from_str(&self.project.advisories).unwrap_or_default()
+    }
+
+    /// Credentials outside repos.yaml, where a shared read token is the norm.
+    pub fn exposed_elsewhere(&self) -> Vec<String> {
+        let mut e = self.exposed();
+        e.retain(|e| !e.starts_with("odoo/custom/src/repos.yaml "));
+        e
     }
 
     pub fn exposed(&self) -> Vec<String> {
