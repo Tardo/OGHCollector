@@ -359,12 +359,14 @@ async fn doodba_project_tools_are_off_unless_enabled() {
         [
             "addons",
             "advisories",
+            "demo_url",
             "exposed_credentials",
             "last_commit_date",
             "odoo_version",
             "organization",
             "patches",
             "patches_done",
+            "prod_url",
             "repository",
             "template_behind",
             "template_commit",
@@ -375,6 +377,7 @@ async fn doodba_project_tools_are_off_unless_enabled() {
 
     let one = json_of(on.get_doodba_project(params(project())).await);
     assert_eq!(one["repository"], "client-a");
+    assert_eq!(one["deploy"]["demo_url"], "https://demo.example");
     assert_eq!(
         one["template_pending"],
         json!(["abc1234 Bump pre-commit hooks"])

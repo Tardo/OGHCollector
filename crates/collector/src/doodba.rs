@@ -8,6 +8,10 @@
 //! - `repos.yaml`: remotes, target and the merges after the first one (`patches`: PRs/MRs and
 //!   branches carried on top of the base branch; git-aggregator merges onto `merges[0]`).
 //! - `addons.yaml`: repo → addons (every document; `ENV`/`ONLY` aren't repos).
+//! - `.gitlab-ci.yml` `variables` (`DEPLOY_PROD_ENVIRONMENT`, `DEPLOY_DEMO_ENVIRONMENT` and the
+//!   demo's branch/clone/reset/name) and the hosts of the answers' `domains_prod`/`domains_test`:
+//!   the real instances and their URLs (`deploy`). The included CI template isn't fetched, so
+//!   an unset switch has its default (prod on, demo off).
 //! - `.pre-commit-config.yaml` hook revs, `dependencies/*.txt`, the Dockerfile `FROM`.
 //!
 //! Template drift: each distinct template is cloned once per job under
@@ -37,7 +41,7 @@ use yaml_rust2::{Yaml, YamlLoader};
 
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models::dependency_osv;
-use sqlitedb::models::doodba_project::{self, Advisory, Linter, Patch, Repo};
+use sqlitedb::models::doodba_project::{self, Advisory, Deploy, Linter, Patch, Repo};
 use sqlitedb::DbSqliteConnection as SqliteConnection;
 
 use crate::anygitclient::AnyGitClient;
@@ -71,6 +75,7 @@ pub(crate) struct Project {
     pub linters: Vec<Linter>,
     pub dependencies: BTreeMap<String, Vec<String>>,
     pub exposed: Vec<String>,
+    pub deploy: Deploy,
 }
 
 static CREDENTIALS: LazyLock<Regex> =
@@ -220,6 +225,55 @@ fn parse_addons(docs: &[Yaml]) -> Vec<(String, String)> {
     out
 }
 
+/// A CI variable: `NAME: value` or `NAME: {value: ..., options: ...}`.
+fn ci_var(ci: Option<&Yaml>, name: &str) -> Option<String> {
+    let var = &ci?["variables"][name];
+    scalar(var).or_else(|| scalar(&var["value"]))
+}
+
+fn yes(value: Option<&str>) -> bool {
+    value.is_some_and(|v| matches!(v.to_lowercase().as_str(), "yes" | "true" | "1"))
+}
+
+/// First host of an answers' `domains_*` (`[{hosts: [..]}]`) as an https
+/// URL; only a plausible hostname, it ends up in a link.
+fn first_host_url(answers: Option<&Yaml>, key: &str) -> Option<String> {
+    static HOST: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$").unwrap());
+    let host = scalar(&answers?[key][0]["hosts"][0])?;
+    HOST.is_match(&host).then(|| format!("https://{host}"))
+}
+
+/// The branch a deploy follows; `HEAD` (the template's default) = the default branch.
+fn deploy_branch(ci: Option<&Yaml>, name: &str) -> Option<String> {
+    ci_var(ci, name).filter(|b| !b.is_empty() && b != "HEAD")
+}
+
+fn parse_deploy(root: &Path, answers: Option<&Yaml>) -> Deploy {
+    // A CI file we can't parse doesn't make the project unreadable.
+    let docs = read_yaml(&root.join(".gitlab-ci.yml")).unwrap_or_else(|err| {
+        log::warn!("{}: {err}", root.display());
+        None
+    });
+    let ci = docs.as_ref().and_then(|d| d.first());
+    let prod = ci_var(ci, "DEPLOY_PROD_ENVIRONMENT").is_none_or(|v| yes(Some(&v)));
+    let demo = yes(ci_var(ci, "DEPLOY_DEMO_ENVIRONMENT").as_deref());
+    Deploy {
+        gitlab_ci: ci.is_some(),
+        prod,
+        prod_branch: deploy_branch(ci, "DOODBA_BRANCH_PROD"),
+        prod_url: first_host_url(answers, "domains_prod").filter(|_| prod),
+        demo,
+        demo_branch: deploy_branch(ci, "DOODBA_BRANCH_DEMO").filter(|_| demo),
+        demo_clone_prod: demo && yes(ci_var(ci, "DEPLOY_DEMO_CLONE_PROD").as_deref()),
+        demo_reset_db: demo && yes(ci_var(ci, "DEPLOY_DEMO_RESET_DB").as_deref()),
+        demo_name: ci_var(ci, "DOODBA_DEMO_NAME")
+            .filter(|n| demo && !n.is_empty())
+            .map(|n| strip_credentials(&n)),
+        demo_url: first_host_url(answers, "domains_test").filter(|_| demo),
+    }
+}
+
 /// Reads the project files of a checkout; `Ok(None)` = not a doodba project.
 pub(crate) fn detect(root: &Path, version: &str) -> Result<Option<Project>, String> {
     let src = root.join("odoo/custom/src");
@@ -252,6 +306,7 @@ pub(crate) fn detect(root: &Path, version: &str) -> Result<Option<Project>, Stri
             .collect(),
         addons: parse_addons(addons.as_deref().unwrap_or_default()),
         exposed: exposed(root, src_path.as_deref()),
+        deploy: parse_deploy(root, answers),
         ..Default::default()
     };
     if let Some(docs) = read_yaml(&root.join(".pre-commit-config.yaml"))? {
@@ -672,6 +727,7 @@ pub(crate) async fn collect(
                 dependencies: serde_json::to_string(&p.dependencies).unwrap_or_default(),
                 exposed: serde_json::to_string(&p.exposed).unwrap_or_default(),
                 advisories: serde_json::to_string(&advisories).unwrap_or_default(),
+                deploy: serde_json::to_string(&p.deploy).unwrap_or_default(),
             });
         }
         let stored = doodba_project::replace(
@@ -750,6 +806,14 @@ mod tests {
         );
 
         let p = detect(&root, "16.0").unwrap().unwrap();
+        assert_eq!(
+            p.deploy,
+            Deploy {
+                prod: true,
+                ..Default::default()
+            },
+            "no CI file"
+        );
         assert_eq!(p.template_commit.as_deref(), Some("v9.6.1-3-gfd15475"));
         assert_eq!(
             p.template_src.as_deref(),
@@ -826,6 +890,42 @@ mod tests {
             Some("https://github.com/Tecnativa/doodba-copier-template")
         );
         assert_eq!(template_url("/home/me/template"), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn deploy_reads_the_ci_variables_and_answers_hosts() {
+        let root = std::env::temp_dir().join(format!("ogh-deploy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        write(
+            &root,
+            ".copier-answers.yml",
+            "domains_prod:\n  - hosts:\n      - erp.example.com\ndomains_test:\n  - hosts:\n      - demo.example.com\n      - other.example.com\n",
+        );
+        let answers = read_yaml(&root.join(".copier-answers.yml"))
+            .unwrap()
+            .unwrap();
+        let answers = answers.first();
+        write(
+            &root,
+            ".gitlab-ci.yml",
+            "include:\n  - project: a/b\n    file: /c.yml\nvariables:\n  DEPLOY_DEMO_ENVIRONMENT: \"Yes\"\n  DEPLOY_DEMO_CLONE_PROD:\n    value: \"Yes\"\n    options: [\"Yes\", \"No\"]\n  DOODBA_BRANCH_DEMO: 17.0-demo\n  DOODBA_BRANCH_PROD: HEAD\n",
+        );
+        let d = parse_deploy(&root, answers);
+        assert!(d.gitlab_ci && d.prod && d.demo && d.demo_clone_prod && !d.demo_reset_db);
+        assert_eq!(d.prod_branch, None);
+        assert_eq!(d.demo_branch.as_deref(), Some("17.0-demo"));
+        assert_eq!(d.prod_url.as_deref(), Some("https://erp.example.com"));
+        assert_eq!(d.demo_url.as_deref(), Some("https://demo.example.com"));
+        // Demo off by default; prod off when told so, and then it has no URL.
+        write(
+            &root,
+            ".gitlab-ci.yml",
+            "variables:\n  DEPLOY_PROD_ENVIRONMENT: \"No\"\n  DOODBA_BRANCH_DEMO: 17.0-demo\n",
+        );
+        let d = parse_deploy(&root, answers);
+        assert!(!d.prod && !d.demo);
+        assert_eq!((d.prod_url, d.demo_url, d.demo_branch), (None, None, None));
         let _ = fs::remove_dir_all(&root);
     }
 

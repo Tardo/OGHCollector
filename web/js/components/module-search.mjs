@@ -2,6 +2,7 @@
 import {registerComponent} from 'mirlo';
 import SearchDropdown from './search-dropdown.mjs';
 import '@scss/components/module-search.scss';
+import {t} from '@app/utils/i18n';
 
 // Semantic queries hit the server (embedding inference per request), so they
 // debounce longer than the local-index search and are best typed as full
@@ -48,7 +49,10 @@ class ModuleSearch extends SearchDropdown {
 
   onChangeFilters() {
     const field_label = this.#el_field.selectedOptions[0].text.toLowerCase();
-    this.queryId('search').placeholder = `Search module (${field_label})...`;
+    this.queryId('search').placeholder = t(
+      'Search module ({0})...',
+      field_label,
+    );
     this.refreshResults();
   }
 

@@ -1,6 +1,6 @@
 {# Copyright 2025 Alexandre D. Díaz #}
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="{{ LANG if LANG is defined else 'en' }}" data-bs-theme="dark">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -53,7 +53,7 @@
         {# Global sheet first so page sheets (inside the block) override it #}
         <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css">
         {% block base_head_content %}{% endblock %}
-        <title>{{ meta_title }} - Odoo Module Metadata</title>
+        <title>{{ meta_title|t }} - Odoo Module Metadata</title>
     </head>
     <body>
         {% block base_body_content %}{% endblock %}

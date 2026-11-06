@@ -622,6 +622,32 @@ fn patch_url(remote_url: &str, patch: &Patch) -> Option<String> {
     Some(oghutils::git::pull_request_url(remote_url, patch.number()?))
 }
 
+/// Technical names of a project's addons (no `*`), for the migration planner.
+#[get("/project/{org}/{repository}/{version}/addons")]
+pub async fn route_project_addons(
+    pool: web::Data<Pool>,
+    path: web::Path<(String, String, String)>,
+) -> Result<impl Responder> {
+    let (org, repository, version) = path.into_inner();
+    let version_odoo = crate::utils::odoo_version(&version)? as i32;
+    let names = web::block(move || {
+        let mut conn = pool.get().unwrap();
+        let row = doodba_project::get(&mut conn, &org, &repository, version_odoo)?;
+        let mut names: Vec<String> =
+            doodba_project::addons(&mut conn, row.project.gh_repository_id, version_odoo, None)
+                .into_iter()
+                .map(|a| a.technical_name)
+                .filter(|n| n != "*")
+                .collect();
+        names.sort();
+        names.dedup();
+        Some(names)
+    })
+    .await?
+    .ok_or_else(|| actix_web::error::ErrorNotFound("No such Doodba project"))?;
+    Ok(web::Json(names))
+}
+
 #[get("/project/{org}/{repository}/{version}")]
 pub async fn route_project(
     pool: web::Data<Pool>,
@@ -634,10 +660,12 @@ pub async fn route_project(
     let data = web::block(move || {
         let mut conn = pool.get().unwrap();
         let row = doodba_project::get(&mut conn, &org, &repository, version_odoo)?;
-        let next = models::module::get_odoo_versions(&mut conn)
+        let mut targets: Vec<i32> = models::module::get_odoo_versions(&mut conn)
             .into_iter()
             .filter(|v| *v > version_odoo)
-            .min();
+            .collect();
+        targets.sort();
+        let next = targets.first().copied();
         let addons =
             doodba_project::addons(&mut conn, row.project.gh_repository_id, version_odoo, next);
         let missing: Vec<String> = addons
@@ -666,10 +694,10 @@ pub async fn route_project(
             })
             .collect();
         let fleet = doodba_project::list(&mut conn);
-        Some((row, next, addons, newest_revs(&fleet)))
+        Some((row, next, targets, addons, newest_revs(&fleet)))
     })
     .await?;
-    let Some((row, next, addons, newest)) = data else {
+    let Some((row, next, targets, addons, newest)) = data else {
         return Err(actix_web::error::ErrorNotFound("No such Doodba project"));
     };
 
@@ -721,6 +749,7 @@ pub async fn route_project(
                 meta_title => format!("{} {}", row.repository, version_str(version_odoo)),
                 version => version_str(version_odoo),
                 next => next.map(version_str),
+                targets => targets.into_iter().map(version_str).collect::<Vec<_>>(),
                 in_next => tracked.iter().filter(|a| a.in_next).count(),
                 in_pr => tracked.iter().filter(|a| !a.in_next && a.pr.is_some()).count(),
                 tracked => tracked.len(),
@@ -736,6 +765,7 @@ pub async fn route_project(
                 repo_url => oghutils::git::files_url(&git),
                 patches_done => patches.iter().filter(|p| matches!(p.state.as_deref(), Some("merged" | "closed"))).count(),
                 advisories => row.advisories(),
+                deploy => row.deploy(),
                 // "<file> <host>"
                 exposed => row.exposed_elsewhere().iter().map(|e| {
                     let (file, host) = e.split_once(' ').unwrap_or((e, ""));

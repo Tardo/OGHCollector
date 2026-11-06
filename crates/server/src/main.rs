@@ -6,6 +6,7 @@
 //! (the crate directory, not the workspace root) previously made a bare relative default silently
 //! create a phantom empty DB there.
 mod config;
+mod i18n;
 mod middlewares;
 mod minijinja_renderer;
 mod routes;
@@ -157,6 +158,7 @@ async fn main() -> std::io::Result<()> {
         env.add_filter("repo_files", |git: String| oghutils::git::files_url(&git));
         env.add_filter("num", utils::num);
         env.add_filter("avatar", utils::avatar);
+        env.add_filter("t", i18n::t);
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);
@@ -283,6 +285,7 @@ async fn main() -> std::io::Result<()> {
                 if SERVER_CONFIG.get_projects_enabled() {
                     cfg.service(routes::projects::route)
                         .service(routes::projects::route_csv)
+                        .service(routes::projects::route_project_addons)
                         .service(routes::projects::route_project);
                 }
             })
@@ -307,8 +310,8 @@ async fn main() -> std::io::Result<()> {
                         "Cache-Control",
                         format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),
                     ))
-                    // Pages differ per `workspace` cookie.
-                    .add(("Vary", "Cookie")),
+                    // Pages differ per `workspace`/`lang` cookie and browser language.
+                    .add(("Vary", "Cookie, Accept-Language")),
             )
             .wrap(SessionMiddleware::new(
                 CookieSessionStore::default(),

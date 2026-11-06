@@ -14,10 +14,10 @@
 <template id="template-mirlo-doodba-dependency-resolver">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/doodba-dependency-resolver.css" as="style">
     <div class="doodba-toolbar">
-        <span class="search_container" id="doodba_dep_resolver_search_version"><strong>Odoo Version:</strong> <select class="search_input" id="doodba_dep_resolver_search_select_ver" aria-label="Odoo version"></select></span>
-        <span class="search_container search_container-save" id="doodba_dep_resolver_save" style="display:none"><span class="material-icons" aria-hidden="true">save</span> Save</span>
+        <span class="search_container" id="doodba_dep_resolver_search_version"><strong>{{ "Odoo Version:"|t }}</strong> <select class="search_input" id="doodba_dep_resolver_search_select_ver" aria-label="{{ 'Odoo version'|t }}"></select></span>
+        <span class="search_container search_container-save" id="doodba_dep_resolver_save" style="display:none"><span class="material-icons" aria-hidden="true">save</span> {{ "Save"|t }}</span>
     </div>
-    <div id="doodba_dep_resolver_drag_panel" class="doodba-drag-panel"><span class="no_mouse">Drop your addons.yaml here, or click to browse, to resolve its full dependency list.</span></div>
+    <div id="doodba_dep_resolver_drag_panel" class="doodba-drag-panel"><span class="no_mouse">{{ "Drop your addons.yaml here, or click to browse, to resolve its full dependency list."|t }}</span></div>
     <div id="doodba_dep_resolver_unresolved"></div>
     <div id="doodba_dep_resolver_license"></div>
     <div id="doodba_dep_resolver_result" style="display: none">
@@ -29,8 +29,8 @@
 
 
 <header class="page-header">
-    <h1>Doodba dependency resolver</h1>
-    <p class="page-header-desc">Upload your <code>addons.yaml</code> and get back every module it depends on, plus the Python and system packages behind them — nothing missing when you deploy — and a license review of the whole set. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
+    <h1>{{ "Doodba dependency resolver"|t }}</h1>
+    <p class="page-header-desc">{% set _i221 %}<code>addons.yaml</code>{% endset %}{% set _i222 %}<span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span>{% endset %}{{ "Upload your {0} and get back every module it depends on, plus the Python and system packages behind them — nothing missing when you deploy — and a license review of the whole set. {1}"|t(_i221, _i222) }}</p>
 </header>
 <mirlo-doodba-dependency-resolver></mirlo-doodba-dependency-resolver>
 

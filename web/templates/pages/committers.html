@@ -17,8 +17,8 @@
 {%- endmacro %}
 
 <header class="page-header">
-    <h1>Committers</h1>
-    <p class="page-header-desc">The people behind the tracked modules: who's busy lately, who has been around the longest and who just arrived.</p>
+    <h1>{{ "Committers"|t }}</h1>
+    <p class="page-header-desc">{{ "The people behind the tracked modules: who's busy lately, who has been around the longest and who just arrived."|t }}</p>
 </header>
 
 <div class="committers-search" id="committer_search">
@@ -29,41 +29,41 @@
 <div class="row g-3">
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">groups</span> People</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">groups</span> {{ "People"|t }}</div>
             <div class="stat-card-value">{{ c.people | num }}</div>
-            <div class="stat-card-note">With at least one tracked commit</div>
+            <div class="stat-card-note">{{ "With at least one tracked commit"|t }}</div>
         </div>
     </div>
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">bolt</span> Active lately</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">bolt</span> {{ "Active lately"|t }}</div>
             <div class="stat-card-value">{{ c.active | num }} <small>{{ (c.active * 100 / c.people) | round | int }}%</small></div>
-            <div class="stat-card-note">Committed in the last 12 months</div>
+            <div class="stat-card-note">{{ "Committed in the last 12 months"|t }}</div>
         </div>
     </div>
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">waving_hand</span> New faces</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">waving_hand</span> {{ "New faces"|t }}</div>
             <div class="stat-card-value">{{ c.new | num }}</div>
-            <div class="stat-card-note">First commit in the last 12 months</div>
+            <div class="stat-card-note">{{ "First commit in the last 12 months"|t }}</div>
         </div>
     </div>
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">smart_toy</span> Robots</div>
-            <div class="stat-card-value">{{ c.bot_share }}% <small>of commits</small></div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">smart_toy</span> {{ "Robots"|t }}</div>
+            <div class="stat-card-value">{{ c.bot_share }}% <small>{{ "of commits"|t }}</small></div>
             <div class="stat-bar" aria-hidden="true"><span style="width: {{ c.bot_share }}%"></span></div>
-            <div class="stat-card-note">Made by {{ c.bots }} bot{{ c.bots != 1 and 's' or '' }} (translations, CI, merges)</div>
+            <div class="stat-card-note">{{ "Made by {0} bot{1} (translations, CI, merges)"|t((c.bots), (c.bots != 1 and 's' or '')) }}</div>
         </div>
     </div>
 </div>
 
 <div class="dash-report">
     <section aria-labelledby="recent-title">
-        <div class="section-heading"><h2 id="recent-title">Last 12 months</h2></div>
-        <p class="dash-caption">{{ c.window }}. A commit that touches several modules counts once per module.</p>
+        <div class="section-heading"><h2 id="recent-title">{{ "Last 12 months"|t }}</h2></div>
+        <p class="dash-caption">{{ "{0}. A commit that touches several modules counts once per module."|t((c.window)) }}</p>
         <table class="dash-rank">
-            <thead><tr><th>Committer</th><th class="dash-num">Modules</th><th class="dash-num">Commits</th></tr></thead>
+            <thead><tr><th>{{ "Committer"|t }}</th><th class="dash-num">{{ "Modules"|t }}</th><th class="dash-num">{{ "Commits"|t }}</th></tr></thead>
             <tbody>
                 {% for e in c.recent %}
                 <tr>
@@ -77,10 +77,10 @@
     </section>
 
     <section aria-labelledby="alltime-title">
-        <div class="section-heading"><h2 id="alltime-title">All time</h2></div>
-        <p class="dash-caption">Every tracked branch, bots left out.</p>
+        <div class="section-heading"><h2 id="alltime-title">{{ "All time"|t }}</h2></div>
+        <p class="dash-caption">{{ "Every tracked branch, bots left out."|t }}</p>
         <table class="dash-rank">
-            <thead><tr><th>Committer</th><th class="dash-num">Modules</th><th class="dash-num">Commits</th></tr></thead>
+            <thead><tr><th>{{ "Committer"|t }}</th><th class="dash-num">{{ "Modules"|t }}</th><th class="dash-num">{{ "Commits"|t }}</th></tr></thead>
             <tbody>
                 {% for e in c.all_time %}
                 <tr>
@@ -94,13 +94,13 @@
     </section>
 
     <section class="report-wide" aria-labelledby="veterans-title">
-        <div class="section-heading"><h2 id="veterans-title">Veterans</h2></div>
-        <p class="dash-caption">The longest stretches between a first and a latest tracked commit. Not necessarily nonstop.</p>
+        <div class="section-heading"><h2 id="veterans-title">{{ "Veterans"|t }}</h2></div>
+        <p class="dash-caption">{{ "The longest stretches between a first and a latest tracked commit. Not necessarily nonstop."|t }}</p>
         <div class="vet-timeline">
             <div class="vet-row vet-axis" aria-hidden="true">
                 <span></span>
                 <span class="vet-track">{% for t in c.ticks %}<span class="vet-tick" style="left: {{ t.left }}%">{{ t.year }}</span>{% endfor %}</span>
-                <span class="vet-years">Years</span>
+                <span class="vet-years">{{ "Years"|t }}</span>
             </div>
             {% for v in c.veterans %}
             <div class="vet-row">
@@ -113,11 +113,11 @@
     </section>
 
     <section aria-labelledby="newcomers-title">
-        <div class="section-heading"><h2 id="newcomers-title">Newcomers</h2></div>
+        <div class="section-heading"><h2 id="newcomers-title">{{ "Newcomers"|t }}</h2></div>
         {% if c.newcomers %}
-        <p class="dash-caption">First tracked commit in the last 12 months{% if c.new > c.newcomers | length %}; the busiest {{ c.newcomers | length }} of {{ c.new }}{% endif %}.</p>
+        <p class="dash-caption">{{ "First tracked commit in the last 12 months"|t }}{% if c.new > c.newcomers | length %}; the busiest {{ c.newcomers | length }} of {{ c.new }}{% endif %}.</p>
         <table class="dash-rank">
-            <thead><tr><th>Committer</th><th>Since</th><th class="dash-num">Commits</th></tr></thead>
+            <thead><tr><th>{{ "Committer"|t }}</th><th>{{ "Since"|t }}</th><th class="dash-num">{{ "Commits"|t }}</th></tr></thead>
             <tbody>
                 {% for n in c.newcomers %}
                 <tr>
@@ -129,15 +129,15 @@
             </tbody>
         </table>
         {% else %}
-        <p class="dash-caption">Nobody new in the last 12 months.</p>
+        <p class="dash-caption">{{ "Nobody new in the last 12 months."|t }}</p>
         {% endif %}
     </section>
 
     <section aria-labelledby="arrivals-title">
-        <div class="section-heading"><h2 id="arrivals-title">Arrivals per year</h2></div>
-        <p class="dash-caption">People making their first tracked commit, by year.</p>
+        <div class="section-heading"><h2 id="arrivals-title">{{ "Arrivals per year"|t }}</h2></div>
+        <p class="dash-caption">{{ "People making their first tracked commit, by year."|t }}</p>
         {% set peak = c.arrivals | map(attribute="people") | max %}
-        <div class="dash-chart arrivals-chart" role="img" aria-label="First-time committers per year, {{ c.arrivals[0].year }} to {{ c.arrivals[-1].year }}; the peak year had {{ peak }}">
+        <div class="dash-chart arrivals-chart" role="img" aria-label="{{ 'First-time committers per year, {0} to {1}; the peak year had {2}'|t((c.arrivals[0].year), (c.arrivals[-1].year), (peak)) }}">
             {% for a in c.arrivals %}
             <div class="dash-chart-col{% if a.people == peak %} is-peak{% endif %}{% if a.partial %} is-partial{% endif %}" title="{{ a.year }}: {{ a.people | num }} new committer{{ a.people != 1 and 's' or '' }}{% if a.partial %} (year in progress){% endif %}">
                 <span class="dash-chart-track"><span class="dash-chart-bar" style="height: {{ [a.pct, 1] | max if a.people else 0 }}%">{% if a.people == peak %}<span class="dash-chart-value">{{ a.people | num }}</span>{% endif %}</span></span>
@@ -148,6 +148,6 @@
     </section>
 </div>
 {% else %}
-<p class="text-body-secondary">No commit history collected yet.</p>
+<p class="text-body-secondary">{{ "No commit history collected yet."|t }}</p>
 {% endif %}
 {% endblock %}

@@ -843,6 +843,7 @@ mod template_tests {
     #[test]
     fn module_source_links_follow_the_scanned_directory() {
         let mut env = Environment::new();
+        env.add_filter("t", crate::i18n::t);
         env.add_filter("markdown", crate::utils::markdown);
         env.add_filter("repo_files", |git: String| oghutils::git::files_url(&git));
         env.add_template(
@@ -939,6 +940,7 @@ mod template_tests {
     #[test]
     fn pull_requests_escape_what_prs_bring() {
         let mut env = Environment::new();
+        env.add_filter("t", crate::i18n::t);
         env.add_template(
             "prs.html",
             include_str!("../../../../web/templates/partials/module_pull_requests.html"),
@@ -969,6 +971,7 @@ mod template_tests {
     #[test]
     fn module_links_use_gitlab_routes_for_gitlab_repos() {
         let mut env = Environment::new();
+        env.add_filter("t", crate::i18n::t);
         env.add_filter("markdown", crate::utils::markdown);
         env.add_filter("repo_files", |git: String| oghutils::git::files_url(&git));
         env.add_template(

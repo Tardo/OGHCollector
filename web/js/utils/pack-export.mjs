@@ -1,6 +1,7 @@
 // Copyright 2026 Alexandre D. Díaz
 import * as yaml from 'js-yaml';
 import JSZip from 'jszip';
+import {t} from './i18n.mjs';
 
 // Groups the resolved modules by repo (adding a `_MISSING_` bucket for any
 // pack module the chosen Odoo version doesn't have), then builds addons.yaml
@@ -17,7 +18,7 @@ export async function exportPackZip(pack, odoo_version) {
     body: formData,
   });
   if (!res.ok) {
-    window.alert('Failed to resolve dependencies for this pack.');
+    window.alert(t('Failed to resolve dependencies for this pack.'));
     return;
   }
   const data = await res.json();
@@ -31,7 +32,9 @@ export async function exportPackZip(pack, odoo_version) {
     grouped._MISSING_ = missing;
   }
   if (Object.keys(grouped).length === 0) {
-    window.alert(`No modules found for Odoo ${odoo_version} in this pack.`);
+    window.alert(
+      t('No modules found for Odoo {0} in this pack.', odoo_version),
+    );
     return;
   }
   const sorted_odoo = Object.keys(grouped)

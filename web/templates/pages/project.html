@@ -13,59 +13,79 @@
 
 <header class="page-header">
     <h1>{{ p.repository }} <span class="prj-version">{{ version }}</span></h1>
-    <p class="page-header-desc">Doodba project of <strong>{{ p.org_name }}</strong>, branch <code>{{ version }}</code>{% if last_commit %}, last commit {{ last_commit }}{% endif %}.</p>
+    <p class="page-header-desc">{{ "Doodba project of"|t }} <strong>{{ p.org_name }}</strong>, branch <code>{{ version }}</code>{% if last_commit %}, last commit {{ last_commit }}{% endif %}.</p>
     {% if exposed %}
-    <p class="page-header-desc prj-alert"><span class="material-icons" aria-hidden="true">key</span>
-        Credentials written in {% for file, host in exposed %}<code>{{ file }}</code> (for {{ host }}){{ ', ' if not loop.last }}{% endfor %}. Outside repos.yaml: move them to secrets and rotate them, anyone who can read the repository has them. git-aggregator expands <code>$VARIABLES</code> in repos.yaml (that's how <code>$ODOO_VERSION</code> works), so a token can come from the build environment instead.</p>
+    <p class="page-header-desc prj-alert">{% set _i186 %}<span class="material-icons" aria-hidden="true">key</span>{% endset %}{{ "{0} Credentials written in"|t(_i186) }} {% for file, host in exposed %}<code>{{ file }}</code> {{ "(for {0}){1}"|t((host), (', ' if not loop.last)) }}{% endfor %}. Outside repos.yaml: move them to secrets and rotate them, anyone who can read the repository has them. git-aggregator expands <code>{{ "$VARIABLES"|t }}</code> {% set _i187 %}<code>$ODOO_VERSION</code>{% endset %}{{ "in repos.yaml (that's how {0} works), so a token can come from the build environment instead."|t(_i187) }}</p>
     {% endif %}
     {% if repos_token %}
-    <p class="page-header-desc"><span class="material-icons" aria-hidden="true">key</span> Token in <code>repos.yaml</code>: usual for a read-only token shared by the team; check it can only read.</p>
+    <p class="page-header-desc">{% set _i188 %}<span class="material-icons" aria-hidden="true">key</span>{% endset %}{% set _i189 %}<code>repos.yaml</code>{% endset %}{{ "{0} Token in {1}: usual for a read-only token shared by the team; check it can only read."|t(_i188, _i189) }}</p>
     {% endif %}
     <div class="page-header-actions">
-        <a class="btn btn-outline-secondary btn-sm" href="{{ repo_url }}/tree/{{ version | urlencode }}" target="_blank" rel="noopener"><span class="material-icons" aria-hidden="true">code</span> Repository</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/projects"><span class="material-icons" aria-hidden="true">inventory_2</span> All projects</a>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ repo_url }}/tree/{{ version | urlencode }}" target="_blank" rel="noopener"><span class="material-icons" aria-hidden="true">code</span> {{ "Repository"|t }}</a>
+        {% if deploy.prod_url %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ deploy.prod_url }}" target="_blank" rel="noopener"><span class="material-icons" aria-hidden="true">public</span> {{ "Production"|t }}</a>
+        {% endif %}
+        {% if deploy.demo_url %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ deploy.demo_url }}" target="_blank" rel="noopener"><span class="material-icons" aria-hidden="true">science</span> {{ "Demo"|t }}</a>
+        {% endif %}
+        {% if targets %}
+        <a class="btn btn-outline-secondary btn-sm" href="/doodba/migration?project={{ p.org_name | urlencode }}/{{ p.repository | urlencode }}/{{ version }}&to={{ targets[-1] }}"><span class="material-icons" aria-hidden="true">upgrade</span> {{ "Plan migration"|t }}</a>
+        {% endif %}
     </div>
 </header>
 
-<section class="fact-strip" aria-label="Summary">
+<section class="fact-strip" aria-label="{{ 'Summary'|t }}">
     <div class="fact{% if p.project.template_behind %} is-warn{% endif %}">
         <span class="material-icons" aria-hidden="true">history</span>
         {% if p.project.template_behind is none %}
         <div class="fact-headline">?</div>
         <div class="fact-caption">{% if p.project.template_commit %}the template has no commit <code>{{ p.project.template_commit }}</code>{% else %}no copier answers file{% endif %}</div>
         {% elif p.project.template_behind == 0 %}
-        <div class="fact-headline">Current</div>
-        <div class="fact-caption">on the template's latest commit, <code>{{ p.project.template_commit }}</code></div>
+        <div class="fact-headline">{{ "Current"|t }}</div>
+        <div class="fact-caption">{% set _i193 %}<code>{{ p.project.template_commit }}</code>{% endset %}{{ "on the template's latest commit, {0}"|t(_i193) }}</div>
         {% else %}
         <div class="fact-headline">{{ p.project.template_behind | num }}</div>
-        <div class="fact-caption">template commits behind, from <code>{{ p.project.template_commit }}</code>{% if template_date %} ({{ template_date }}){% endif %}</div>
+        <div class="fact-caption">{% set _i194 %}<code>{{ p.project.template_commit }}</code>{% endset %}{{ "template commits behind, from {0}"|t(_i194) }}{% if template_date %} ({{ template_date }}){% endif %}</div>
         {% endif %}
     </div>
     <div class="fact">
         <span class="material-icons" aria-hidden="true">extension</span>
         <div class="fact-headline">{{ addon_total | num }}</div>
-        <div class="fact-caption">addons enabled, {{ tracked | num }} of them collected</div>
+        <div class="fact-caption">{{ "addons enabled, {0} of them collected"|t((tracked | num)) }}</div>
     </div>
     {% if next %}
     <div class="fact">
         <span class="material-icons" aria-hidden="true">trending_up</span>
         <div class="fact-headline">{{ next_pct }}%</div>
-        <div class="fact-caption">of the {{ tracked | num }} collected exist in {{ next }}{% if in_pr %}, {{ in_pr | num }} more in a migration PR{% endif %}</div>
+        <div class="fact-caption">{{ "of the {0} collected exist in {1}"|t((tracked | num), (next)) }}{% if in_pr %}, {{ in_pr | num }} more in a migration PR{% endif %}</div>
     </div>
     {% endif %}
     <div class="fact{% if patches %} is-warn{% endif %}">
         <span class="material-icons" aria-hidden="true">call_merge</span>
         <div class="fact-headline">{{ patches | length }}</div>
-        <div class="fact-caption">patches merged on top of {{ repos | length }} aggregated repositories{% if patches_done %}; {{ patches_done | num }} of their PRs are merged or closed upstream{% endif %}</div>
+        <div class="fact-caption">{{ "patches merged on top of {0} aggregated repositories"|t((repos | length)) }}{% if patches_done %}; {{ patches_done | num }} of their PRs are merged or closed upstream{% endif %}</div>
+    </div>
+    <div class="fact">
+        <span class="material-icons" aria-hidden="true">science</span>
+        {% if not deploy.gitlab_ci %}
+        <div class="fact-headline">?</div>
+        <div class="fact-caption">{{ "no .gitlab-ci.yml: demo environment unknown"|t }}</div>
+        {% elif not deploy.demo %}
+        <div class="fact-headline">{{ "Off"|t }}</div>
+        <div class="fact-caption">{{ "no demo environment deployed (DEPLOY_DEMO_ENVIRONMENT)"|t }}</div>
+        {% else %}
+        <div class="fact-headline">{{ "On"|t }}</div>
+        <div class="fact-caption">{{ "demo from branch {0}"|t((deploy.demo_branch or "the default branch")) }}{% if deploy.demo_clone_prod %}; {{ "cloned from production"|t }}{% endif %}{% if deploy.demo_reset_db %}; {{ "database reset on deploy"|t }}{% endif %}{% if deploy.demo_name %}; {{ "named {0}"|t((deploy.demo_name)) }}{% endif %}</div>
+        {% endif %}
     </div>
     <div class="fact{% if advisories %} is-warn{% endif %}">
         <span class="material-icons" aria-hidden="true">bug_report</span>
         <div class="fact-headline">{{ advisories | length }}</div>
-        <div class="fact-caption">PyPI advisories on its pinned pip dependencies</div>
+        <div class="fact-caption">{{ "PyPI advisories on its pinned pip dependencies"|t }}</div>
     </div>
 </section>
 {% if next and tracked %}
-<div class="mig-progress" title="Of the {{ tracked | num }} collected addons: {{ in_next | num }} in {{ next }}, {{ in_pr | num }} in a migration PR, {{ (tracked - in_next - in_pr) | num }} missing">
+<div class="mig-progress" title="{{ 'Of the {0} collected addons: {1} in {2}, {3} in a migration PR, {4} missing'|t((tracked | num), (in_next | num), (next), (in_pr | num), ((tracked - in_next - in_pr) | num)) }}">
     <div class="dash-progress" aria-hidden="true"><span class="is-ported" style="width: {{ next_pct }}%"></span><span class="is-progress" style="width: {{ pr_pct }}%"></span></div>
 </div>
 {% endif %}
@@ -73,15 +93,15 @@
 <div class="dash-report">
     <section aria-labelledby="repos-title">
         <div class="section-heading">
-            <h2 id="repos-title">Aggregated repositories</h2>
+            <h2 id="repos-title">{{ "Aggregated repositories"|t }}</h2>
         </div>
-        <p class="dash-caption"><code>repos.yaml</code>: the base each one is built from, and the patches merged on top.</p>
+        <p class="dash-caption">{% set _i201 %}<code>repos.yaml</code>{% endset %}{{ "{0}: the base each one is built from, and the patches merged on top."|t(_i201) }}</p>
         <table class="dash-rank">
             <thead>
                 <tr>
-                    <th>Path</th>
-                    <th>Base</th>
-                    <th class="dash-num">Patches</th>
+                    <th>{{ "Path"|t }}</th>
+                    <th>{{ "Base"|t }}</th>
+                    <th class="dash-num">{{ "Patches"|t }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -97,16 +117,16 @@
     </section>
     <section aria-labelledby="patches-title">
         <div class="section-heading">
-            <h2 id="patches-title">Patches</h2>
+            <h2 id="patches-title">{{ "Patches"|t }}</h2>
         </div>
-        <p class="dash-caption">Pull/merge requests and branches merged on top of a repository's base: code the project runs that upstream may not have. A merged PR can leave repos.yaml once the base has it; a closed one was never merged.</p>
+        <p class="dash-caption">{{ "Pull/merge requests and branches merged on top of a repository's base: code the project runs that upstream may not have. A merged PR can leave repos.yaml once the base has it; a closed one was never merged."|t }}</p>
         {% if patches %}
         <table class="dash-rank">
             <thead>
                 <tr>
-                    <th>Repository</th>
-                    <th>Merge</th>
-                    <th>Upstream</th>
+                    <th>{{ "Repository"|t }}</th>
+                    <th>{{ "Merge"|t }}</th>
+                    <th>{{ "Upstream"|t }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -115,9 +135,9 @@
                     <td>{{ m.repo }}</td>
                     <td class="dash-name">{% if m.url %}<a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.git_ref }}</a>{% else %}<code>{{ m.git_ref }}</code>{% endif %} <span class="dash-meta">{{ m.remote }}</span></td>
                     <td>
-                        {%- if m.state == 'merged' %}<span class="prj-ok">Merged</span>
-                        {%- elif m.state == 'closed' %}<span class="dash-flag">Closed</span>
-                        {%- elif m.state == 'open' %}<span class="dash-meta">Open</span>
+                        {%- if m.state == 'merged' %}<span class="dash-flag">{{ "Merged"|t }}</span>
+                        {%- elif m.state == 'closed' %}<span class="dash-flag">{{ "Closed"|t }}</span>
+                        {%- elif m.state == 'open' %}<span class="prj-ok">{{ "Open"|t }}</span>
                         {%- else %}<span class="dash-meta" title="{{ m.url and 'Not looked up: another forge, or no token for it' or 'A branch, not a PR/MR' }}">-</span>{% endif -%}
                     </td>
                 </tr>
@@ -125,20 +145,20 @@
             </tbody>
         </table>
         {% else %}
-        <p class="dash-caption">None: every repository is its base branch as is.</p>
+        <p class="dash-caption">{{ "None: every repository is its base branch as is."|t }}</p>
         {% endif %}
     </section>
     <section aria-labelledby="lint-title">
         <div class="section-heading">
-            <h2 id="lint-title">Lint hooks</h2>
+            <h2 id="lint-title">{{ "Lint hooks"|t }}</h2>
         </div>
-        <p class="dash-caption"><code>.pre-commit-config.yaml</code>, against the newest revision the fleet runs for {{ version }}.</p>
+        <p class="dash-caption">{% set _i202 %}<code>.pre-commit-config.yaml</code>{% endset %}{{ "{0}, against the newest revision the fleet runs for {1}."|t(_i202, (version)) }}</p>
         <table class="dash-rank">
             <thead>
                 <tr>
-                    <th>Hook</th>
-                    <th>Revision</th>
-                    <th>Fleet newest</th>
+                    <th>{{ "Hook"|t }}</th>
+                    <th>{{ "Revision"|t }}</th>
+                    <th>{{ "Fleet newest"|t }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -154,12 +174,12 @@
     </section>
     <section aria-labelledby="config-title">
         <div class="section-heading">
-            <h2 id="config-title">Configuration</h2>
+            <h2 id="config-title">{{ "Configuration"|t }}</h2>
         </div>
         <dl class="spec-sheet">
-            <dt>Template</dt>
+            <dt>{{ "Template"|t }}</dt>
             <dd>{% if p.project.template_src %}<code>{{ p.project.template_src }}</code> at <code>{{ p.project.template_commit }}</code>{% else %}-{% endif %}</dd>
-            <dt>Base image</dt>
+            <dt>{{ "Base image"|t }}</dt>
             <dd>{% if p.project.base_image %}<code>{{ p.project.base_image }}</code>{% else %}-{% endif %}</dd>
             {% for key, value in answers | items %}
             <dt>{{ key | replace('_', ' ') }}</dt>
@@ -170,9 +190,9 @@
     {% if template_log %}
     <section aria-labelledby="changes-title">
         <div class="section-heading">
-            <h2 id="changes-title">Template changes since <code>{{ p.project.template_commit }}</code></h2>
+            <h2 id="changes-title">{% set _i205 %}<code>{{ p.project.template_commit }}</code>{% endset %}{{ "Template changes since {0}"|t(_i205) }}</h2>
         </div>
-        <p class="dash-caption">What a <code>copier update</code> would bring{% if template_log | length < p.project.template_behind %}: the newest {{ template_log | length }} of {{ p.project.template_behind | num }} commits{% endif %}.</p>
+        <p class="dash-caption">{% set _i206 %}<code>copier update</code>{% endset %}{{ "What a {0} would bring"|t(_i206) }}{% if template_log | length < p.project.template_behind %}: the newest {{ template_log | length }} of {{ p.project.template_behind | num }} commits{% endif %}.</p>
         <ul class="prj-log">
             {% for hash, subject in template_log %}
             <li><code>{{ hash }}</code> {{ subject }}</li>
@@ -182,9 +202,9 @@
     {% endif %}
     <section aria-labelledby="deps-title">
         <div class="section-heading">
-            <h2 id="deps-title">System dependencies</h2>
+            <h2 id="deps-title">{{ "System dependencies"|t }}</h2>
         </div>
-        <p class="dash-caption"><code>odoo/custom/dependencies</code>, installed in the image on top of the addons' own.</p>
+        <p class="dash-caption">{% set _i208 %}<code>odoo/custom/dependencies</code>{% endset %}{{ "{0}, installed in the image on top of the addons' own."|t(_i208) }}</p>
         {% if dependencies %}
         <dl class="spec-sheet">
             {% for kind, lines in dependencies | items %}
@@ -193,17 +213,17 @@
             {% endfor %}
         </dl>
         {% else %}
-        <p class="dash-caption">None.</p>
+        <p class="dash-caption">{{ "None."|t }}</p>
         {% endif %}
         {% if advisories %}
-        <h3 class="subsection-title" id="advisories">Advisories</h3>
-        <p class="dash-caption">What PyPI reports for the exact pins of <code>pip.txt</code> (the addons' own Python dependencies are on <a href="/osv">Vulnerabilities</a>).</p>
+        <h3 class="subsection-title" id="advisories">{{ "Advisories"|t }}</h3>
+        <p class="dash-caption">{% set _i210 %}<code>pip.txt</code>{% endset %}{% set _i211 %}<a href="/osv">{{ "Vulnerabilities"|t }}</a>{% endset %}{{ "What PyPI reports for the exact pins of {0} (the addons' own Python dependencies are on {1})."|t(_i210, _i211) }}</p>
         <table class="dash-rank">
             <thead>
                 <tr>
-                    <th>Pin</th>
-                    <th>Advisory</th>
-                    <th>Fixed in</th>
+                    <th>{{ "Pin"|t }}</th>
+                    <th>{{ "Advisory"|t }}</th>
+                    <th>{{ "Fixed in"|t }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -211,7 +231,7 @@
                 <tr>
                     <td><code>{{ a.package }}=={{ a.version }}</code></td>
                     <td class="dash-name" title="{{ a.summary }}"><a href="https://osv.dev/vulnerability/{{ a.id | urlencode }}" target="_blank" rel="noopener">{{ a.id }}</a> <span class="dash-meta">{{ a.summary }}</span></td>
-                    <td>{% if a.fixed_in %}{{ a.fixed_in }}{% else %}<span class="dash-flag">no fix</span>{% endif %}</td>
+                    <td>{% if a.fixed_in %}{{ a.fixed_in }}{% else %}<span class="dash-flag">{{ "no fix"|t }}</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -222,17 +242,17 @@
 
 <section id="addons" aria-labelledby="addons-title">
     <div class="section-heading">
-        <h2 id="addons-title">Addons</h2>
+        <h2 id="addons-title">{{ "Addons"|t }}</h2>
     </div>
     <div class="prj-toolbar">
         <p class="dash-caption"><code>addons.yaml</code>{% if next %}, and whether each one exists in {{ next }} (under its name or one OpenUpgrade renamed it to) or is in a migration PR{% endif %}.</p>
-        <input type="search" class="form-control form-control-sm" id="projects_search" placeholder="Filter by addon or repository" aria-label="Filter addons" autocomplete="off">
+        <input type="search" class="form-control form-control-sm" id="projects_search" placeholder="{{ 'Filter by addon or repository'|t }}" aria-label="{{ 'Filter addons'|t }}" autocomplete="off">
     </div>
     <table class="dash-rank" id="projects-table">
         <thead>
             <tr>
-                <th>Addon</th>
-                <th>Repository</th>
+                <th>{{ "Addon"|t }}</th>
+                <th>{{ "Repository"|t }}</th>
                 {% if next %}<th>{{ next }}</th>{% endif %}
             </tr>
         </thead>
@@ -240,23 +260,23 @@
             {% for a in addons %}
             <tr data-search="{{ (a.technical_name ~ ' ' ~ a.repo) | lower }}">
                 <td class="dash-name">
-                    {%- if a.technical_name == '*' %}<span class="dash-meta">every addon</span>
+                    {%- if a.technical_name == '*' %}<span class="dash-meta">{{ "every addon"|t }}</span>
                     {%- elif a.org_name %}<a href="/module/{{ a.org_name | urlencode }}/{{ a.technical_name | urlencode }}" title="{{ a.technical_name }}">{{ a.technical_name }}</a>
-                    {%- else %}<span title="Not collected at {{ version }}">{{ a.technical_name }}</span>{% endif -%}
+                    {%- else %}<span title="{{ 'Not collected at {0}'|t((version)) }}">{{ a.technical_name }}</span>{% endif -%}
                 </td>
                 <td class="dash-meta">{{ a.repo }}</td>
                 {% if next %}
                 <td>
                     {%- if a.technical_name == '*' %}
-                    {%- elif a.in_next %}<span class="prj-ok">Available</span>
+                    {%- elif a.in_next %}<span class="prj-ok">{{ "Available"|t }}</span>
                     {%- elif a.pr %}<a class="dash-flag" href="{{ a.pr.url }}" target="_blank" rel="noopener" title="{{ a.pr.title }}">PR #{{ a.pr.prid }}</a>
-                    {%- else %}<span class="dash-meta">Missing</span>{% endif -%}
+                    {%- else %}<span class="dash-meta">{{ "Missing"|t }}</span>{% endif -%}
                 </td>
                 {% endif %}
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    <p class="dash-caption" id="projects-no-match" hidden>No addon matches the filter.</p>
+    <p class="dash-caption" id="projects-no-match" hidden>{{ "No addon matches the filter."|t }}</p>
 </section>
 {% endblock %}

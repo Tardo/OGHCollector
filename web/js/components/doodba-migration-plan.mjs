@@ -8,6 +8,7 @@ import {
   isYamlFile,
 } from '@app/utils/drag-panel-processing';
 import '@scss/components/doodba-migration-plan.scss';
+import {t} from '@app/utils/i18n';
 
 class DoodbaMigrationPlan extends Component {
   #el_search_select_from = null;
@@ -16,6 +17,7 @@ class DoodbaMigrationPlan extends Component {
   #el_result = null;
   #el_save = null;
   #steps = [];
+  #project = null;
 
   onSetup() {
     Component.useEvents({
@@ -57,9 +59,50 @@ class DoodbaMigrationPlan extends Component {
     this.#el_save = this.queryId('doodba_migration_plan_save');
   }
 
-  onStart() {
+  async onStart() {
     super.onStart();
     this.#fillOdooVersionsSearchOptions();
+    // Arriving from a Doodba project page: plan with that project's addons.
+    const params = new URLSearchParams(window.location.search);
+    const project = params.get('project');
+    if (project) {
+      const [, , from_ver] = project.split('/');
+      const to_ver = params.get('to');
+      // "org/repo 11.0": the project is the source, not just a version.
+      const [org, repo] = project.split('/');
+      this.#el_search_select_from.replaceChildren(
+        new Option(`${org}/${repo} ${from_ver}`, from_ver),
+      );
+      if (to_ver) this.#el_search_select_to.value = to_ver;
+      this.#project = project;
+      await this.#planProject(project);
+      // Plans come from the project, not a dropped file: changing a version re-plans.
+      this.#el_search_select_to.addEventListener('change', () =>
+        this.#planProject(project),
+      );
+    }
+  }
+
+  async #planProject(project) {
+    // Back to the loading panel while (re)planning.
+    this.#el_result.style.display = 'none';
+    this.#el_save.style.display = 'none';
+    this.#el_drag_panel.style.display = '';
+    this.#el_search_select_to.disabled = true;
+    setDragPanelProcessing(this.#el_drag_panel, true);
+    try {
+      await this.#plan(
+        await getService('requests').getJSON(
+          `/project/${project.split('/').map(encodeURIComponent).join('/')}/addons`,
+        ),
+      );
+    } catch (_err) {
+      showDragPanelError(
+        this.#el_drag_panel,
+        'Could not load the project addons.',
+      );
+      this.#el_search_select_to.disabled = false;
+    }
   }
 
   onDragEnter(ev) {
@@ -251,7 +294,10 @@ class DoodbaMigrationPlan extends Component {
     if (step.unknown.length > 0) {
       const unknown_info = document.createElement('div');
       unknown_info.classList.add('migration-step-unknown');
-      unknown_info.textContent = `❓ Unknown to this system, not reported as missing: ${step.unknown.join(', ')}`;
+      unknown_info.textContent = t(
+        '❓ Unknown to this system, not reported as missing: {0}',
+        step.unknown.join(', '),
+      );
       card.appendChild(unknown_info);
     }
 
@@ -304,6 +350,29 @@ class DoodbaMigrationPlan extends Component {
     });
   }
 
+  async #plan(modules) {
+    if (modules.length === 0) {
+      throw new Error(t('No modules found in the file.'));
+    }
+    const from_ver =
+      this.#el_search_select_from.value ||
+      this.getFetchData('odoo_versions')[0].value;
+    const formData = new FormData();
+    formData.append('from_version', from_ver);
+    formData.append('to_version', this.#el_search_select_to.value);
+    modules.forEach(mod_name => formData.append('modules', mod_name));
+    const data = await getService('requests').post('/doodba/migration/plan', {
+      body: formData,
+    });
+    if (!data.ok) {
+      throw new Error(t('Server responded with {0}', data.status));
+    }
+    this.#showResults(await data.json());
+    this.#el_search_select_from.disabled = true;
+    this.#el_search_select_to.disabled = !this.#project;
+    setDragPanelProcessing(this.#el_drag_panel, false);
+  }
+
   // Reads, parses and posts `file` in one guarded path so a malformed
   // addons.yaml or a request failure both surface the same way instead of
   // one of them silently doing nothing.
@@ -312,28 +381,7 @@ class DoodbaMigrationPlan extends Component {
     try {
       const file_text = await this.#readFileAsText(file);
       const yaml_data = yaml.load(file_text);
-      const modules = Object.values(yaml_data).flat();
-      if (modules.length === 0) {
-        throw new Error('No modules found in the file.');
-      }
-      const from_ver =
-        this.#el_search_select_from.value ||
-        this.getFetchData('odoo_versions')[0].value;
-      const formData = new FormData();
-      formData.append('from_version', from_ver);
-      formData.append('to_version', this.#el_search_select_to.value);
-      modules.forEach(mod_name => formData.append('modules', mod_name));
-      const data = await getService('requests').post('/doodba/migration/plan', {
-        body: formData,
-      });
-      if (!data.ok) {
-        throw new Error(`Server responded with ${data.status}`);
-      }
-      const steps = await data.json();
-      this.#showResults(steps);
-      this.#el_search_select_from.disabled = true;
-      this.#el_search_select_to.disabled = true;
-      setDragPanelProcessing(this.#el_drag_panel, false);
+      await this.#plan(Object.values(yaml_data).flat());
     } catch (_err) {
       showDragPanelError(
         this.#el_drag_panel,

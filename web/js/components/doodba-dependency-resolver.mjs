@@ -9,6 +9,7 @@ import {
 } from '@app/utils/drag-panel-processing';
 import {renderLicenseReview} from '@app/utils/license-review';
 import '@scss/components/doodba-dependency-resolver.scss';
+import {t} from '@app/utils/i18n';
 
 // UnresolvedModule statuses meaning the module is gone at that version.
 const DROPPED = new Set(['renamed', 'merged', 'lost', 'later']);
@@ -181,7 +182,11 @@ class DoodbaDependencyResolver extends Component {
     icon.setAttribute('aria-hidden', 'true');
     icon.textContent = 'report';
     const title = document.createElement('strong');
-    title.textContent = `${unresolved.length} module(s) not found in ${odoo_ver}`;
+    title.textContent = t(
+      '{0} module(s) not found in {1}',
+      unresolved.length,
+      odoo_ver,
+    );
     head.append(icon, title);
     const list = document.createElement('ul');
     for (const mod of unresolved) {
@@ -252,7 +257,7 @@ class DoodbaDependencyResolver extends Component {
         },
       );
       if (!data.ok) {
-        throw new Error(`Server responded with ${data.status}`);
+        throw new Error(t('Server responded with {0}', data.status));
       }
       const json_data = await data.json();
       const dropped = new Map(

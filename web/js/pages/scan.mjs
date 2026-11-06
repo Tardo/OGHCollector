@@ -1,5 +1,6 @@
 // Copyright 2026 Alexandre D. Díaz
 import '@scss/pages/scan.scss';
+import {t} from '@app/utils/i18n';
 
 // ScanReport shape (see oghscan::ScanReport). Kept as a structural shape so a
 // future field addition never silently breaks a render - we read what we show
@@ -64,9 +65,9 @@ function renderSummary(report) {
   const high = findings.filter(f => f.severity === 'high').length;
   const findingsNote = document.getElementById('scan_findings_note');
   if (critical > 0) {
-    findingsNote.textContent = `${critical} critical`;
+    findingsNote.textContent = t('{0} critical', critical);
   } else if (high > 0) {
-    findingsNote.textContent = `${high} high severity`;
+    findingsNote.textContent = t('{0} high severity', high);
   } else {
     findingsNote.textContent = '';
   }
@@ -116,8 +117,8 @@ function renderReviewSummary(report) {
     ])
     .filter(([, count]) => count > 0);
   const severity = breakdown[0]?.[0];
-  valueEl.textContent = report.reachable ? severity || 'None' : 'Unknown';
-  ratingEl.textContent = 'Highest observed severity';
+  valueEl.textContent = report.reachable ? severity || 'None' : t('Unknown');
+  ratingEl.textContent = t('Highest observed severity');
 
   card.classList.remove(
     'scan-sev-critical',
@@ -175,11 +176,11 @@ function renderChecks(report) {
 function renderTimings(report) {
   const container = document.getElementById('scan_timings');
   container.textContent = '';
-  const t = report.timings || {};
+  const tm = report.timings || {};
   const rows = [
-    ['Total scan time', `${t.total_ms.toFixed(0)} ms`],
-    ['Main endpoint TTFB', `${t.main_ttfb_ms.toFixed(0)} ms`],
-    ['Main endpoint total', `${t.main_total_ms.toFixed(0)} ms`],
+    ['Total scan time', `${tm.total_ms.toFixed(0)} ms`],
+    ['Main endpoint TTFB', `${tm.main_ttfb_ms.toFixed(0)} ms`],
+    ['Main endpoint total', `${tm.main_total_ms.toFixed(0)} ms`],
   ];
   for (const [label, value] of rows) {
     const row = createEl('div', {
@@ -463,7 +464,7 @@ function renderReport(report) {
     );
     document.getElementById('scan_findings_note').textContent =
       reportFinding?.code || 'unreachable';
-    document.getElementById('scan_version').textContent = 'Unknown';
+    document.getElementById('scan_version').textContent = t('Unknown');
     document.getElementById('scan_https').textContent = report.is_https
       ? 'Yes'
       : 'No';

@@ -49,7 +49,9 @@ function initThemeSwitch() {
   const choice = () => localStorage.getItem('ommd_theme') || 'auto';
   const syncIcon = () => {
     icon.textContent = THEME_ICONS[choice()];
-    theme_toggle.title = `Theme: ${choice()} (click to change)`;
+    const [theme, change, ...names] = theme_toggle.dataset.i18nTheme.split('|');
+    const label = {auto: names[0], light: names[1], dark: names[2]}[choice()];
+    theme_toggle.title = `${theme}: ${label} (${change})`;
   };
   syncIcon();
   theme_toggle.addEventListener('click', () => {
@@ -63,6 +65,30 @@ function initThemeSwitch() {
       next === 'auto' ? window.ommdAutoTheme() : next;
     syncIcon();
     restartAnimation(icon, 'spin');
+  });
+}
+
+// Language dropdown: auto (no cookie: the server uses the browser's language) or a fixed one.
+// Pages are translated server-side, so a change reloads.
+function initLangSwitch() {
+  const root = document.getElementById('lang-select');
+  if (!root) {
+    return;
+  }
+  const match = document.cookie.match(/(?:^|; )lang=(en|es|gl)/);
+  const choice = match ? match[1] : 'auto';
+  root.querySelector('.lang-code').textContent =
+    choice === 'auto' ? root.dataset.lang : choice;
+  root.querySelector(`[data-lang-choice="${choice}"]`).classList.add('active');
+  root.addEventListener('click', ev => {
+    const item = ev.target.closest('[data-lang-choice]');
+    if (!item) {
+      return;
+    }
+    const next = item.dataset.langChoice;
+    const max_age = next === 'auto' ? 0 : 31536000;
+    document.cookie = `lang=${next === 'auto' ? '' : next}; path=/; max-age=${max_age}; SameSite=Lax`;
+    location.reload();
   });
 }
 
@@ -182,6 +208,7 @@ function init() {
   initModeSwitch();
   initThemeSwitch();
   initWorkspaceSelect();
+  initLangSwitch();
   initSidebarToggle();
   initSearchPalette();
 }

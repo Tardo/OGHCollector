@@ -12,8 +12,8 @@
 {{ super() }}
 
 <header class="page-header">
-    <h1 id="scan_title">Scan an instance</h1>
-    <p class="page-header-desc" id="scan_subtitle">Enter an Odoo URL to probe it as an HTTP client.</p>
+    <h1 id="scan_title">{{ "Scan an instance"|t }}</h1>
+    <p class="page-header-desc" id="scan_subtitle">{{ "Enter an Odoo URL to probe it as an HTTP client."|t }}</p>
 </header>
 
 
@@ -24,16 +24,15 @@
             class="form-control"
             id="scan_url"
             name="url"
-            placeholder="https://demo.odoo.com"
+            placeholder="{{ 'https://demo.odoo.com'|t }}"
             autocomplete="off"
             spellcheck="false"
-            aria-label="Odoo instance URL"
+            aria-label="{{ 'Odoo instance URL'|t }}"
         />
-        <button class="btn btn-outline-secondary" type="submit" id="scan_run_btn">Scan</button>
+        <button class="btn btn-outline-secondary" type="submit" id="scan_run_btn">{{ "Scan"|t }}</button>
     </div>
     <p class="form-text mt-2 mb-0">
-        Only <code>http</code>/<code>https</code> URLs to public addresses are scanned &mdash;
-        private, loopback and cloud-metadata addresses are refused.
+        {% set _i21 %}<code>http</code>{% endset %}{% set _i22 %}<code>https</code>{% endset %}{{ "Only {0}/{1} URLs to public addresses are scanned — private, loopback and cloud-metadata addresses are refused."|t(_i21, _i22) }}
     </p>
 </form>
 
@@ -42,41 +41,41 @@
 
 <div id="scan_loading" class="d-none text-center py-5">
     <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Scanning&hellip;</span>
+        <span class="visually-hidden">{{ "Scanning…"|t }}</span>
     </div>
-    <p class="mt-3 text-body-secondary" id="scan_loading_text">Probing endpoints&hellip;</p>
+    <p class="mt-3 text-body-secondary" id="scan_loading_text">{{ "Probing endpoints…"|t }}</p>
 </div>
 
 <div id="scan_results" class="d-none">
     <div class="d-flex align-items-center justify-content-between mb-3">
-        <h2 class="fs-6 text-uppercase text-body-secondary mb-0">Results</h2>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="scan_new_btn">New scan</button>
+        <h2 class="fs-6 text-uppercase text-body-secondary mb-0">{{ "Results"|t }}</h2>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="scan_new_btn">{{ "New scan"|t }}</button>
     </div>
 
     <div class="row g-3 mb-4">
         <div class="col-6 col-lg-3">
             <div class="stat-card">
-                <div class="stat-card-label">Version</div>
-                <div class="stat-card-value" id="scan_version">&ndash;</div>
+                <div class="stat-card-label">{{ "Version"|t }}</div>
+                <div class="stat-card-value" id="scan_version">{{ "–"|t }}</div>
                 <div class="stat-card-note" id="scan_version_note"></div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card">
-                <div class="stat-card-label">HTTPS</div>
-                <div class="stat-card-value" id="scan_https">&ndash;</div>
+                <div class="stat-card-label">{{ "HTTPS"|t }}</div>
+                <div class="stat-card-value" id="scan_https">{{ "–"|t }}</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card">
-                <div class="stat-card-label">Debug mode</div>
-                <div class="stat-card-value" id="scan_debug">&ndash;</div>
+                <div class="stat-card-label">{{ "Debug mode"|t }}</div>
+                <div class="stat-card-value" id="scan_debug">{{ "–"|t }}</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card">
-                <div class="stat-card-label">Findings</div>
-                <div class="stat-card-value" id="scan_findings_count">&ndash;</div>
+                <div class="stat-card-label">{{ "Findings"|t }}</div>
+                <div class="stat-card-value" id="scan_findings_count">{{ "–"|t }}</div>
                 <div class="stat-card-note" id="scan_findings_note"></div>
             </div>
         </div>
@@ -88,15 +87,15 @@
         <div class="row g-3 align-items-stretch">
             <div class="col-12 col-md-4">
                 <div class="scan-score-card" id="scan_score_card">
-                    <div class="scan-score-label">Review priority</div>
-                    <div class="scan-score-value" id="scan_score_value">&ndash;</div>
+                    <div class="scan-score-label">{{ "Review priority"|t }}</div>
+                    <div class="scan-score-value" id="scan_score_value">{{ "–"|t }}</div>
                     <div class="scan-score-rating" id="scan_score_rating"></div>
                     <div class="scan-score-breakdown" id="scan_score_breakdown"></div>
                 </div>
             </div>
             <div class="col-12 col-md-8">
                 <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                    <div class="scan-detail-card-title">Security checks</div>
+                    <div class="scan-detail-card-title">{{ "Security checks"|t }}</div>
                     <div id="scan_checks" class="scan-detail-card-body"></div>
                 </div>
             </div>
@@ -106,19 +105,19 @@
     <div class="row g-4 mt-1">
         <div class="col-lg-6">
                 <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                <div class="scan-detail-card-title">Timings</div>
+                <div class="scan-detail-card-title">{{ "Timings"|t }}</div>
                 <div id="scan_timings" class="scan-detail-card-body"></div>
             </div>
         </div>
         <div class="col-lg-6">
             <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                <div class="scan-detail-card-title">Database exposure</div>
+                <div class="scan-detail-card-title">{{ "Database exposure"|t }}</div>
                 <div id="scan_database" class="scan-detail-card-body"></div>
             </div>
         </div>
         <div class="col-lg-6">
             <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                <div class="scan-detail-card-title">TLS certificate</div>
+                <div class="scan-detail-card-title">{{ "TLS certificate"|t }}</div>
                 <div id="scan_certificate" class="scan-detail-card-body"></div>
             </div>
         </div>
@@ -127,7 +126,7 @@
     <div class="row g-4 mt-3">
         <div class="col-12">
                 <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                <div class="scan-detail-card-title">Modules</div>
+                <div class="scan-detail-card-title">{{ "Modules"|t }}</div>
                 <div id="scan_modules" class="scan-detail-card-body"></div>
             </div>
         </div>
@@ -136,7 +135,7 @@
     <div class="row g-4 mt-3">
         <div class="col-12">
                 <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                <div class="scan-detail-card-title">Session cookies</div>
+                <div class="scan-detail-card-title">{{ "Session cookies"|t }}</div>
                 <div id="scan_cookies" class="scan-detail-card-body"></div>
             </div>
         </div>
@@ -145,7 +144,7 @@
     <div class="row g-4 mt-3">
         <div class="col-12">
                 <div class="h-100 p-3 border rounded-3 bg-body-tertiary">
-                <div class="scan-detail-card-title">Probed endpoints</div>
+                <div class="scan-detail-card-title">{{ "Probed endpoints"|t }}</div>
                 <div id="scan_endpoints" class="scan-detail-card-body"></div>
             </div>
         </div>

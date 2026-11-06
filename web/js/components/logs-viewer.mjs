@@ -1,6 +1,7 @@
 // Copyright 2026 Alexandre D. Díaz
 import {Component, registerComponent, getService} from 'mirlo';
 import '@scss/components/logs-viewer.scss';
+import {t} from '@app/utils/i18n';
 
 const PAGE_SIZE = 200;
 const MONTH_FORMATTER = new Intl.DateTimeFormat(undefined, {
@@ -145,7 +146,7 @@ class LogsViewer extends Component {
       return;
     }
     this.#loading = true;
-    this.#el_status.textContent = 'Loading...';
+    this.#el_status.textContent = t('Loading...');
     try {
       const params = new URLSearchParams({limit: String(PAGE_SIZE)});
       if (this.#oldest_id !== null) {
@@ -171,7 +172,7 @@ class LogsViewer extends Component {
           : 'End of log.'
         : '';
     } catch {
-      this.#el_status.textContent = 'Failed to load logs.';
+      this.#el_status.textContent = t('Failed to load logs.');
     } finally {
       this.#loading = false;
     }

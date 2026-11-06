@@ -12,8 +12,8 @@
 {{ super() }}
 
 <header class="page-header">
-    <h1>Modules</h1>
-    <p class="page-header-desc">{{ modules_total }} Odoo module{{ modules_total != 1 and 's' or '' }} tracked across all registered organizations.</p>
+    <h1>{{ "Modules"|t }}</h1>
+    <p class="page-header-desc">{{ "{0} Odoo module{1} tracked across all registered organizations."|t((modules_total), (modules_total != 1 and 's' or '')) }}</p>
 </header>
 
 <div class="position-relative" id="module_search">
@@ -21,7 +21,7 @@
 </div>
 
 {% if not version_groups %}
-<p class="text-body-secondary">No open PRs or security findings tracked.</p>
+<p class="text-body-secondary">{{ "No open PRs or security findings tracked."|t }}</p>
 {% else %}
 <ul class="nav nav-pills mb-3 mt-3" id="versions-tab" role="tablist">
     {% for g in version_groups %}
@@ -40,7 +40,7 @@
     {# Fetched on demand (see modules.mjs) when this tab is first shown, to
        avoid shipping every Odoo version's PRs/security findings up front. #}
     <div class="tab-pane fade" id="modver-{{ g.odoo_version }}" role="tabpanel" aria-labelledby="modver-{{ g.odoo_version }}-tab" tabindex="0" data-lazy-tab-url="/modules/tab/{{ g.odoo_version | urlencode }}">
-        <p class="text-body-secondary">Loading&hellip;</p>
+        <p class="text-body-secondary">{{ "Loading…"|t }}</p>
     </div>
     {% endif %}
     {% endfor %}

@@ -5,6 +5,7 @@ import {geoContains, geoGraticule10, geoOrthographic, geoPath} from 'd3-geo';
 import {feature} from 'topojson-client';
 import {whereAlpha2, whereNumeric} from 'iso-3166-1';
 import world from 'world-atlas/countries-50m.json';
+import {t} from '@app/utils/i18n';
 
 const canvas = document.querySelector('#localization-globe');
 if (canvas) {
@@ -173,7 +174,7 @@ if (canvas) {
     if (!link) return;
     link.setAttribute('aria-current', 'true');
     selectionTitle.textContent = `${link.querySelector('.country-name').textContent} · Odoo ${versionSelect.value}`;
-    selectionCount.textContent = 'Loading…';
+    selectionCount.textContent = t('Loading…');
     request = new AbortController();
     try {
       const res = await fetch(
@@ -185,7 +186,7 @@ if (canvas) {
       const count = selectionList.querySelectorAll(
         '.localization-result',
       ).length;
-      selectionCount.textContent = `${count} module${count === 1 ? '' : 's'}`;
+      selectionCount.textContent = t('{0} module(s)', count);
       if (
         reveal &&
         selectionList.getBoundingClientRect().top > innerHeight - 80
@@ -198,7 +199,7 @@ if (canvas) {
     } catch (error) {
       if (error.name === 'AbortError') return;
       selectionList.replaceChildren();
-      selectionCount.textContent = 'Could not load the modules.';
+      selectionCount.textContent = t('Could not load the modules.');
     }
   }
 

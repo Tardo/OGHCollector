@@ -6,6 +6,7 @@ import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
 import {Component, getService, registerComponent, HTTP_METHOD} from 'mirlo';
 import '@scss/components/atlas.scss';
+import {t} from '@app/utils/i18n';
 
 class SigmaAtlas extends Component {
   DEFAULT_LAYOUT_TIMEOUT = 8000;
@@ -254,8 +255,8 @@ class SigmaAtlas extends Component {
   onPauseAtlasLayout() {
     this.#fa2_layout.stop();
     this.#el_mod_dep_control.firstElementChild.textContent = 'play_arrow';
-    this.#el_mod_dep_control.setAttribute('aria-label', 'Resume layout');
-    this.#el_mod_dep_control.title = 'Resume layout';
+    this.#el_mod_dep_control.setAttribute('aria-label', t('Resume layout'));
+    this.#el_mod_dep_control.title = t('Resume layout');
   }
 
   onClickControl() {
@@ -270,8 +271,8 @@ class SigmaAtlas extends Component {
     } else {
       this.#fa2_layout.start();
       this.#el_mod_dep_control.firstElementChild.textContent = 'stop';
-      this.#el_mod_dep_control.setAttribute('aria-label', 'Pause layout');
-      this.#el_mod_dep_control.title = 'Pause layout';
+      this.#el_mod_dep_control.setAttribute('aria-label', t('Pause layout'));
+      this.#el_mod_dep_control.title = t('Pause layout');
     }
   }
 

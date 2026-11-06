@@ -229,6 +229,7 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
             .map(|ws| ws.names())
             .unwrap_or_default(),
         WORKSPACE => crate::workspace::current(req),
+        LANG => crate::i18n::current(req),
     )
 }
 

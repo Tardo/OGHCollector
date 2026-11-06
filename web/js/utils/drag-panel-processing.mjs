@@ -1,3 +1,4 @@
+import {t} from './i18n.mjs';
 // Copyright 2026 Alexandre D. Díaz
 
 // Shared "processing..."/error indicator for the doodba tools' drag-and-drop
@@ -12,7 +13,7 @@ export function setDragPanelProcessing(panel_el, active) {
   panel_el.classList.toggle('processing', active);
   if (active) {
     text_el.dataset.origText ??= text_el.textContent;
-    text_el.textContent = 'Processing…';
+    text_el.textContent = t('Processing…');
     panel_el.classList.remove('has-error');
   } else if (text_el.dataset.origText) {
     text_el.textContent = text_el.dataset.origText;

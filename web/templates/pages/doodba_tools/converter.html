@@ -14,17 +14,17 @@
 <template id="template-mirlo-doodba-converter">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/doodba-converter.css" as="style">
     <div class="doodba-toolbar">
-        <span class="search_container" id="doodba_converter_search_version"><strong>Odoo Version:</strong> <select class="search_input" id="doodba_converter_search_select_ver" aria-label="Odoo version"></select></span>
-        <span class="search_container search_container-save" id="doodba_converter_save" style="display:none"><span class="material-icons" aria-hidden="true">save</span> Save</span>
+        <span class="search_container" id="doodba_converter_search_version"><strong>{{ "Odoo Version:"|t }}</strong> <select class="search_input" id="doodba_converter_search_select_ver" aria-label="{{ 'Odoo version'|t }}"></select></span>
+        <span class="search_container search_container-save" id="doodba_converter_save" style="display:none"><span class="material-icons" aria-hidden="true">save</span> {{ "Save"|t }}</span>
     </div>
-    <div id="doodba_converter_drag_panel" class="doodba-drag-panel"><span class="no_mouse">Drop your addons folder here, or click to browse, to convert it to doodba format.</span></div>
+    <div id="doodba_converter_drag_panel" class="doodba-drag-panel"><span class="no_mouse">{{ "Drop your addons folder here, or click to browse, to convert it to doodba format."|t }}</span></div>
     <textarea id="doodba_converter_result" style="display: none" readonly="readonly"></textarea>
 </template>
 
 
 <header class="page-header">
-    <h1>Doodba converter</h1>
-    <p class="page-header-desc">Point this at a local Odoo addons folder and it builds the <code>addons.yaml</code> for your Doodba project. Only the folder names get sent — <span class="text-info">contents never leave your machine</span>. Works best in Firefox; Chromium browsers tend to cut off large folders. <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
+    <h1>{{ "Doodba converter"|t }}</h1>
+    <p class="page-header-desc">Point this at a local Odoo addons folder and it builds the <code>addons.yaml</code> for your Doodba project. Only the folder names get sent — <span class="text-info">{{ "contents never leave your machine"|t }}</span>{{ ". Works best in Firefox; Chromium browsers tend to cut off large folders."|t }} <span class="text-muted">Up to {{ DOODBA_MAX_MODULES }} modules per request.</span></p>
 </header>
 
 <mirlo-doodba-converter></mirlo-doodba-converter>

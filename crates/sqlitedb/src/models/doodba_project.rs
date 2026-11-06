@@ -32,6 +32,7 @@ pub struct Model {
     pub dependencies: String,
     pub exposed: String,
     pub advisories: String,
+    pub deploy: String,
 }
 
 /// An entry of the `repos` JSON (repos.yaml): `patches` are its merges after
@@ -60,6 +61,28 @@ pub struct Patch {
 pub struct Linter {
     pub repo: String,
     pub rev: String,
+}
+
+/// The `deploy` JSON: the project's real instances, from its own
+/// `.gitlab-ci.yml` `variables` (the included CI template isn't read: its
+/// defaults, prod on and demo off, apply when they're unset) and the hosts of
+/// `.copier-answers.yml` `domains_prod`/`domains_test`. A URL is only set for
+/// an environment that is deployed.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[serde(default)]
+pub struct Deploy {
+    pub gitlab_ci: bool,
+    pub prod: bool,
+    /// `None` = the default branch.
+    pub prod_branch: Option<String>,
+    pub prod_url: Option<String>,
+    pub demo: bool,
+    pub demo_branch: Option<String>,
+    /// The demo is refilled from prod's database and filestore.
+    pub demo_clone_prod: bool,
+    pub demo_reset_db: bool,
+    pub demo_name: Option<String>,
+    pub demo_url: Option<String>,
 }
 
 /// An entry of the `advisories` JSON: a PyPI advisory of an exact pip pin.
@@ -255,6 +278,10 @@ impl Row {
         e
     }
 
+    pub fn deploy(&self) -> Deploy {
+        serde_json::from_str(&self.project.deploy).unwrap_or_default()
+    }
+
     pub fn exposed(&self) -> Vec<String> {
         serde_json::from_str(&self.project.exposed).unwrap_or_default()
     }
@@ -265,6 +292,7 @@ impl Row {
 
     pub fn summary(&self) -> Summary {
         let patches: Vec<Patch> = self.repos().into_iter().flat_map(|r| r.patches).collect();
+        let deploy = self.deploy();
         Summary {
             organization: self.org_name.clone(),
             repository: self.repository.clone(),
@@ -277,6 +305,8 @@ impl Row {
             patches: patches.len(),
             advisories: self.advisories().len(),
             exposed_credentials: self.exposed().len(),
+            prod_url: deploy.prod_url,
+            demo_url: deploy.demo_url,
         }
     }
 }
@@ -315,6 +345,8 @@ pub struct Summary {
     pub patches_done: usize,
     pub advisories: usize,
     pub exposed_credentials: usize,
+    pub prod_url: Option<String>,
+    pub demo_url: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -345,6 +377,8 @@ pub struct Report {
     pub linters: Vec<Linter>,
     pub dependencies: BTreeMap<String, Vec<String>>,
     pub advisories: Vec<Advisory>,
+    /// Its production and demo instances (CI switches, demo options, URLs).
+    pub deploy: Deploy,
     /// Where the project files hold credentials ("<file> <host>").
     pub exposed_credentials: Vec<String>,
     /// The next indexed Odoo version, which `in_next_version` is about.
@@ -374,6 +408,7 @@ pub fn report(conn: &mut SqliteConnection, row: &Row) -> Report {
         linters: row.linters(),
         dependencies: serde_json::from_str(&p.dependencies).unwrap_or_default(),
         advisories: row.advisories(),
+        deploy: row.deploy(),
         exposed_credentials: row.exposed(),
         next_odoo_version: next.map(|v| odoo_version_u8_to_string(&(v as u8))),
         addons: addons(conn, p.gh_repository_id, p.version_odoo, next)

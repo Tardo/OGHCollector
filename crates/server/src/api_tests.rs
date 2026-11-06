@@ -219,6 +219,8 @@ async fn doodba_projects_answer_from_the_db() {
             "patches_done": 1,
             "advisories": 1,
             "exposed_credentials": 1,
+            "prod_url": "https://erp.example",
+            "demo_url": "https://demo.example",
         }])
     );
     for (uri, count) in [
@@ -241,6 +243,7 @@ async fn doodba_projects_answer_from_the_db() {
             "answers",
             "base_image",
             "dependencies",
+            "deploy",
             "exposed_credentials",
             "last_commit_date",
             "linters",

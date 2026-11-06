@@ -6,6 +6,7 @@ import {
   showDragPanelError,
 } from '@app/utils/drag-panel-processing';
 import '@scss/components/doodba-converter.scss';
+import {t} from '@app/utils/i18n';
 
 const MANIFEST_NAMES = ['__manifest__.py', '__openerp__.py'];
 
@@ -193,7 +194,7 @@ class DoodbaConverter extends Component {
           },
         );
         if (!data.ok) {
-          throw new Error(`Server responded with ${data.status}`);
+          throw new Error(t('Server responded with {0}', data.status));
         }
         const json_data = await data.json();
         const yaml_txt = this.#makeYaml(json_data, mods);

@@ -12,56 +12,56 @@
 {{ super() }}
 
 <header class="page-header">
-    <h1>Favorites &amp; Packs</h1>
-    <p class="page-header-desc">Modules you starred and the packs you built from them.</p>
+    <h1>{{ "Favorites & Packs"|t }}</h1>
+    <p class="page-header-desc">{{ "Modules you starred and the packs you built from them."|t }}</p>
 </header>
 
 <div class="alert alert-warning" role="alert">
-    <strong>Stored only in this browser.</strong> Favorites and packs are saved in this browser's local storage on this computer &mdash; they are never sent to the server, are not synced across devices or browsers, and are visible to anyone else who uses this browser profile. Clearing the browser's site data deletes them for good.
+    <strong>{{ "Stored only in this browser."|t }}</strong> {{ "Favorites and packs are saved in this browser's local storage on this computer — they are never sent to the server, are not synced across devices or browsers, and are visible to anyone else who uses this browser profile. Clearing the browser's site data deletes them for good."|t }}
 </div>
 
 <div class="row g-3 mb-4">
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label">Favorites</div>
+            <div class="stat-card-label">{{ "Favorites"|t }}</div>
             <div class="stat-card-value" id="stat_favorites">0</div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label">Packs</div>
+            <div class="stat-card-label">{{ "Packs"|t }}</div>
             <div class="stat-card-value" id="stat_packs">0</div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label">Modules in packs</div>
+            <div class="stat-card-label">{{ "Modules in packs"|t }}</div>
             <div class="stat-card-value" id="stat_pack_modules">0</div>
         </div>
     </div>
 </div>
 
 <section id="favorites_section" class="mb-5">
-    <h2 class="fs-4 mb-3">Favorites</h2>
+    <h2 class="fs-4 mb-3">{{ "Favorites"|t }}</h2>
     <div id="favorites_list" class="module-tile-grid"></div>
     <div id="favorites_empty" class="empty-state d-none">
         <span class="empty-state-icon material-icons" aria-hidden="true">star_border</span>
-        <p class="mb-0">No favorites yet &mdash; open a module page and click &ldquo;Favorite&rdquo;.</p>
+        <p class="mb-0">{{ "No favorites yet — open a module page and click “Favorite”."|t }}</p>
     </div>
 </section>
 
 <section id="packs_section">
     <div class="d-flex align-items-center justify-content-between mb-3">
-        <h2 class="fs-4 mb-0">Packs</h2>
+        <h2 class="fs-4 mb-0">{{ "Packs"|t }}</h2>
         <div class="d-flex gap-2">
-            <select class="form-select form-select-sm w-auto" id="new_pack_version" aria-label="Odoo version for the new pack"></select>
-            <button type="button" class="btn btn-outline-primary btn-sm" id="new_pack_btn">+ New pack</button>
+            <select class="form-select form-select-sm w-auto" id="new_pack_version" aria-label="{{ 'Odoo version for the new pack'|t }}"></select>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="new_pack_btn">{{ "+ New pack"|t }}</button>
         </div>
     </div>
     <div id="packs_list" class="d-flex flex-column gap-4"></div>
     <div id="packs_empty" class="empty-state d-none">
         <span class="empty-state-icon material-icons" aria-hidden="true">inventory_2</span>
-        <p class="mb-0">No packs yet &mdash; create one to group modules together.</p>
+        <p class="mb-0">{{ "No packs yet — create one to group modules together."|t }}</p>
     </div>
 </section>
 {% endblock %}

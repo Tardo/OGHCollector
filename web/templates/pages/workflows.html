@@ -13,66 +13,66 @@
 {{ super() }}
 
 <header class="page-header">
-    <h1>Workflows</h1>
-    <p class="page-header-desc">What the collector does with each module or pull request it finds. Open one, change it or build a new one, then copy its YAML into <code>workflows.yaml</code> (next to <code>collector.yaml</code>): nothing is saved here. It's checked against the collector's own rules as you go.</p>
+    <h1>{{ "Workflows"|t }}</h1>
+    <p class="page-header-desc">{% set _i49 %}<code>workflows.yaml</code>{% endset %}{% set _i50 %}<code>collector.yaml</code>{% endset %}{{ "What the collector does with each module or pull request it finds. Open one, change it or build a new one, then copy its YAML into {0} (next to {1}): nothing is saved here. It's checked against the collector's own rules as you go."|t(_i49, _i50) }}</p>
     <div class="page-header-actions">
-        <button type="button" class="btn btn-outline-secondary" id="wf-new"><span class="material-icons" aria-hidden="true">add</span> New</button>
-        <button type="button" class="btn btn-outline-secondary" id="wf-import-open"><span class="material-icons" aria-hidden="true">upload</span> Import YAML</button>
+        <button type="button" class="btn btn-outline-secondary" id="wf-new"><span class="material-icons" aria-hidden="true">add</span> {{ "New"|t }}</button>
+        <button type="button" class="btn btn-outline-secondary" id="wf-import-open"><span class="material-icons" aria-hidden="true">upload</span> {{ "Import YAML"|t }}</button>
     </div>
 </header>
 
 <div class="wf-layout">
-    <section class="wf-main panel" aria-label="Editor">
+    <section class="wf-main panel" aria-label="{{ 'Editor'|t }}">
         <div class="wf-toolbar">
-            <select class="form-select form-select-sm" id="wf-list" aria-label="Open a workflow"><option>Loading…</option></select>
-            <label class="wf-field-inline">Name <input type="text" class="form-control form-control-sm" id="wf-name" spellcheck="false" autocomplete="off"></label>
-            <label class="wf-field-inline">On <select class="form-select form-select-sm" id="wf-trigger"></select></label>
+            <select class="form-select form-select-sm" id="wf-list" aria-label="{{ 'Open a workflow'|t }}"><option>{{ "Loading…"|t }}</option></select>
+            <label class="wf-field-inline">{{ "Name"|t }} <input type="text" class="form-control form-control-sm" id="wf-name" spellcheck="false" autocomplete="off"></label>
+            <label class="wf-field-inline">{{ "On"|t }} <select class="form-select form-select-sm" id="wf-trigger"></select></label>
             <div class="form-check form-switch wf-field-inline" title="Off: it doesn't run, even where a source names it">
                 <input class="form-check-input" type="checkbox" role="switch" id="wf-enabled" checked>
-                <label class="form-check-label" for="wf-enabled">Enabled</label>
+                <label class="form-check-label" for="wf-enabled">{{ "Enabled"|t }}</label>
             </div>
-            <label class="wf-field-inline" title="Workflows (same trigger) it runs after, on each module or PR: only once they finished, starting from what they computed">After <input type="text" class="form-control form-control-sm" id="wf-after" placeholder="default, …" spellcheck="false" autocomplete="off"></label>
+            <label class="wf-field-inline" title="{{ 'Workflows (same trigger) it runs after, on each module or PR: only once they finished, starting from what they computed'|t }}">{{ "After"|t }} <input type="text" class="form-control form-control-sm" id="wf-after" placeholder="{{ 'default, …'|t }}" spellcheck="false" autocomplete="off"></label>
             <span class="wf-toolbar-sep"></span>
-            <select class="form-select form-select-sm" id="wf-palette" aria-label="Node type to add"></select>
-            <button type="button" class="btn btn-sm btn-primary" id="wf-add"><span class="material-icons" aria-hidden="true">add_box</span> Add node</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-start" disabled title="The workflow starts at this node"><span class="material-icons" aria-hidden="true">flag</span> Start here</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" id="wf-delete" disabled><span class="material-icons" aria-hidden="true">delete</span> Delete</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-layout-btn" title="Lay the nodes out again"><span class="material-icons" aria-hidden="true">auto_fix_high</span></button>
+            <select class="form-select form-select-sm" id="wf-palette" aria-label="{{ 'Node type to add'|t }}"></select>
+            <button type="button" class="btn btn-sm btn-primary" id="wf-add"><span class="material-icons" aria-hidden="true">add_box</span> {{ "Add node"|t }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-start" disabled title="{{ 'The workflow starts at this node'|t }}"><span class="material-icons" aria-hidden="true">flag</span> {{ "Start here"|t }}</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="wf-delete" disabled><span class="material-icons" aria-hidden="true">delete</span> {{ "Delete"|t }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-layout-btn" title="{{ 'Lay the nodes out again'|t }}"><span class="material-icons" aria-hidden="true">auto_fix_high</span></button>
         </div>
         <p class="wf-file-error text-danger small" id="wf-file-error" hidden></p>
-        <div class="wf-canvas" id="wf-canvas" tabindex="0" aria-label="Workflow graph"></div>
+        <div class="wf-canvas" id="wf-canvas" tabindex="0" aria-label="{{ 'Workflow graph'|t }}"></div>
         <div class="wf-balloon small" id="wf-balloon" role="tooltip" hidden></div>
-        <p class="wf-hint small text-body-secondary">Each card holds its settings: <span class="material-icons" aria-hidden="true">expand_less</span> folds it, <span class="material-icons" aria-hidden="true">info</span> or resting the pointer on a field explains it. Drag from a node's right dot to another node's left dot to connect them (an <code>if</code> has <em>then</em> and <em>else</em>). Delete a link by clicking it, then <kbd>Del</kbd>. <span class="material-icons" aria-hidden="true">auto_fix_high</span> lays the cards out again.</p>
+        <p class="wf-hint small text-body-secondary">{{ "Each card holds its settings:"|t }} <span class="material-icons" aria-hidden="true">expand_less</span> {{ "folds it,"|t }} <span class="material-icons" aria-hidden="true">info</span> or resting the pointer on a field explains it. Drag from a node's right dot to another node's left dot to connect them (an <code>if</code> has <em>then</em> and <em>else</em>). Delete a link by clicking it, then <kbd>{{ "Del"|t }}</kbd>. <span class="material-icons" aria-hidden="true">auto_fix_high</span> {{ "lays the cards out again."|t }}</p>
     </section>
 
-    <section class="panel wf-dock" aria-label="YAML">
+    <section class="panel wf-dock" aria-label="{{ 'YAML'|t }}">
         <div class="panel-header">
             <h2>
-                <button type="button" class="wf-dock-toggle" id="wf-yaml-toggle" aria-expanded="false" aria-controls="wf-yaml-body"><span class="material-icons" aria-hidden="true">expand_less</span> YAML</button>
+                <button type="button" class="wf-dock-toggle" id="wf-yaml-toggle" aria-expanded="false" aria-controls="wf-yaml-body"><span class="material-icons" aria-hidden="true">expand_less</span> {{ "YAML"|t }}</button>
                 <span class="wf-status" id="wf-status" aria-live="polite"></span>
             </h2>
             <div class="wf-yaml-actions">
-                <button type="button" class="btn btn-sm btn-primary" id="wf-copy" disabled title="Just this workflow, indented to paste under the workflows: of workflows.yaml"><span class="material-icons" aria-hidden="true">content_copy</span> Copy</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-download" disabled title="The whole file"><span class="material-icons" aria-hidden="true">download</span> Download</button>
+                <button type="button" class="btn btn-sm btn-primary" id="wf-copy" disabled title="{{ 'Just this workflow, indented to paste under the workflows: of workflows.yaml'|t }}"><span class="material-icons" aria-hidden="true">content_copy</span> {{ "Copy"|t }}</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="wf-download" disabled title="{{ 'The whole file'|t }}"><span class="material-icons" aria-hidden="true">download</span> {{ "Download"|t }}</button>
             </div>
         </div>
         <ul class="wf-errors small" id="wf-errors"></ul>
         <div class="wf-yaml-body" id="wf-yaml-body" hidden>
             <pre class="wf-yaml-text" id="wf-yaml"></pre>
-            <p class="small text-body-secondary">Copy gives just this workflow, indented to paste under the <code>workflows:</code> of <code>workflows.yaml</code>; Download gives the whole file above.</p>
+            <p class="small text-body-secondary">{% set _i63 %}<code>workflows:</code>{% endset %}{% set _i64 %}<code>workflows.yaml</code>{% endset %}{{ "Copy gives just this workflow, indented to paste under the {0} of {1}; Download gives the whole file above."|t(_i63, _i64) }}</p>
         </div>
     </section>
 </div>
 
 <dialog class="wf-import" id="wf-import">
     <form method="dialog">
-        <h2 class="h5">Import YAML</h2>
-        <p class="small text-body-secondary">A whole <code>workflows.yaml</code> (or <code>collector.yaml</code>) or just its <code>workflows:</code> section.</p>
+        <h2 class="h5">{{ "Import YAML"|t }}</h2>
+        <p class="small text-body-secondary">{% set _i65 %}<code>workflows.yaml</code>{% endset %}{% set _i66 %}<code>collector.yaml</code>{% endset %}{% set _i67 %}<code>workflows:</code>{% endset %}{{ "A whole {0} (or {1}) or just its {2} section."|t(_i65, _i66, _i67) }}</p>
         <textarea class="form-control font-monospace" id="wf-import-text" rows="14" spellcheck="false"></textarea>
         <p class="text-danger small" id="wf-import-error" hidden></p>
         <div class="wf-import-actions">
-            <button type="submit" class="btn btn-outline-secondary" value="cancel">Cancel</button>
-            <button type="button" class="btn btn-primary" id="wf-import-load">Load</button>
+            <button type="submit" class="btn btn-outline-secondary" value="cancel">{{ "Cancel"|t }}</button>
+            <button type="button" class="btn btn-primary" id="wf-import-load">{{ "Load"|t }}</button>
         </div>
     </form>
 </dialog>

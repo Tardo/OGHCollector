@@ -11,10 +11,10 @@
 {{ super() }}
 <div class="localization-results" data-country="{{ country_code }}">
     <header class="page-header">
-        <h1>Localization: <span id="localization-country-name">{{ country_code }}</span></h1>
-        <p class="page-header-desc">{{ modules | length }} module{{ modules | length != 1 and 's' or '' }} for {{ country_code }} {% if selected_version %}in Odoo {{ selected_version }}{% else %}across all indexed Odoo versions{% endif %}: its <code>l10n_XX</code> modules and every addon of its <code>l10n-*</code> repositories.</p>
+        <h1>{{ "Localization:"|t }} <span id="localization-country-name">{{ country_code }}</span></h1>
+        <p class="page-header-desc">{{ "{0} module{1} for {2}"|t((modules | length), (modules | length != 1 and 's' or ''), (country_code)) }} {% if selected_version %}in Odoo {{ selected_version }}{% else %}across all indexed Odoo versions{% endif %}: its <code>l10n_XX</code> {% set _i68 %}<code>l10n-*</code>{% endset %}{{ "modules and every addon of its {0} repositories."|t(_i68) }}</p>
         <div class="page-header-actions">
-            <a class="btn btn-outline-secondary btn-sm" href="/localization{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}"><span class="material-icons" aria-hidden="true">public</span> Back to the globe</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/localization{% if selected_version %}?version={{ selected_version | urlencode }}{% endif %}"><span class="material-icons" aria-hidden="true">public</span> {{ "Back to the globe"|t }}</a>
         </div>
     </header>
     {% include "partials/localization_modules.html" %}

@@ -167,6 +167,8 @@ fn seed(conn: &mut SqliteConnection) {
         exposed: r#"["odoo/custom/src/repos.yaml forge.example"]"#.to_string(),
         advisories: r#"[{"package":"requests","version":"2.0.0","id":"PYSEC-2014-14","fixed_in":"2.3.0","summary":"Leaks credentials."}]"#
             .to_string(),
+        deploy: r#"{"gitlab_ci":true,"prod":true,"prod_url":"https://erp.example","demo":true,"demo_branch":"18.0-demo","demo_clone_prod":true,"demo_url":"https://demo.example"}"#
+            .to_string(),
     };
     let addons = [
         ("web".to_string(), "web_widget_demo".to_string()),

@@ -5,11 +5,11 @@
    models / required_by (up to 500 rows) for versions nobody looks at. #}
 {% set repo_files = module.git | repo_files %}
 {% set git_folder_url = repo_files ~ '/tree/' ~ module.odoo_version ~ '/' ~ module.source_path %}
-<section class="module-summary" aria-label="Summary">
+<section class="module-summary" aria-label="{{ 'Summary'|t }}">
 {% if HEALTH_SCORE_ENABLED and module.health %}{% set h = module.health %}
     <div class="stat-card module-health">
         <div class="module-health-score">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">monitor_heart</span> Health</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">monitor_heart</span> {{ "Health"|t }}</div>
             <div class="stat-card-value"><span class="{{ h.grade == 'good' and 'text-success' or (h.grade == 'fair' and 'text-warning-emphasis' or 'text-danger') }}">{{ h.score }}</span><small>/100</small></div>
             <span class="badge module-health-grade grade-{{ h.grade }}">{{ h.grade }}</span>
         </div>
@@ -22,95 +22,95 @@
             </li>
             {% endfor %}
         </ul>
-        <p class="stat-card-note module-health-disclaimer">Heuristic over the facts below, not an audit &middot; <a href="/about#health">How it's computed</a></p>
+        <p class="stat-card-note module-health-disclaimer">{{ "Heuristic over the facts below, not an audit ·"|t }} <a href="/about#health">{{ "How it's computed"|t }}</a></p>
     </div>
 {% endif %}
     <div class="module-metrics">
     <div class="stat-card">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">shield</span> Security findings</div>
-        <div class="stat-card-value"><span class="security-indicator" role="img" aria-label="{{ module.security_warnings | length }} grave and {{ module.security_warning_count }} minor static-analysis findings; not a security audit"><span class="segment segment-errors{{ module.security_warnings and ' has-findings' or '' }}" title="Grave findings" aria-hidden="true">{{ module.security_warnings | length }}</span><span class="segment segment-warnings{{ module.security_warning_count and ' has-findings' or '' }}" title="Minor findings" aria-hidden="true">{{ module.security_warning_count }}</span></span></div>
-        <div class="stat-card-note">Grave / minor (<a href="/about#security">static analysis</a>)</div>
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">shield</span> {{ "Security findings"|t }}</div>
+        <div class="stat-card-value"><span class="security-indicator" role="img" aria-label="{{ '{0} grave and {1} minor static-analysis findings; not a security audit'|t((module.security_warnings | length), (module.security_warning_count)) }}"><span class="segment segment-errors{{ module.security_warnings and ' has-findings' or '' }}" title="{{ 'Grave findings'|t }}" aria-hidden="true">{{ module.security_warnings | length }}</span><span class="segment segment-warnings{{ module.security_warning_count and ' has-findings' or '' }}" title="{{ 'Minor findings'|t }}" aria-hidden="true">{{ module.security_warning_count }}</span></span></div>
+        <div class="stat-card-note">{% set _i258 %}<a href="/about#security">{{ "static analysis"|t }}</a>{% endset %}{{ "Grave / minor ({0})"|t(_i258) }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">call_merge</span> Required by</div>
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">call_merge</span> {{ "Required by"|t }}</div>
         <div class="stat-card-value">{{ module.required_by | length }}</div>
-        <div class="stat-card-note">Modules depending on it</div>
+        <div class="stat-card-note">{{ "Modules depending on it"|t }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> External deps</div>
-        <div class="stat-card-value"><span class="text-nowrap">{{ module.dependencies.pip | length }} <small>pip</small></span> &middot; <span class="text-nowrap">{{ module.dependencies.bin | length }} <small>bin</small></span></div>
-        <div class="stat-card-note">Python packages / system binaries</div>
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> {{ "External deps"|t }}</div>
+        <div class="stat-card-value"><span class="text-nowrap">{{ module.dependencies.pip | length }} <small>{{ "pip"|t }}</small></span> {{ "·"|t }} <span class="text-nowrap">{{ module.dependencies.bin | length }} <small>{{ "bin"|t }}</small></span></div>
+        <div class="stat-card-note">{{ "Python packages / system binaries"|t }}</div>
     </div>
     {% set lr = module.license_review %}
     {# Only an open-source module can be "upgraded" by its dependencies; a
        proprietary one isn't distributed under the closure's copyleft. #}
     {% set lr_upgrade = lr.findings | selectattr("code", "eq", "LICENSE_EFFECTIVE_UPGRADE") | first %}
     <div class="stat-card">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gavel</span> License</div>
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gavel</span> {{ "License"|t }}</div>
         <div class="stat-card-value">{{ module.license }}</div>
-        <div class="stat-card-note">{% if lr.findings and lr.findings[0].severity == "error" %}<span class="text-danger">License conflict in dependencies</span>{% elif lr_upgrade %}Combined: {{ lr.effective_license }}{% elif lr.proprietary %}Needs commercial licenses{% else %}No conflicts with its dependencies{% endif %}</div>
+        <div class="stat-card-note">{% if lr.findings and lr.findings[0].severity == "error" %}<span class="text-danger">{{ "License conflict in dependencies"|t }}</span>{% elif lr_upgrade %}Combined: {{ lr.effective_license }}{% elif lr.proprietary %}Needs commercial licenses{% else %}No conflicts with its dependencies{% endif %}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">folder</span> Folder size</div>
-        <div class="stat-card-value">{{ (module.folder_size / 1048576) | round(2) }} <small>MB</small></div>
-        <div class="stat-card-note">Module directory on disk</div>
+        <div class="stat-card-label"><span class="material-icons" aria-hidden="true">folder</span> {{ "Folder size"|t }}</div>
+        <div class="stat-card-value">{{ (module.folder_size / 1048576) | round(2) }} <small>{{ "MB"|t }}</small></div>
+        <div class="stat-card-note">{{ "Module directory on disk"|t }}</div>
     </div>
     </div>
     {# One inline row, not more cells: dev-only cells left the overview grid
        with ragged rows. #}
     <div class="stat-card module-dev-metrics dev-only">
-        <span class="stat-card-label"><span class="material-icons" aria-hidden="true">code</span> Code analysis</span>
-        <span><b>{{ module.migration_considerations | length }}</b> migration note{{ module.migration_considerations | length != 1 and 's' or '' }}</span>
-        <span><b>{{ module.models | length }}</b> model{{ module.models | length != 1 and 's' or '' }}</span>
-        <span><b>{{ module.views | length }}</b> view{{ module.views | length != 1 and 's' or '' }}</span>
-        <span><b>{{ module.controllers | length }}</b> HTTP endpoint{{ module.controllers | length != 1 and 's' or '' }}</span>
+        <span class="stat-card-label"><span class="material-icons" aria-hidden="true">code</span> {{ "Code analysis"|t }}</span>
+        <span>{% set _i264 %}<b>{{ module.migration_considerations | length }}</b>{% endset %}{{ "{0} migration note{1}"|t(_i264, (module.migration_considerations | length != 1 and 's' or '')) }}</span>
+        <span>{% set _i265 %}<b>{{ module.models | length }}</b>{% endset %}{{ "{0} model{1}"|t(_i265, (module.models | length != 1 and 's' or '')) }}</span>
+        <span>{% set _i266 %}<b>{{ module.views | length }}</b>{% endset %}{{ "{0} view{1}"|t(_i266, (module.views | length != 1 and 's' or '')) }}</span>
+        <span>{% set _i267 %}<b>{{ module.controllers | length }}</b>{% endset %}{{ "{0} HTTP endpoint{1}"|t(_i267, (module.controllers | length != 1 and 's' or '')) }}</span>
     </div>
 </section>
 {% if module.security_warnings %}
 <div class="dev-only alert alert-danger" role="alert">
-    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">warning</span> Security warnings</h5>
+    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">warning</span> {{ "Security warnings"|t }}</h5>
     <ul>
         {% for w in module.security_warnings %}
-        <li>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }} <span class="badge text-bg-danger">{{ w.code }}</span>{% if w.file %} &middot; <a href="{{ repo_files ~ '/blob/' ~ module.odoo_version ~ '/' ~ module.source_path ~ '/' ~ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
+        <li>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }} <span class="badge text-bg-danger">{{ w.code }}</span>{% if w.file %} &middot; <a href="{{ repo_files ~ '/blob/' ~ module.odoo_version ~ '/' ~ module.source_path ~ '/' ~ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer">{{ "source"|t }}</a>{% endif %}</li>
         {% endfor %}
     </ul>
-    <p class="mb-0 small">Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue. <a href="/about#security">Methodology</a></p>
+    <p class="mb-0 small">{{ "Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue."|t }} <a href="/about#security">{{ "Methodology"|t }}</a></p>
 </div>
 {% endif %}
 {% if lr.findings %}
 {% set lr_level = lr.findings[0].severity %}
 <div class="alert alert-{{ lr_level == 'error' and 'danger' or (lr_level == 'warning' and 'warning' or 'info') }}" role="alert">
-    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">gavel</span> License review</h5>
+    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">gavel</span> {{ "License review"|t }}</h5>
     <ul>
         {% for f in lr.findings %}
         <li>{{ f.message }} <span class="badge {{ f.severity == 'error' and 'text-bg-danger' or (f.severity == 'warning' and 'text-bg-warning' or 'text-bg-info') }}">{{ f.code }}</span></li>
         {% endfor %}
     </ul>
-    <p class="mb-0 small">Based on the manifest licenses of this module and everything it depends on: a heuristic to spot problems early, not legal advice. <a href="/about#licenses">Methodology</a></p>
+    <p class="mb-0 small">{{ "Based on the manifest licenses of this module and everything it depends on: a heuristic to spot problems early, not legal advice."|t }} <a href="/about#licenses">{{ "Methodology"|t }}</a></p>
 </div>
 {% endif %}
 {% if module.migration_considerations %}
 <div class="dev-only alert alert-warning" role="alert">
-    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">build</span> Migration considerations</h5>
+    <h5 class="alert-heading"><span class="material-icons" aria-hidden="true">build</span> {{ "Migration considerations"|t }}</h5>
     <ul>
         {% for c in module.migration_considerations %}
-        <li>{% if c.context %}<code>{{ c.context }}</code> &mdash; {% endif %}{{ c.message }} <span class="badge {{ c.severity == 'warning' and 'text-bg-warning' or 'text-bg-secondary' }}">{{ c.code }}</span>{% if c.file %} &middot; <a href="{{ repo_files ~ '/blob/' ~ module.odoo_version ~ '/' ~ module.source_path ~ '/' ~ c.file }}{% if c.line %}#L{{ c.line }}{% endif %}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>
+        <li>{% if c.context %}<code>{{ c.context }}</code> &mdash; {% endif %}{{ c.message }} <span class="badge {{ c.severity == 'warning' and 'text-bg-warning' or 'text-bg-secondary' }}">{{ c.code }}</span>{% if c.file %} &middot; <a href="{{ repo_files ~ '/blob/' ~ module.odoo_version ~ '/' ~ module.source_path ~ '/' ~ c.file }}{% if c.line %}#L{{ c.line }}{% endif %}" target="_blank" rel="noopener noreferrer">{{ "source"|t }}</a>{% endif %}</li>
         {% endfor %}
     </ul>
-    <p class="mb-0 small">Migration review checklist, not a compatibility verdict. "Migrating to X.0" applies once you upgrade to that version; "Since X.0" means this version already ignores or rejects that code. <a href="/about#migration">Methodology</a></p>
+    <p class="mb-0 small">Migration review checklist, not a compatibility verdict. "Migrating to X.0" applies once you upgrade to that version; "Since X.0" means this version already ignores or rejects that code. <a href="/about#migration">{{ "Methodology"|t }}</a></p>
 </div>
 {% endif %}
 <div class="module-layout">
     <div class="module-main">
         <section class="panel">
-            <header class="panel-header"><h2>Description</h2></header>
+            <header class="panel-header"><h2>{{ "Description"|t }}</h2></header>
             <div class="panel-body module-description">{{ module.description | markdown(repo_files ~ '/raw/' ~ module.odoo_version ~ '/' ~ module.source_path ~ '/') }}</div>
         </section>
         <section class="panel">
-            <header class="panel-header"><h2>Dependencies</h2></header>
+            <header class="panel-header"><h2>{{ "Dependencies"|t }}</h2></header>
             <div class="panel-body">
             <dl class="spec-sheet">
-                    <dt>Odoo dependencies</dt>
+                    <dt>{{ "Odoo dependencies"|t }}</dt>
                     <dd>
                         {% if module.dependencies.odoo %}
                         <div class="module-dependencies-yaml">
@@ -123,35 +123,35 @@
                             {% endfor %}
                         </div>
                         {% else %}
-                        <span class="text-body-secondary">None</span>
+                        <span class="text-body-secondary">{{ "None"|t }}</span>
                         {% endif %}
                     </dd>
-                    <dt>Python dependencies</dt>
+                    <dt>{{ "Python dependencies"|t }}</dt>
                     <dd>
                         {% if module.dependencies.pip %}
                         {% for dep_name in module.dependencies.pip %}
                         <a href="https://pypi.org/project/{{ dep_name | urlencode }}/" target="_blank" rel="noopener">{{ dep_name }}</a>{{ not loop.last and ', ' or '' }}
                         {% endfor %}
                         {% else %}
-                        <span class="text-body-secondary">None</span>
+                        <span class="text-body-secondary">{{ "None"|t }}</span>
                         {% endif %}
                     </dd>
-                    <dt>System dependencies</dt>
+                    <dt>{{ "System dependencies"|t }}</dt>
                     <dd>
                         {% if module.dependencies.bin %}
                         {{ module.dependencies.bin | join(', ') }}
                         {% else %}
-                        <span class="text-body-secondary">None</span>
+                        <span class="text-body-secondary">{{ "None"|t }}</span>
                         {% endif %}
                     </dd>
-                    <dt>Required by</dt>
+                    <dt>{{ "Required by"|t }}</dt>
                     <dd>
                         {% if module.required_by %}
                         {% for req in module.required_by %}
                         <a href="/module/{{ req.organization | urlencode }}/{{ req.technical_name | urlencode }}">{{ req.technical_name }}</a>{{ not loop.last and ', ' or '' }}
                         {% endfor %}
                         {% else %}
-                        <span class="text-body-secondary">None</span>
+                        <span class="text-body-secondary">{{ "None"|t }}</span>
                         {% endif %}
                     </dd>
                 </dl>
@@ -159,14 +159,14 @@
         </section>
 
 <div class="dev-only module-code-analysis">
-<div class="section-heading"><h2>Code analysis</h2><p>Extracted from the source by best-effort static analysis (no code is executed); details may be incomplete.</p></div>
+<div class="section-heading"><h2>{{ "Code analysis"|t }}</h2><p>{{ "Extracted from the source by best-effort static analysis (no code is executed); details may be incomplete."|t }}</p></div>
 <section class="panel">
-<header class="panel-header"><h2>Views touched <span class="badge text-bg-light border">{{ module.views | length }}</span></h2></header>
+<header class="panel-header"><h2>{{ "Views touched"|t }} <span class="badge text-bg-light border">{{ module.views | length }}</span></h2></header>
 <div class="panel-body">
 {% if module.views %}
 <div class="table-responsive">
 <table class="table table-sm table-striped-columns">
-    <thead><tr><th>XML ID</th><th>Name</th><th>Model</th><th>Type</th><th>Status</th></tr></thead>
+    <thead><tr><th>{{ "XML ID"|t }}</th><th>{{ "Name"|t }}</th><th>{{ "Model"|t }}</th><th>{{ "Type"|t }}</th><th>{{ "Status"|t }}</th></tr></thead>
     <tbody>
         {% for view in module.views %}
         <tr>
@@ -176,9 +176,9 @@
             <td>{% if view.view_type %}<span class="badge text-bg-secondary">{{ view.view_type }}</span>{% endif %}</td>
             <td>
                 {% if view.is_new %}
-                <span class="badge text-bg-success">New</span>
+                <span class="badge text-bg-success">{{ "New"|t }}</span>
                 {% else %}
-                <span class="badge text-bg-info">Inherits {{ view.inherit_xml_id }}</span>
+                <span class="badge text-bg-info">{{ "Inherits {0}"|t((view.inherit_xml_id)) }}</span>
                 {% endif %}
             </td>
         </tr>
@@ -187,35 +187,35 @@
 </table>
 </div>
 {% else %}
-<p class="text-muted">No views found for this module.</p>
+<p class="text-muted">{{ "No views found for this module."|t }}</p>
 {% endif %}
 
 </div>
 </section>
 
 <section class="panel">
-<header class="panel-header"><h2>HTTP endpoints <span class="badge text-bg-light border">{{ module.controllers | length }}</span></h2></header>
+<header class="panel-header"><h2>{{ "HTTP endpoints"|t }} <span class="badge text-bg-light border">{{ module.controllers | length }}</span></h2></header>
 <div class="panel-body">
 {% if module.controllers %}
 <div class="table-responsive">
 <table class="table table-sm table-striped-columns">
-    <thead><tr><th>Route(s)</th><th>Handler</th><th>Auth</th><th>Type</th><th>Methods</th><th>Flags</th></tr></thead>
+    <thead><tr><th>{{ "Route(s)"|t }}</th><th>{{ "Handler"|t }}</th><th>{{ "Auth"|t }}</th><th>{{ "Type"|t }}</th><th>{{ "Methods"|t }}</th><th>{{ "Flags"|t }}</th></tr></thead>
     <tbody>
         {% for c in module.controllers %}
         <tr>
-            <td>{% if c.routes %}{% for r in c.routes %}<code>{{ r }}</code>{{ not loop.last and ', ' or '' }}{% endfor %}{% else %}<span class="text-muted">(inherited route override)</span>{% endif %}</td>
+            <td>{% if c.routes %}{% for r in c.routes %}<code>{{ r }}</code>{{ not loop.last and ', ' or '' }}{% endfor %}{% else %}<span class="text-muted">{{ "(inherited route override)"|t }}</span>{% endif %}</td>
             <td><code>{{ c.class_name }}.{{ c.name }}</code></td>
             <td>
-                {% if c.auth == "user" %}<span class="badge text-bg-secondary">user</span>
+                {% if c.auth == "user" %}<span class="badge text-bg-secondary">{{ "user"|t }}</span>
                 {% elif c.auth %}<span class="badge text-bg-warning">{{ c.auth }}</span>
-                {% else %}<span class="badge text-bg-light border">inherited</span>{% endif %}
+                {% else %}<span class="badge text-bg-light border">{{ "inherited"|t }}</span>{% endif %}
             </td>
             <td><span class="badge text-bg-light border">{{ c.http_type }}</span></td>
             <td>{{ c.methods and c.methods | join(', ') or 'ALL' }}</td>
             <td>
-                {% if c.csrf == false %}<span class="badge text-bg-danger">csrf off</span>{% endif %}
-                {% if c.uses_sudo %}<span class="badge text-bg-warning">sudo</span>{% endif %}
-                {% if c.website %}<span class="badge text-bg-info">website</span>{% endif %}
+                {% if c.csrf == false %}<span class="badge text-bg-danger">{{ "csrf off"|t }}</span>{% endif %}
+                {% if c.uses_sudo %}<span class="badge text-bg-warning">{{ "sudo"|t }}</span>{% endif %}
+                {% if c.website %}<span class="badge text-bg-info">{{ "website"|t }}</span>{% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -223,14 +223,14 @@
 </table>
 </div>
 {% else %}
-<p class="text-muted">No HTTP endpoints found for this module.</p>
+<p class="text-muted">{{ "No HTTP endpoints found for this module."|t }}</p>
 {% endif %}
 
 </div>
 </section>
 
 <section class="panel">
-<header class="panel-header"><h2>Models touched <span class="badge text-bg-light border">{{ module.models | length }}</span></h2></header>
+<header class="panel-header"><h2>{{ "Models touched"|t }} <span class="badge text-bg-light border">{{ module.models | length }}</span></h2></header>
 <div class="panel-body">
 {% if module.models %}
 <div class="accordion module-model-accordion" id="models-accordion-{{ module.odoo_version }}">
@@ -242,12 +242,12 @@
                     <span class="module-model-header-title">
                         <code>{{ mdl.model_name }}</code>
                         {% if mdl.is_new_model %}
-                        <span class="badge text-bg-success">New model</span>
+                        <span class="badge text-bg-success">{{ "New model"|t }}</span>
                         {% else %}
-                        <span class="badge text-bg-secondary">Extends</span>
+                        <span class="badge text-bg-secondary">{{ "Extends"|t }}</span>
                         {% endif %}
                         {% if mdl.attrs.kind %}<span class="badge text-bg-light border">{{ mdl.attrs.kind }}</span>{% endif %}
-                        <span class="badge rounded-pill text-bg-light border">{{ mdl.fields | length }} field{{ mdl.fields | length != 1 and 's' or '' }}</span>
+                        <span class="badge rounded-pill text-bg-light border">{{ "{0} field{1}"|t((mdl.fields | length), (mdl.fields | length != 1 and 's' or '')) }}</span>
                         <span class="badge rounded-pill text-bg-light border">{{ mdl.methods | length }} method{{ mdl.methods | length != 1 and 's' or '' }}</span>
                     </span>
                     <span class="module-model-header-meta">
@@ -272,16 +272,16 @@
                             {% for key, value in f.attrs|items %}
                             {% if key != "args" %}<span><code>{{ key }}</code>={{ value }}</span>{% endif %}
                             {% endfor %}
-                            {% if f.attrs.args %}<span>args: {{ f.attrs.args|join(', ') }}</span>{% endif %}
+                            {% if f.attrs.args %}<span>{{ "args: {0}"|t((f.attrs.args|join(', '))) }}</span>{% endif %}
                         </div>
                         {% endif %}
                     </li>
                     {% endfor %}
                 </ul>
                 {% else %}
-                <p class="text-muted">No new fields.</p>
+                <p class="text-muted">{{ "No new fields."|t }}</p>
                 {% endif %}
-                <strong>Public methods ({{ mdl.methods | length }})</strong>
+                <strong>{{ "Public methods ({0})"|t((mdl.methods | length)) }}</strong>
                 {% if mdl.methods %}
                 <ul class="list-unstyled module-method-list">
                     {% for m in mdl.methods %}
@@ -293,7 +293,7 @@
                     {% endfor %}
                 </ul>
                 {% else %}
-                <p class="text-muted">No public methods.</p>
+                <p class="text-muted">{{ "No public methods."|t }}</p>
                 {% endif %}
             </div>
         </div>
@@ -301,26 +301,26 @@
     {% endfor %}
 </div>
 {% else %}
-<p class="text-muted">No models found for this module.</p>
+<p class="text-muted">{{ "No models found for this module."|t }}</p>
 {% endif %}
 </div>
 </section>
 </div>
     </div>
-    <aside class="module-facts panel" aria-label="Module facts">
+    <aside class="module-facts panel" aria-label="{{ 'Module facts'|t }}">
         <div class="panel-body">
         <dl class="spec-sheet">
-                <dt>Repository</dt>
+                <dt>{{ "Repository"|t }}</dt>
                 <dd>
-                    <a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> &middot; <a href="{{ git_folder_url }}">module folder</a>
+                    <a href="{{ module.git }}">{{ module.organization }}/{{ module.repository }}</a> {{ "·"|t }} <a href="{{ git_folder_url }}">{{ "module folder"|t }}</a>
                     {% if module.organization == "OCA" %}
-                    &middot; <a href="https://runboat.odoo-community.org/builds?repo=OCA/{{ module.repository | urlencode }}&target_branch={{ module.odoo_version | urlencode }}" target="_blank" rel="noopener">Try on Runboat</a>
+                    &middot; <a href="https://runboat.odoo-community.org/builds?repo=OCA/{{ module.repository | urlencode }}&target_branch={{ module.odoo_version | urlencode }}" target="_blank" rel="noopener">{{ "Try on Runboat"|t }}</a>
                     {% endif %}
                 </dd>
-                <dt>Module version</dt>
+                <dt>{{ "Module version"|t }}</dt>
                 <dd>
                     {% if history and history | length > 1 %}
-                    <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="Select module version">
+                    <select class="form-select form-select-sm w-auto d-inline-block module-version-select" data-odoo-version="{{ module.odoo_version }}" aria-label="{{ 'Select module version'|t }}">
                         {% for v in history %}
                         <option value="{{ v.version_module }}" {{ (v.version_module == module.version) and 'selected' or '' }}>{{ v.version_module }}{{ v.is_latest and ' (latest)' or '' }}</option>
                         {% endfor %}
@@ -329,31 +329,31 @@
                     {{ module.version }}
                     {% endif %}
                 </dd>
-                <dt>Category</dt>
+                <dt>{{ "Category"|t }}</dt>
                 <dd>{{ module.category }}</dd>
-                <dt>License</dt>
+                <dt>{{ "License"|t }}</dt>
                 <dd>
                     {{ module.license }}
                     {% if lr_upgrade %}
-                    <div class="small text-body-secondary">Combined with its dependencies: <strong>{{ lr.effective_license }}</strong>{% if lr.effective_license_source %} (via <code>{{ lr.effective_license_source }}</code>){% endif %}</div>
+                    <div class="small text-body-secondary">{{ "Combined with its dependencies:"|t }} <strong>{{ lr.effective_license }}</strong>{% if lr.effective_license_source %} (via <code>{{ lr.effective_license_source }}</code>){% endif %}</div>
                     {% endif %}
                     {% if lr.proprietary %}
-                    <div class="small text-body-secondary">Commercial licenses needed: {{ lr.proprietary | join(', ') }}</div>
+                    <div class="small text-body-secondary">{{ "Commercial licenses needed: {0}"|t((lr.proprietary | join(', '))) }}</div>
                     {% endif %}
                 </dd>
-                <dt>Application</dt>
+                <dt>{{ "Application"|t }}</dt>
                 <dd>{{ module.application and "Yes" or "No" }}</dd>
-                <dt>Auto-installable</dt>
+                <dt>{{ "Auto-installable"|t }}</dt>
                 <dd>{{ module.auto_install and "Yes" or "No" }}</dd>
-                <dt>Website</dt>
-                <dd>{% if module.website %}<a href="{{ module.website }}">{{ module.website }}</a>{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
-                <dt>Last tracking update</dt>
+                <dt>{{ "Website"|t }}</dt>
+                <dd>{% if module.website %}<a href="{{ module.website }}">{{ module.website }}</a>{% else %}<span class="text-body-secondary">{{ "None"|t }}</span>{% endif %}</dd>
+                <dt>{{ "Last tracking update"|t }}</dt>
                 <dd>{{ module.update_date }}</dd>
-                <dt>Authors</dt>
+                <dt>{{ "Authors"|t }}</dt>
                 <dd>{{ module.authors | join(', ') }}</dd>
-                <dt>Maintainers</dt>
-                <dd>{% if module.maintainers %}{{ module.maintainers | join(', ') }}{% else %}<span class="text-body-secondary">None</span>{% endif %}</dd>
-                <dt>Committers</dt>
+                <dt>{{ "Maintainers"|t }}</dt>
+                <dd>{% if module.maintainers %}{{ module.maintainers | join(', ') }}{% else %}<span class="text-body-secondary">{{ "None"|t }}</span>{% endif %}</dd>
+                <dt>{{ "Committers"|t }}</dt>
                 <dd>{% for committer in module.committers %}<a href="/committer/{{ committer | urlencode }}">{{ committer }}</a>{{ not loop.last and ', ' or '' }}{% endfor %}</dd>
             </dl>
             {% set badge_base = "/badge/" ~ (module.organization | urlencode) ~ "/" ~ (module.technical_name | urlencode) %}
@@ -365,20 +365,20 @@
                 ("Static analysis", badge_base ~ "/security.svg" ~ badge_version),
             ] %}
             <details class="badge-embed" data-module-path="/module/{{ module.organization | urlencode }}/{{ module.technical_name | urlencode }}">
-                <summary><span class="material-icons" aria-hidden="true">verified</span> Embed badges</summary>
-                <p class="small text-body-secondary">Status badges for a README, kept up to date with this site.</p>
+                <summary><span class="material-icons" aria-hidden="true">verified</span> {{ "Embed badges"|t }}</summary>
+                <p class="small text-body-secondary">{{ "Status badges for a README, kept up to date with this site."|t }}</p>
                 <div class="badge-embed-previews">
                     {% for alt, src in badges %}<img src="{{ src }}" alt="{{ alt }}" loading="lazy" height="20">{% endfor %}
                 </div>
                 <div class="d-flex gap-2 align-items-center my-2">
-                    <select class="form-select form-select-sm badge-embed-format" aria-label="Snippet format">
-                        <option value="markdown">Markdown</option>
-                        <option value="rst">reStructuredText</option>
-                        <option value="html">HTML</option>
+                    <select class="form-select form-select-sm badge-embed-format" aria-label="{{ 'Snippet format'|t }}">
+                        <option value="markdown">{{ "Markdown"|t }}</option>
+                        <option value="rst">{{ "reStructuredText"|t }}</option>
+                        <option value="html">{{ "HTML"|t }}</option>
                     </select>
-                    <button type="button" class="btn btn-outline-secondary btn-sm badge-embed-copy">Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm badge-embed-copy">{{ "Copy"|t }}</button>
                 </div>
-                <textarea class="form-control form-control-sm badge-embed-code" rows="5" readonly aria-label="Badge snippet"></textarea>
+                <textarea class="form-control form-control-sm badge-embed-code" rows="5" readonly aria-label="{{ 'Badge snippet'|t }}"></textarea>
             </details>
         </div>
     </aside>

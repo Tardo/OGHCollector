@@ -12,6 +12,7 @@ import {
 } from '@app/utils/favorites-store';
 import {exportPackZip} from '@app/utils/pack-export';
 import {createModuleTileLink} from '@app/utils/module-tile';
+import {t} from '@app/utils/i18n';
 
 // Populated once on init - every pack card's version <select> shares it, no
 // need to refetch on every rename/delete-triggered re-render.
@@ -31,10 +32,10 @@ function createModuleTile(mod, onRemove) {
   const remove_btn = document.createElement('button');
   remove_btn.type = 'button';
   remove_btn.className = 'module-tile-remove';
-  remove_btn.title = `Remove ${mod.name || mod.technical_name}`;
+  remove_btn.title = t('Remove {0}', mod.name || mod.technical_name);
   remove_btn.setAttribute(
     'aria-label',
-    `Remove ${mod.name || mod.technical_name}`,
+    t('Remove {0}', mod.name || mod.technical_name),
   );
   remove_btn.classList.add('material-icons');
   remove_btn.textContent = 'close';
@@ -100,7 +101,7 @@ function createPackCard(pack) {
   if (version) {
     const version_badge = document.createElement('span');
     version_badge.className = 'badge text-bg-light border';
-    version_badge.title = 'Odoo version this pack was built for';
+    version_badge.title = t('Odoo version this pack was built for');
     version_badge.textContent = version;
     title.appendChild(version_badge);
   }
@@ -113,8 +114,11 @@ function createPackCard(pack) {
     const export_btn = document.createElement('button');
     export_btn.type = 'button';
     export_btn.className = 'btn btn-sm btn-outline-primary';
-    export_btn.textContent = 'Export';
-    export_btn.title = `Export for Odoo ${version} — open the pack's share link to convert it to another version first`;
+    export_btn.textContent = t('Export');
+    export_btn.title = t(
+      "Export for Odoo {0} — open the pack's share link to convert it to another version first",
+      version,
+    );
     export_btn.addEventListener('click', () => {
       export_btn.disabled = true;
       exportPackZip(pack, version).finally(() => {
@@ -128,8 +132,8 @@ function createPackCard(pack) {
     const share_btn = document.createElement('button');
     share_btn.type = 'button';
     share_btn.className = 'btn btn-sm btn-outline-primary';
-    share_btn.textContent = 'Share';
-    share_btn.title = 'Open a shareable link (and QR code) for this pack';
+    share_btn.textContent = t('Share');
+    share_btn.title = t('Open a shareable link (and QR code) for this pack');
     share_btn.addEventListener('click', () => {
       window.open(`/pack?d=${encodePackForShare(pack)}`, '_blank', 'noopener');
     });
@@ -145,9 +149,8 @@ function createPackCard(pack) {
   more_btn.className = 'btn btn-sm btn-outline-secondary pack-card-more';
   more_btn.setAttribute('data-bs-toggle', 'dropdown');
   more_btn.setAttribute('aria-expanded', 'false');
-  more_btn.title = 'More actions';
-  more_btn.innerHTML =
-    '<span class="material-icons" aria-hidden="true">more_vert</span><span class="visually-hidden">More actions</span>';
+  more_btn.title = t('More actions');
+  more_btn.innerHTML = `<span class="material-icons" aria-hidden="true">more_vert</span><span class="visually-hidden">${t('More actions')}</span>`;
   more_wrap.appendChild(more_btn);
 
   const menu = document.createElement('ul');
@@ -157,7 +160,7 @@ function createPackCard(pack) {
   const rename_btn = document.createElement('button');
   rename_btn.type = 'button';
   rename_btn.className = 'dropdown-item';
-  rename_btn.textContent = 'Rename';
+  rename_btn.textContent = t('Rename');
   rename_btn.addEventListener('click', () => {
     const name = window.prompt('Pack name:', pack.name)?.trim();
     if (!name) {
@@ -173,9 +176,9 @@ function createPackCard(pack) {
   const delete_btn = document.createElement('button');
   delete_btn.type = 'button';
   delete_btn.className = 'dropdown-item text-danger';
-  delete_btn.textContent = 'Delete pack';
+  delete_btn.textContent = t('Delete pack');
   delete_btn.addEventListener('click', () => {
-    if (!window.confirm(`Delete pack "${pack.name}"?`)) {
+    if (!window.confirm(t('Delete pack "{0}"?', pack.name))) {
       return;
     }
     deletePack(pack.id);
@@ -227,7 +230,7 @@ function renderPacks() {
 document.getElementById('new_pack_btn').addEventListener('click', () => {
   const version_select = document.getElementById('new_pack_version');
   if (!version_select.value) {
-    window.alert('Still loading Odoo versions - try again in a second.');
+    window.alert(t('Still loading Odoo versions - try again in a second.'));
     return;
   }
   const name = window.prompt('Pack name:')?.trim();

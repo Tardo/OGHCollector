@@ -10,6 +10,7 @@ import {
   removeFromPack,
   toggleFavorite,
 } from '@app/utils/favorites-store';
+import {t} from '@app/utils/i18n';
 
 // Delegated (not queried once at load) since lazy-loaded tabs inject their
 // own `.module-version-select` after this script has already run. Re-fetches
@@ -94,13 +95,13 @@ versions_tab_content?.addEventListener('click', async ev => {
   try {
     // Needs a secure context (https/localhost); select the text otherwise.
     await navigator.clipboard.writeText(code.value);
-    button.textContent = 'Copied!';
+    button.textContent = t('Copied!');
   } catch {
     code.select();
-    button.textContent = 'Press Ctrl+C';
+    button.textContent = t('Press Ctrl+C');
   }
   setTimeout(() => {
-    button.textContent = 'Copy';
+    button.textContent = t('Copy');
   }, 1500);
 });
 
@@ -173,7 +174,7 @@ function buildPackMenuItems(menu, mod, available_versions) {
       (unavailable ? ' disabled' : '');
     if (unavailable) {
       link.setAttribute('aria-disabled', 'true');
-      link.title = `Not available for Odoo ${pack.odoo_version}`;
+      link.title = t('Not available for Odoo {0}', pack.odoo_version);
     }
     const label = document.createElement('span');
     const in_pack = isInPack(pack.id, mod);
@@ -220,7 +221,7 @@ function buildPackMenuItems(menu, mod, available_versions) {
   const new_link = document.createElement('a');
   new_link.href = '#';
   new_link.className = 'dropdown-item';
-  new_link.textContent = '+ New pack…';
+  new_link.textContent = t('+ New pack…');
   new_link.addEventListener('click', ev => {
     ev.preventDefault();
     const version = getActiveOdooVersion();

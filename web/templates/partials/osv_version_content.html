@@ -8,42 +8,42 @@
 <div class="row g-3">
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gpp_maybe</span> Advisories</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">gpp_maybe</span> {{ "Advisories"|t }}</div>
             <div class="stat-card-value">{{ version.vuln_count }}</div>
-            <div class="stat-card-note">GHSA and PYSEC entries may describe the same issue</div>
+            <div class="stat-card-note">{{ "GHSA and PYSEC entries may describe the same issue"|t }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> Packages</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">inventory_2</span> {{ "Packages"|t }}</div>
             <div class="stat-card-value">{{ version.package_count }}</div>
-            <div class="stat-card-note">Python dependencies with an advisory</div>
+            <div class="stat-card-note">{{ "Python dependencies with an advisory"|t }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> Modules</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> {{ "Modules"|t }}</div>
             <div class="stat-card-value">{{ version.module_count }}</div>
-            <div class="stat-card-note">Declaring an affected version</div>
+            <div class="stat-card-note">{{ "Declaring an affected version"|t }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">report</span> No fix</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">report</span> {{ "No fix"|t }}</div>
             <div class="stat-card-value{{ ' text-danger-emphasis' if version.no_fix_count else '' }}">{{ version.no_fix_count }}</div>
-            <div class="stat-card-note">Advisories without a fixed release</div>
+            <div class="stat-card-note">{{ "Advisories without a fixed release"|t }}</div>
         </div>
     </div>
 </div>
 
 <div class="section-heading">
-    <h2>Advisories by package</h2>
-    <p>Most advisories first; within a package, no fix first, then the highest release to upgrade to.</p>
+    <h2>{{ "Advisories by package"|t }}</h2>
+    <p>{{ "Most advisories first; within a package, no fix first, then the highest release to upgrade to."|t }}</p>
 </div>
 <div class="panel">
     <table class="table osv-table">
         <thead>
-            <tr><th>Advisory</th><th>Summary</th><th class="text-end">Fixed in</th></tr>
+            <tr><th>{{ "Advisory"|t }}</th><th>{{ "Summary"|t }}</th><th class="text-end">{{ "Fixed in"|t }}</th></tr>
         </thead>
         {% for package in version.packages %}
         <tbody class="osv-package">
@@ -64,21 +64,21 @@
             <tr data-search="{{ osv.search }}">
                 <td class="osv-id">
                     <a href="https://osv.dev/vulnerability/{{ osv.osv_id | urlencode }}" target="_blank" rel="noopener noreferrer">{{ osv.osv_id }}</a>
-                    {% if osv.pins | length < package.pins | length %}<small>only {% for pin in osv.pins %}<code>{{ pin or 'any' }}</code>{{ ', ' if not loop.last else '' }}{% endfor %}</small>{% endif %}
+                    {% if osv.pins | length < package.pins | length %}<small>{{ "only"|t }} {% for pin in osv.pins %}<code>{{ pin or 'any' }}</code>{{ ', ' if not loop.last else '' }}{% endfor %}</small>{% endif %}
                 </td>
                 <td class="osv-summary">
                     {% if osv.details %}
                     <details>
-                        <summary title="Show details"><span class="material-icons" aria-hidden="true">chevron_right</span>{{ osv.summary or osv.osv_id }}</summary>
+                        <summary title="{{ 'Show details'|t }}"><span class="material-icons" aria-hidden="true">chevron_right</span>{{ osv.summary or osv.osv_id }}</summary>
                         <div class="osv-details">{{ osv.details | markdown }}</div>
                     </details>
-                    {% else %}<span class="text-body-secondary">No description</span>{% endif %}
+                    {% else %}<span class="text-body-secondary">{{ "No description"|t }}</span>{% endif %}
                 </td>
-                <td class="osv-fix">{% if osv.fixed_in %}{{ osv.fixed_in }}{% else %}<span class="osv-no-fix">No fix</span>{% endif %}</td>
+                <td class="osv-fix">{% if osv.fixed_in %}{{ osv.fixed_in }}{% else %}<span class="osv-no-fix">{{ "No fix"|t }}</span>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
         {% endfor %}
     </table>
 </div>
-<p class="osv-no-match text-body-secondary" hidden>No advisories match the filter in Odoo {{ version.odoo_version }}.</p>
+<p class="osv-no-match text-body-secondary" hidden>{{ "No advisories match the filter in Odoo {0}."|t((version.odoo_version)) }}</p>

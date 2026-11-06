@@ -8,7 +8,7 @@
 {{ super() }}
 
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/pages/module.css" as="style">
-    <link rel="alternate" type="application/atom+xml" title="{{ technical_name }} ({{ org }}): activity" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" />
+    <link rel="alternate" type="application/atom+xml" title="{{ '{0} ({1}): activity'|t((technical_name), (org)) }}" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" />
     <script type="module" src="/static/auto/module.mjs" async></script>
 {% endblock %}
 {% block content %}
@@ -23,31 +23,30 @@
 {% macro upstream_link(u) %}{% if u.org %}<a href="/module/{{ u.org | urlencode }}/{{ u.name | urlencode }}"><code>{{ u.name }}</code></a>{% else %}<code>{{ u.name }}</code>{% endif %}{% endmacro %}
 {% set upstream_lines %}
 {% for chain in upstream.became %}
-<p class="page-header-desc module-upstream" title="Recorded by OpenUpgrade"><span class="material-icons" aria-hidden="true">{{ 'call_merge' if chain[0].kind == 'merged' else 'drive_file_rename_outline' }}</span>
+<p class="page-header-desc module-upstream" title="{{ 'Recorded by OpenUpgrade'|t }}"><span class="material-icons" aria-hidden="true">{{ 'call_merge' if chain[0].kind == 'merged' else 'drive_file_rename_outline' }}</span>
     {%- for u in chain %}{% set verb = 'merged into' if u.kind == 'merged' else 'renamed to' %}{{ ', then' if not loop.first }} {{ verb | capitalize if loop.first else verb }} {{ upstream_link(u) }} in {{ u.odoo_version }}{% endfor %}</p>
 {% endfor %}
 {% if upstream.replaces %}
-{% set replaces %}{% for v, infos in upstream.replaces %}{% if not loop.first %} &middot; {% endif %}{% for u in infos %}<span title="{{ u.kind | capitalize }} in {{ v }}">{{ upstream_link(u) }}{% if u.via %} <small>via <code>{{ u.via }}</code></small>{% endif %}</span>{{ ', ' if not loop.last }}{% endfor %} ({{ v }}){% endfor %}{% endset %}
-<div class="page-header-desc module-upstream" title="Recorded by OpenUpgrade"><span class="material-icons" aria-hidden="true">call_merge</span>
-    {%- if upstream.replaced > 5 %} <details><summary>Replaces {{ upstream.replaced }} modules renamed or merged into it</summary>{{ replaces }}</details>
+{% set replaces %}{% for v, infos in upstream.replaces %}{% if not loop.first %} &middot; {% endif %}{% for u in infos %}<span title="{{ u.kind | capitalize }} in {{ v }}">{{ upstream_link(u) }}{% if u.via %} <small>{% set _i145 %}<code>{{ u.via }}</code>{% endset %}{{ "via {0}"|t(_i145) }}</small>{% endif %}</span>{{ ', ' if not loop.last }}{% endfor %} ({{ v }}){% endfor %}{% endset %}
+<div class="page-header-desc module-upstream" title="{{ 'Recorded by OpenUpgrade'|t }}"><span class="material-icons" aria-hidden="true">call_merge</span>
+    {%- if upstream.replaced > 5 %} <details><summary>{{ "Replaces {0} modules renamed or merged into it"|t((upstream.replaced)) }}</summary>{{ replaces }}</details>
     {%- else %} Replaces {{ replaces }}{% endif %}</div>
 {% endif %}
 {# Every repository with this technical name, any organization (oldest
    first, → where it starts after the earlier ones ended); a name with
    no data here still says where it is. #}
 {% if locations.repos | length > 1 or (locations.repos and not modules) %}
-<p class="page-header-desc module-upstream" title="Repositories with a module of this technical name (the same name, not necessarily the same code)"><span class="material-icons" aria-hidden="true">swap_horiz</span>
+<p class="page-header-desc module-upstream" title="{{ 'Repositories with a module of this technical name (the same name, not necessarily the same code)'|t }}"><span class="material-icons" aria-hidden="true">swap_horiz</span>
     {%- for l in locations.repos %}{% if not loop.first %}{{ ' →' if l.moved else ' ·' }}{% endif %} {% if l.org != org %}<a href="/module/{{ l.org | urlencode }}/{{ technical_name | urlencode }}">{{ l.org }}/{{ l.repo }}</a>{% else %}{{ l.org }}/{{ l.repo }}{% endif %} <span title="{{ l.versions | join(', ') }}">{{ l.versions | first }}{% if l.versions | length > 1 %}–{{ l.versions | last }}{% endif %}</span>{% endfor %}</p>
 {% endif %}
 {% for c in locations.collisions %}
-<p class="page-header-desc module-upstream module-collision" title="Odoo loads one module per technical name: only one of these fits an addons path"><span class="material-icons" aria-hidden="true">warning</span>
-    Name collision in {{ c.versions | join(', ') }}: {{ c.locations | join(' and ') }} have <code>{{ technical_name }}</code>{% if c.core %}; {{ c.locations[0] }} (Odoo core) is the reference{% endif %}</p>
+<p class="page-header-desc module-upstream module-collision" title="{{ 'Odoo loads one module per technical name: only one of these fits an addons path'|t }}">{% set _i148 %}<span class="material-icons" aria-hidden="true">warning</span>{% endset %}{% set _i149 %}<code>{{ technical_name }}</code>{% endset %}{{ "{0} Name collision in {1}: {2} have {3}"|t(_i148, (c.versions | join(', ')), (c.locations | join(' and ')), _i149) }}{% if c.core %}; {{ c.locations[0] }} (Odoo core) is the reference{% endif %}</p>
 {% endfor %}{% endset %}
 {% if not modules and not pull_request_count %}
 <header class="page-header module-page-header">
     <div>
         <h1>{{ technical_name }}</h1>
-        <p class="page-header-desc">No data found for this module.</p>
+        <p class="page-header-desc">{{ "No data found for this module."|t }}</p>
         {{ upstream_lines }}
     </div>
 </header>
@@ -56,28 +55,28 @@
     {% if modules and modules[0].icon %}
     <img class="module-icon" src="data:image/png;base64,{{ modules[0].icon }}" alt="" />
     {% else %}
-    <span class="module-icon module-icon-generic material-icons" aria-hidden="true">inventory_2</span>
+    <span class="module-icon module-icon-generic material-icons" aria-hidden="true">{{ "inventory_2"|t }}</span>
     {% endif %}
     <div>
         <h1>{{ modules[0].name if modules else technical_name }}</h1>
         <p class="page-header-desc"><code>{{ technical_name }}</code>{% if modules %} &middot; {{ modules[0].organization }}/{{ modules[0].repository }}{% endif %}</p>
         {{ upstream_lines }}
         {% if used_by %}
-        <div class="page-header-desc module-upstream" title="Doodba projects whose addons.yaml enables it"><span class="material-icons" aria-hidden="true">inventory_2</span>
-            <details><summary>Used by {{ used_by_count }} Doodba project{{ 's' if used_by_count != 1 }}</summary> {% for version, projects in used_by %}{% if not loop.first %} &middot; {% endif %}{{ version }}: {% for o, r in projects %}<a href="/project/{{ o | urlencode }}/{{ r | urlencode }}/{{ version | urlencode }}">{{ o }}/{{ r }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endfor %}</details></div>
+        <div class="page-header-desc module-upstream" title="{{ 'Doodba projects whose addons.yaml enables it'|t }}"><span class="material-icons" aria-hidden="true">inventory_2</span>
+            <details><summary>{{ "Used by {0} Doodba project{1}"|t((used_by_count), ('s' if used_by_count != 1)) }}</summary> {% for version, projects in used_by %}{% if not loop.first %} &middot; {% endif %}{{ version }}: {% for o, r in projects %}<a href="/project/{{ o | urlencode }}/{{ r | urlencode }}/{{ version | urlencode }}">{{ o }}/{{ r }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endfor %}</details></div>
         {% endif %}
     </div>
     <div class="module-header-actions">
-    <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" title="Atom feed: new versions, migration PRs, findings and committers of this module"><span class="material-icons" aria-hidden="true">rss_feed</span> Follow</a>
+    <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/feed.atom" title="{{ 'Atom feed: new versions, migration PRs, findings and committers of this module'|t }}"><span class="material-icons" aria-hidden="true">rss_feed</span> {{ "Follow"|t }}</a>
     {% if odoo_versions | length > 1 %}
-    <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/compare" title="What changed between two Odoo versions of this module"><span class="material-icons" aria-hidden="true">compare_arrows</span> Compare</a>
+    <a class="btn btn-outline-secondary" href="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/compare" title="{{ 'What changed between two Odoo versions of this module'|t }}"><span class="material-icons" aria-hidden="true">compare_arrows</span> {{ "Compare"|t }}</a>
     {% endif %}
     <div class="dropdown module-favorite-actions" data-org="{{ org }}" data-technical-name="{{ technical_name }}" data-name="{{ modules[0].name if modules else technical_name }}">
-        <button type="button" class="btn btn-outline-secondary favorite-toggle-btn" title="Add to favorites (saved in this browser only)">
-            <span class="favorite-icon material-icons" aria-hidden="true">star_border</span> Favorite
+        <button type="button" class="btn btn-outline-secondary favorite-toggle-btn" title="{{ 'Add to favorites (saved in this browser only)'|t }}">
+            <span class="favorite-icon material-icons" aria-hidden="true">star_border</span> {{ "Favorite"|t }}
         </button>
-        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Add to a pack (saved in this browser only)">
-            <span class="visually-hidden">Add to pack</span>
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="{{ 'Add to a pack (saved in this browser only)'|t }}">
+            <span class="visually-hidden">{{ "Add to pack"|t }}</span>
         </button>
         <ul class="dropdown-menu dropdown-menu-end pack-dropdown-menu"></ul>
     </div>
@@ -91,7 +90,7 @@
     {% endfor %}
     {% if pull_request_count %}
     <li class="nav-item" role="presentation">
-        <button class="nav-link {{ not modules and 'active' or '' }}" id="pull-requests-tab" data-bs-toggle="pill" data-bs-target="#pull-requests" type="button" role="tab" aria-controls="pull-requests">Pull requests <span class="badge text-bg-warning" title="Open pull requests changing this module">{{ pull_request_count }}</span></button>
+        <button class="nav-link {{ not modules and 'active' or '' }}" id="pull-requests-tab" data-bs-toggle="pill" data-bs-target="#pull-requests" type="button" role="tab" aria-controls="pull-requests">{{ "Pull requests"|t }} <span class="badge text-bg-warning" title="{{ 'Open pull requests changing this module'|t }}">{{ pull_request_count }}</span></button>
     </li>
     {% endif %}
 </ul>
@@ -108,7 +107,7 @@
        handler) to avoid computing dependency trees / models / required_by
        for versions nobody may look at. #}
     <div class="tab-pane fade module-tab-lazy" id="version-{{ v }}" role="tabpanel" aria-labelledby="version-{{ v }}-tab" tabindex="0" data-lazy-tab-url="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/tab/{{ v | urlencode }}">
-        <p class="text-body-secondary">Loading&hellip;</p>
+        <p class="text-body-secondary">{{ "Loading…"|t }}</p>
     </div>
     {% endif %}
     {% endfor %}
@@ -116,7 +115,7 @@
     {# Fetched with the tab (module.mjs, lazy-tab) unless it's the only tab:
        a core module can have hundreds of open PRs. #}
     <div class="tab-pane fade {{ not modules and 'show active' or '' }}" id="pull-requests" role="tabpanel" aria-labelledby="pull-requests-tab" tabindex="0"{% if modules %} data-lazy-tab-url="/module/{{ org | urlencode }}/{{ technical_name | urlencode }}/pull-requests"{% endif %}>
-        {% if modules %}<p class="text-body-secondary">Loading&hellip;</p>{% else %}{% include "partials/module_pull_requests.html" %}{% endif %}
+        {% if modules %}<p class="text-body-secondary">{{ "Loading…"|t }}</p>{% else %}{% include "partials/module_pull_requests.html" %}{% endif %}
     </div>
     {% endif %}
 </div>

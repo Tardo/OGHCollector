@@ -9,16 +9,16 @@
     {% if g.most_changed %}
     <div class="col-md-4 col-6">
         <div class="stat-card">
-            <div class="stat-card-label">Most changed module</div>
+            <div class="stat-card-label">{{ "Most changed module"|t }}</div>
             <div class="stat-card-value"><a href="/module/{{ g.most_changed.organization }}/{{ g.most_changed.technical_name }}">{{ g.most_changed.technical_name }}</a></div>
-            <div class="stat-card-note">{{ g.most_changed.value }} commit{{ g.most_changed.value != 1 and 's' or '' }}</div>
+            <div class="stat-card-note">{{ "{0} commit{1}"|t((g.most_changed.value), (g.most_changed.value != 1 and 's' or '')) }}</div>
         </div>
     </div>
     {% endif %}
     {% if g.largest_module %}
     <div class="col-md-4 col-6">
         <div class="stat-card">
-            <div class="stat-card-label">Largest module</div>
+            <div class="stat-card-label">{{ "Largest module"|t }}</div>
             <div class="stat-card-value"><a href="/module/{{ g.largest_module.organization }}/{{ g.largest_module.technical_name }}">{{ g.largest_module.technical_name }}</a></div>
             <div class="stat-card-note">{{ (g.largest_module.value / 1048576) | round(1) }} MB</div>
         </div>
@@ -27,59 +27,59 @@
     {% if g.newest_module %}
     <div class="col-md-4 col-6">
         <div class="stat-card">
-            <div class="stat-card-label">Newest module</div>
+            <div class="stat-card-label">{{ "Newest module"|t }}</div>
             <div class="stat-card-value"><a href="/module/{{ g.newest_module.org_name }}/{{ g.newest_module.technical_name }}">{{ g.newest_module.technical_name }}</a></div>
-            <div class="stat-card-note">added {{ g.newest_module.create_date }}</div>
+            <div class="stat-card-note">{{ "added {0}"|t((g.newest_module.create_date)) }}</div>
         </div>
     </div>
     {% endif %}
 </div>
 {% endif %}
 
-<div class="section-heading"><h2>Active migration pull requests <span class="badge text-bg-light border">{{ g.pull_requests | length }}</span></h2><p>Open PRs/MRs porting a module to Odoo {{ g.odoo_version }}. Click a status to filter.</p></div>
+<div class="section-heading"><h2>{{ "Active migration pull requests"|t }} <span class="badge text-bg-light border">{{ g.pull_requests | length }}</span></h2><p>{{ "Open PRs/MRs porting a module to Odoo {0}. Click a status to filter."|t((g.odoo_version)) }}</p></div>
 {% if g.pull_requests %}
 <p class="text-body-secondary pr-filter-group">
     <span class="badge text-bg-success pr-filter" data-filter="fresh">{{ g.pr_fresh }} fresh</span>
     <span class="badge text-bg-warning pr-filter" data-filter="rotting">{{ g.pr_rotting }} rotting</span>
     <span class="badge text-bg-danger pr-filter" data-filter="rotten">{{ g.pr_rotten }} rotten</span>
-    {% if g.pr_duplicate %}<span class="badge text-bg-info pr-filter" data-filter="duplicate">{{ g.pr_duplicate }} duplicate</span>{% endif %}
+    {% if g.pr_duplicate %}<span class="badge text-bg-info pr-filter" data-filter="duplicate">{{ "{0} duplicate"|t((g.pr_duplicate)) }}</span>{% endif %}
 </p>
 {% endif %}
 {% if g.avg_days_open is not none %}
 <p class="text-body-secondary">
-    Avg. time open before merge: <strong>{{ g.avg_days_open | round(1) }} day{{ g.avg_days_open != 1 and 's' or '' }}</strong>
-    <span style="cursor: help;" title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact merge time; PRs closed without merging are excluded.">(based on {{ g.closed_count }} merged PR{{ g.closed_count != 1 and 's' or '' }} <span class="material-icons" aria-label="Approximate figure">info_outline</span>)</span>
+    {{ "Avg. time open before merge:"|t }} <strong>{{ g.avg_days_open | round(1) }} day{{ g.avg_days_open != 1 and 's' or '' }}</strong>
+    <span style="cursor: help;" title="Approximate: measured from when the collector detects a PR/MR is no longer open, not the provider's exact merge time; PRs closed without merging are excluded.">{% set _i238 %}<span class="material-icons" aria-label="{{ 'Approximate figure'|t }}">info_outline</span>{% endset %}{{ "(based on {0} merged PR{1} {2})"|t((g.closed_count), (g.closed_count != 1 and 's' or ''), _i238) }}</span>
 </p>
 {% endif %}
 {% if not g.pull_requests %}
-<p class="text-body-secondary">No open migration PRs/MRs tracked.</p>
+<p class="text-body-secondary">{{ "No open migration PRs/MRs tracked."|t }}</p>
 {% else %}
 <div class="modules-scroll-list pr-list">
     <table class="table table-striped table-striped-columns table-hover">
         <thead>
             <tr>
-                <th class="col-module">Module</th>
-                <th class="col-repo">Repository</th>
-                <th class="col-title">Title</th>
+                <th class="col-module">{{ "Module"|t }}</th>
+                <th class="col-repo">{{ "Repository"|t }}</th>
+                <th class="col-title">{{ "Title"|t }}</th>
             </tr>
         </thead>
         <tbody>
             {% for pr in g.pull_requests %}
             {% set age_class = pr.freshness or "" %}
-            <tr class="pr-row pr-row-{{ age_class }}{{ pr.is_duplicate and ' pr-row-duplicate' or '' }}"{% if pr.is_duplicate %} title="Another open PR/MR is also migrating this module at this Odoo version"{% endif %}>
+            <tr class="pr-row pr-row-{{ age_class }}{{ pr.is_duplicate and ' pr-row-duplicate' or '' }}"{% if pr.is_duplicate %} title="{{ 'Another open PR/MR is also migrating this module at this Odoo version'|t }}"{% endif %}>
                 <td class="pr-module">
                     <a href="/module/{{ pr.organization }}/{{ pr.module_technical_name }}" title="{{ pr.module_technical_name }}">{{ pr.module_technical_name }}</a>
                     <div class="pr-meta">
                         {% if pr.age_days is not none %}
-                        <span class="badge text-bg-light border" title="Opened {{ pr.age_days }} day{{ pr.age_days != 1 and 's' or '' }} ago">{{ pr.age_days }}d open</span>
+                        <span class="badge text-bg-light border" title="{{ 'Opened {0} day{1} ago'|t((pr.age_days), (pr.age_days != 1 and 's' or '')) }}">{{ "{0}d open"|t((pr.age_days)) }}</span>
                         {% endif %}
                         {% if pr.last_message_days is not none %}
-                        <span class="badge age-badge age-badge-{{ age_class }}" title="Last activity {{ pr.last_message_days }} day{{ pr.last_message_days != 1 and 's' or '' }} ago">{{ pr.last_message_days }}d quiet</span>
-                        {% else %}<span class="text-body-secondary">&mdash;</span>{% endif %}
-                        {% if pr.ci_status == "success" %}<span class="badge text-bg-success">green</span>
-                        {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">pending</span>
-                        {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">failing</span>
-                        {% else %}<span class="badge text-bg-light border">no CI data</span>{% endif %}
+                        <span class="badge age-badge age-badge-{{ age_class }}" title="{{ 'Last activity {0} day{1} ago'|t((pr.last_message_days), (pr.last_message_days != 1 and 's' or '')) }}">{{ "{0}d quiet"|t((pr.last_message_days)) }}</span>
+                        {% else %}<span class="text-body-secondary">{{ "—"|t }}</span>{% endif %}
+                        {% if pr.ci_status == "success" %}<span class="badge text-bg-success">{{ "green"|t }}</span>
+                        {% elif pr.ci_status == "pending" %}<span class="badge text-bg-warning">{{ "pending"|t }}</span>
+                        {% elif pr.ci_status == "failure" %}<span class="badge text-bg-danger">{{ "failing"|t }}</span>
+                        {% else %}<span class="badge text-bg-light border">{{ "no CI data"|t }}</span>{% endif %}
                     </div>
                 </td>
                 <td class="text-body-secondary">{{ pr.organization }}/{{ pr.repository }}</td>
@@ -92,19 +92,19 @@
 {% endif %}
 
 <div class="dev-only">
-<div class="section-heading"><h2>Security findings</h2><p>Automated static analysis, not an audit: a starting point for manual review, not confirmed issues.</p></div>
+<div class="section-heading"><h2>{{ "Security findings"|t }}</h2><p>{{ "Automated static analysis, not an audit: a starting point for manual review, not confirmed issues."|t }}</p></div>
 
-<h3 class="subsection-title">Grave <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h3>
+<h3 class="subsection-title">{{ "Grave"|t }} <span class="badge text-bg-danger">{{ g.security_errors | length }}</span></h3>
 {% if not g.security_errors %}
-<p class="text-body-secondary">No grave findings.</p>
+<p class="text-body-secondary">{{ "No grave findings."|t }}</p>
 {% else %}
 <div class="modules-scroll-list">
     <table class="table table-striped-columns">
         <thead>
             <tr>
-                <th>Module</th>
-                <th>Code</th>
-                <th>Message</th>
+                <th>{{ "Module"|t }}</th>
+                <th>{{ "Code"|t }}</th>
+                <th>{{ "Message"|t }}</th>
             </tr>
         </thead>
         <tbody>
@@ -112,7 +112,7 @@
             <tr>
                 <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
                 <td><span class="badge text-bg-danger">{{ w.code }}</span></td>
-                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="{{ w.files_url }}/blob/{{ g.odoo_version }}/{{ w.source_path }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View source">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="{{ w.files_url }}/blob/{{ g.odoo_version }}/{{ w.source_path }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="{{ 'View source'|t }}">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -120,17 +120,17 @@
 </div>
 {% endif %}
 
-<h3 class="subsection-title">Minor <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h3>
+<h3 class="subsection-title">{{ "Minor"|t }} <span class="badge text-bg-warning">{{ g.security_warnings | length }}</span></h3>
 {% if not g.security_warnings %}
-<p class="text-body-secondary">No minor findings.</p>
+<p class="text-body-secondary">{{ "No minor findings."|t }}</p>
 {% else %}
 <div class="modules-scroll-list">
     <table class="table table-striped-columns">
         <thead>
             <tr>
-                <th>Module</th>
-                <th>Code</th>
-                <th>Message</th>
+                <th>{{ "Module"|t }}</th>
+                <th>{{ "Code"|t }}</th>
+                <th>{{ "Message"|t }}</th>
             </tr>
         </thead>
         <tbody>
@@ -138,7 +138,7 @@
             <tr>
                 <td><a href="/module/{{ w.organization }}/{{ w.technical_name }}">{{ w.technical_name }}</a></td>
                 <td><span class="badge text-bg-warning">{{ w.code }}</span></td>
-                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="{{ w.files_url }}/blob/{{ g.odoo_version }}/{{ w.source_path }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View source">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if w.xml_id %}<code>{{ w.xml_id }}</code> &mdash; {% endif %}{{ w.message }}{% if w.file %} &middot; <a class="gh-finding-link" href="{{ w.files_url }}/blob/{{ g.odoo_version }}/{{ w.source_path }}/{{ w.file }}{% if w.line %}#L{{ w.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="{{ 'View source'|t }}">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -146,19 +146,19 @@
 </div>
 {% endif %}
 
-<div class="section-heading"><h2>Migration considerations</h2><p>Notes that already apply to each module's own version; each module page has the full upgrade checklist.</p></div>
+<div class="section-heading"><h2>{{ "Migration considerations"|t }}</h2><p>{{ "Notes that already apply to each module's own version; each module page has the full upgrade checklist."|t }}</p></div>
 
-<h3 class="subsection-title">Likely need a code change <span class="badge text-bg-warning">{{ g.migration_warnings | length }}</span></h3>
+<h3 class="subsection-title">{{ "Likely need a code change"|t }} <span class="badge text-bg-warning">{{ g.migration_warnings | length }}</span></h3>
 {% if not g.migration_warnings %}
-<p class="text-body-secondary">No findings that likely need a code change.</p>
+<p class="text-body-secondary">{{ "No findings that likely need a code change."|t }}</p>
 {% else %}
 <div class="modules-scroll-list">
     <table class="table table-striped-columns">
         <thead>
             <tr>
-                <th>Module</th>
-                <th>Code</th>
-                <th>Message</th>
+                <th>{{ "Module"|t }}</th>
+                <th>{{ "Code"|t }}</th>
+                <th>{{ "Message"|t }}</th>
             </tr>
         </thead>
         <tbody>
@@ -166,7 +166,7 @@
             <tr>
                 <td><a href="/module/{{ n.organization }}/{{ n.technical_name }}">{{ n.technical_name }}</a></td>
                 <td><span class="badge text-bg-warning">{{ n.code }}</span></td>
-                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="{{ n.files_url }}/blob/{{ g.odoo_version }}/{{ n.source_path }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View source">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="{{ n.files_url }}/blob/{{ g.odoo_version }}/{{ n.source_path }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="{{ 'View source'|t }}">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -174,17 +174,17 @@
 </div>
 {% endif %}
 
-<h3 class="subsection-title">Worth a second look <span class="badge text-bg-secondary">{{ g.migration_infos | length }}</span></h3>
+<h3 class="subsection-title">{{ "Worth a second look"|t }} <span class="badge text-bg-secondary">{{ g.migration_infos | length }}</span></h3>
 {% if not g.migration_infos %}
-<p class="text-body-secondary">No informational findings.</p>
+<p class="text-body-secondary">{{ "No informational findings."|t }}</p>
 {% else %}
 <div class="modules-scroll-list">
     <table class="table table-striped-columns">
         <thead>
             <tr>
-                <th>Module</th>
-                <th>Code</th>
-                <th>Message</th>
+                <th>{{ "Module"|t }}</th>
+                <th>{{ "Code"|t }}</th>
+                <th>{{ "Message"|t }}</th>
             </tr>
         </thead>
         <tbody>
@@ -192,7 +192,7 @@
             <tr>
                 <td><a href="/module/{{ n.organization }}/{{ n.technical_name }}">{{ n.technical_name }}</a></td>
                 <td><span class="badge text-bg-secondary">{{ n.code }}</span></td>
-                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="{{ n.files_url }}/blob/{{ g.odoo_version }}/{{ n.source_path }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="View source">{{ github_icon | safe }}</a>{% endif %}</td>
+                <td>{% if n.context %}<code>{{ n.context }}</code> &mdash; {% endif %}{{ n.message }}{% if n.file %} &middot; <a class="gh-finding-link" href="{{ n.files_url }}/blob/{{ g.odoo_version }}/{{ n.source_path }}/{{ n.file }}{% if n.line %}#L{{ n.line }}{% endif %}" target="_blank" rel="noopener noreferrer" title="{{ 'View source'|t }}">{{ github_icon | safe }}</a>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>

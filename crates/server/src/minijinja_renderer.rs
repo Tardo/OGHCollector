@@ -5,6 +5,7 @@ use std::future::{ready, Ready};
 
 pub struct MiniJinjaRenderer {
     tmpl_env: web::Data<minijinja_autoreload::AutoReloader>,
+    lang: &'static str,
 }
 
 impl MiniJinjaRenderer {
@@ -13,6 +14,7 @@ impl MiniJinjaRenderer {
         tmpl: &str,
         ctx: impl Into<minijinja::value::Value>,
     ) -> actix_web::Result<Html> {
+        crate::i18n::set_render_lang(self.lang);
         self.tmpl_env
             .acquire_env()
             .map_err(|_| error::ErrorInternalServerError("could not acquire template env"))?
@@ -40,6 +42,9 @@ impl FromRequest for MiniJinjaRenderer {
             .into_inner()
             .unwrap();
 
-        ready(Ok(Self { tmpl_env }))
+        ready(Ok(Self {
+            tmpl_env,
+            lang: crate::i18n::current(req),
+        }))
     }
 }

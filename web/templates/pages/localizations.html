@@ -10,25 +10,25 @@
 {% block content %}
 {{ super() }}
 <header class="page-header">
-    <h1>Localizations</h1>
-    <p class="page-header-desc">Countries with <code>l10n_XX</code> modules or <code>l10n-*</code> repositories (every addon in them counts). Choose a version and a country to list its modules.</p>
+    <h1>{{ "Localizations"|t }}</h1>
+    <p class="page-header-desc">{% set _i70 %}<code>l10n_XX</code>{% endset %}{% set _i71 %}<code>l10n-*</code>{% endset %}{{ "Countries with {0} modules or {1} repositories (every addon in them counts). Choose a version and a country to list its modules."|t(_i70, _i71) }}</p>
 </header>
 
 {% if localization_countries %}
 <div class="localization-panel">
     <div class="globe-stage">
         <canvas id="localization-globe" aria-hidden="true"></canvas>
-        <div class="globe-caption" id="globe-caption" aria-live="polite">Hover to pause · Drag to rotate · Select a highlighted country</div>
+        <div class="globe-caption" id="globe-caption" aria-live="polite">{{ "Hover to pause · Drag to rotate · Select a highlighted country"|t }}</div>
     </div>
     <div class="localization-sidebar">
-        <label for="localization-version">Odoo version</label>
-        <select id="localization-version" class="form-select form-select-sm" aria-label="Filter localization by Odoo version">
+        <label for="localization-version">{{ "Odoo version"|t }}</label>
+        <select id="localization-version" class="form-select form-select-sm" aria-label="{{ 'Filter localization by Odoo version'|t }}">
             {% for version in localization_versions %}
             <option value="{{ version }}"{% if loop.first %} selected{% endif %}>{{ version }}</option>
             {% endfor %}
         </select>
-        <p>Highlighted countries have localization modules in the selected version. Choose one to see its modules.</p>
-        <div class="localization-countries" aria-label="Countries with localization modules">
+        <p>{{ "Highlighted countries have localization modules in the selected version. Choose one to see its modules."|t }}</p>
+        <div class="localization-countries" aria-label="{{ 'Countries with localization modules'|t }}">
             {% for country in localization_countries %}
             <a href="/localization/{{ country.code | lower }}?version={{ localization_versions[0] | urlencode }}" data-country="{{ country.code }}" data-version="{{ country.version_odoo }}"{% if country.version_odoo != localization_default_version %} hidden{% endif %}><span class="country-name">{{ country.code }}</span><span class="country-count">{{ country.count }} <span aria-hidden="true">↗</span></span></a>
             {% endfor %}
@@ -40,6 +40,6 @@
     <div id="localization-selection-list"></div>
 </section>
 {% else %}
-<p class="text-body-secondary">No localization modules indexed yet.</p>
+<p class="text-body-secondary">{{ "No localization modules indexed yet."|t }}</p>
 {% endif %}
 {% endblock %}

@@ -9,6 +9,7 @@ import {
 import {exportPackZip} from '@app/utils/pack-export';
 import {createModuleTileLink} from '@app/utils/module-tile';
 import {renderLicenseReview} from '@app/utils/license-review';
+import {t} from '@app/utils/i18n';
 
 function moduleKey(org, technical_name) {
   return `${org}/${technical_name}`;
@@ -140,7 +141,7 @@ async function init() {
       await navigator.clipboard.writeText(share_url);
       const btn = ev.currentTarget;
       const original = btn.textContent;
-      btn.textContent = 'Copied!';
+      btn.textContent = t('Copied!');
       setTimeout(() => {
         btn.textContent = original;
       }, 1500);

@@ -357,7 +357,12 @@ html[data-mode='user'] .dev-only {
   }
 
   .theme-icon.spin { animation: theme-icon-spin 0.4s ease; }
+
+  .lang-code { margin-left: 0.125rem; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; }
 }
+
+#lang-select .app-icon-btn { width: auto; padding: 0 0.5rem; }
+.dropdown-toggle-no-caret::after { display: none; }
 
 .app-breadcrumb {
   display: flex;

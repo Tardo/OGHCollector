@@ -13,13 +13,13 @@
 
 
 <header class="page-header">
-    <h1>Vulnerabilities</h1>
-    <p class="page-header-desc">Published advisories from the <a href="https://osv.dev/" target="_blank" rel="noopener">OSV</a> database for the pinned Python dependencies of tracked modules. A module is listed because it declares an affected version, not because it uses the affected code: a starting point for review. <a href="/about#vulnerabilities">How it's checked</a></p>
+    <h1>{{ "Vulnerabilities"|t }}</h1>
+    <p class="page-header-desc">{{ "Published advisories from the"|t }} <a href="https://osv.dev/" target="_blank" rel="noopener">{{ "OSV"|t }}</a> {{ "database for the pinned Python dependencies of tracked modules. A module is listed because it declares an affected version, not because it uses the affected code: a starting point for review."|t }} <a href="/about#vulnerabilities">{{ "How it's checked"|t }}</a></p>
 </header>
 
 <div id="osv">
 {% if not osv_info %}
-    <p class="text-body-secondary">No known advisories in the pinned Python dependencies of tracked modules.</p>
+    <p class="text-body-secondary">{{ "No known advisories in the pinned Python dependencies of tracked modules."|t }}</p>
 {% else %}
     <div class="osv-toolbar">
         <ul class="nav nav-pills" id="pills-tab" role="tablist">
@@ -29,7 +29,7 @@
             </li>
         {% endfor %}
         </ul>
-        <input type="search" class="form-control form-control-sm" id="osv_search" placeholder="Filter by package, advisory or module" aria-label="Filter advisories" autocomplete="off" autofocus>
+        <input type="search" class="form-control form-control-sm" id="osv_search" placeholder="{{ 'Filter by package, advisory or module'|t }}" aria-label="{{ 'Filter advisories'|t }}" autocomplete="off" autofocus>
     </div>
     <div class="tab-content" id="pills-tabContent">
     {% for version in osv_info %}
@@ -41,7 +41,7 @@
         {# Fetched on demand (see osv.mjs) when this tab is first shown, to
            avoid shipping every Odoo version's packages/advisories up front. #}
         <div class="tab-pane fade" id="osv-pills-{{ version.odoo_version }}" role="tabpanel" aria-labelledby="osv-pills-{{ version.odoo_version }}-tab" tabindex="0" data-lazy-tab-url="/osv/tab/{{ version.odoo_version | urlencode }}">
-            <p class="text-body-secondary">Loading&hellip;</p>
+            <p class="text-body-secondary">{{ "Loading…"|t }}</p>
         </div>
         {% endif %}
     {% endfor %}

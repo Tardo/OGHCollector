@@ -1,3 +1,4 @@
+import {t} from './i18n.mjs';
 // Copyright 2026 Alexandre D. Díaz
 
 // Renders a license review (oghutils::license::LicenseReport, served by the
@@ -32,7 +33,7 @@ export function renderLicenseReview(container, review) {
   icon.setAttribute('aria-hidden', 'true');
   icon.textContent = worst ? 'gavel' : 'verified';
   const title = document.createElement('strong');
-  title.textContent = 'License review';
+  title.textContent = t('License review');
   head.append(icon, title);
   if (review.effective_license) {
     const effective = document.createElement('span');

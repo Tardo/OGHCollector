@@ -35,6 +35,7 @@
 import '@scss/pages/workflows.scss';
 import Drawflow from 'drawflow';
 import * as yaml from 'js-yaml';
+import {t} from '@app/utils/i18n';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -567,7 +568,7 @@ function regenerate() {
   els.yaml.textContent = current_yaml;
   valid = false;
   setYamlButtons();
-  els.status.textContent = 'Checking…';
+  els.status.textContent = t('Checking…');
   els.status.className = 'wf-status';
   clearTimeout(validate_timer);
   validate_timer = setTimeout(validate, 350);
@@ -1140,8 +1141,8 @@ const resizes = new ResizeObserver(entries => {
 function refreshTrigger() {
   const trigger = els.trigger.value;
   els.palette.textContent = '';
-  for (const type of meta.node_types.filter(t =>
-    t.triggers.includes(trigger),
+  for (const type of meta.node_types.filter(nt =>
+    nt.triggers.includes(trigger),
   )) {
     els.palette.append(
       el('option', {value: type.type, title: type.description}, type.type),
@@ -1351,14 +1352,14 @@ function bindEvents() {
   els.copy.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(current_snippet);
-      els.copy.lastChild.textContent = ' Copied!';
+      els.copy.lastChild.textContent = t(' Copied!');
     } catch {
       setYamlOpen(true);
       window.getSelection().selectAllChildren(els.yaml);
-      els.copy.lastChild.textContent = ' Press Ctrl+C';
+      els.copy.lastChild.textContent = t(' Press Ctrl+C');
     }
     setTimeout(() => {
-      els.copy.lastChild.textContent = ' Copy';
+      els.copy.lastChild.textContent = t(' Copy');
     }, 1500);
   });
   els.download.addEventListener('click', () => {

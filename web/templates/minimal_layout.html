@@ -21,7 +21,7 @@
     {% endif %}
 
     <link rel="modulepreload" href="/static/auto/mirlo.mjs" />
-    <link rel="alternate" type="application/atom+xml" title="Odoo Module Metadata: activity" href="/feed.atom" />
+    <link rel="alternate" type="application/atom+xml" title="{{ 'Odoo Module Metadata: activity'|t }}" href="/feed.atom" />
 {% endblock %}
 {% block base_body_content %}
 {{ super() }}
@@ -31,25 +31,25 @@
 <template id="template-mirlo-module-search">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/module-search.css" as="style" />
     <div class="search-filters">
-        <select id="field" aria-label="Search field">
-            <option value="technical_name">Technical name</option>
-            <option value="name">Name</option>
-            <option value="description">Description</option>
-            <option value="category">Category</option>
+        <select id="field" aria-label="{{ "Search field"|t }}">
+            <option value="technical_name">{{ "Technical name"|t }}</option>
+            <option value="name">{{ "Name"|t }}</option>
+            <option value="description">{{ "Description"|t }}</option>
+            <option value="category">{{ "Category"|t }}</option>
             {% if SEMANTIC_SEARCH_ENABLED %}
-            <option value="semantic">Semantic</option>
+            <option value="semantic">{{ "Semantic"|t }}</option>
             {% endif %}
         </select>
-        <input type="text" id="search" autocomplete="off" placeholder="Search module (technical name)..." aria-label="Search modules" />
-        <select id="version" aria-label="Odoo version">
-            <option value="">All versions</option>
+        <input type="text" id="search" autocomplete="off" placeholder="{{ "Search module (technical name)..."|t }}" aria-label="{{ "Search modules"|t }}" />
+        <select id="version" aria-label="{{ "Odoo version"|t }}">
+            <option value="">{{ "All versions"|t }}</option>
         </select>
     </div>
     <ul id="results"></ul>
 </template>
 <template id="template-mirlo-committer-search">
     <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/components/committer-search.css" as="style" />
-    <input type="text" id="search" autocomplete="off" placeholder="Search committer (name)..." aria-label="Search committers" />
+    <input type="text" id="search" autocomplete="off" placeholder="{{ "Search committer (name)..."|t }}" aria-label="{{ "Search committers"|t }}" />
     <ul id="results"></ul>
 </template>
 
@@ -66,25 +66,25 @@
 {% set nav_section = nav_sections[page_name] if page_name is defined else none %}
 
 {% macro nav_item(href, icon, label, active, extra_class="") -%}
-<li class="{{ extra_class }}"><a class="app-nav-link{{ active and ' active' or '' }}" href="{{ href }}" title="{{ label }}"{% if active %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">{{ icon }}</span><span class="app-nav-label">{{ label }}</span></a></li>
+<li class="{{ extra_class }}"><a class="app-nav-link{{ active and ' active' or '' }}" href="{{ href }}" title="{{ label|t }}"{% if active %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">{{ icon }}</span><span class="app-nav-label">{{ label|t }}</span></a></li>
 {%- endmacro %}
 
-<a class="visually-hidden-focusable app-skip-link" href="#app-content">Skip to content</a>
+<a class="visually-hidden-focusable app-skip-link" href="#app-content">{{ "Skip to content"|t }}</a>
 <div class="app-shell">
-    <aside class="app-sidebar offcanvas-lg offcanvas-start" id="app-sidebar" tabindex="-1" aria-label="Main navigation">
+    <aside class="app-sidebar offcanvas-lg offcanvas-start" id="app-sidebar" tabindex="-1" aria-label="{{ "Main navigation"|t }}">
         <div class="app-sidebar-inner">
             <div class="app-sidebar-brand">
-                <a class="app-brand" href="/" title="Odoo Module Metadata">
+                <a class="app-brand" href="/" title="{{ 'Odoo Module Metadata'|t }}">
                     <img src="/static/favicon-32x32.png" alt="" width="28" height="28">
-                    <span class="app-nav-label"><span class="app-brand-name">OM<span class="app-brand-accent">//</span>MD</span><span class="app-brand-descriptor">Odoo Module Metadata</span></span>
+                    <span class="app-nav-label"><span class="app-brand-name">{% set _i3 %}<span class="app-brand-accent">//</span>{% endset %}{{ "OM{0}MD"|t(_i3) }}</span><span class="app-brand-descriptor">Odoo Module Metadata</span></span>
                 </a>
-                <button type="button" class="btn-close d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#app-sidebar" aria-label="Close navigation"></button>
+                <button type="button" class="btn-close d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#app-sidebar" aria-label="{{ "Close navigation"|t }}"></button>
             </div>
             <nav class="app-nav">
                 <ul>
                     {{ nav_item("/", "space_dashboard", "Overview", page_name is defined and page_name == 'dashboard') }}
                 </ul>
-                <div class="app-nav-group">Explore</div>
+                <div class="app-nav-group">{{ "Explore"|t }}</div>
                 <ul>
                     {{ nav_item("/modules", "extension", "Modules", page_name in ['modules', 'module', 'module_compare']) }}
                     {{ nav_item("/migration", "compare_arrows", "Version migration", page_name == 'migration') }}
@@ -92,18 +92,18 @@
                     {{ nav_item("/localization", "public", "Localizations", page_name == 'localization') }}
                     {{ nav_item("/committers", "groups", "Committers", page_name in ['committers', 'committer']) }}
                 </ul>
-                <div class="app-nav-group{{ not SCAN_ENABLED and ' dev-only' or '' }}">Security</div>
+                <div class="app-nav-group{{ not SCAN_ENABLED and ' dev-only' or '' }}">{{ "Security"|t }}</div>
                 <ul>
                     {{ nav_item("/osv", "gpp_maybe", "Vulnerabilities", page_name == 'osv', "dev-only") }}
                     {% if SCAN_ENABLED %}
                     {{ nav_item("/scan", "radar", "Instance scan", page_name == 'scan') }}
                     {% endif %}
                 </ul>
-                <div class="app-nav-group">Workspace</div>
+                <div class="app-nav-group">{{ "Workspace"|t }}</div>
                 <ul>
                     {{ nav_item("/favorites", "star", "Favorites & packs", page_name in ['favorites', 'pack']) }}
                 </ul>
-                <div class="app-nav-group{{ not PROJECTS_ENABLED and ' dev-only' or '' }}">Doodba</div>
+                <div class="app-nav-group{{ not PROJECTS_ENABLED and ' dev-only' or '' }}">{{ "Doodba"|t }}</div>
                 <ul>
                     {% if PROJECTS_ENABLED %}
                     {{ nav_item("/projects", "inventory_2", "Projects", page_name in ['projects', 'project']) }}
@@ -112,7 +112,7 @@
                     {{ nav_item("/doodba/dependency-resolver", "account_tree", "Dependency resolver", page_name == 'doodba_dep_resolver', "dev-only") }}
                     {{ nav_item("/doodba/migration", "upgrade", "Migration plan", page_name == 'doodba_migration_plan', "dev-only") }}
                 </ul>
-                <div class="app-nav-group dev-only">Developer</div>
+                <div class="app-nav-group dev-only">{{ "Developer"|t }}</div>
                 <ul class="dev-only">
                     {{ nav_item("/api", "api", "REST API", page_name == 'api') }}
                     {% if MCP_INFO_ENABLED %}
@@ -125,42 +125,51 @@
                 </ul>
             </nav>
             <div class="app-sidebar-footer">
-                <a class="app-nav-link{{ (page_name is defined and page_name == 'about') and ' active' or '' }}" href="/about" title="About &amp; methodology"{% if page_name is defined and page_name == 'about' %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">info</span><span class="app-nav-label">About &amp; methodology</span></a>
-                <a class="app-nav-link" href="https://github.com/Tardo/OGHCollector" target="_blank" rel="noopener" title="Source code on GitHub">
+                <a class="app-nav-link{{ (page_name is defined and page_name == 'about') and ' active' or '' }}" href="/about" title="{{ "About & methodology"|t }}"{% if page_name is defined and page_name == 'about' %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">info</span><span class="app-nav-label">{{ "About & methodology"|t }}</span></a>
+                <a class="app-nav-link" href="https://github.com/Tardo/OGHCollector" target="_blank" rel="noopener" title="{{ "Source code on GitHub"|t }}">
                     <svg class="app-github-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
                         <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
                     </svg>
-                    <span class="app-nav-label">Source code</span>
+                    <span class="app-nav-label">{{ "Source code"|t }}</span>
                 </a>
-                <p class="app-disclaimer app-nav-label">Independent project. Not affiliated with Odoo S.A. or the Odoo Community Association.</p>
+                <p class="app-disclaimer app-nav-label">{{ "Independent project. Not affiliated with Odoo S.A. or the Odoo Community Association."|t }}</p>
             </div>
         </div>
     </aside>
 
     <div class="app-main">
         <header class="app-topbar">
-            <button type="button" class="app-icon-btn d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#app-sidebar" aria-controls="app-sidebar" aria-label="Open navigation"><span class="material-icons" aria-hidden="true">menu</span></button>
-            <button type="button" class="app-icon-btn d-none d-lg-inline-flex" id="sidebar-toggle" aria-label="Collapse sidebar" title="Collapse sidebar"><span class="material-icons" aria-hidden="true">menu_open</span></button>
-            <nav class="app-breadcrumb" aria-label="Breadcrumb">
-                {% if nav_section and nav_section != page_title %}<span class="app-breadcrumb-section">{{ nav_section }}</span><span class="app-breadcrumb-sep" aria-hidden="true">/</span>{% endif %}
-                <span class="app-breadcrumb-current" aria-current="page">{{ page_title }}</span>
+            <button type="button" class="app-icon-btn d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#app-sidebar" aria-controls="app-sidebar" aria-label="{{ "Open navigation"|t }}"><span class="material-icons" aria-hidden="true">menu</span></button>
+            <button type="button" class="app-icon-btn d-none d-lg-inline-flex" id="sidebar-toggle" aria-label="{{ "Collapse sidebar"|t }}" title="{{ "Collapse sidebar"|t }}"><span class="material-icons" aria-hidden="true">menu_open</span></button>
+            <nav class="app-breadcrumb" aria-label="{{ "Breadcrumb"|t }}">
+                {% if nav_section and nav_section != page_title %}<span class="app-breadcrumb-section">{{ nav_section|t }}</span><span class="app-breadcrumb-sep" aria-hidden="true">/</span>{% endif %}
+                <span class="app-breadcrumb-current" aria-current="page">{{ page_title|t }}</span>
             </nav>
             <div class="app-topbar-actions">
-                <button type="button" class="app-search-trigger" data-search-open aria-label="Search (Ctrl+K)">
+                <button type="button" class="app-search-trigger" data-search-open aria-label="{{ "Search"|t }} (Ctrl+K)">
                     <span class="material-icons" aria-hidden="true">search</span>
-                    <span class="app-search-trigger-label">Search modules, committers…</span>
-                    <kbd>Ctrl K</kbd>
+                    <span class="app-search-trigger-label">{{ "Search modules, committers…"|t }}</span>
+                    <kbd>{{ "Ctrl K"|t }}</kbd>
                 </button>
                 {% if WORKSPACES %}
-                <select class="form-select form-select-sm w-auto" id="workspace-select" aria-label="Workspace" title="Workspace: only list its repositories">
-                    <option value="">All workspaces</option>
+                <select class="form-select form-select-sm w-auto" id="workspace-select" aria-label="{{ "Workspace"|t }}" title="{{ "Workspace: only list its repositories"|t }}">
+                    <option value="">{{ "All workspaces"|t }}</option>
                     {% for ws in WORKSPACES %}<option value="{{ ws }}"{% if ws == WORKSPACE %} selected{% endif %}>{{ ws }}</option>{% endfor %}
                 </select>
                 {% endif %}
-                <button type="button" class="app-icon-btn" id="theme-toggle" title="Theme: auto / light / dark" aria-label="Theme: auto / light / dark"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
-                <div class="form-check form-switch mode-switch" title="Developer mode: API, MCP, logs, Doodba tools and code analysis">
+                <button type="button" class="app-icon-btn" id="theme-toggle" title="{{ "Theme: auto / light / dark"|t }}" aria-label="{{ "Theme: auto / light / dark"|t }}" data-i18n-theme="{{ "Theme"|t }}|{{ "click to change"|t }}|{{ "auto"|t }}|{{ "light"|t }}|{{ "dark"|t }}"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
+                <div class="dropdown" id="lang-select" data-lang="{{ LANG }}">
+                    <button type="button" class="app-icon-btn dropdown-toggle-no-caret" data-bs-toggle="dropdown" aria-expanded="false" title="{{ "Language"|t }}" aria-label="{{ "Language"|t }}"><span class="material-icons" aria-hidden="true">translate</span><span class="lang-code"></span></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><button type="button" class="dropdown-item" data-lang-choice="auto">{{ "Auto"|t }}</button></li>
+                        <li><button type="button" class="dropdown-item" data-lang-choice="en">{{ "English"|t }}</button></li>
+                        <li><button type="button" class="dropdown-item" data-lang-choice="es">{{ "Español"|t }}</button></li>
+                        <li><button type="button" class="dropdown-item" data-lang-choice="gl">{{ "Galego"|t }}</button></li>
+                    </ul>
+                </div>
+                <div class="form-check form-switch mode-switch" title="{{ "Developer mode: API, MCP, logs, Doodba tools and code analysis"|t }}">
                     <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
-                    <label class="form-check-label" for="dev-mode-switch">Dev<span class="d-none d-xl-inline"> mode</span></label>
+                    <label class="form-check-label" for="dev-mode-switch">{{ "Dev"|t }}<span class="d-none d-xl-inline"> {{ "mode"|t }}</span></label>
                 </div>
             </div>
         </header>
@@ -174,15 +183,15 @@
    `fade` on purpose - the dialog must be visible synchronously so the key
    that opened it lands in the search input. #}
 {% set committer_scope = page_name is defined and page_name in ['committers', 'committer'] %}
-<div class="modal search-palette" id="search-palette" tabindex="-1" aria-label="Search">
+<div class="modal search-palette" id="search-palette" tabindex="-1" aria-label="{{ "Search"|t }}">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="search-palette-head">
                 <ul class="nav search-palette-scopes" role="tablist">
-                    <li role="presentation"><button type="button" class="nav-link{{ not committer_scope and ' active' or '' }}" data-bs-toggle="tab" data-bs-target="#palette-modules" role="tab" aria-controls="palette-modules"><span class="material-icons" aria-hidden="true">extension</span> Modules</button></li>
-                    <li role="presentation"><button type="button" class="nav-link{{ committer_scope and ' active' or '' }}" data-bs-toggle="tab" data-bs-target="#palette-committers" role="tab" aria-controls="palette-committers"><span class="material-icons" aria-hidden="true">person</span> Committers</button></li>
+                    <li role="presentation"><button type="button" class="nav-link{{ not committer_scope and ' active' or '' }}" data-bs-toggle="tab" data-bs-target="#palette-modules" role="tab" aria-controls="palette-modules"><span class="material-icons" aria-hidden="true">extension</span> {{ "Modules"|t }}</button></li>
+                    <li role="presentation"><button type="button" class="nav-link{{ committer_scope and ' active' or '' }}" data-bs-toggle="tab" data-bs-target="#palette-committers" role="tab" aria-controls="palette-committers"><span class="material-icons" aria-hidden="true">person</span> {{ "Committers"|t }}</button></li>
                 </ul>
-                <span class="search-palette-hint"><kbd>↑</kbd><kbd>↓</kbd> navigate <kbd>Enter</kbd> open <kbd>Esc</kbd> close</span>
+                <span class="search-palette-hint"><kbd>↑</kbd><kbd>↓</kbd> {{ "navigate"|t }} <kbd>{{ "Enter"|t }}</kbd> {{ "open"|t }} <kbd>{{ "Esc"|t }}</kbd> {{ "close"|t }}</span>
             </div>
             <div class="tab-content">
                 <div class="tab-pane{{ not committer_scope and ' active' or '' }}" id="palette-modules" role="tabpanel" data-search-tag="mirlo-module-search"></div>

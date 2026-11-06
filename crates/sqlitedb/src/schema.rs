@@ -64,6 +64,7 @@ diesel::table! {
         dependencies -> Text,
         exposed -> Text,
         advisories -> Text,
+        deploy -> Text,
     }
 }
 

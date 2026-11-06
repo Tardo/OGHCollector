@@ -1,3 +1,4 @@
+import {t} from './i18n.mjs';
 // Copyright 2025 Alexandre D. Díaz
 // "Copy" button ([data-copy]) of a .code-panel: copies the panel's <pre>.
 // Outside a secure context (no clipboard API) it selects the snippet for
@@ -10,12 +11,12 @@ document.addEventListener('click', async ev => {
   const code = btn.closest('.code-panel').querySelector('pre');
   try {
     await navigator.clipboard.writeText(code.textContent);
-    btn.textContent = 'Copied!';
+    btn.textContent = t('Copied!');
   } catch {
     window.getSelection().selectAllChildren(code);
-    btn.textContent = 'Press Ctrl+C';
+    btn.textContent = t('Press Ctrl+C');
   }
   setTimeout(() => {
-    btn.textContent = 'Copy';
+    btn.textContent = t('Copy');
   }, 1500);
 });

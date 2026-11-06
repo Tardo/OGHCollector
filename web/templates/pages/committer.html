@@ -25,7 +25,7 @@
     <div>
         <h1>{{ committer_name }}</h1>
         <p class="page-header-desc">
-            {% if stats.total_commits %}{% if home %}Mostly in <a href="{{ home.url }}">{{ home.organization }}/{{ home.repository }}</a> ({{ home.share | round | int }}% of their commits){% endif %}{% if t %} &middot; {{ t.since }}{% if t.until != t.since %} &ndash; {{ t.until }}{% endif %}{% endif %}
+            {% if stats.total_commits %}{% if home %}Mostly in <a href="{{ home.url }}">{{ home.organization }}/{{ home.repository }}</a> {{ "({0}% of their commits)"|t((home.share | round | int)) }}{% endif %}{% if t %} &middot; {{ t.since }}{% if t.until != t.since %} &ndash; {{ t.until }}{% endif %}{% endif %}
             {% else %}No commit data found for this committer.{% endif %}
         </p>
     </div>
@@ -35,41 +35,41 @@
 <div class="row g-3">
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">commit</span> Commits</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">commit</span> {{ "Commits"|t }}</div>
             <div class="stat-card-value">{{ stats.total_commits | num }}</div>
-            <div class="stat-card-note">In {{ stats.total_repositories | num }} repositor{{ stats.total_repositories != 1 and 'ies' or 'y' }}</div>
+            <div class="stat-card-note">{{ "In {0} repositor{1}"|t((stats.total_repositories | num), (stats.total_repositories != 1 and 'ies' or 'y')) }}</div>
         </div>
     </div>
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> Modules</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">extension</span> {{ "Modules"|t }}</div>
             <div class="stat-card-value">{{ stats.total_modules | num }}</div>
             <div class="stat-card-note">Of {{ plural(stats.total_organizations, "organization") }}</div>
         </div>
     </div>
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">layers</span> Odoo versions</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">layers</span> {{ "Odoo versions"|t }}</div>
             <div class="stat-card-value">{{ stats.versions[0].version }}{% if stats.versions | length > 1 %} &ndash; {{ stats.versions[-1].version }}{% endif %}</div>
-            <div class="stat-card-note">Most commits in {{ stats.top_version }}</div>
+            <div class="stat-card-note">{{ "Most commits in {0}"|t((stats.top_version)) }}</div>
         </div>
     </div>
     <div class="col-6 col-xl-3">
         <div class="stat-card">
-            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">history</span> Contributing</div>
+            <div class="stat-card-label"><span class="material-icons" aria-hidden="true">history</span> {{ "Contributing"|t }}</div>
             {% if t %}
             <div class="stat-card-value">{{ t.active_span }}</div>
-            <div class="stat-card-note">Since {{ t.first_seen }}</div>
+            <div class="stat-card-note">{{ "Since {0}"|t((t.first_seen)) }}</div>
             {% else %}
-            <div class="stat-card-value">&mdash;</div>
-            <div class="stat-card-note">No dated commits</div>
+            <div class="stat-card-value">{{ "—"|t }}</div>
+            <div class="stat-card-note">{{ "No dated commits"|t }}</div>
             {% endif %}
         </div>
     </div>
 </div>
 
 <section aria-labelledby="trivia-title">
-    <div class="section-heading"><h2 id="trivia-title">Trivia</h2></div>
+    <div class="section-heading"><h2 id="trivia-title">{{ "Trivia"|t }}</h2></div>
     <div class="fact-strip">
         {% if stats.quijote %}
         <div class="fact">
@@ -82,7 +82,7 @@
         <div class="fact">
             <span class="material-icons" aria-hidden="true">flag</span>
             <div class="fact-headline">{{ t.first_seen_short }}</div>
-            <div class="fact-caption">First commit seen, in <a href="/module/{{ t.first_module_organization | urlencode }}/{{ t.first_module_technical_name | urlencode }}" title="{{ t.first_module_name }}">{{ t.first_module_technical_name }}</a></div>
+            <div class="fact-caption">{{ "First commit seen, in"|t }} <a href="/module/{{ t.first_module_organization | urlencode }}/{{ t.first_module_technical_name | urlencode }}" title="{{ t.first_module_name }}">{{ t.first_module_technical_name }}</a></div>
         </div>
         <div class="fact">
             <span class="material-icons" aria-hidden="true">local_fire_department</span>
@@ -93,7 +93,7 @@
         <div class="fact">
             <span class="material-icons" aria-hidden="true">event</span>
             <div class="fact-headline">{{ t.favourite_month }}</div>
-            <div class="fact-caption">Favourite month: active in it {{ t.favourite_month_years }} of {{ t.calendar | length }} years</div>
+            <div class="fact-caption">{{ "Favourite month: active in it {0} of {1} years"|t((t.favourite_month_years), (t.calendar | length)) }}</div>
         </div>
         {% endif %}
         {% endif %}
@@ -101,8 +101,8 @@
         {% set m = stats.longest_followed %}
         <div class="fact">
             <span class="material-icons" aria-hidden="true">route</span>
-            <div class="fact-headline">{{ m.versions }} versions</div>
-            <div class="fact-caption">Longest-followed module: {{ module_link(m) }}, {{ m.first_version }} &rarr; {{ m.last_version }}</div>
+            <div class="fact-headline">{{ "{0} versions"|t((m.versions)) }}</div>
+            <div class="fact-caption">{{ "Longest-followed module: {0}, {1} → {2}"|t((module_link(m)), (m.first_version), (m.last_version)) }}</div>
         </div>
         {% endif %}
     </div>
@@ -111,13 +111,13 @@
 <div class="dash-report">
     {% if t %}
     <section aria-labelledby="calendar-title">
-        <div class="section-heading"><h2 id="calendar-title">Commit calendar</h2></div>
-        <p class="dash-caption">Every month since the first commit. A commit that touches several modules counts once per module.</p>
+        <div class="section-heading"><h2 id="calendar-title">{{ "Commit calendar"|t }}</h2></div>
+        <p class="dash-caption">{{ "Every month since the first commit. A commit that touches several modules counts once per module."|t }}</p>
         <div class="heatmap">
             <div class="heatmap-row heatmap-head" aria-hidden="true">
                 <span></span>
                 {% for name in month_names %}<span>{{ name[:1] }}</span>{% endfor %}
-                <span class="heatmap-total">Commits</span>
+                <span class="heatmap-total">{{ "Commits"|t }}</span>
             </div>
             {% for y in t.calendar %}
             <div class="heatmap-row">
@@ -126,16 +126,16 @@
                 <span class="heatmap-total">{{ meter(y.commits, t.busiest_year_commits) }}</span>
             </div>
             {% endfor %}
-            <div class="heatmap-legend" aria-hidden="true">Less {% for l in range(5) %}<span class="heatmap-cell" data-l="{{ l }}"></span>{% endfor %} More</div>
+            <div class="heatmap-legend" aria-hidden="true">{{ "Less"|t }} {% for l in range(5) %}<span class="heatmap-cell" data-l="{{ l }}"></span>{% endfor %} More</div>
         </div>
     </section>
     {% endif %}
 
     <div>
         <section aria-labelledby="versions-title">
-            <div class="section-heading"><h2 id="versions-title">Odoo versions</h2></div>
-            <p class="dash-caption">Commits per version branch.</p>
-            <div class="dash-chart versions-chart" role="img" aria-label="Commits per Odoo version; most in {{ stats.top_version }}">
+            <div class="section-heading"><h2 id="versions-title">{{ "Odoo versions"|t }}</h2></div>
+            <p class="dash-caption">{{ "Commits per version branch."|t }}</p>
+            <div class="dash-chart versions-chart" role="img" aria-label="{{ 'Commits per Odoo version; most in {0}'|t((stats.top_version)) }}">
                 {% for v in stats.versions %}
                 <div class="dash-chart-col{% if v.version == stats.top_version %} is-peak{% endif %}" title="Odoo {{ v.version }}: {{ plural(v.commits, 'commit') }} in {{ plural(v.modules, 'module') }}">
                     <span class="dash-chart-track"><span class="dash-chart-bar" style="height: {{ [v.pct, 1] | max }}%">{% if v.version == stats.top_version %}<span class="dash-chart-value">{{ v.commits | num }}</span>{% endif %}</span></span>
@@ -146,14 +146,14 @@
         </section>
 
         <section aria-labelledby="repos-title">
-            <div class="section-heading"><h2 id="repos-title">Repositories</h2></div>
-            <p class="dash-caption">Where their commits go{% if stats.total_repositories > stats.repositories | length %}: the top {{ stats.repositories | length }} of {{ stats.total_repositories | num }}{% endif %}.</p>
-            <div class="share-bar" role="img" aria-label="Share of commits per repository, listed below">
+            <div class="section-heading"><h2 id="repos-title">{{ "Repositories"|t }}</h2></div>
+            <p class="dash-caption">{{ "Where their commits go"|t }}{% if stats.total_repositories > stats.repositories | length %}: the top {{ stats.repositories | length }} of {{ stats.total_repositories | num }}{% endif %}.</p>
+            <div class="share-bar" role="img" aria-label="{{ 'Share of commits per repository, listed below'|t }}">
                 {% for r in stats.repositories %}<span class="share-{{ loop.index }}" style="flex-grow: {{ r.share }}" title="{{ r.organization }}/{{ r.repository }}: {{ r.share }}%"></span>{% endfor %}
-                {% if stats.other_share %}<span class="share-other" style="flex-grow: {{ stats.other_share }}" title="Other repositories: {{ stats.other_share }}%"></span>{% endif %}
+                {% if stats.other_share %}<span class="share-other" style="flex-grow: {{ stats.other_share }}" title="{{ 'Other repositories: {0}%'|t((stats.other_share)) }}"></span>{% endif %}
             </div>
             <table class="dash-rank">
-                <thead><tr><th>Repository</th><th class="dash-num">Modules</th><th class="dash-num">Share</th><th class="dash-num">Commits</th></tr></thead>
+                <thead><tr><th>{{ "Repository"|t }}</th><th class="dash-num">{{ "Modules"|t }}</th><th class="dash-num">{{ "Share"|t }}</th><th class="dash-num">{{ "Commits"|t }}</th></tr></thead>
                 <tbody>
                     {% for r in stats.repositories %}
                     <tr>
@@ -165,7 +165,7 @@
                     {% endfor %}
                     {% if stats.other_share %}
                     <tr>
-                        <td class="dash-name dash-meta"><span class="share-swatch share-other" aria-hidden="true"></span>{{ (stats.total_repositories - stats.repositories | length) | num }} more</td>
+                        <td class="dash-name dash-meta">{% set _i99 %}<span class="share-swatch share-other" aria-hidden="true"></span>{% endset %}{{ "{0}{1} more"|t(_i99, ((stats.total_repositories - stats.repositories | length) | num)) }}</td>
                         <td></td>
                         <td class="dash-num dash-meta">{{ stats.other_share | round | int if stats.other_share >= 1 else "<1" }}%</td>
                         <td></td>
@@ -178,8 +178,8 @@
 
     {% if stats.co_committers %}
     <section class="report-wide" aria-labelledby="peers-title">
-        <div class="section-heading"><h2 id="peers-title">Often in the same modules as</h2></div>
-        <p class="dash-caption">The people who committed to the most of the same modules.</p>
+        <div class="section-heading"><h2 id="peers-title">{{ "Often in the same modules as"|t }}</h2></div>
+        <p class="dash-caption">{{ "The people who committed to the most of the same modules."|t }}</p>
         <ul class="peer-list">
             {% for p in stats.co_committers %}
             <li>
@@ -192,10 +192,10 @@
     {% endif %}
 
     <section class="report-wide" aria-labelledby="modules-title">
-        <div class="section-heading"><h2 id="modules-title">Modules</h2></div>
-        <p class="dash-caption">Every Odoo version together; the bar marks the versions committed to, within their own {{ stats.versions[0].version }} &ndash; {{ stats.versions[-1].version }}.{% if stats.more_modules %} The {{ stats.modules | length }} with the most commits, of {{ (stats.modules | length + stats.more_modules) | num }}.{% endif %}</p>
+        <div class="section-heading"><h2 id="modules-title">{{ "Modules"|t }}</h2></div>
+        <p class="dash-caption">{{ "Every Odoo version together; the bar marks the versions committed to, within their own {0} – {1}."|t((stats.versions[0].version), (stats.versions[-1].version)) }}{% if stats.more_modules %} The {{ stats.modules | length }} with the most commits, of {{ (stats.modules | length + stats.more_modules) | num }}.{% endif %}</p>
         <table class="dash-rank">
-            <thead><tr><th>Module</th><th class="d-none d-md-table-cell">Repository</th><th>Odoo</th><th class="dash-num">Commits</th></tr></thead>
+            <thead><tr><th>{{ "Module"|t }}</th><th class="d-none d-md-table-cell">{{ "Repository"|t }}</th><th>{{ "Odoo"|t }}</th><th class="dash-num">{{ "Commits"|t }}</th></tr></thead>
             <tbody>
                 {% for m in stats.modules %}
                 <tr>

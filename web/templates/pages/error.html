@@ -6,8 +6,8 @@
 
 <div class="text-center mx-auto my-5" style="max-width: 32rem;">
     <div class="display-1 fw-bold text-body-secondary">{{ status_code }}</div>
-    <h1 class="fs-3 fw-semibold mb-3">Something went wrong</h1>
+    <h1 class="fs-3 fw-semibold mb-3">{{ "Something went wrong"|t }}</h1>
     <p class="text-body-secondary">{{ error }}</p>
-    <a class="btn btn-primary mt-3" href="/">Back to home</a>
+    <a class="btn btn-primary mt-3" href="/">{{ "Back to home"|t }}</a>
 </div>
 {% endblock %}
