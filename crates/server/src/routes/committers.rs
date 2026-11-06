@@ -7,9 +7,12 @@
 use std::collections::BTreeMap;
 
 use actix_web::{get, web, HttpRequest, Responder, Result};
+use cached::{proc_macro::cached, stores::TimedSizedCache};
+use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use serde::Serialize;
 
+use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::routes::committer::month_year_label;
 use crate::utils::get_minijinja_context;
@@ -33,7 +36,7 @@ fn month_label(index: i32) -> String {
 }
 
 /// Positions on the veterans' time axis are percentages of its width.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Veteran {
     name: String,
     since: i32,
@@ -43,13 +46,13 @@ struct Veteran {
     width: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Tick {
     year: i32,
     left: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Newcomer {
     name: String,
     first_seen: String,
@@ -57,7 +60,7 @@ struct Newcomer {
 }
 
 /// People whose first tracked commit falls in `year`.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Arrival {
     year: i32,
     people: usize,
@@ -65,7 +68,7 @@ struct Arrival {
     partial: bool,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 struct CommittersPage {
     people: usize,
     bots: usize,
@@ -194,27 +197,38 @@ fn build_page(summaries: Vec<CommitterSummary>, latest: i32) -> CommittersPage {
     }
 }
 
+/// Two full scans of `module_committer_period` (~0.8 s on a real DB): cached per workspace.
+#[cached(
+    ty = "TimedSizedCache<String, CommittersPage>",
+    create = r#"{ TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(*SERVER_CONFIG.get_cache_ttl()), true) }"#,
+    convert = r#"{ _workspace.to_string() }"#
+)]
+fn get_page(conn: &mut SqliteConnection, _workspace: &str) -> CommittersPage {
+    let summaries = models::committer::activity_summary(conn);
+    let Some(latest) = summaries.iter().map(|s| s.last_month).max() else {
+        return CommittersPage::default();
+    };
+    let window_start = latest - 11;
+    let mut page = build_page(summaries, latest);
+    page.recent = models::module_committer_period::rank_between(
+        conn,
+        split_month(window_start),
+        split_month(latest),
+        TOP_LIMIT as i64,
+    );
+    page
+}
+
 #[get("/committers")]
 pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
     pool: AreaPool,
 ) -> Result<impl Responder> {
+    let key = pool.key().to_string();
     let page = web::block(move || {
         let mut conn = pool.get().unwrap();
-        let summaries = models::committer::activity_summary(&mut conn);
-        let Some(latest) = summaries.iter().map(|s| s.last_month).max() else {
-            return CommittersPage::default();
-        };
-        let window_start = latest - 11;
-        let mut page = build_page(summaries, latest);
-        page.recent = models::module_committer_period::rank_between(
-            &mut conn,
-            split_month(window_start),
-            split_month(latest),
-            TOP_LIMIT as i64,
-        );
-        page
+        get_page(&mut conn, &key)
     })
     .await?;
 

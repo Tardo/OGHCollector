@@ -34,7 +34,7 @@ pub fn get_by_name(conn: &mut SqliteConnection, name: &str) -> Option<Model> {
         .expect("DB error in committer::get_by_name")
 }
 
-#[derive(QueryableByName, Debug, Serialize)]
+#[derive(QueryableByName, Debug, Serialize, Clone)]
 pub struct CommitterSummary {
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub name: String,

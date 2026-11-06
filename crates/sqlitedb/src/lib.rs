@@ -45,8 +45,13 @@ struct ReadCustomizer(Option<(String, bool)>);
 impl CustomizeConnection<SqliteConnection, R2d2Error> for ReadCustomizer {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), R2d2Error> {
         use diesel::connection::SimpleConnection;
-        conn.batch_execute("PRAGMA busy_timeout = 5000;")
-            .map_err(R2d2Error::QueryError)?;
+        // mmap: the 1.5 GB DB is served from the OS page cache without copies; the 16 MB
+        // page cache and in-memory temp B-trees help the GROUP BY scans (default is 2 MB).
+        conn.batch_execute(
+            "PRAGMA busy_timeout = 5000; PRAGMA mmap_size = 2147483648; \
+             PRAGMA cache_size = -16384; PRAGMA temp_store = MEMORY;",
+        )
+        .map_err(R2d2Error::QueryError)?;
         // TEMP objects can't be created once query_only is on.
         if let Some((ws, own)) = &self.0 {
             conn.batch_execute(&workspace_views(ws, *own))

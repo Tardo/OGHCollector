@@ -9,15 +9,17 @@
 //! resolve to modules of any workspace, with where they stand at the next indexed version (by
 //! name or an OpenUpgrade rename, else their open migration PR).
 use actix_web::{get, web, HttpRequest, Responder, Result};
+use cached::{proc_macro::cached, stores::TimedSizedCache};
 use minijinja::context;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::models::doodba_project::{self, Patch, Repo, Row};
+use sqlitedb::models::doodba_project::{self, Patch, Repo, Row, SharedAddon};
 use sqlitedb::{models, Pool};
 
+use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::routes::doodba_tools::get_pending_modules;
 use crate::utils::get_minijinja_context;
@@ -189,6 +191,61 @@ struct LintRev {
     newest: bool,
 }
 
+type FleetData = (
+    Vec<Row>,
+    HashMap<(String, i32), String>,
+    Vec<(Option<i32>, usize, usize, usize)>,
+    Vec<SharedAddon>,
+);
+
+/// One query per project for the next-version readiness (~0.25 s): cached per workspace.
+#[cached(
+    ty = "TimedSizedCache<String, FleetData>",
+    create = r#"{ TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(*SERVER_CONFIG.get_cache_ttl()), true) }"#,
+    convert = r#"{ pool.key().to_string() }"#
+)]
+fn fleet_data(pool: &AreaPool, all: &Pool) -> FleetData {
+    // The lint baseline is the whole fleet's, as on the project page.
+    let rows = doodba_project::list(&mut pool.get().unwrap());
+    let mut conn = all.get().unwrap();
+    let newest = newest_revs(&doodba_project::list(&mut conn));
+    let versions = models::module::get_odoo_versions(&mut conn);
+    let shared = doodba_project::all_addons(&mut pool.get().unwrap());
+    // (next version, in next, with a migration PR, collected addons)
+    let readiness: Vec<(Option<i32>, usize, usize, usize)> = rows
+        .iter()
+        .map(|r| {
+            let p = &r.project;
+            let next = versions
+                .iter()
+                .copied()
+                .filter(|v| *v > p.version_odoo)
+                .min();
+            let Some(n) = next else {
+                return (None, 0, 0, 0);
+            };
+            let addons =
+                doodba_project::addons(&mut conn, p.gh_repository_id, p.version_odoo, next);
+            let tracked: Vec<_> = addons
+                .iter()
+                .filter(|a| a.technical_name != "*" && a.org_name.is_some())
+                .collect();
+            let missing: Vec<String> = tracked
+                .iter()
+                .filter(|a| a.in_next == 0)
+                .map(|a| a.technical_name.clone())
+                .collect();
+            let pending = get_pending_modules(&mut conn, &missing, &(n as u8));
+            let in_pr = missing
+                .iter()
+                .filter(|m| pending.iter().any(|pr| &pr.technical_name == *m))
+                .count();
+            (next, tracked.len() - missing.len(), in_pr, tracked.len())
+        })
+        .collect();
+    (rows, newest, readiness, shared)
+}
+
 #[get("/projects")]
 pub async fn route(
     pool: AreaPool,
@@ -196,48 +253,8 @@ pub async fn route(
     tmpl_env: MiniJinjaRenderer,
     req: HttpRequest,
 ) -> Result<impl Responder> {
-    // The lint baseline is the whole fleet's, as on the project page.
-    let (rows, newest, readiness, shared) = web::block(move || {
-        let rows = doodba_project::list(&mut pool.get().unwrap());
-        let mut conn = all.get().unwrap();
-        let newest = newest_revs(&doodba_project::list(&mut conn));
-        let versions = models::module::get_odoo_versions(&mut conn);
-        let shared = doodba_project::all_addons(&mut pool.get().unwrap());
-        // (next version, in next, with a migration PR, collected addons)
-        let readiness: Vec<(Option<i32>, usize, usize, usize)> = rows
-            .iter()
-            .map(|r| {
-                let p = &r.project;
-                let next = versions
-                    .iter()
-                    .copied()
-                    .filter(|v| *v > p.version_odoo)
-                    .min();
-                let Some(n) = next else {
-                    return (None, 0, 0, 0);
-                };
-                let addons =
-                    doodba_project::addons(&mut conn, p.gh_repository_id, p.version_odoo, next);
-                let tracked: Vec<_> = addons
-                    .iter()
-                    .filter(|a| a.technical_name != "*" && a.org_name.is_some())
-                    .collect();
-                let missing: Vec<String> = tracked
-                    .iter()
-                    .filter(|a| a.in_next == 0)
-                    .map(|a| a.technical_name.clone())
-                    .collect();
-                let pending = get_pending_modules(&mut conn, &missing, &(n as u8));
-                let in_pr = missing
-                    .iter()
-                    .filter(|m| pending.iter().any(|pr| &pr.technical_name == *m))
-                    .count();
-                (next, tracked.len() - missing.len(), in_pr, tracked.len())
-            })
-            .collect();
-        (rows, newest, readiness, shared)
-    })
-    .await?;
+    let all = all.get_ref().clone();
+    let (rows, newest, readiness, shared) = web::block(move || fleet_data(&pool, &all)).await?;
     let top_behind = rows
         .iter()
         .filter_map(|r| r.project.template_behind)
