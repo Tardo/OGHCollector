@@ -70,6 +70,16 @@ pub struct ListDoodbaProjectsParams {
     pub odoo_version: Option<String>,
     /// A module's technical name: only the projects whose addons.yaml enables it.
     pub module: Option<String>,
+    /// Substring of the project's repository name, case-insensitive.
+    pub name: Option<String>,
+    /// true: only projects behind their template (template_behind > 0).
+    pub template_outdated: Option<bool>,
+    /// true: only projects with PyPI advisories on their pinned pip dependencies.
+    pub with_advisories: Option<bool>,
+    /// true: only projects whose files hold credentials.
+    pub with_exposed_credentials: Option<bool>,
+    /// true: only projects with patches whose PR/MR is merged or closed (candidates to drop).
+    pub with_done_patches: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1661,7 +1671,9 @@ impl OghMcp {
                         doodba-copier-template, one entry per repository and Odoo version / \
                         branch), optionally only those of an organization, an Odoo version, or \
                         that enable a given module in addons.yaml (\"which projects use \
-                        account_banking_mandate?\"). Each entry: how many template commits the \
+                        account_banking_mandate?\"), whose repository name contains a text, or \
+                        that need attention (template_outdated, with_advisories, \
+                        with_exposed_credentials, with_done_patches). Each entry: how many template commits the \
                         project is behind (template_behind; null = unknown), addons enabled, \
                         patches merged in repos.yaml and how many of their PRs/MRs are merged \
                         or closed upstream (patches_done: candidates to drop), PyPI advisories \
@@ -1695,6 +1707,32 @@ impl OghMcp {
                 .filter(|r| params.org.as_ref().is_none_or(|org| *org == r.org_name))
                 .filter(|r| version_odoo.is_none_or(|v| v as i32 == r.project.version_odoo))
                 .map(|r| r.summary())
+                .filter(|s| {
+                    params
+                        .name
+                        .as_ref()
+                        .is_none_or(|n| s.repository.to_lowercase().contains(&n.to_lowercase()))
+                })
+                .filter(|s| {
+                    params
+                        .template_outdated
+                        .is_none_or(|b| b == (s.template_behind.unwrap_or(0) > 0))
+                })
+                .filter(|s| {
+                    params
+                        .with_advisories
+                        .is_none_or(|b| b == (s.advisories > 0))
+                })
+                .filter(|s| {
+                    params
+                        .with_exposed_credentials
+                        .is_none_or(|b| b == (s.exposed_credentials > 0))
+                })
+                .filter(|s| {
+                    params
+                        .with_done_patches
+                        .is_none_or(|b| b == (s.patches_done > 0))
+                })
                 .collect::<Vec<_>>()
         })
         .await
