@@ -6,8 +6,9 @@
 //! `OGHCOLLECTOR_MCP_BIND_ADDR` (default `0.0.0.0:8081`). rmcp rejects requests whose `Host` header
 //! isn't localhost/127.0.0.1/::1 by default (DNS-rebinding protection) — set
 //! `OGHCOLLECTOR_MCP_ALLOWED_HOSTS` (comma-separated) to the real public hostname(s)/IP(s) for a
-//! reachable deployment; `main.rs` logs a warning when it falls back to the loopback-only default.
+//! reachable deployment (API keys: see `gate.rs`); `main.rs` logs a warning when it falls back to the loopback-only default.
 mod config;
+mod gate;
 mod tools;
 
 use std::path::PathBuf;
@@ -94,7 +95,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts),
     );
 
-    let router = Router::new().nest_service("/mcp", service);
+    let mut router = Router::new().nest_service("/mcp", service);
+    match gate::Gate::from_env() {
+        Ok(Some(g)) => {
+            log::info!("API keys required (membership of the GitLab group is checked)");
+            router = router.layer(axum::middleware::from_fn_with_state(
+                std::sync::Arc::new(g),
+                gate::require_key,
+            ));
+        }
+        Ok(None) => log::warn!(
+            "OGHCOLLECTOR_MCP_KEY_SECRET not set - /mcp has NO authentication of its own"
+        ),
+        Err(e) => {
+            log::error!("{e}");
+            std::process::exit(1);
+        }
+    }
     let bind_addr = resolve_bind_addr();
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     log::info!("MCP endpoint listening on http://{bind_addr}/mcp");

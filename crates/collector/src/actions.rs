@@ -28,6 +28,9 @@
 //! Gates like `pr.head_changed`/`not unchanged` defeat retries — the README says so; prefer relying
 //! on the ledger. `actions_tests.rs` = axum mock of OpenAI/Anthropic/GitLab/GitHub (records
 //! path+query) + local bare origin (incl. the push-done-PR-missing recovery).
+//! `open_project_pr`/`Forge::auto_merge` (project workflows): push `ogh/<wf>/<version>-<tree>` from the
+//! worktree unless it exists upstream, skip if another open PR/MR of that workflow+version exists;
+//! `auto_merge` (a `project_pr` field, runs right after opening; retried on a still-open PR) = GitLab `merge_when_pipeline_succeeds` (only with a pipeline) / GitHub GraphQL, never a direct merge.
 //! `notify` = one POST to an Apprise API server (`caronc/apprise`): `url` is `/notify/<key>` (its
 //! saved config, `${...}` to keep it out of the workflow) or `/notify/` + `urls` from `api_key_env`; 424 (some targets failed, it can't say
 //! which) counts as sent, or a retry repeats it on those that worked. Capped at `NOTIFY_LIMIT` per
@@ -38,6 +41,10 @@ use std::time::Duration;
 use reqwest::header::{ACCEPT, USER_AGENT};
 use reqwest::Method;
 use serde_json::{json, Value};
+
+/// Polls for a GitLab MR's pipeline (it is created a moment after the push).
+const PIPELINE_POLLS: usize = 6;
+const PIPELINE_POLL_EVERY: Duration = Duration::from_secs(5);
 
 use crate::gitclient::{git_auth_env, git_run, git_run_env};
 use crate::{config, review};
@@ -280,7 +287,11 @@ impl Forge {
     }
 
     /// The open PR/MR from `branch`, if any (its URL).
-    async fn find_open(&self, full_path: &str, branch: &str) -> Result<Option<String>, String> {
+    pub(crate) async fn find_open(
+        &self,
+        full_path: &str,
+        branch: &str,
+    ) -> Result<Option<String>, String> {
         let project = self.project(full_path);
         let branch_q = urlencoding::encode(branch);
         let (path, url_key) = match self.gitlab {
@@ -300,6 +311,96 @@ impl Forge {
         Ok(res[0][url_key].as_str().map(str::to_string))
     }
 
+    /// An open PR/MR whose branch starts with `prefix` (its URL). Only the
+    /// newest 100 open ones are looked at.
+    async fn find_open_prefixed(
+        &self,
+        full_path: &str,
+        prefix: &str,
+    ) -> Result<Option<String>, String> {
+        let project = self.project(full_path);
+        let (path, branch_key, url_key) = match self.gitlab {
+            true => (
+                format!("{project}/merge_requests?state=opened&per_page=100"),
+                "source_branch",
+                "web_url",
+            ),
+            false => (
+                format!("{project}/pulls?state=open&per_page=100"),
+                "",
+                "html_url",
+            ),
+        };
+        let res = self.send(Method::GET, &path, None).await?;
+        Ok(res.as_array().into_iter().flatten().find_map(|pr| {
+            let branch = match self.gitlab {
+                true => pr[branch_key].as_str(),
+                false => pr["head"]["ref"].as_str(),
+            }?;
+            branch
+                .starts_with(prefix)
+                .then(|| pr[url_key].as_str().map(str::to_string))?
+        }))
+    }
+
+    /// Sets the open PR/MR from `branch` to merge once its pipeline/checks
+    /// pass; what happened, in words. Never merges at once: a GitLab MR
+    /// without a pipeline would, so it waits briefly for one, then leaves
+    /// the MR open with an error (the next run tries again); GitHub's
+    /// auto-merge is refused where the repository has it off or nothing is
+    /// required, and that's an error too.
+    pub async fn auto_merge(&self, full_path: &str, branch: &str) -> Result<String, String> {
+        let Some(url) = self.find_open(full_path, branch).await? else {
+            return Ok(format!("no open PR/MR from {branch}: nothing to merge"));
+        };
+        let number: i64 = url
+            .rsplit('/')
+            .next()
+            .and_then(|n| n.parse().ok())
+            .ok_or_else(|| format!("no PR/MR number in {}", host(&url)))?;
+        let project = self.project(full_path);
+        if self.gitlab {
+            let mr = format!("{project}/merge_requests/{number}");
+            let mut has_pipeline = false;
+            for attempt in 0..PIPELINE_POLLS {
+                let res = self.send(Method::GET, &mr, None).await?;
+                has_pipeline = !res["head_pipeline"].is_null() || !res["pipeline"].is_null();
+                if has_pipeline {
+                    break;
+                }
+                if attempt + 1 < PIPELINE_POLLS {
+                    tokio::time::sleep(PIPELINE_POLL_EVERY).await;
+                }
+            }
+            if !has_pipeline {
+                return Err(format!(
+                    "!{number} has no pipeline yet: left open, not merged"
+                ));
+            }
+            // `merge_when_pipeline_succeeds` is the older name of `auto_merge`.
+            let body = json!({"auto_merge": true, "merge_when_pipeline_succeeds": true});
+            self.send(Method::PUT, &format!("{mr}/merge"), Some(body))
+                .await?;
+            return Ok(format!("{url} will merge when its pipeline passes"));
+        }
+        let pr = self
+            .send(Method::GET, &format!("{project}/pulls/{number}"), None)
+            .await?;
+        let id = pr["node_id"].as_str().ok_or("the PR has no node_id")?;
+        let query = "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) { pullRequest { number } } }";
+        let res = self
+            .send(
+                Method::POST,
+                "graphql",
+                Some(json!({"query": query, "variables": {"id": id}})),
+            )
+            .await?;
+        if let Some(err) = res["errors"][0]["message"].as_str() {
+            return Err(format!("{} refused auto-merge: {err}", self.api_host()));
+        }
+        Ok(format!("{url} will merge when its checks pass"))
+    }
+
     /// Opens a PR/MR from `branch` onto `base`; its URL.
     async fn open(
         &self,
@@ -313,7 +414,7 @@ impl Forge {
         let (path, payload, url_key) = match self.gitlab {
             true => (
                 format!("{project}/merge_requests"),
-                json!({"source_branch": branch, "target_branch": base, "title": title, "description": body}),
+                json!({"source_branch": branch, "target_branch": base, "title": title, "description": body, "remove_source_branch": true}),
                 "web_url",
             ),
             false => (
@@ -556,7 +657,7 @@ pub struct NewPr<'a> {
 }
 
 /// Commit author of `pr_open` (`OGHCOLLECTOR_COMMIT_AUTHOR`, "Name <email>").
-fn commit_author() -> (String, String) {
+pub(crate) fn commit_author() -> (String, String) {
     let raw = std::env::var("OGHCOLLECTOR_COMMIT_AUTHOR").unwrap_or_default();
     match raw.split_once('<') {
         Some((name, email)) if !name.trim().is_empty() => (
@@ -642,6 +743,65 @@ pub async fn open_pr(
     let _ = git_run(pr.clone, &["worktree", "remove", "--force", &wt]);
     let _ = std::fs::remove_file(&patch_file);
     result
+}
+
+/// What `project_pr` pushes: the commits of a worktree, as one PR/MR.
+pub struct ProjectPush<'a> {
+    pub worktree: &'a str,
+    pub repo_url: &'a str,
+    pub full_path: &'a str,
+    pub base: &'a str,
+    /// `ogh/<workflow>/<version>-<tree>`.
+    pub branch: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    /// Set it to merge when its pipeline/checks pass (`Forge::auto_merge`).
+    pub auto_merge: bool,
+}
+
+/// Pushes a project's fix branch (never one that exists upstream: that's an
+/// earlier attempt, whose PR/MR is only created if missing) and opens its
+/// PR/MR, unless an earlier one of the same workflow and version (another
+/// `ogh/<workflow>/<version>-...` branch) is still open: fixes don't pile up.
+pub async fn open_project_pr(forge: &Forge, push: &ProjectPush<'_>) -> Result<String, String> {
+    let prefix = push
+        .branch
+        .rsplit_once('-')
+        .map_or(push.branch, |(head, _)| head);
+    let prefix = format!("{prefix}-");
+    if let Some(url) = forge.find_open_prefixed(push.full_path, &prefix).await? {
+        // An earlier run may have opened it and failed at the merge: retry that.
+        let merge = match push.auto_merge {
+            true => format!("; {}", forge.auto_merge(push.full_path, push.branch).await?),
+            false => String::new(),
+        };
+        return Ok(format!("{url} is still open: no new one{merge}"));
+    }
+    let (user, token) = forge.git_credentials()?;
+    let auth = git_auth_env(push.repo_url, user, token);
+    let remote = git_run_env(
+        push.worktree,
+        &["ls-remote", "--heads", "origin", push.branch],
+        &auth,
+    )?;
+    if remote.trim().is_empty() {
+        let refspec = format!("HEAD:refs/heads/{}", push.branch);
+        git_run_env(push.worktree, &["push", "origin", &refspec], &auth)?;
+    }
+    let url = forge
+        .open(
+            push.full_path,
+            push.branch,
+            push.base,
+            push.title,
+            push.body,
+        )
+        .await?;
+    if !push.auto_merge {
+        return Ok(url);
+    }
+    let merge = forge.auto_merge(push.full_path, push.branch).await?;
+    Ok(format!("{url}; {merge}"))
 }
 
 #[cfg(test)]

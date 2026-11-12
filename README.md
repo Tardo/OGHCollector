@@ -132,6 +132,11 @@ Mount a volume to `/app/server.yaml` (JSON is also supported) to override the de
 | `projects_enabled` | bool | Enable the Doodba projects pages (`/projects`), their `/v1/projects` and `/v1/project/{org}/{repo}/{version}` API and the "Used by N Doodba projects" line on module pages: the template drift, aggregated repos, patches (with their PR/MR state upstream), addons, linters, dependencies, PyPI advisories of the pip pins and credentials found in the files of every collected Doodba project. Disabled by default: it describes your private deployments, enable it only behind access controls (MCP: `OGHCOLLECTOR_PROJECTS_ENABLED`). | `false` |
 | `mcp_url` | string | Public URL of the MCP endpoint, displayed on that page | `http://localhost:8081/mcp` |
 | `trusted_proxies` | list of strings | IPs/CIDRs (e.g. your reverse proxy's address, or the Docker network subnet) allowed to set `X-Forwarded-For`/`Forwarded`; honored only when the request's direct TCP peer matches one of these, otherwise the headers are stripped and the real peer address is used instead. Needed for correct client IPs in access logs (and `REQ_BASE_URL` scheme/host) behind Traefik/nginx/etc. | `[]` |
+| `auth_enabled` | bool | Require a login: every request needs the user header set by the auth proxy (else `401`) and workspaces follow the user's groups. See [Login with OIDC](#login-with-oidc). Startup fails without `trusted_proxies`. | `false` |
+| `auth_user_header` | string | Header carrying the user id | `X-Auth-Request-User` |
+| `auth_groups_header` | string | Header carrying the user's groups, comma separated | `X-Auth-Request-Groups` |
+| `auth_groups` | map | Group (lowercase) → list of workspaces it may use | `{}` |
+| `default_workspace` | string | Workspace everyone gets, and the one used when the cookie names a workspace the user may not use | `default` |
 | `seo_enabled` | bool | Allow search engines/social previews to index and share the site: `/robots.txt` returns `Allow: /` instead of `Disallow: /`, and pages get a canonical link plus Open Graph/Twitter Card meta tags. Off by default so nothing is shared/indexed until explicitly opted in. | `false` |
 | `semantic_search_enabled` | bool | Enable embedding-based "Semantic" search (the `/v1/semantic-search` endpoint, the "Semantic" option in the search dropdowns, and its entry on the `/api` page). When off, the option is hidden, the route is not served and the embedding model is never downloaded or loaded in memory. On by default so the feature keeps working unless explicitly disabled. | `true` |
 | `health_score_enabled` | bool | Show the synthetic "Health" card (0-100 over security findings, human commit activity, "Required by" and Odoo series) on the module page. The detail cards stay either way; the `health` field is always in `/v1/module/*`. | `true` |
@@ -376,9 +381,45 @@ and `migration.count|notes`, each item with its `module` (empty without the anal
 - Stored modules a job no longer finds in the repository are deleted, whatever the workflows do.
 - Which PRs/MRs are tracked (and analyzed) still depends on the source's `pull_requests`.
 
+#### Project workflows (`on: project`)
+
+Routine fixes to a Doodba project, one commit per step and one PR/MR at the end. They run over
+every Doodba project a job stores (see `doodba_fixes` in `workflows.yaml`, disabled; name it in a
+source's `workflows:`). Besides `if`, `log`, `ai` and `apprise`, they have:
+
+| Node | What it does | Fields |
+|---|---|---|
+| `drop_missing_addons` | Removes from `addons.yaml` the addons the collected repos no longer have at this version (`project.missing_addons`), in a commit | `next`, `title` (commit message) |
+| `update_linters` | Moves `.pre-commit-config.yaml` hooks to the newest tag the fleet runs for this version (`project.lint_updates`; only tag → newer tag), in a commit | `next`, `title` |
+| `pre_commit` | Runs the project's `pre-commit run --all-files` over the tree the steps above left and commits what its hooks fixed; the second pass must be clean, else the item's workflow stops (nothing is opened). Does nothing without earlier commits or a `.pre-commit-config.yaml`. Local, but hooks are foreign code: it only runs when `project_pr` is live | `next`, `title` |
+| `project_pr` | Pushes the commits as `ogh/<workflow>/<version>-<tree>` and opens one PR/MR; nothing if no step changed anything. With `auto_merge: true` it also sets the PR/MR to merge when its pipeline/checks pass (never at once). Outward | `next`, `title`, `body`, `auto_merge` |
+
+The fix nodes only commit in a scratch worktree, so even the dry-run report (`/logs`) shows the
+real diffstat. `body` sees `changes` (`step`, `message`, `files` of each commit). Variables:
+`org`, `repo`, `odoo_version`, `project.{answers,base_image,template_behind,addons,repos,linters,exposed,missing_addons,lint_updates}`,
+`changes`, `ai.<node id>`, `file('rel/path')`. `after` isn't allowed on them.
+
+- "Missing" means: listed in `addons.yaml`, its repo is collected at this version and lacks the
+  module (a `private` addon: no folder under `odoo/custom/src/private`). It is **not** the project
+  page's "Missing" column (absent from the *next* version): removing those would break the running
+  deployment. A repo we don't collect is never "missing". Only list items are removed
+  (flow-style lists are left alone); `*`, `ENV` and `ONLY` are never touched.
+- The files are edited as text, so comments and formatting survive.
+- A PR/MR of the same workflow and version that is still open blocks a new one; the branch name
+  carries the resulting tree, so the same fixes find their earlier push. GitLab MRs remove their
+  source branch when merged.
+- `pre_commit`: needs the `pre-commit` binary and network (hook repos) in the collector image; scrubbed environment (no forge tokens), 10 min per pass, hook cache in `OGHCOLLECTOR_PRE_COMMIT_HOME` (default: the job's temp dir, so cold each job). A hook that fixes files exits 1: pass 1 failing with changes is normal, with none it is a real failure.
+- `auto_merge`: GitLab needs a pipeline on the MR (it waits ~30 s for one, then fails and
+  retries next run: without one GitLab would merge at once) and uses "merge when pipeline
+  succeeds"; GitHub uses GraphQL `enablePullRequestAutoMerge` (merge commit), which needs
+  auto-merge enabled on the repository and required checks, and is refused otherwise. There is no
+  fallback to a direct merge. A failure (no pipeline yet) is retried next run on the same open PR/MR.
+- Not covered: updating the copier template (it runs the template's tasks, i.e. foreign code) and
+  dropping repos left empty in `repos.yaml`.
+
 #### Actions
 
-`ai`, `pr_comment`, `pr_edit`, `pr_review`, `pr_open` and `apprise` reach outside the collector, so they only **log what
+`ai`, `pr_comment`, `pr_edit`, `pr_review`, `pr_open`, `apprise` and `project_pr` reach outside the collector, so they only **log what
 they would do** (`[dry-run] ...` events in `/logs`, with what they'd send) until the source lists
 them:
 
@@ -593,6 +634,66 @@ an absent or empty secret falls back to the corresponding environment variable.
 Alternatively, without secrets, set `OGHCOLLECTOR_TOKEN_GH` / `OGHCOLLECTOR_TOKEN_GL` as environment
 variables (used as a fallback when the corresponding secret file isn't found).
 
+### Login with OIDC
+
+The apps don't talk to the identity provider. Traefik asks [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)
+(which does the OIDC login) about every request; the proxy answers with the user's id and groups
+as headers, and `oghserver` trusts them only when the request comes from `trusted_proxies`.
+
+1. **`server.yaml`**
+
+   ```yaml
+   auth_enabled: true
+   trusted_proxies: ["172.18.0.0/16"]   # oauth2-proxy / Traefik address or Docker subnet
+   default_workspace: default           # what a user with no mapped group sees
+   auth_groups:                         # OIDC group (lowercase) -> workspaces
+     staff: [mycompany, oca]
+   ```
+
+   With `auth_enabled` the selector offers only the user's workspaces (plus `default_workspace`),
+   a cookie naming another one falls back to `default_workspace`, and pages are sent
+   `Cache-Control: private`. Identity headers from any other peer are dropped.
+
+2. **oauth2-proxy** (example for GitLab as OIDC provider)
+
+   ```
+   --provider=oidc
+   --oidc-issuer-url=https://gitlab.example.com
+   --client-id=... --client-secret=...
+   --redirect-url=https://ogh.example.com/oauth2/callback
+   --scope="openid profile email"
+   --oidc-groups-claim=groups
+   --user-id-claim=sub              # needed by the MCP keys: the user header must be the numeric id
+   --set-xauthrequest=true          # sends X-Auth-Request-User / -Groups
+   --reverse-proxy=true
+   --cookie-secret=...
+   --email-domain=*
+   --upstream=static://202          # auth only, it doesn't proxy
+   ```
+
+   Register the redirect URL above in the provider.
+
+3. **Traefik**: a `forwardAuth` middleware on the server's router, and a route for `/oauth2/*`
+   to oauth2-proxy.
+
+   ```yaml
+   traefik.http.middlewares.ogh-auth.forwardauth.address: http://oauth2-proxy:4180/oauth2/auth
+   traefik.http.middlewares.ogh-auth.forwardauth.trustForwardHeader: "true"
+   traefik.http.middlewares.ogh-auth.forwardauth.authResponseHeaders: X-Auth-Request-User,X-Auth-Request-Groups
+   ```
+
+4. **MCP keys** (optional). Don't put `/mcp` behind `forwardAuth`: MCP clients send
+   `Authorization: Bearer <key>`. Set the same `OGHCOLLECTOR_MCP_KEY_SECRET` (or Docker secret
+   `mcp_key_secret`) on `server` and `mcp`: the server's `/mcp` page then shows each logged-in user
+   their key. `mcp` also needs `OGHCOLLECTOR_MCP_GITLAB_URL`, `OGHCOLLECTOR_MCP_GITLAB_GROUP` and a
+   read-only `OGHCOLLECTOR_MCP_GITLAB_TOKEN` (or Docker secret `mcp_gitlab_token`): on every use
+   (cached `OGHCOLLECTOR_MCP_GITLAB_CACHE` seconds, default 300) it checks that the user is still an
+   active member of that group, so removing someone from the group revokes their key. Changing
+   the secret revokes all keys.
+
+> Authentication gates entry and filters listings; it is not per-workspace authorization. Any
+> logged-in user can open any module page, and MCP is not filtered by workspace.
+
 ### Scheduling updates
 
 The `collector` service runs `oghcollector --listen`, which stays up and runs collection jobs one
@@ -710,8 +811,9 @@ services:
       OGHCOLLECTOR_MCP_ALLOWED_HOSTS: mcp.example.com,203.0.113.10
 ```
 
-> `oghmcp` has no authentication of its own. If `oghserver` sits behind auth or a private network,
-> give `oghmcp` the same treatment.
+> Without `OGHCOLLECTOR_MCP_KEY_SECRET`, `oghmcp` has no authentication of its own (it logs a
+> warning): if `oghserver` sits behind auth, set the key secret (see [Login with OIDC](#login-with-oidc))
+> or keep `oghmcp` on a private network.
 >
 > `scan_instance` is disabled in MCP unless `OGHCOLLECTOR_SCAN_ENABLED=true`. Enable it only where
 > access to the endpoint is controlled, as it makes outbound requests. Likewise
@@ -791,6 +893,8 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_PROJECTS_ENABLED` | mcp | Enable the Doodba project tools (`list_doodba_projects`, `get_doodba_project`). Disabled by default (the server's switch is `projects_enabled`). |
 | `OGHCOLLECTOR_MCP_BIND_ADDR` | mcp | HTTP bind address (default `0.0.0.0:8081`) |
 | `OGHCOLLECTOR_MCP_ALLOWED_HOSTS` | mcp | Comma-separated `Host` header allowlist (default `localhost,127.0.0.1,::1`) |
+| `OGHCOLLECTOR_MCP_KEY_SECRET` | server, mcp | HMAC secret of the per-user MCP API keys (or Docker secret `mcp_key_secret`). Set: `/mcp` needs `Authorization: Bearer <key>`, and the server's `/mcp` page shows each logged-in user theirs (needs `auth_enabled` and the numeric GitLab id as user header: oauth2-proxy `--user-id-claim=sub`). Unset: `/mcp` is open. Rotating it revokes every key |
+| `OGHCOLLECTOR_MCP_GITLAB_URL` / `_GROUP` / `_TOKEN` / `_CACHE` | mcp | Required with the key secret: GitLab base URL, group path, read-only token (or Docker secret `mcp_gitlab_token`) and how many seconds a membership answer is cached (default 300). A user removed from the group, or blocked, loses access within that time |
 | `OGHCOLLECTOR_MCP_CACHE_TTL` | mcp | Overrides `cache_ttl` from `mcp.yaml` (default `3600`) |
 | `OGHCOLLECTOR_EMBED_CACHE_DIR` | collector, server, mcp | Directory for the embedding model cache (default `data/.fastembed_cache`) |
 | `OGHCOLLECTOR_FORCE_REANALYZE` | collector | Reanalyze module sources even when their latest commit has not changed |

@@ -307,6 +307,11 @@ pub trait GitClient {
                 &base_dir,
                 &[
                     "clone",
+                    // Blobless: every branch's commits and trees (committer
+                    // ranges need `origin/<previous version>`), but file
+                    // contents only for what is checked out or diffed. A server
+                    // without filter support ignores it and sends everything.
+                    "--filter=blob:none",
                     "--no-single-branch",
                     "--branch",
                     branch,

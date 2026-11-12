@@ -153,7 +153,7 @@
                 </button>
                 {% if WORKSPACES %}
                 <select class="form-select form-select-sm w-auto" id="workspace-select" aria-label="{{ "Workspace"|t }}" title="{{ "Workspace: only list its repositories"|t }}">
-                    <option value="">{{ "All workspaces"|t }}</option>
+                    {% if not AUTH_ENABLED %}<option value="">{{ "All workspaces"|t }}</option>{% endif %}
                     {% for ws in WORKSPACES %}<option value="{{ ws }}"{% if ws == WORKSPACE %} selected{% endif %}>{{ ws }}</option>{% endfor %}
                 </select>
                 {% endif %}

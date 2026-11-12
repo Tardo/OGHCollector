@@ -1487,9 +1487,42 @@ def analyze_module(module_path):
     )
 "##;
 
+fn manifest_str(manifest: &Bound<'_, PyDict>, key: &str) -> Option<String> {
+    manifest
+        .get_item(key)
+        .ok()??
+        .cast::<PyString>()
+        .ok()?
+        .extract()
+        .ok()
+}
+
+/// The strings of a list/tuple value (or one string); anything else, none.
+fn manifest_list_strs(value: &Bound<'_, PyAny>) -> Vec<String> {
+    if let Ok(s) = value.cast::<PyString>() {
+        return s.extract().into_iter().collect();
+    }
+    if !(value.is_instance_of::<PyList>() || value.is_instance_of::<PyTuple>()) {
+        return Vec::new();
+    }
+    value
+        .try_iter()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.ok()?.extract::<String>().ok())
+        .collect()
+}
+
+fn manifest_strs(manifest: &Bound<'_, PyDict>, key: &str) -> Vec<String> {
+    match manifest.get_item(key) {
+        Ok(Some(v)) => manifest_list_strs(&v),
+        _ => Vec::new(),
+    }
+}
+
 /// A manifest parsed with `ast.literal_eval`, like Odoo's own loader: nothing
-/// in it runs. For PR heads, which come from anyone's fork (`read_manifest`
-/// evals the merged code's manifests).
+/// in it runs. For PR heads, which come from anyone's fork (`read_manifest` does the
+/// same, except for Odoo < 11.0, which falls back to `eval`).
 pub(crate) fn literal_manifest(path: &std::path::Path) -> Result<serde_json::Value, String> {
     const SRC: &std::ffi::CStr = c"import ast, json
 def load(path):
@@ -1753,23 +1786,25 @@ impl OGHCollectorAnalyzer {
                 .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
             let code = CString::new(code)
                 .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-            let manifest = py.eval(&code, None, None)?.cast_into::<PyDict>()?;
-            // name
-            let name_opt = manifest.get_item("name")?;
-            let name: String = if let Some(name_value) = name_opt {
-                name_value.cast::<PyString>()?.extract::<String>()?
-            } else {
-                String::new()
-            };
+            // Like Odoo's loader (>= 11.0): nothing in the manifest runs. Older ones may hold
+            // expressions `literal_eval` refuses, so only they fall back to `eval`.
+            let literal = py
+                .import("ast")?
+                .getattr("literal_eval")?
+                .call1((code.to_string_lossy().as_ref(),));
+            let manifest = match literal {
+                Ok(value) => value,
+                Err(_) if self.version_odoo < 110 => py.eval(&code, None, None)?,
+                Err(err) => return Err(err),
+            }
+            .cast_into::<PyDict>()?;
+            // Odoo manifests often hold `False`/tuples where a string/list is expected
+            // (`'website': False`): a wrong type means "unset", never a failed module.
+            let name = manifest_str(&manifest, "name").unwrap_or_default();
             // description - readme/DESCRIPTION.md (OCA's rendered readme fragment) wins
             // over the manifest's `description` key when present, since the manifest
             // value is often stale or just a placeholder for the generated readme.
-            let description_opt = manifest.get_item("description")?;
-            let description: String = if let Some(description_value) = description_opt {
-                description_value.cast::<PyString>()?.extract::<String>()?
-            } else {
-                String::new()
-            };
+            let description: String = manifest_str(&manifest, "description").unwrap_or_default();
             let module_dir = std::path::Path::new(manifest_path).parent();
             let description = module_dir
                 .and_then(|p| Self::read_readme_fragment(p, "DESCRIPTION.md"))
@@ -1789,32 +1824,12 @@ impl OGHCollectorAnalyzer {
             // module page falls back to a generic icon when this is empty.
             let icon = module_dir.and_then(Self::read_icon).unwrap_or_default();
             // author
-            let author_opt = manifest.get_item("author")?;
-            let author: String = if let Some(author_value) = author_opt {
-                match author_value.cast::<PyString>() {
-                    Ok(pyval) => pyval.extract::<String>()?,
-                    Err(_) => match author_value.cast::<PyList>() {
-                        Ok(pyval) => {
-                            let author_vec = pyval.extract::<Vec<String>>()?;
-                            author_vec.join(", ")
-                        }
-                        Err(_) => String::new(),
-                    },
-                }
-            } else {
-                String::new()
-            };
+            let author: String = manifest_strs(&manifest, "author").join(", ");
             // website
-            let website_opt = manifest.get_item("website")?;
-            let website: String = if let Some(website_value) = website_opt {
-                website_value.cast::<PyString>()?.extract::<String>()?
-            } else {
-                String::new()
-            };
+            let website: String = manifest_str(&manifest, "website").unwrap_or_default();
             // license
-            let license_opt = manifest.get_item("license")?;
-            let license: String = if let Some(license_value) = license_opt {
-                license_value.cast::<PyString>()?.extract::<String>()?
+            let license: String = if let Some(license) = manifest_str(&manifest, "license") {
+                license
             } else if self.version_odoo < 90 {
                 // OpenERP <= 8.0 defaulted a missing manifest license to
                 // AGPL-3; Odoo 9.0 switched the default (and core) to LGPL-3.
@@ -1823,12 +1838,8 @@ impl OGHCollectorAnalyzer {
                 "LGPL-3".to_string()
             };
             // category
-            let category_opt = manifest.get_item("category")?;
-            let category: String = if let Some(category_value) = category_opt {
-                category_value.cast::<PyString>()?.extract::<String>()?
-            } else {
-                "Uncategorized".to_string()
-            };
+            let category: String =
+                manifest_str(&manifest, "category").unwrap_or_else(|| "Uncategorized".to_string());
             // auto_install
             let auto_install_opt = manifest.get_item("auto_install")?;
             let auto_install: bool = if let Some(auto_install_value) = auto_install_opt {
@@ -1840,10 +1851,8 @@ impl OGHCollectorAnalyzer {
                 false
             };
             // version_odoo, version_module
-            let version_opt = manifest.get_item("version")?;
             let version_odoo: u8;
-            let version_module: String = if let Some(version_value) = version_opt {
-                let version = version_value.cast::<PyString>()?.extract::<String>()?;
+            let version_module: String = if let Some(version) = manifest_str(&manifest, "version") {
                 let odoo_ver = OdooVersion::new(&version, &self.version_odoo);
                 version_odoo = *odoo_ver.get_version_odoo();
                 odoo_ver.get_version_module().clone()
@@ -1852,12 +1861,10 @@ impl OGHCollectorAnalyzer {
                 "0.1.0".to_string()
             };
             // application
-            let application_opt = manifest.get_item("application")?;
-            let application: bool = if let Some(application_value) = application_opt {
-                application_value.cast::<PyBool>()?.extract::<bool>()?
-            } else {
-                false
-            };
+            let application: bool = manifest
+                .get_item("application")?
+                .and_then(|v| v.cast::<PyBool>().ok().map(|b| b.is_true()))
+                .unwrap_or(false);
             // installable
             let installable_opt = manifest.get_item("installable")?;
             let installable: bool = if let Some(installable_value) = installable_opt {
@@ -1869,48 +1876,30 @@ impl OGHCollectorAnalyzer {
                 true
             };
             // maintainer
-            let maintainer_opt = manifest.get_item("maintainer")?;
-            let maintainer: String = if let Some(maintainer_value) = maintainer_opt {
-                match maintainer_value.cast::<PyString>() {
-                    Ok(pyval) => pyval.extract::<String>()?,
-                    Err(_) => match maintainer_value.cast::<PyList>() {
-                        Ok(pyval) => {
-                            let maintainer_vec = pyval.extract::<Vec<String>>()?;
-                            maintainer_vec.join(", ")
-                        }
-                        Err(_) => author.clone(),
-                    },
-                }
-            } else {
-                author.clone()
+            let maintainer = match manifest_strs(&manifest, "maintainer").join(", ") {
+                m if m.is_empty() => author.clone(),
+                m => m,
             };
             // depends
-            let depends_opt = manifest.get_item("depends")?;
-            let depends: Vec<String> = if let Some(depends_value) = depends_opt {
-                depends_value.cast::<PyList>()?.extract::<Vec<String>>()?
-            } else {
-                Vec::new()
-            };
+            let depends = manifest_strs(&manifest, "depends");
             let mut external_depends_python_set: HashSet<String> = HashSet::new();
             let mut external_depends_bin_set: HashSet<String> = HashSet::new();
             if let Some(external_depends_value) = manifest.get_item("external_dependencies")? {
-                let depends_dict = external_depends_value.cast::<PyDict>()?;
+                let depends_dict = external_depends_value.cast::<PyDict>().map_err(|_| {
+                    pyo3::exceptions::PyValueError::new_err("external_dependencies isn't a dict")
+                })?;
                 // "deb" is an unofficial way to get the "debian" package name (used by OCA CI)
                 for key in ["python", "bin", "deb"] {
                     let Some(deps_value) = depends_dict.get_item(key)? else {
                         continue;
                     };
-                    let Ok(deps_list) = deps_value.cast::<PyList>() else {
-                        continue;
-                    };
+                    let deps_list = manifest_list_strs(&deps_value);
                     let target = if key == "python" {
                         &mut external_depends_python_set
                     } else {
                         &mut external_depends_bin_set
                     };
-                    for dep_name in deps_list.iter() {
-                        target.insert(dep_name.extract()?);
-                    }
+                    target.extend(deps_list);
                 }
             }
 
@@ -2033,6 +2022,44 @@ impl OGHCollectorAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manifest_with_false_and_tuple_values_still_reads() {
+        let dir = std::env::temp_dir().join(format!("ogh-manifest-types-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("__manifest__.py");
+        fs::write(
+            &path,
+            "{'name': 'X', 'website': False, 'description': False, 'author': ('A', 'B'),\n 'depends': ('base', 'web'), 'external_dependencies': {'python': ('lxml',), 'bin': False}}",
+        )
+        .unwrap();
+        let m = OGHCollectorAnalyzer::new(&170u8)
+            .read_manifest("o", "r", "x", &path.to_string_lossy())
+            .unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!((m.website.as_str(), m.author.as_str()), ("", "A, B"));
+        assert_eq!(m.depends, ["base", "web"]);
+        assert_eq!(m.external_depends_python, ["lxml"]);
+    }
+
+    #[test]
+    fn read_manifest_runs_code_only_before_odoo_11() {
+        let dir = std::env::temp_dir().join(format!("ogh-manifest-eval-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (path, marker) = (dir.join("__manifest__.py"), dir.join("ran"));
+        let code = format!(
+            "{{'name': 'X' + open({:?}, 'w').name}}",
+            marker.to_string_lossy()
+        );
+        fs::write(&path, code).unwrap();
+        let read = |v: u8| {
+            OGHCollectorAnalyzer::new(&v).read_manifest("o", "r", "x", &path.to_string_lossy())
+        };
+        assert!(read(170).is_err());
+        assert!(!marker.exists(), "17.0 manifest was executed");
+        assert!(read(100).is_ok());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn test_literal_manifest_never_runs_code() {

@@ -97,3 +97,37 @@ workflows:
           {% endfor %}{% if ai.ask %}
           The suggestions on its lines were written by an AI: check them before applying.{% endif %}
         patch: "{{ ai.ask }}"
+
+  # Demo: routine fixes to Doodba projects, one commit per step and one PR/MR
+  # at the end (`on: project` runs over every Doodba project a job stores; it
+  # needs `projects` data, i.e. a source with a Doodba layout). The fix nodes
+  # only commit in a scratch worktree; nothing leaves the collector until the
+  # source lists `project_pr` in `actions`; `auto_merge: true` there also sets the
+  # PR/MR to merge when its pipeline passes (never at once). Until then it only
+  # logs what it would open, with the diffstat.
+  # Needs a write token. Name it in the source: `workflows: [default, doodba_fixes]`.
+  doodba_fixes:
+    on: project
+    enabled: false
+    nodes:
+      - id: addons
+        type: drop_missing_addons
+        title: "fix(doodba): drop addons that no longer exist"
+        next: lints
+      - id: lints
+        type: update_linters
+        title: "chore(pre-commit): update hooks to the fleet's newest"
+        next: hooks
+      - id: hooks
+        type: pre_commit
+        title: "style: pre-commit fixes"
+        next: open
+      - id: open
+        type: project_pr
+        title: "chore: routine fixes by OGHCollector"
+        body: |
+          Routine fixes, one commit each:
+          {% for c in changes %}- {{ c.message }} ({{ c.files | join(', ') }})
+          {% endfor %}
+          Review the commits: the PR merges itself only if its pipeline passes.
+        auto_merge: true

@@ -28,6 +28,7 @@ mod golden;
 mod listen;
 mod migration;
 mod openupgrade;
+mod project_workflow;
 mod pull_requests;
 mod pypi;
 mod review;
@@ -458,6 +459,10 @@ async fn main() {
         &gh_repo_ids,
         *odoo_ver,
         config.get_repos_path(),
+        doodba::Flow {
+            engine: &engine,
+            deps: &deps,
+        },
     )
     .await;
 

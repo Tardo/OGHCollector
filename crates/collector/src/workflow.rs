@@ -11,7 +11,7 @@
 //! invalid config, which `validate` rejects before anything runs.
 //!
 //! Outward nodes (`ai`, `pr_comment`, `pr_edit`, `pr_review`, `pr_open`,
-//! `apprise`) are dry-run (they
+//! `apprise`, `project_pr`) are dry-run (they
 //! log what they would do) unless the source lists them in `actions`, and the
 //! `workflow_action` ledger makes each run once per item. Their secrets
 //! (`api_key_env`, `${...}` in `url`) are resolved (`secrets`) only right
@@ -19,6 +19,9 @@
 //! `url`, and nothing resolved ever reaches `Ctx::view` (prompts and bodies
 //! leave the collector).
 //!
+//! `on: project` (`Engine::run_project`, `Ctx::Project`, see `project_workflow.rs`): run by
+//! `doodba::collect` per stored Doodba project; the engine rejects `after` on them and `run_all`
+//! removes their worktree after each walk.
 //! The per-module pipeline is a graph of nodes (root `workflows.yaml`, `default` = the old
 //! pipeline). The core only walks (`run_modules`: `analyzer.module_folders`, sorted by name, + git
 //! info + the stored row → `Found`), then each of the source's workflows runs from a fresh
@@ -63,9 +66,10 @@ use sqlitedb::DbSqliteConnection as SqliteConnection;
 
 use oghutils::version::odoo_version_u8_to_string;
 
-use crate::actions::{self, AiRequest, Forge, NewPr};
+use crate::actions::{self, AiRequest, Forge, NewPr, ProjectPush};
 use crate::analyzer::{self, GitInfo, OGHCollectorAnalyzer};
 use crate::gitclient::{git_run, PullRequestInfo, RepoInfo};
+use crate::project_workflow::{FoundProject, ProjectCtx};
 use crate::pypi::PypiClient;
 use crate::{migration, review, secrets, security};
 
@@ -127,6 +131,14 @@ impl Engine {
                     ));
                 }
             }
+        }
+        if let Some((name, _)) = listed
+            .iter()
+            .find(|(_, wf)| wf.on == "project" && wf.after.is_some())
+        {
+            return Err(format!(
+                "workflow '{name}' (on: project) can't use `after`: each project workflow edits a worktree of its own"
+            ));
         }
         // The listed order, but each after what it names.
         let mut ordered: Vec<(&String, &Workflow)> = Vec::with_capacity(listed.len());
@@ -215,6 +227,17 @@ impl Engine {
         self.run_all("pull_request", fresh, conn, deps).await;
     }
 
+    /// Runs the `project` workflows over one Doodba project.
+    pub async fn run_project(
+        &self,
+        found: &FoundProject<'_>,
+        conn: &mut SqliteConnection,
+        deps: &Deps<'_>,
+    ) {
+        let fresh = || Ctx::Project(ProjectCtx::new(found));
+        self.run_all("project", fresh, conn, deps).await;
+    }
+
     /// Runs the `trigger` workflows over one item, in order: each from a
     /// clean context, or, one with `after`, from what those left (the first
     /// listed wins where two computed the same) and only if they finished.
@@ -251,7 +274,12 @@ impl Engine {
                 .workflows
                 .iter()
                 .any(|(_, w)| w.after.iter().flatten().any(|dep| dep == name));
-            if self.walk(name, wf, &mut ctx, conn, deps).await && needed {
+            let finished = self.walk(name, wf, &mut ctx, conn, deps).await;
+            // Whatever the walk did, its worktree goes.
+            if let Ctx::Project(project) = &mut ctx {
+                project.cleanup();
+            }
+            if finished && needed {
                 left.insert(name, ctx);
             }
         }
@@ -475,6 +503,69 @@ impl Engine {
                     let outcome = actions::open_pr(deps.forge, deps.workdir, &pr, live).await?;
                     record(conn, deps, &key, live, &what, &outcome);
                 }
+            }
+            "drop_missing_addons" | "update_linters" => {
+                let message = node
+                    .title
+                    .as_ref()
+                    .map(|_| render(ctx, &node.title))
+                    .transpose()?;
+                ctx.project()
+                    .fix(&node.kind, &node.id, message, workflow, deps)?;
+            }
+            "pre_commit" => {
+                // Foreign code (hooks): run only where the PR would really open.
+                if !deps.live("project_pr") || !ctx.project().has_commits() {
+                    return Ok(node.next.as_deref());
+                }
+                let message = node
+                    .title
+                    .as_ref()
+                    .map(|_| render(ctx, &node.title))
+                    .transpose()?;
+                ctx.project().pre_commit(&node.id, message, deps)?;
+            }
+            "project_pr" => {
+                if !ctx.project().has_commits() {
+                    return Ok(node.next.as_deref());
+                }
+                let branch = ctx.project().branch_name(workflow)?;
+                let (title, body) = (render(ctx, &node.title)?, render(ctx, &node.body)?);
+                let (title, body) = (
+                    crate::doodba::strip_credentials(&title),
+                    crate::doodba::strip_credentials(&body),
+                );
+                let p = ctx.project();
+                let (f, wt) = (p.found, p.worktree_path().ok_or("nothing was changed")?);
+                let worktree = wt.to_string_lossy().to_string();
+                let push = ProjectPush {
+                    worktree: &worktree,
+                    repo_url: f.repo.get_url(),
+                    full_path: f.repo.get_full_path(),
+                    base: deps.branch,
+                    branch: &branch,
+                    title: &title,
+                    body: &body,
+                    auto_merge: node.auto_merge.unwrap_or(false),
+                };
+                let what = format!(
+                    "Workflow '{workflow}' ({}): open a PR for {}",
+                    node.id,
+                    ctx.label()
+                );
+                // The tree is in the branch name: other fixes, another key.
+                let key = format!("{}:{workflow}/{}:{branch}", ctx.item(), node.id);
+                let sends = format!("'{title}' from {branch}\n{}", ctx.project().summary());
+                act(
+                    conn,
+                    deps,
+                    &node.kind,
+                    &key,
+                    &what,
+                    &sends,
+                    actions::open_project_pr(deps.forge, &push),
+                )
+                .await?;
             }
             "apprise" => {
                 let (title, body) = (render(ctx, &node.title)?, render(ctx, &node.body)?);
@@ -993,6 +1084,7 @@ fn pr_problems(analyses: &[(&str, Option<Value>)]) -> (Value, Value) {
 pub enum Ctx<'f, 'a> {
     Module(Box<ModuleCtx<'f, 'a>>),
     Pr(PrCtx<'f, 'a>),
+    Project(ProjectCtx<'f, 'a>),
 }
 
 impl<'f, 'a> Ctx<'f, 'a> {
@@ -1006,7 +1098,7 @@ impl<'f, 'a> Ctx<'f, 'a> {
                     ctx.ai.entry(id.clone()).or_insert_with(|| answer.clone());
                 }
             }
-            _ => unreachable!("`after` across triggers"),
+            _ => unreachable!("`after` across triggers, or on a project workflow"),
         }
     }
 
@@ -1023,14 +1115,21 @@ impl<'f, 'a> Ctx<'f, 'a> {
     fn module(&mut self) -> &mut ModuleCtx<'f, 'a> {
         match self {
             Ctx::Module(ctx) => ctx,
-            Ctx::Pr(_) => unreachable!("a module node in a pull_request workflow"),
+            _ => unreachable!("a module node in a pull_request or project workflow"),
         }
     }
 
     fn pr(&self) -> &PrCtx<'f, 'a> {
         match self {
             Ctx::Pr(ctx) => ctx,
-            Ctx::Module(_) => unreachable!("a PR node in a module workflow"),
+            _ => unreachable!("a PR node in a module or project workflow"),
+        }
+    }
+
+    fn project(&mut self) -> &mut ProjectCtx<'f, 'a> {
+        match self {
+            Ctx::Project(ctx) => ctx,
+            _ => unreachable!("a project node in a module or pull_request workflow"),
         }
     }
 
@@ -1038,6 +1137,7 @@ impl<'f, 'a> Ctx<'f, 'a> {
         match self {
             Ctx::Module(ctx) => &mut ctx.ai,
             Ctx::Pr(ctx) => &mut ctx.ai,
+            Ctx::Project(ctx) => &mut ctx.ai,
         }
     }
 
@@ -1046,6 +1146,7 @@ impl<'f, 'a> Ctx<'f, 'a> {
         let (mut view, ai) = match self {
             Ctx::Module(ctx) => (ctx.json(), &ctx.ai),
             Ctx::Pr(ctx) => (ctx.json(), &ctx.ai),
+            Ctx::Project(ctx) => (ctx.json(), &ctx.ai),
         };
         view["ai"] = json!(ai);
         minijinja::Value::from_serialize(&view)
@@ -1070,6 +1171,10 @@ impl<'f, 'a> Ctx<'f, 'a> {
                 );
                 env.add_function("diff", move || pr_diff(&clone, &range));
             }
+            Ctx::Project(ctx) => {
+                let dir = PathBuf::from(ctx.root());
+                env.add_function("file", move |rel: String| read_file(&dir, &rel));
+            }
         }
         env
     }
@@ -1077,6 +1182,7 @@ impl<'f, 'a> Ctx<'f, 'a> {
     /// The item an action acts on, for the ledger.
     fn item(&self) -> String {
         match self {
+            Ctx::Project(ctx) => ctx.item(),
             Ctx::Module(ctx) => {
                 let f = ctx.found;
                 format!(
@@ -1104,6 +1210,7 @@ impl<'f, 'a> Ctx<'f, 'a> {
     /// The item, for people.
     fn label(&self) -> String {
         match self {
+            Ctx::Project(ctx) => ctx.label(),
             Ctx::Module(ctx) => {
                 let f = ctx.found;
                 let version = odoo_version_u8_to_string(&f.version_odoo);

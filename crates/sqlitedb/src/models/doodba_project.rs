@@ -8,7 +8,7 @@
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use oghutils::version::odoo_version_u8_to_string;
 
@@ -172,6 +172,39 @@ const ROW_SQL: &str = "SELECT p.*, o.name AS org_name, r.name AS repository, r.u
     FROM doodba_project p
     JOIN gh_repository r ON r.id = p.gh_repository_id
     JOIN gh_organization o ON o.id = r.gh_organization_id";
+
+/// Sort key of a rev: its numbers (`v8.0.20` → [8, 0, 20]); a commit hash
+/// sorts below any tag.
+pub fn rev_key(rev: &str) -> Vec<u64> {
+    if rev.len() >= 7 && rev.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Vec::new();
+    }
+    rev.split(|c: char| !c.is_ascii_digit())
+        .filter_map(|n| n.parse().ok())
+        .collect()
+}
+
+/// The newest rev of each hook the fleet runs, per Odoo version; among
+/// revs that don't order (commit hashes), the most used one.
+pub fn newest_revs(rows: &[Row]) -> HashMap<(String, i32), String> {
+    let mut counts: HashMap<(String, i32, String), usize> = HashMap::new();
+    for row in rows {
+        for lint in row.linters() {
+            *counts
+                .entry((lint.repo, row.project.version_odoo, lint.rev))
+                .or_default() += 1;
+        }
+    }
+    let mut out: HashMap<(String, i32), (Vec<u64>, usize, String)> = HashMap::new();
+    for ((repo, version_odoo, rev), count) in counts {
+        let candidate = (rev_key(&rev), count, rev);
+        let best = out.entry((repo, version_odoo)).or_insert(candidate.clone());
+        if candidate > *best {
+            *best = candidate;
+        }
+    }
+    out.into_iter().map(|(k, (_, _, rev))| (k, rev)).collect()
+}
 
 /// Every project the connection sees, by organization, repository, version.
 pub fn list(conn: &mut SqliteConnection) -> Vec<Row> {
@@ -440,6 +473,24 @@ pub struct AddonRow {
     pub org_name: Option<String>,
     #[diesel(sql_type = Integer)]
     pub in_next: i32,
+}
+
+/// Whether any repository called `repo` has modules collected at `version_odoo`.
+pub fn repo_has_modules(conn: &mut SqliteConnection, repo: &str, version_odoo: i32) -> bool {
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = BigInt)]
+        n: i64,
+    }
+    let found: Vec<Count> = diesel::sql_query(
+        "SELECT COUNT(*) AS n FROM module m JOIN gh_repository r ON r.id = m.gh_repository_id
+         WHERE r.name = ?1 AND m.version_odoo = ?2",
+    )
+    .bind::<Text, _>(repo)
+    .bind::<Integer, _>(version_odoo)
+    .load(conn)
+    .expect("DB error in doodba_project::repo_has_modules");
+    found.first().is_some_and(|c| c.n > 0)
 }
 
 pub fn addons(

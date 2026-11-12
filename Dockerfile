@@ -92,6 +92,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpython3.13 \
     libssl3 \
     libsqlite3-0 \
+    pre-commit \
     && rm -rf /var/lib/apt/lists/*
 
 ARG UID=10001

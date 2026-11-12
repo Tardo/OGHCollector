@@ -28,7 +28,8 @@
 //! the job's own forge. Asked once per job each, at most `PATCH_LOOKUPS_PER_JOB`; `merged` is
 //! final. Exact pip pins (`pkg==1.2`) get PyPI's advisories, once per job each. A lookup that
 //! can't be made (no token, out of lookups, a failure) keeps the stored state/advisories, so an
-//! outage never reads as "nothing". Per-repo failures `warn` and keep what was stored; only a DB
+//! outage never reads as "nothing". After each project is stored,
+//! `Flow` runs the source's `on: project` workflows over it (`project_workflow.rs`). Per-repo failures `warn` and keep what was stored; only a DB
 //! write failure is an error.
 use regex::Regex;
 use serde_json::{Map, Value};
@@ -47,7 +48,9 @@ use sqlitedb::DbSqliteConnection as SqliteConnection;
 use crate::anygitclient::AnyGitClient;
 use crate::clients::github::GithubClient;
 use crate::gitclient::{git_auth_env, git_run, git_run_env, GitClient, RepoInfo};
+use crate::project_workflow::FoundProject;
 use crate::pypi::PypiClient;
+use crate::workflow::{Deps, Engine};
 
 /// Copier answers worth showing; anything else stays out of the DB.
 const ANSWERS: &[&str] = &[
@@ -137,7 +140,7 @@ fn pip_pin(line: &str) -> Option<(String, String)> {
 
 /// A remote as an https URL without credentials (`git@host:a/b.git` →
 /// `https://host/a/b.git`), so links and PR URLs can be built from it.
-fn clean_url(url: &str) -> String {
+pub(crate) fn clean_url(url: &str) -> String {
     let url = strip_credentials(url.trim());
     SCP_URL.replace(&url, "https://$1/$2").into_owned()
 }
@@ -636,6 +639,13 @@ impl Templates<'_> {
     }
 }
 
+/// What runs the `on: project` workflows (`collect`'s last step per project).
+pub(crate) struct Flow<'a> {
+    pub engine: &'a Engine,
+    pub deps: &'a Deps<'a>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn collect(
     conn: &mut SqliteConnection,
     git: &AnyGitClient,
@@ -644,8 +654,10 @@ pub(crate) async fn collect(
     gh_repo_ids: &[i64],
     version_odoo: u8,
     repos_path: &str,
+    flow: Flow<'_>,
 ) {
     let version = odoo_version_u8_to_string(&version_odoo);
+    let mut newest = None;
     let mut templates = Templates {
         dir: Path::new(repos_path).join(".templates"),
         git,
@@ -665,6 +677,7 @@ pub(crate) async fn collect(
             }
         };
         let mut model = None;
+        let mut behind_by = None;
         if let Some(p) = project.as_mut() {
             // What was stored stands where it can't be asked again.
             let stored = doodba_project::find(conn, *gh_repo_id, version_odoo as i32);
@@ -710,6 +723,7 @@ pub(crate) async fn collect(
                     "{n} commits behind"
                 ))
             );
+            behind_by = behind;
             model = Some(doodba_project::Model {
                 gh_repository_id: *gh_repo_id,
                 version_odoo: version_odoo as i32,
@@ -741,6 +755,23 @@ pub(crate) async fn collect(
                 "'{}': can't store the doodba project: {err}",
                 repo.get_full_path()
             );
+            continue;
+        }
+        // What's stored is what the project workflows see.
+        if let (Some(p), true) = (project.as_ref(), flow.engine.runs("project")) {
+            let newest = newest
+                .get_or_insert_with(|| doodba_project::newest_revs(&doodba_project::list(conn)));
+            let found = FoundProject::new(
+                conn,
+                repo,
+                *gh_repo_id,
+                version_odoo,
+                flow.deps.branch,
+                p,
+                behind_by,
+                newest,
+            );
+            flow.engine.run_project(&found, conn, flow.deps).await;
         }
     }
 }

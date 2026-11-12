@@ -2,6 +2,7 @@
 use config::Config;
 use ipnet::IpNet;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 use std::net::IpAddr;
 use url::Url;
 
@@ -27,6 +28,11 @@ pub struct OGHServerConfig {
     semantic_search_enabled: bool,
     health_score_enabled: bool,
     projects_enabled: bool,
+    auth_enabled: bool,
+    auth_user_header: String,
+    auth_groups_header: String,
+    auth_groups: HashMap<String, Vec<String>>,
+    default_workspace: String,
 }
 
 impl OGHServerConfig {
@@ -82,6 +88,29 @@ impl OGHServerConfig {
         let semantic_search_enabled = settings.get_bool("semantic_search_enabled").unwrap_or(true);
         let health_score_enabled = settings.get_bool("health_score_enabled").unwrap_or(true);
         let projects_enabled = settings.get_bool("projects_enabled").unwrap_or(false);
+        let auth_enabled = settings.get_bool("auth_enabled").unwrap_or(false);
+        let auth_user_header = settings
+            .get_string("auth_user_header")
+            .unwrap_or("X-Auth-Request-User".to_string());
+        let auth_groups_header = settings
+            .get_string("auth_groups_header")
+            .unwrap_or("X-Auth-Request-Groups".to_string());
+        // The config crate lowercases map keys: groups are compared lowercased.
+        let auth_groups = settings
+            .get_table("auth_groups")
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(group, ws)| {
+                let ws = ws
+                    .into_array()
+                    .map(|a| a.into_iter().filter_map(|v| v.into_string().ok()).collect())
+                    .unwrap_or_default();
+                (group.to_lowercase(), ws)
+            })
+            .collect();
+        let default_workspace = settings
+            .get_string("default_workspace")
+            .unwrap_or("default".to_string());
         OGHServerConfig {
             bind_address,
             port,
@@ -103,6 +132,11 @@ impl OGHServerConfig {
             semantic_search_enabled,
             health_score_enabled,
             projects_enabled,
+            auth_enabled,
+            auth_user_header,
+            auth_groups_header,
+            auth_groups,
+            default_workspace,
         }
     }
 
@@ -193,6 +227,26 @@ impl OGHServerConfig {
 
     pub fn is_trusted_proxy(&self, addr: IpAddr) -> bool {
         self.trusted_proxies.iter().any(|net| net.contains(&addr))
+    }
+
+    pub fn get_auth_enabled(&self) -> bool {
+        self.auth_enabled
+    }
+
+    pub fn get_auth_user_header(&self) -> &str {
+        &self.auth_user_header
+    }
+
+    pub fn get_auth_groups_header(&self) -> &str {
+        &self.auth_groups_header
+    }
+
+    pub fn get_auth_groups(&self) -> &HashMap<String, Vec<String>> {
+        &self.auth_groups
+    }
+
+    pub fn get_default_workspace(&self) -> &str {
+        &self.default_workspace
     }
 
     pub fn get_seo_enabled(&self) -> bool {

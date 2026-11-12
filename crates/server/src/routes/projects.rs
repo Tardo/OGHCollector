@@ -16,7 +16,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 use oghutils::version::odoo_version_u8_to_string;
-use sqlitedb::models::doodba_project::{self, Patch, Repo, Row, SharedAddon};
+use sqlitedb::models::doodba_project::{self, newest_revs, rev_key, Patch, Repo, Row, SharedAddon};
 use sqlitedb::{models, Pool};
 
 use crate::config::SERVER_CONFIG;
@@ -36,39 +36,6 @@ fn hook_name(repo: &str) -> &str {
         .rsplit('/')
         .next()
         .unwrap_or(repo)
-}
-
-/// Sort key of a rev: its numbers (`v8.0.20` → [8, 0, 20]); a commit hash
-/// sorts below any tag.
-fn rev_key(rev: &str) -> Vec<u64> {
-    if rev.len() >= 7 && rev.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Vec::new();
-    }
-    rev.split(|c: char| !c.is_ascii_digit())
-        .filter_map(|n| n.parse().ok())
-        .collect()
-}
-
-/// The newest rev of each hook the fleet runs, per Odoo version; among
-/// revs that don't order (commit hashes), the most used one.
-fn newest_revs(rows: &[Row]) -> HashMap<(String, i32), String> {
-    let mut counts: HashMap<(String, i32, String), usize> = HashMap::new();
-    for row in rows {
-        for lint in row.linters() {
-            *counts
-                .entry((lint.repo, row.project.version_odoo, lint.rev))
-                .or_default() += 1;
-        }
-    }
-    let mut out: HashMap<(String, i32), (Vec<u64>, usize, String)> = HashMap::new();
-    for ((repo, version_odoo, rev), count) in counts {
-        let candidate = (rev_key(&rev), count, rev);
-        let best = out.entry((repo, version_odoo)).or_insert(candidate.clone());
-        if candidate > *best {
-            *best = candidate;
-        }
-    }
-    out.into_iter().map(|(k, (_, _, rev))| (k, rev)).collect()
 }
 
 /// Hooks of `row` behind the fleet's newest for its version: (hook, rev, newest).

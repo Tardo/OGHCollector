@@ -18,7 +18,7 @@
     <p class="page-header-desc">
         Give an LLM client the module search, dependency-graph, code-analysis and maintenance data of this site
         through the <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">Model Context Protocol</a>.
-        Read-only, no API key of its own (<a href="#mcp-auth">behind a proxy with auth? see below</a>).
+        Read-only{% if MCP_KEY %}; <a href="#mcp-key">you need your API key</a>{% else %}, no API key of its own (<a href="#mcp-auth">behind a proxy with auth? see below</a>){% endif %}.
     </p>
     <div class="page-header-actions">
         <a class="btn btn-sm btn-outline-secondary" href="/api">Plain HTTP? See the REST API</a>
@@ -153,6 +153,27 @@
 
     </div>
 </div>
+
+{% if MCP_KEY %}
+<div class="section-heading">
+    <h2 id="mcp-key">Your API key</h2>
+    <p>Personal: it identifies you and works only while you are still a member of the GitLab group. Don't share it or commit it.</p>
+</div>
+<div class="panel mcp-clients">
+    <div class="panel-body">
+        <div class="code-panel">
+            <div class="code-panel-bar"><span>API key</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>{{ MCP_KEY }}</code></pre>
+        </div>
+        <p class="mcp-step">Send it as a bearer token (same header setup as below, with this value):</p>
+        <div class="code-panel">
+            <div class="code-panel-bar"><span>Terminal</span><button type="button" class="code-copy" data-copy>Copy</button></div>
+            <pre><code>claude mcp add --transport http oghcollector {{ MCP_URL }} \
+  --header "Authorization: Bearer {{ MCP_KEY }}"</code></pre>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="section-heading">
     <h2 id="mcp-auth">Behind authentication</h2>

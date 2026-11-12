@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use config::SERVER_CONFIG;
 use middlewares::head::head_as_get;
 use middlewares::not_found;
-use middlewares::trusted_proxy::strip_untrusted_forwarded_headers;
+use middlewares::trusted_proxy::{require_auth, strip_untrusted_forwarded_headers};
 use sqlitedb::Pool;
 
 fn is_same_origin(origin: &header::HeaderValue, req: &actix_web::dev::RequestHead) -> bool {
@@ -181,6 +181,16 @@ async fn main() -> std::io::Result<()> {
         SERVER_CONFIG.get_port()
     );
 
+    if SERVER_CONFIG.get_auth_enabled()
+        && (SERVER_CONFIG.get_trusted_proxies().is_empty()
+            || SERVER_CONFIG.get_default_workspace().is_empty())
+    {
+        // Without trusted_proxies every identity header is stripped: nobody could log in.
+        log::error!(
+            "auth_enabled needs trusted_proxies (the auth proxy's IP/CIDR) and a default_workspace"
+        );
+        std::process::exit(1);
+    }
     if SERVER_CONFIG.get_trusted_proxies().is_empty() {
         log::info!(
             "trusted_proxies is empty; access logs use the direct TCP peer address. Set it to \
@@ -308,7 +318,16 @@ async fn main() -> std::io::Result<()> {
                 DefaultHeaders::new()
                     .add((
                         "Cache-Control",
-                        format!("public, max-age={}", *SERVER_CONFIG.get_cache_ttl()),
+                        // Per-user pages behind auth must not sit in a shared cache.
+                        format!(
+                            "{}, max-age={}",
+                            if SERVER_CONFIG.get_auth_enabled() {
+                                "private"
+                            } else {
+                                "public"
+                            },
+                            *SERVER_CONFIG.get_cache_ttl()
+                        ),
                     ))
                     // Pages differ per `workspace`/`lang` cookie and browser language.
                     .add(("Vary", "Cookie, Accept-Language")),
@@ -322,6 +341,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::new(
                 r#"%{r}a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#,
             ))
+            .wrap(middleware::from_fn(require_auth))
             .wrap(middleware::from_fn(strip_untrusted_forwarded_headers))
             .wrap(middleware::Compress::default())
     })

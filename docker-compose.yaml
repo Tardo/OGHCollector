@@ -50,9 +50,23 @@ services:
     command: [oghcollector, --listen]
     # PID 1 that reaps the git processes a killed job leaves behind.
     init: true
+    # Scans must not starve the host (other services stopped answering):
+    # cap CPU and RAM, and yield CPU/disk to everything else.
+    cpus: 2
+    mem_limit: 3g
+    memswap_limit: 3g
+    pids_limit: 512
+    cpu_shares: 128
+    blkio_config:
+      weight: 100
     # On stop it TERMs the running job and waits for it, so git drops its locks.
     stop_grace_period: 30s
     restart: unless-stopped
+    environment:
+      RUST_LOG: info
+      RUST_BACKTRACE: 0
+      # Hook cache of the `pre_commit` workflow node, kept across jobs.
+      OGHCOLLECTOR_PRE_COMMIT_HOME: /app/data/.pre-commit
     volumes:
       - app_data:/app/data
       - ./collector.yaml:/app/collector.yaml:ro

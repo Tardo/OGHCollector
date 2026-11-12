@@ -220,14 +220,12 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
         WORKFLOW_EDITOR_ENABLED => SERVER_CONFIG.get_workflow_editor_enabled(),
         SCAN_ENABLED => SERVER_CONFIG.get_scan_enabled(),
         PROJECTS_ENABLED => SERVER_CONFIG.get_projects_enabled(),
+        AUTH_ENABLED => SERVER_CONFIG.get_auth_enabled(),
         MCP_URL => SERVER_CONFIG.get_mcp_url().clone(),
         SEO_ENABLED => SERVER_CONFIG.get_seo_enabled(),
         SEMANTIC_SEARCH_ENABLED => SERVER_CONFIG.get_semantic_search_enabled(),
         HEALTH_SCORE_ENABLED => SERVER_CONFIG.get_health_score_enabled(),
-        WORKSPACES => req
-            .app_data::<actix_web::web::Data<crate::workspace::Workspaces>>()
-            .map(|ws| ws.names())
-            .unwrap_or_default(),
+        WORKSPACES => crate::workspace::visible_names(req),
         WORKSPACE => crate::workspace::current(req),
         LANG => crate::i18n::current(req),
     )

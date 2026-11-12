@@ -912,6 +912,12 @@ function fieldControl(field, value, onChange) {
     control.addEventListener('change', () => onChange(control.value));
     return control;
   }
+  if (spec.kind === 'bool') {
+    control = el('input', {class: 'form-check-input', type: 'checkbox'});
+    control.checked = value === true;
+    control.addEventListener('change', () => onChange(control.checked || ''));
+    return control;
+  }
   if (spec.kind === 'template') {
     const rows = ['prompt', 'patch', 'body', 'system'].includes(field) ? 4 : 2;
     control = el('textarea', {

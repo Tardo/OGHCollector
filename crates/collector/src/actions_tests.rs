@@ -698,3 +698,177 @@ fn review_plans_anchor_on_the_pr_head() {
     let missing = review::plan_on(&clone, "18.0", &"0".repeat(40), patch);
     assert!(missing.unwrap_err().contains("isn't in the clone"));
 }
+
+/// An origin with a Doodba project's addons.yaml and pre-commit config, and its clone.
+fn project_fixture(name: &str) -> (Fixture, std::path::PathBuf) {
+    let f = Fixture::new(name);
+    f.write(
+        "odoo/custom/src/addons.yaml",
+        "# addons\nserver-tools:\n  - auditlog\n  - gone\nweb:\n  - gone2\n",
+    );
+    f.write(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/OCA/pre-commit-hooks\n    rev: v1.0.0\n",
+    );
+    f.commit("one");
+    git(&f.dir, &["clone", "-q", "--bare", "repo", "origin.git"]);
+    std::fs::remove_dir_all(&f.repo).unwrap();
+    git(
+        &f.dir,
+        &["clone", "-q", "--branch", "18.0", "origin.git", "repo"],
+    );
+    let origin = f.dir.join("origin.git");
+    (f, origin)
+}
+
+/// One project workflow run over the fixture's project, with `missing` addons and a lint update.
+async fn run_project(
+    f: &Fixture,
+    conn: &mut SqliteConnection,
+    wf: &Workflow,
+    actions: &[&str],
+    forge: &Forge,
+    fixes: bool,
+) {
+    let defs = workflow::with_built_in(&HashMap::from([("w".to_string(), wf.clone())]));
+    let engine = Engine::new(&["w".to_string()], &defs).unwrap();
+    let (analyzer, pypi) = (OGHCollectorAnalyzer::new(&180), PypiClient::new());
+    let actions: Vec<String> = actions.iter().map(|a| a.to_string()).collect();
+    let workdir = f.dir.join("work");
+    let deps = Deps::for_tests(&analyzer, &pypi, forge, &workdir, &actions);
+    let repos = f.repo_infos();
+    let project = crate::doodba::Project::default();
+    let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+    let found = crate::project_workflow::FoundProject {
+        repo: &repos[0],
+        version_odoo: 180,
+        branch: "18.0",
+        project: &project,
+        template_behind: None,
+        missing: match fixes {
+            true => vec![pair("server-tools", "gone"), pair("web", "gone2")],
+            false => Vec::new(),
+        },
+        lint_updates: match fixes {
+            true => vec![(
+                "https://github.com/OCA/pre-commit-hooks".to_string(),
+                "v1.0.0".to_string(),
+                "v1.2.0".to_string(),
+            )],
+            false => Vec::new(),
+        },
+        head: git(&f.repo, &["rev-parse", "HEAD"]).trim().to_string(),
+    };
+    engine.run_project(&found, conn, &deps).await;
+}
+
+#[tokio::test]
+async fn project_fixes_are_one_commit_each_in_one_mr_that_merges_when_green() {
+    let opened = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let seen = opened.clone();
+    let (base, calls) = serve(move |method, path| {
+        let created = seen.load(std::sync::atomic::Ordering::SeqCst);
+        match (method, path) {
+            ("GET", p) if p.ends_with("/merge_requests") && created => json!([{
+                "web_url": "https://git.example/org/repo/-/merge_requests/3",
+                "source_branch": "ogh/w/18.0-x",
+            }]),
+            ("GET", p) if p.ends_with("/merge_requests") => json!([]),
+            ("GET", _) => json!({"head_pipeline": {"id": 9, "status": "running"}}),
+            ("PUT", _) => json!({"state": "opened"}),
+            _ => {
+                seen.store(true, std::sync::atomic::Ordering::SeqCst);
+                json!({"web_url": "https://git.example/org/repo/-/merge_requests/3"})
+            }
+        }
+    })
+    .await;
+    let (f, origin) = project_fixture("project");
+    let pool = f.db();
+    let conn = &mut pool.get().unwrap();
+    let forge = Forge::with(true, &base, Some("write".to_string()));
+    let wf = parse(
+        "on: project
+nodes:
+  - {id: drop, type: drop_missing_addons, next: lints}
+  - {id: lints, type: update_linters, next: hooks}
+  - {id: hooks, type: pre_commit, title: 'style: pre-commit', next: pr}
+  - {id: pr, type: project_pr, title: 'Routine fixes', auto_merge: true,
+     body: \"{% for c in changes %}- {{ c.message }} {% endfor %}\"}
+",
+    );
+    let branches = || git(&origin, &["branch", "--list", "ogh/*"]);
+    // A stand-in pre-commit: pass 1 fixes a file and exits 1, pass 2 is clean.
+    let bin = f.dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("pre-commit");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\ngrep -q fixed odoo/custom/src/addons.yaml && exit 0\necho '# fixed' >> odoo/custom/src/addons.yaml\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::env::set_var(
+        "PATH",
+        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+    );
+
+    // Dry-run: the report has the real diffstat; nothing is pushed or called.
+    run_project(&f, conn, &wf, &[], &forge, true).await;
+    let dry = events(conn, "workflow");
+    assert!(
+        dry[0].contains("[dry-run]") && dry[0].contains("addons.yaml"),
+        "{dry:?}"
+    );
+    assert_eq!(branches(), "");
+    assert!(calls.lock().unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(f.dir.join("work")).unwrap().count(), 0);
+
+    // Live, twice: one branch with a commit per step, one MR, one auto-merge.
+    for _ in 0..2 {
+        run_project(&f, conn, &wf, &["project_pr"], &forge, true).await;
+    }
+    let branch = branches().trim().to_string();
+    assert!(branch.starts_with("ogh/w/18.0-"), "{branch}");
+    let log = git(&origin, &["log", "--format=%s", &format!("18.0..{branch}")]);
+    assert_eq!(
+        log.lines().collect::<Vec<_>>(),
+        [
+            "style: pre-commit",
+            "chore(pre-commit): update hooks to the fleet's newest",
+            "fix(doodba): drop addons that no longer exist"
+        ]
+    );
+    let addons = git(
+        &origin,
+        &["show", &format!("{branch}:odoo/custom/src/addons.yaml")],
+    );
+    assert_eq!(addons, "# addons\nserver-tools:\n  - auditlog\n# fixed");
+    assert!(git(
+        &origin,
+        &["show", &format!("{branch}:.pre-commit-config.yaml")]
+    )
+    .contains("v1.2.0"));
+    let sent = calls.lock().unwrap().clone();
+    let creates: Vec<&Value> = sent
+        .iter()
+        .filter(|c| c.0 == "POST")
+        .map(|c| &c.2)
+        .collect();
+    assert_eq!(creates.len(), 1);
+    assert_eq!(creates[0]["target_branch"], "18.0");
+    assert_eq!(creates[0]["remove_source_branch"], true);
+    assert!(creates[0]["description"]
+        .as_str()
+        .unwrap()
+        .contains("drop addons"));
+    let merges: Vec<&Value> = sent.iter().filter(|c| c.0 == "PUT").map(|c| &c.2).collect();
+    assert_eq!(merges.len(), 1);
+    assert_eq!(merges[0]["merge_when_pipeline_succeeds"], true);
+    assert_eq!(std::fs::read_dir(f.dir.join("work")).unwrap().count(), 0);
+
+    // Nothing to fix: no commit, nothing sent.
+    let before = events(conn, "workflow").len();
+    run_project(&f, conn, &wf, &["project_pr"], &forge, false).await;
+    assert_eq!(events(conn, "workflow").len(), before);
+}

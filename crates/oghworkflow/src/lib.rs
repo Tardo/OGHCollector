@@ -103,6 +103,9 @@ pub struct Node {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patch: Option<String>,
+    /// `project_pr`: set the PR/MR to merge when its pipeline/checks pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_merge: Option<bool>,
     /// Where the editor draws it, `[x, y]`, so a shared workflow keeps its
     /// layout. Any node may have it; the collector ignores it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,6 +133,7 @@ impl Node {
             ("body", self.body.is_some()),
             ("title", self.title.is_some()),
             ("patch", self.patch.is_some()),
+            ("auto_merge", self.auto_merge.is_some()),
         ]
         .into_iter()
         .filter_map(|(field, set)| set.then_some(field))
@@ -144,7 +148,8 @@ impl Node {
 
 const MODULE: &[&str] = &["module"];
 const PULL_REQUEST: &[&str] = &["pull_request"];
-const ANY: &[&str] = &["module", "pull_request"];
+const PROJECT: &[&str] = &["project"];
+const ANY: &[&str] = &["module", "pull_request", "project"];
 const AI_FIELDS: &[&str] = &[
     "next",
     "provider",
@@ -159,7 +164,7 @@ const AI_FIELDS: &[&str] = &[
 
 /// Node types, the fields each takes besides `id`/`type`, and the triggers
 /// it can run on.
-const NODE_TYPES: [(&str, &[&str], &[&str]); 15] = [
+const NODE_TYPES: [(&str, &[&str], &[&str]); 19] = [
     ("if", &["when", "then", "else"], ANY),
     ("read_manifest", &["next"], MODULE),
     ("git_stats", &["next"], MODULE),
@@ -179,16 +184,25 @@ const NODE_TYPES: [(&str, &[&str], &[&str]); 15] = [
         &["next", "url", "api_key_env", "severity", "title", "body"],
         ANY,
     ),
+    ("drop_missing_addons", &["next", "title"], PROJECT),
+    ("update_linters", &["next", "title"], PROJECT),
+    ("pre_commit", &["next", "title"], PROJECT),
+    (
+        "project_pr",
+        &["next", "title", "body", "auto_merge"],
+        PROJECT,
+    ),
 ];
 
 /// The outward node types a source can let act for real (`actions`).
-pub const ACTIONS: [&str; 6] = [
+pub const ACTIONS: [&str; 7] = [
     "ai",
     "pr_comment",
     "pr_edit",
     "pr_review",
     "pr_open",
     "apprise",
+    "project_pr",
 ];
 const PROVIDERS: [&str; 2] = ["openai", "anthropic"];
 /// `ai.timeout` at most: with `OGHCOLLECTOR_AI_LIMIT` calls per job it must
@@ -198,7 +212,7 @@ const MAX_AI_TIMEOUT: u64 = 600;
 const SEVERITIES: [&str; 4] = ["info", "success", "warning", "error"];
 
 /// What each node type does, for people (the editor's palette).
-const NODE_DOCS: [(&str, &str); 15] = [
+const NODE_DOCS: [(&str, &str); 19] = [
     (
         "if",
         "Goes to `then` when the condition holds, else to `else` (none: the flow stops there, a filter)",
@@ -235,11 +249,27 @@ const NODE_DOCS: [(&str, &str); 15] = [
         "apprise",
         "Sends a notification through an Apprise API server (outward)",
     ),
+    (
+        "drop_missing_addons",
+        "Removes from addons.yaml the addons the collected repos no longer have at this version, in a commit of its own (local: nothing leaves the collector until project_pr)",
+    ),
+    (
+        "update_linters",
+        "Moves the pre-commit hooks to the newest rev the fleet runs for this version, in a commit of its own (local until project_pr)",
+    ),
+    (
+        "pre_commit",
+        "Runs the project's pre-commit over the earlier steps' tree and commits what its hooks fixed (two passes: the second must be clean, else the run stops and nothing is opened). Runs foreign hook code: only when project_pr is live; does nothing without commits or a .pre-commit-config.yaml",
+    ),
+    (
+        "project_pr",
+        "Pushes the commits the earlier steps made and opens one PR/MR with them; does nothing if there are none (outward)",
+    ),
 ];
 
 /// How each field is edited (`edge`: a link to another node; `condition`:
 /// a Jinja expression; `template`: Jinja text) and what it's for.
-const FIELDS: [(&str, &str, &str); 18] = [
+const FIELDS: [(&str, &str, &str); 19] = [
     ("next", "edge", "Node to run after this one"),
     (
         "when",
@@ -292,16 +322,25 @@ const FIELDS: [(&str, &str, &str); 18] = [
         "template",
         "Comment, description or notification text",
     ),
-    ("title", "template", "PR/MR or notification title"),
+    (
+        "title",
+        "template",
+        "PR/MR or notification title; for a project fix, its commit message",
+    ),
     (
         "patch",
         "template",
         "Unified diff, e.g. {{ ai.fix }}: committed (pr_open) or suggested on the PR's head (pr_review)",
     ),
+    (
+        "auto_merge",
+        "bool",
+        "Merge the PR/MR when its pipeline/checks pass; never at once (GitLab waits for a pipeline, GitHub needs auto-merge and required checks)",
+    ),
 ];
 
 /// The fields `validate` requires, per node type.
-const REQUIRED: [(&str, &[&str]); 8] = [
+const REQUIRED: [(&str, &[&str]); 9] = [
     ("if", &["when", "then"]),
     ("log", &["message"]),
     ("ai", &["provider", "model", "prompt"]),
@@ -310,6 +349,7 @@ const REQUIRED: [(&str, &[&str]); 8] = [
     ("pr_review", &["patch"]),
     ("pr_open", &["title", "patch"]),
     ("apprise", &["url", "body"]),
+    ("project_pr", &["title"]),
 ];
 
 /// Everything an editor needs to build valid workflows, from the same
@@ -359,6 +399,12 @@ pub fn metadata() -> serde_json::Value {
         "node_types": node_types,
         "fields": fields,
         "variables": {
+            "project": [
+                "org", "repo", "odoo_version", "project.answers", "project.base_image",
+                "project.template_behind", "project.addons", "project.repos",
+                "project.linters", "project.exposed", "project.missing_addons",
+                "project.lint_updates", "changes", "pr.url", "ai.<node id>",
+            ],
             "module": [
                 "technical_name", "path", "source_path", "org", "repo", "odoo_version", "is_new",
                 "unchanged", "last_commit.hash", "last_commit.author", "last_commit.date",
@@ -594,7 +640,7 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
     }
     if !ANY.contains(&wf.on.as_str()) {
         return whole(format!(
-            "unknown trigger '{}' (module or pull_request)",
+            "unknown trigger '{}' (module, pull_request or project)",
             wf.on
         ));
     }
@@ -710,6 +756,13 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
             "pr_open" => {
                 template("title", &node.title, true).or_else(fail)?;
                 template("patch", &node.patch, true).or_else(fail)?;
+                template("body", &node.body, false).or_else(fail)?;
+            }
+            "drop_missing_addons" | "update_linters" => {
+                template("title", &node.title, false).or_else(fail)?
+            }
+            "project_pr" => {
+                template("title", &node.title, true).or_else(fail)?;
                 template("body", &node.body, false).or_else(fail)?;
             }
             "apprise" => {
@@ -875,6 +928,22 @@ mod tests {
             meta["fields"]["provider"]["values"],
             serde_json::json!(PROVIDERS)
         );
+    }
+
+    #[test]
+    fn project_nodes_only_run_on_projects() {
+        let ok = parse(
+            "on: project\nnodes: [{id: a, type: drop_missing_addons, next: b}, {id: b, type: project_pr, title: t}]",
+        );
+        assert!(problems("w", &ok).is_empty(), "{:?}", problems("w", &ok));
+        let bad = parse("on: module\nnodes: [{id: a, type: update_linters}]");
+        assert!(validate("w", &bad)
+            .unwrap_err()
+            .contains("can't run `on: module`"));
+        let no_title = parse("on: project\nnodes: [{id: a, type: project_pr}]");
+        assert!(validate("w", &no_title)
+            .unwrap_err()
+            .contains("needs `title`"));
     }
 
     #[test]
