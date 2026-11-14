@@ -460,6 +460,11 @@ pub async fn route(
         true => StatusCode::NOT_FOUND,
         false => StatusCode::OK,
     };
+    // Newest first. Computed here, not in the template: a filter before `extends` makes
+    // minijinja 1.0.22 resolve the layout's `|t` to that filter (the title came out reversed).
+    let module_infos: Vec<_> = module_infos.into_iter().rev().collect();
+    let (meta_title, meta_description, meta_keywords) =
+        page_meta(&technical_name_ctx, module_infos.first());
     Ok(tmpl_env
         .render(
             "pages/module.html",
@@ -470,6 +475,9 @@ pub async fn route(
                     org => org_ctx,
                     technical_name => technical_name_ctx,
                     module_infos => module_infos,
+                    meta_title => meta_title,
+                    meta_description => meta_description,
+                    meta_keywords => meta_keywords,
                     module_versions => module_versions,
                     pull_request_count => pull_request_count,
                     pull_requests => pull_requests,
@@ -483,6 +491,44 @@ pub async fn route(
         )?
         .customize()
         .with_status(status))
+}
+
+/// `<title>`, description and keywords of the module page, from its newest version.
+fn page_meta(
+    technical_name: &str,
+    newest: Option<&ModuleFullInfoResponse>,
+) -> (String, String, String) {
+    let Some(m) = newest else {
+        return (
+            format!("Module: {technical_name}"),
+            format!(
+                "Metadata, dependencies and code analysis for the Odoo module {technical_name}."
+            ),
+            format!("Odoo, module, addon, metadata, information, restapi, {technical_name}"),
+        );
+    };
+    let desc = m.description.replace('\n', " ").replace(['#', '`'], "");
+    let desc = desc.trim();
+    let description = if desc.is_empty() {
+        format!("Metadata, dependencies and code analysis for the Odoo module {technical_name}.")
+    } else if desc.chars().count() <= 160 {
+        desc.to_string()
+    } else {
+        format!("{}…", desc.chars().take(160).collect::<String>().trim_end())
+    };
+    let keywords = format!(
+        "Odoo, module, addon, metadata, information, restapi, {technical_name}{}",
+        if m.name.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", m.name)
+        }
+    );
+    (
+        format!("{} ({technical_name})", m.name),
+        description,
+        keywords,
+    )
 }
 
 // The "Pull requests" tab (`partials/module_pull_requests.html`), fetched by
