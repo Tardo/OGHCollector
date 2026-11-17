@@ -1951,6 +1951,14 @@ msgid "Loading..."
 msgstr "Cargando..."
 
 #: web/js
+msgid "No log entries found."
+msgstr "No hay entradas en el registro."
+
+#: web/js
+msgid "End of log."
+msgstr "Fin del registro."
+
+#: web/js
 msgid "Failed to load logs."
 msgstr "No se pudieron cargar los registros."
 

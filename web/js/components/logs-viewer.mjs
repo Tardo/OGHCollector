@@ -18,8 +18,17 @@ function formatUTCDate(year, month_index, day) {
   return new Date(Date.UTC(year, month_index, day)).toISOString().slice(0, 10);
 }
 
+function escapeHtml(text) {
+  return String(text).replace(
+    /[&<>"']/g,
+    c =>
+      ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[
+        c
+      ],
+  );
+}
+
 class LogsViewer extends Component {
-  #el_rows = null;
   #el_date_from = null;
   #el_date_to = null;
   #el_status = null;
@@ -29,16 +38,30 @@ class LogsViewer extends Component {
   #done = false;
   #loading = false;
 
-  // Tracks the currently open group so paginated fetches can keep appending
-  // to it instead of starting a new group when a page happens to split a day.
-  #current_year_key = null;
-  #current_month_key = null;
-  #current_day_key = null;
-  #el_year_group = null;
-  #el_month_group = null;
-  #el_day_group = null;
+  // Last header emitted per level, so paginated fetches keep appending
+  // under the open day instead of repeating its headers.
+  #last_year = null;
+  #last_month = null;
+  #last_day = null;
 
   onSetup() {
+    // Flat list: header entries (year/month/day) and log rows share one
+    // template; `cls` picks the look, the CSS hides the unused cells.
+    Component.useStateBinds({
+      entries: {
+        id: 'rows',
+        each: {
+          template: 'tpl-entry',
+          key: 'key',
+          binds: {
+            cls: {attribute: 'class'},
+            time: {selector: '.log-time'},
+            type: {selector: '.log-type-badge'},
+            html: {selector: '.log-message', attribute: 'html'},
+          },
+        },
+      },
+    });
     Component.useEvents({
       date_from: {
         mode: 'id',
@@ -69,7 +92,6 @@ class LogsViewer extends Component {
 
   async onWillStart() {
     await super.onWillStart(...arguments);
-    this.#el_rows = this.queryId('rows');
     this.#el_date_from = this.queryId('date_from');
     this.#el_date_to = this.queryId('date_to');
     this.#el_status = this.queryId('status');
@@ -78,6 +100,7 @@ class LogsViewer extends Component {
 
   onStart() {
     super.onStart();
+    this.mirlo.state.entries = [];
     this.#observer = new IntersectionObserver(
       entries => {
         if (entries[0].isIntersecting) {
@@ -129,15 +152,12 @@ class LogsViewer extends Component {
   }
 
   #resetAndReload() {
-    this.#el_rows.replaceChildren();
+    this.mirlo.state.entries = [];
     this.#oldest_id = null;
     this.#done = false;
-    this.#current_year_key = null;
-    this.#current_month_key = null;
-    this.#current_day_key = null;
-    this.#el_year_group = null;
-    this.#el_month_group = null;
-    this.#el_day_group = null;
+    this.#last_year = null;
+    this.#last_month = null;
+    this.#last_day = null;
     this.#loadNextPage();
   }
 
@@ -167,9 +187,9 @@ class LogsViewer extends Component {
       }
       this.#done = events.length < PAGE_SIZE;
       this.#el_status.textContent = this.#done
-        ? this.#el_rows.children.length === 0
-          ? 'No log entries found.'
-          : 'End of log.'
+        ? this.mirlo.state.entries.length === 0
+          ? t('No log entries found.')
+          : t('End of log.')
         : '';
     } catch {
       this.#el_status.textContent = t('Failed to load logs.');
@@ -178,96 +198,53 @@ class LogsViewer extends Component {
     }
   }
 
-  #createHeader(text, class_name) {
-    const el = document.createElement('div');
-    el.className = class_name;
-    el.textContent = text;
-    return el;
-  }
-
-  #openYearGroup(year_key) {
-    const group = document.createElement('div');
-    group.className = 'year-group';
-    group.appendChild(this.#createHeader(year_key, 'year-header'));
-    this.#el_rows.appendChild(group);
-    this.#current_year_key = year_key;
-    this.#current_month_key = null;
-    return group;
-  }
-
-  #openMonthGroup(year_group, date_part) {
-    const group = document.createElement('div');
-    group.className = 'month-group';
-    const label = MONTH_FORMATTER.format(
-      new Date(`${date_part.slice(0, 7)}-01`),
-    );
-    group.appendChild(this.#createHeader(label, 'month-header'));
-    year_group.appendChild(group);
-    this.#current_month_key = date_part.slice(0, 7);
-    this.#current_day_key = null;
-    return group;
-  }
-
-  #openDayGroup(month_group, date_part) {
-    const group = document.createElement('div');
-    group.className = 'day-group';
-    const label = DAY_FORMATTER.format(new Date(date_part));
-    group.appendChild(this.#createHeader(label, 'day-header'));
-    month_group.appendChild(group);
-    this.#current_day_key = date_part;
-    return group;
-  }
-
-  #createRow(event, time_part) {
-    const row = document.createElement('div');
-    row.className = `log-row log-severity-${event.severity}`;
-
-    const time_el = document.createElement('span');
-    time_el.className = 'log-time';
-    time_el.textContent = time_part;
-
-    const type_el = document.createElement('span');
-    type_el.className = 'log-type-badge';
-    type_el.textContent = event.event_type_name;
-
-    const msg_el = document.createElement('span');
-    msg_el.className = 'log-message';
-    if (event.is_html) {
-      // ponytail: trusted data, same trust boundary as the old `| safe`
-      // Jinja rendering it replaces - only pre-rewrite rows ever set is_html.
-      msg_el.innerHTML = event.message;
-    } else {
-      msg_el.textContent = event.message;
-    }
-
-    row.append(time_el, type_el, msg_el);
-    return row;
+  #header(key, cls, label) {
+    return {key, cls, time: '', type: '', html: escapeHtml(label)};
   }
 
   #appendRows(events) {
+    const entries = [];
     for (const event of events) {
       const [date_part, time_part] = event.date.split(' ');
-      const year_key = date_part.slice(0, 4);
-      const month_key = date_part.slice(0, 7);
-
-      if (year_key !== this.#current_year_key) {
-        this.#el_year_group = this.#openYearGroup(year_key);
+      const year = date_part.slice(0, 4);
+      const month = date_part.slice(0, 7);
+      if (year !== this.#last_year) {
+        entries.push(this.#header(`y:${year}`, 'year-header', year));
+        this.#last_year = year;
+        this.#last_month = null;
       }
-      if (month_key !== this.#current_month_key) {
-        this.#el_month_group = this.#openMonthGroup(
-          this.#el_year_group,
-          date_part,
+      if (month !== this.#last_month) {
+        entries.push(
+          this.#header(
+            `m:${month}`,
+            'month-header',
+            MONTH_FORMATTER.format(new Date(`${month}-01`)),
+          ),
         );
+        this.#last_month = month;
+        this.#last_day = null;
       }
-      if (date_part !== this.#current_day_key) {
-        this.#el_day_group = this.#openDayGroup(
-          this.#el_month_group,
-          date_part,
+      if (date_part !== this.#last_day) {
+        entries.push(
+          this.#header(
+            `d:${date_part}`,
+            'day-header',
+            DAY_FORMATTER.format(new Date(date_part)),
+          ),
         );
+        this.#last_day = date_part;
       }
-      this.#el_day_group.appendChild(this.#createRow(event, time_part));
+      entries.push({
+        key: `e:${event.id}`,
+        cls: `log-row log-severity-${event.severity}`,
+        time: time_part,
+        type: event.event_type_name,
+        // ponytail: is_html rows are trusted, same boundary as the old
+        // `| safe` Jinja rendering; only pre-rewrite rows ever set it.
+        html: event.is_html ? event.message : escapeHtml(event.message),
+      });
     }
+    this.mirlo.state.entries.push(...entries);
   }
 }
-
 registerComponent('logs-viewer', LogsViewer);

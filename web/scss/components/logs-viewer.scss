@@ -125,6 +125,15 @@ input[type='date']:focus-visible {
     color: var(--bs-secondary-color);
 }
 
+.year-header,
+.month-header,
+.day-header {
+    .log-time,
+    .log-type-badge {
+        display: none;
+    }
+}
+
 .log-row {
     display: grid;
     grid-template-columns: 6em 8em 1fr;
