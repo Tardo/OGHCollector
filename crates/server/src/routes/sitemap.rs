@@ -47,7 +47,7 @@ fn page_url(base: &Url, segments: &[&str]) -> String {
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(8, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(8, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ base.to_string() }"#

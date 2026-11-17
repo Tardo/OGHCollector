@@ -171,7 +171,7 @@ fn collector_status(conn: &mut SqliteConnection) -> Option<CollectorStatus> {
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(16, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(16, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ workspace.to_string() }"#
@@ -405,6 +405,14 @@ pub async fn route(
             )
         ),
     )
+}
+
+/// Cache warm-up (`warmup.rs`): what the Overview is built from first (the pieces it reads
+/// are cached too), then the Overview itself.
+pub(crate) fn warm(conn: &mut SqliteConnection, all: &mut SqliteConnection, key: &str) {
+    crate::routes::migration::warm(conn, all, key);
+    crate::routes::modules::warm(conn, key);
+    compute_dashboard_data_prime_cache(conn, all, key);
 }
 
 #[cfg(test)]

@@ -200,7 +200,7 @@ fn build_page(summaries: Vec<CommitterSummary>, latest: i32) -> CommittersPage {
 /// Two full scans of `module_committer_period` (~0.8 s on a real DB): cached per workspace.
 #[cached(
     ty = "TimedSizedCache<String, CommittersPage>",
-    create = r#"{ TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(*SERVER_CONFIG.get_cache_ttl()), true) }"#,
+    create = r#"{ TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(*SERVER_CONFIG.get_cache_ttl()), false) }"#,
     convert = r#"{ _workspace.to_string() }"#
 )]
 fn get_page(conn: &mut SqliteConnection, _workspace: &str) -> CommittersPage {
@@ -242,6 +242,11 @@ pub async fn route(
             )
         ),
     )
+}
+
+/// Cache warm-up (`warmup.rs`).
+pub(crate) fn warm(conn: &mut SqliteConnection, key: &str) {
+    get_page_prime_cache(conn, key);
 }
 
 #[cfg(test)]

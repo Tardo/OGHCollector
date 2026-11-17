@@ -168,7 +168,7 @@ type FleetData = (
 /// One query per project for the next-version readiness (~0.25 s): cached per workspace.
 #[cached(
     ty = "TimedSizedCache<String, FleetData>",
-    create = r#"{ TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(*SERVER_CONFIG.get_cache_ttl()), true) }"#,
+    create = r#"{ TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(*SERVER_CONFIG.get_cache_ttl()), false) }"#,
     convert = r#"{ pool.key().to_string() }"#
 )]
 fn fleet_data(pool: &AreaPool, all: &Pool) -> FleetData {
@@ -856,4 +856,9 @@ pub async fn route_csv(pool: AreaPool) -> Result<impl Responder> {
             "attachment; filename=\"doodba-projects.csv\"",
         ))
         .body(out))
+}
+
+/// Cache warm-up (`warmup.rs`).
+pub(crate) fn warm(pool: &AreaPool, all: &Pool) {
+    fleet_data_prime_cache(pool, all);
 }

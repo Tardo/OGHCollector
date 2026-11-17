@@ -35,6 +35,7 @@ lazy_static.workspace = true
 chrono.workspace = true
 cached.workspace = true
 base64.workspace = true
+polib = "0.3.0"
 
 [dev-dependencies]
 sqlitedb = { path = "../sqlitedb", features = ["fixture"] }

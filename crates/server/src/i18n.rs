@@ -1,33 +1,63 @@
 // Copyright Alexandre D. Díaz
 //! UI language: the `lang` cookie (`en`/`es`/`gl`) if set, else the browser's `Accept-Language`
 //! (no cookie = "auto"), else English. Templates translate with the `t` filter
-//! (`{{ "Overview"|t }}`): the English text is the key, catalogs are
-//! `web/templates/i18n/{es,gl}.json` (English → translation, read once at startup; a missing key
-//! shows the English text). Responses vary on `Accept-Language` (see `main.rs`).
+//! (`{{ "Overview"|t }}`): the English text is the msgid. Catalogs are standard gettext files,
+//! `web/templates/i18n/{es,gl}.po` (edit them with Poedit/Weblate, check with `msgfmt --check`),
+//! parsed once at startup with `polib`; an untranslated or fuzzy entry shows the English text.
+//! Entries whose reference comment is `#: web/js` are also what the browser gets: the layout
+//! embeds them through `i18n_js()` and `web/js/utils/i18n.mjs` (i18next) reads them.
+//! Responses vary on `Accept-Language` (see `main.rs`).
 use actix_web::HttpRequest;
 use minijinja::value::{Rest, Value};
 use minijinja::State;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::sync::LazyLock;
 
 pub const COOKIE: &str = "lang";
 const LANGS: [&str; 3] = ["en", "es", "gl"];
 
-type Catalog = HashMap<String, String>;
+#[derive(Default)]
+struct Catalog {
+    all: HashMap<String, String>,
+    /// The subset the browser needs, as ready-to-embed JSON.
+    js_json: String,
+}
+
+fn load(path: &Path) -> Result<Catalog, String> {
+    let po = polib::po_file::parse(path).map_err(|e| e.to_string())?;
+    let mut all = HashMap::new();
+    let mut js = BTreeMap::new();
+    for m in po.messages() {
+        if !m.is_singular() || !m.is_translated() || m.is_fuzzy() || m.msgctxt().is_some() {
+            continue;
+        }
+        let id = m.msgid();
+        let Ok(str) = m.msgstr() else {
+            continue;
+        };
+        if m.source().contains("web/js") {
+            js.insert(id.to_string(), str.to_string());
+        }
+        all.insert(id.to_string(), str.to_string());
+    }
+    // `<` escaped: the JSON sits inside a <script> element.
+    let js_json = serde_json::to_string(&js)
+        .map_err(|e| e.to_string())?
+        .replace('<', "\\u003c");
+    Ok(Catalog { all, js_json })
+}
 
 static CATALOGS: LazyLock<HashMap<&'static str, Catalog>> = LazyLock::new(|| {
     LANGS
         .iter()
         .filter(|l| **l != "en")
         .map(|l| {
-            let path = format!("web/templates/i18n/{l}.json");
-            let catalog = std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))
-                .unwrap_or_else(|e| {
-                    log::error!("i18n catalog {path}: {e}");
-                    Catalog::new()
-                });
+            let path = format!("web/templates/i18n/{l}.po");
+            let catalog = load(Path::new(&path)).unwrap_or_else(|e| {
+                log::error!("i18n catalog {path}: {e}");
+                Catalog::default()
+            });
             (*l, catalog)
         })
         .collect()
@@ -77,6 +107,17 @@ pub fn set_render_lang(lang: &'static str) {
     RENDER_LANG.with(|l| l.set(lang));
 }
 
+/// `i18n_js()` template function: the browser's catalog (JSON object) for the current render.
+pub fn i18n_js(_state: &State) -> Value {
+    let lang = RENDER_LANG.with(|l| l.get());
+    let json = CATALOGS.get(lang).map_or("{}", |c| c.js_json.as_str());
+    Value::from_safe_string(if json.is_empty() {
+        "{}".into()
+    } else {
+        json.into()
+    })
+}
+
 /// `t` template filter: translation in the language of the current render. Extra arguments fill
 /// `{0}`, `{1}`... of the (translated) text and make the result HTML: the text and every argument
 /// that isn't already safe markup is escaped, so `{{ "Found {0} modules"|t(n) }}` and
@@ -85,7 +126,7 @@ pub fn t(_state: &State, text: String, args: Rest<Value>) -> Value {
     let lang = RENDER_LANG.with(|l| l.get());
     let text = CATALOGS
         .get(lang)
-        .and_then(|c| c.get(&text).cloned())
+        .and_then(|c| c.all.get(&text).cloned())
         .unwrap_or(text);
     if args.is_empty() {
         return Value::from(text);
@@ -161,8 +202,11 @@ mod tests {
             }
         }
         for l in ["es", "gl"] {
-            let s = std::fs::read_to_string(format!("../../web/templates/i18n/{l}.json")).unwrap();
-            serde_json::from_str::<super::Catalog>(&s).unwrap();
+            let c = super::load(std::path::Path::new(&format!(
+                "../../web/templates/i18n/{l}.po"
+            )))
+            .unwrap();
+            assert!(c.all.len() > 600 && c.js_json.contains("Loading..."));
         }
     }
 

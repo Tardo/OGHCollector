@@ -9,6 +9,7 @@
 {% endblock %}
 {% block content %}
 {{ super() }}
+<mirlo-localization>
 <div class="localization-results" data-country="{{ country_code }}">
     <header class="page-header">
         <h1>{{ "Localization:"|t }} <span id="localization-country-name">{{ country_code }}</span></h1>
@@ -19,4 +20,5 @@
     </header>
     {% include "partials/localization_modules.html" %}
 </div>
+</mirlo-localization>
 {% endblock %}

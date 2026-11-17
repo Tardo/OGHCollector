@@ -181,7 +181,7 @@ fn runs(versions: &[i32], keep: impl Fn(i32) -> bool) -> String {
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(32, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(32, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ (_workspace.to_string(), from, to) }"#
@@ -478,6 +478,14 @@ pub async fn route(
             )
         ),
     )
+}
+
+/// Cache warm-up (`warmup.rs`): the newest pair, which is what `/migration` and the Overview open on.
+pub(crate) fn warm(conn: &mut SqliteConnection, all: &mut SqliteConnection, key: &str) {
+    let versions = models::module::get_odoo_versions(conn);
+    if let Some((from, to)) = pick_compare_versions(&versions, None, None) {
+        compute_migration_data_prime_cache(conn, all, key, &versions, from, to);
+    }
 }
 
 #[cfg(test)]

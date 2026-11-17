@@ -20,6 +20,9 @@
     <strong>{{ "Stored only in this browser."|t }}</strong> {{ "Favorites and packs are saved in this browser's local storage on this computer — they are never sent to the server, are not synced across devices or browsers, and are visible to anyone else who uses this browser profile. Clearing the browser's site data deletes them for good."|t }}
 </div>
 
+<mirlo-favorites></mirlo-favorites>
+
+<template id="template-mirlo-favorites">
 <div class="row g-3 mb-4">
     <div class="col-6 col-lg-3">
         <div class="stat-card">
@@ -64,4 +67,5 @@
         <p class="mb-0">{{ "No packs yet — create one to group modules together."|t }}</p>
     </div>
 </section>
+</template>
 {% endblock %}

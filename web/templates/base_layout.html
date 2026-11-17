@@ -53,10 +53,12 @@
         {# Global sheet first so page sheets (inside the block) override it #}
         <link type="text/css" rel="stylesheet" href="/static/auto/web/scss/main.css">
         {% block base_head_content %}{% endblock %}
+        <meta name="build-id" content="{{ build_id() }}">
         <title>{{ meta_title|t }} - Odoo Module Metadata</title>
     </head>
     <body>
         {% block base_body_content %}{% endblock %}
+        <script type="application/json" id="i18n-data">{{ i18n_js() }}</script>
         <script type="module" src="/static/auto/main.mjs" async></script>
     </body>
 </html>

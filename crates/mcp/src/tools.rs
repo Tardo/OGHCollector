@@ -887,7 +887,7 @@ fn build_module_summary(
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{org}|{repo}|{version_odoo:?}|{installable:?}") }"#
@@ -917,7 +917,7 @@ fn list_repository_modules_cached(
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}") }"#
@@ -945,7 +945,7 @@ fn get_module_cached(
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}") }"#
@@ -973,7 +973,7 @@ fn get_module_docs_cached(
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}") }"#
@@ -1001,7 +1001,7 @@ fn get_module_dependencies_cached(
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{technical_name}|{version_odoo}|{org:?}|{repo:?}|{version_module:?}") }"#
@@ -1030,7 +1030,7 @@ fn get_module_code_analysis_cached(
     create = r#"
         {
             let ttl_secs = *crate::config::MCP_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(500, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{version_odoo}|{search_term:?}|{category:?}|{depends_on:?}|{limit}") }"#

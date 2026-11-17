@@ -140,7 +140,7 @@
     <div class="app-main">
         <header class="app-topbar">
             <button type="button" class="app-icon-btn d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#app-sidebar" aria-controls="app-sidebar" aria-label="{{ "Open navigation"|t }}"><span class="material-icons" aria-hidden="true">menu</span></button>
-            <button type="button" class="app-icon-btn d-none d-lg-inline-flex" id="sidebar-toggle" aria-label="{{ "Collapse sidebar"|t }}" title="{{ "Collapse sidebar"|t }}"><span class="material-icons" aria-hidden="true">menu_open</span></button>
+            <mirlo-sidebar-toggle><button type="button" class="app-icon-btn d-none d-lg-inline-flex" id="sidebar-toggle" aria-label="{{ "Collapse sidebar"|t }}" title="{{ "Collapse sidebar"|t }}"><span class="material-icons" aria-hidden="true">menu_open</span></button></mirlo-sidebar-toggle>
             <nav class="app-breadcrumb" aria-label="{{ "Breadcrumb"|t }}">
                 {% if nav_section and nav_section != page_title %}<span class="app-breadcrumb-section">{{ nav_section|t }}</span><span class="app-breadcrumb-sep" aria-hidden="true">/</span>{% endif %}
                 <span class="app-breadcrumb-current" aria-current="page">{{ page_title|t }}</span>
@@ -152,12 +152,15 @@
                     <kbd>{{ "Ctrl K"|t }}</kbd>
                 </button>
                 {% if WORKSPACES %}
+                <mirlo-workspace-select>
                 <select class="form-select form-select-sm w-auto" id="workspace-select" aria-label="{{ "Workspace"|t }}" title="{{ "Workspace: only list its repositories"|t }}">
                     {% if not AUTH_ENABLED %}<option value="">{{ "All workspaces"|t }}</option>{% endif %}
                     {% for ws in WORKSPACES %}<option value="{{ ws }}"{% if ws == WORKSPACE %} selected{% endif %}>{{ ws }}</option>{% endfor %}
                 </select>
+                </mirlo-workspace-select>
                 {% endif %}
-                <button type="button" class="app-icon-btn" id="theme-toggle" title="{{ "Theme: auto / light / dark"|t }}" aria-label="{{ "Theme: auto / light / dark"|t }}" data-i18n-theme="{{ "Theme"|t }}|{{ "click to change"|t }}|{{ "auto"|t }}|{{ "light"|t }}|{{ "dark"|t }}"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button>
+                <mirlo-theme-toggle><button type="button" class="app-icon-btn" id="theme-toggle" title="{{ "Theme: auto / light / dark"|t }}" aria-label="{{ "Theme: auto / light / dark"|t }}" data-i18n-theme="{{ "Theme"|t }}|{{ "click to change"|t }}|{{ "auto"|t }}|{{ "light"|t }}|{{ "dark"|t }}"><span class="theme-icon material-icons" aria-hidden="true">dark_mode</span></button></mirlo-theme-toggle>
+                <mirlo-lang-select>
                 <div class="dropdown" id="lang-select" data-lang="{{ LANG }}">
                     <button type="button" class="app-icon-btn dropdown-toggle-no-caret" data-bs-toggle="dropdown" aria-expanded="false" title="{{ "Language"|t }}" aria-label="{{ "Language"|t }}"><span class="material-icons" aria-hidden="true">translate</span><span class="lang-code"></span></button>
                     <ul class="dropdown-menu dropdown-menu-end">
@@ -167,10 +170,13 @@
                         <li><button type="button" class="dropdown-item" data-lang-choice="gl">{{ "Galego"|t }}</button></li>
                     </ul>
                 </div>
+                </mirlo-lang-select>
+                <mirlo-mode-switch>
                 <div class="form-check form-switch mode-switch" title="{{ "Developer mode: API, MCP, logs, Doodba tools and code analysis"|t }}">
                     <input class="form-check-input" type="checkbox" role="switch" id="dev-mode-switch"/>
                     <label class="form-check-label" for="dev-mode-switch">{{ "Dev"|t }}<span class="d-none d-xl-inline"> {{ "mode"|t }}</span></label>
                 </div>
+                </mirlo-mode-switch>
             </div>
         </header>
         <main class="app-content {{ content_class if content_class is defined else '' }}" id="app-content" tabindex="-1">
@@ -183,6 +189,7 @@
    `fade` on purpose - the dialog must be visible synchronously so the key
    that opened it lands in the search input. #}
 {% set committer_scope = page_name is defined and page_name in ['committers', 'committer'] %}
+<mirlo-search-palette>
 <div class="modal search-palette" id="search-palette" tabindex="-1" aria-label="{{ "Search"|t }}">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -200,4 +207,5 @@
         </div>
     </div>
 </div>
+</mirlo-search-palette>
 {% endblock %}

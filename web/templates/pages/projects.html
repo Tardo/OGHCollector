@@ -9,6 +9,7 @@
 {% endblock %}
 {% block content %}
 {{ super() }}
+<mirlo-projects>
 {% from "partials/report.html" import meter %}
 
 <header class="page-header">
@@ -279,4 +280,5 @@
     </section>
 </div>
 {% endif %}
+</mirlo-projects>
 {% endblock %}

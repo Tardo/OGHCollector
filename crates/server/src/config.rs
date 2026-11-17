@@ -28,6 +28,7 @@ pub struct OGHServerConfig {
     semantic_search_enabled: bool,
     health_score_enabled: bool,
     projects_enabled: bool,
+    cache_warmup: bool,
     auth_enabled: bool,
     auth_user_header: String,
     auth_groups_header: String,
@@ -88,6 +89,7 @@ impl OGHServerConfig {
         let semantic_search_enabled = settings.get_bool("semantic_search_enabled").unwrap_or(true);
         let health_score_enabled = settings.get_bool("health_score_enabled").unwrap_or(true);
         let projects_enabled = settings.get_bool("projects_enabled").unwrap_or(false);
+        let cache_warmup = settings.get_bool("cache_warmup").unwrap_or(true);
         let auth_enabled = settings.get_bool("auth_enabled").unwrap_or(false);
         let auth_user_header = settings
             .get_string("auth_user_header")
@@ -132,6 +134,7 @@ impl OGHServerConfig {
             semantic_search_enabled,
             health_score_enabled,
             projects_enabled,
+            cache_warmup,
             auth_enabled,
             auth_user_header,
             auth_groups_header,
@@ -211,6 +214,10 @@ impl OGHServerConfig {
 
     pub fn get_scan_enabled(&self) -> bool {
         self.scan_enabled
+    }
+
+    pub fn get_cache_warmup(&self) -> bool {
+        self.cache_warmup
     }
 
     pub fn get_projects_enabled(&self) -> bool {

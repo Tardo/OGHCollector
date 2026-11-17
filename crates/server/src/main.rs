@@ -11,6 +11,7 @@ mod middlewares;
 mod minijinja_renderer;
 mod routes;
 mod utils;
+mod warmup;
 mod workspace;
 
 #[cfg(test)]
@@ -159,6 +160,8 @@ async fn main() -> std::io::Result<()> {
         env.add_filter("num", utils::num);
         env.add_filter("avatar", utils::avatar);
         env.add_filter("t", i18n::t);
+        env.add_function("i18n_js", i18n::i18n_js);
+        env.add_function("build_id", utils::build_id);
         Ok(env)
     });
     let tmpl_reloader = web::Data::new(tmpl_reloader);
@@ -174,6 +177,7 @@ async fn main() -> std::io::Result<()> {
         db_path.to_string_lossy().into_owned(),
         pool.clone(),
     ));
+    warmup::spawn(workspaces.clone(), pool.clone());
 
     log::info!(
         "starting HTTP server at http://{}:{}",

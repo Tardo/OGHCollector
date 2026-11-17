@@ -1,0 +1,2279 @@
+# Spanish translations of Odoo Module Metadata.
+# Entries referenced from web/js are also sent to the browser (see crates/server/src/i18n.rs).
+msgid ""
+msgstr ""
+"Project-Id-Version: OGHCollector\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Overview"
+msgstr "Resumen"
+
+msgid "Explore"
+msgstr "Explorar"
+
+msgid "Security"
+msgstr "Seguridad"
+
+msgid "Workspace"
+msgstr "Espacio de trabajo"
+
+msgid "Doodba"
+msgstr "Doodba"
+
+msgid "Developer"
+msgstr "Desarrollo"
+
+msgid "Modules"
+msgstr "Módulos"
+
+msgid "Version migration"
+msgstr "Migración de versión"
+
+msgid "Dependency atlas"
+msgstr "Atlas de dependencias"
+
+msgid "Localizations"
+msgstr "Localizaciones"
+
+msgid "Committers"
+msgstr "Contribuidores"
+
+msgid "Vulnerabilities"
+msgstr "Vulnerabilidades"
+
+msgid "Instance scan"
+msgstr "Análisis de instancia"
+
+msgid "Favorites & packs"
+msgstr "Favoritos y packs"
+
+msgid "Projects"
+msgstr "Proyectos"
+
+msgid "Converter"
+msgstr "Conversor"
+
+msgid "Dependency resolver"
+msgstr "Resolutor de dependencias"
+
+msgid "Migration plan"
+msgstr "Plan de migración"
+
+msgid "REST API"
+msgstr "API REST"
+
+msgid "MCP server"
+msgstr "Servidor MCP"
+
+msgid "Workflows"
+msgstr "Flujos de trabajo"
+
+msgid "System logs"
+msgstr "Registros del sistema"
+
+msgid "Source code"
+msgstr "Código fuente"
+
+msgid "About & methodology"
+msgstr "Acerca de y metodología"
+
+msgid "Source code on GitHub"
+msgstr "Código fuente en GitHub"
+
+msgid "Independent project. Not affiliated with Odoo S.A. or the Odoo Community Association."
+msgstr "Proyecto independiente. Sin afiliación con Odoo S.A. ni con la Odoo Community Association."
+
+msgid "Skip to content"
+msgstr "Saltar al contenido"
+
+msgid "Main navigation"
+msgstr "Navegación principal"
+
+msgid "Close navigation"
+msgstr "Cerrar navegación"
+
+msgid "Open navigation"
+msgstr "Abrir navegación"
+
+#: web/js
+msgid "Collapse sidebar"
+msgstr "Contraer barra lateral"
+
+msgid "Breadcrumb"
+msgstr "Ruta de navegación"
+
+msgid "Search"
+msgstr "Buscar"
+
+msgid "Search modules, committers…"
+msgstr "Buscar módulos, contribuidores…"
+
+msgid "All workspaces"
+msgstr "Todos los espacios"
+
+msgid "Workspace: only list its repositories"
+msgstr "Espacio de trabajo: lista solo sus repositorios"
+
+msgid "Theme: auto / light / dark"
+msgstr "Tema: auto / claro / oscuro"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "click to change"
+msgstr "clic para cambiar"
+
+msgid "auto"
+msgstr "auto"
+
+msgid "light"
+msgstr "claro"
+
+msgid "dark"
+msgstr "oscuro"
+
+msgid "Developer mode: API, MCP, logs, Doodba tools and code analysis"
+msgstr "Modo desarrollador: API, MCP, registros, herramientas Doodba y análisis de código"
+
+msgid "Dev"
+msgstr "Dev"
+
+msgid "mode"
+msgstr "modo"
+
+msgid "navigate"
+msgstr "navegar"
+
+msgid "open"
+msgstr "abrir"
+
+msgid "close"
+msgstr "cerrar"
+
+msgid "Search field"
+msgstr "Campo de búsqueda"
+
+msgid "Technical name"
+msgstr "Nombre técnico"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "Description"
+msgstr "Descripción"
+
+msgid "Category"
+msgstr "Categoría"
+
+msgid "Semantic"
+msgstr "Semántica"
+
+msgid "Search module (technical name)..."
+msgstr "Buscar módulo (nombre técnico)..."
+
+msgid "Search modules"
+msgstr "Buscar módulos"
+
+msgid "Odoo version"
+msgstr "Versión de Odoo"
+
+msgid "All versions"
+msgstr "Todas las versiones"
+
+msgid "Search committer (name)..."
+msgstr "Buscar contribuidor (nombre)..."
+
+msgid "Search committers"
+msgstr "Buscar contribuidores"
+
+msgid "+ Add to my Packs"
+msgstr "+ Añadir a mis packs"
+
+msgid "+ New pack"
+msgstr "+ Nuevo pack"
+
+msgid ", no PR open"
+msgstr ", sin PR abierta"
+
+msgid ". Also available as JSON:"
+msgstr ". También disponible en JSON:"
+
+msgid ". Works best in Firefox; Chromium browsers tend to cut off large folders."
+msgstr ". Funciona mejor en Firefox; los navegadores Chromium tienden a cortar las carpetas grandes."
+
+msgid "Actions"
+msgstr "Acciones"
+
+msgid "Active lately"
+msgstr "Activos últimamente"
+
+msgid "Active migration pull requests"
+msgstr "Pull requests de migración activas"
+
+msgid "Activity"
+msgstr "Actividad"
+
+msgid "Add node"
+msgstr "Añadir nodo"
+
+msgid "Add to pack"
+msgstr "Añadir al pack"
+
+msgid "Added"
+msgstr "Añadido"
+
+msgid "Added, removed or changed"
+msgstr "Añadido, eliminado o modificado"
+
+msgid "Addon"
+msgstr "Addon"
+
+msgid "Addons"
+msgstr "Addons"
+
+msgid "Addons enabled by several projects of the same Odoo version: what a change there would reach."
+msgstr "Addons activados por varios proyectos de la misma versión de Odoo: lo que alcanzaría un cambio ahí."
+
+msgid "Advisories"
+msgstr "Avisos"
+
+msgid "Advisories by package"
+msgstr "Avisos por paquete"
+
+msgid "Advisories without a fixed release"
+msgstr "Avisos sin versión corregida"
+
+msgid "Advisory"
+msgstr "Aviso"
+
+msgid "After"
+msgstr "Después"
+
+msgid "Aggregated repositories"
+msgstr "Repositorios agregados"
+
+msgid "All"
+msgstr "Todos"
+
+msgid "All findings"
+msgstr "Todos los hallazgos"
+
+msgid "All projects"
+msgstr "Todos los proyectos"
+
+msgid "All time"
+msgstr "Todo el tiempo"
+
+msgid "Any checks"
+msgstr "Cualquier comprobación"
+
+msgid "Application"
+msgstr "Aplicación"
+
+msgid "Approximate figure"
+msgstr "Cifra aproximada"
+
+msgid "Arrivals per year"
+msgstr "Llegadas por año"
+
+msgid "Atom feed: new versions, migration PRs, findings and committers of this module"
+msgstr "Feed Atom: nuevas versiones, PRs de migración, hallazgos y contribuidores de este módulo"
+
+msgid "Auth"
+msgstr "Autenticación"
+
+msgid "Authors"
+msgstr "Autores"
+
+msgid "Auto-installable"
+msgstr "Autoinstalable"
+
+msgid "Automated static analysis, not an audit: a starting point for manual review, not confirmed issues."
+msgstr "Análisis estático automatizado, no una auditoría: un punto de partida para la revisión manual, no problemas confirmados."
+
+msgid "Available"
+msgstr "Disponible"
+
+msgid "Avg. time open before merge:"
+msgstr "Tiempo medio abierta antes de fusionarse:"
+
+msgid "Back to home"
+msgstr "Volver al inicio"
+
+msgid "Back to the globe"
+msgstr "Volver al globo"
+
+msgid "Badge snippet"
+msgstr "Fragmento de insignia"
+
+msgid "Base"
+msgstr "Base"
+
+msgid "Base image"
+msgstr "Imagen base"
+
+msgid "Based on the manifest licenses of this module and everything it depends on: a heuristic to spot problems early, not legal advice."
+msgstr "Basado en las licencias del manifiesto de este módulo y de todo lo que depende de él: una heurística para detectar problemas pronto, no asesoría legal."
+
+msgid "Baseline Odoo version"
+msgstr "Versión de Odoo de referencia"
+
+msgid "Behind"
+msgstr "Por detrás"
+
+msgid "Behind template"
+msgstr "Por detrás de la plantilla"
+
+msgid "Browse modules"
+msgstr "Explorar módulos"
+
+msgid "CI"
+msgstr "CI"
+
+msgid "CI failing"
+msgstr "CI fallando"
+
+msgid "CI status"
+msgstr "Estado de CI"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Changed"
+msgstr "Modificado"
+
+msgid "Changes"
+msgstr "Cambios"
+
+msgid "Clear"
+msgstr "Limpiar"
+
+msgid "Closed"
+msgstr "Cerrada"
+
+msgid "Code"
+msgstr "Código"
+
+msgid "Code analysis"
+msgstr "Análisis de código"
+
+msgid "Collected addons already in the next Odoo version"
+msgstr "Addons recopilados ya en la siguiente versión de Odoo"
+
+msgid "Collector"
+msgstr "Recolector"
+
+msgid "Combined with its dependencies:"
+msgstr "Combinado con sus dependencias:"
+
+msgid "Commit"
+msgstr "Commit"
+
+msgid "Commit calendar"
+msgstr "Calendario de commits"
+
+msgid "Commits"
+msgstr "Commits"
+
+msgid "Commits by people per month, bots excluded."
+msgstr "Commits de personas por mes, sin bots."
+
+msgid "Commits per version branch."
+msgstr "Commits por rama de versión."
+
+msgid "Committed in the last 12 months"
+msgstr "Con commits en los últimos 12 meses"
+
+msgid "Committer"
+msgstr "Contribuidor"
+
+msgid "Compare"
+msgstr "Comparar"
+
+msgid "Configuration"
+msgstr "Configuración"
+
+msgid "Contributing"
+msgstr "Contribuir"
+
+msgid "Convert this pack to another Odoo version"
+msgstr "Convertir este pack a otra versión de Odoo"
+
+msgid "Convert to Odoo version"
+msgstr "Convertir a la versión de Odoo"
+
+#: web/js
+msgid "Copy"
+msgstr "Copiar"
+
+msgid "Countries with localization modules"
+msgstr "Países con módulos de localización"
+
+msgid "Credentials"
+msgstr "Credenciales"
+
+msgid "Credentials written outside repos.yaml"
+msgstr "Credenciales escritas fuera de repos.yaml"
+
+msgid "Current"
+msgstr "Actual"
+
+msgid "Database exposure"
+msgstr "Exposición de la base de datos"
+
+msgid "Days to merge"
+msgstr "Días hasta fusionar"
+
+msgid "Debug mode"
+msgstr "Modo depuración"
+
+msgid "Declaring an affected version"
+msgstr "Declarar una versión afectada"
+
+msgid "Decoding link…"
+msgstr "Decodificando enlace…"
+
+msgid "Delete"
+msgstr "Eliminar"
+
+msgid "Dependencies"
+msgstr "Dependencias"
+
+msgid "Dependents"
+msgstr "Dependientes"
+
+msgid "Disk size"
+msgstr "Tamaño en disco"
+
+msgid "Doodba converter"
+msgstr "Conversor Doodba"
+
+msgid "Doodba dependency resolver"
+msgstr "Resolutor de dependencias Doodba"
+
+msgid "Doodba migration plan"
+msgstr "Plan de migración Doodba"
+
+msgid "Doodba project of"
+msgstr "Proyecto Doodba de"
+
+msgid "Doodba projects"
+msgstr "Proyectos Doodba"
+
+msgid "Doodba projects whose addons.yaml enables it"
+msgstr "Proyectos Doodba cuyo addons.yaml lo activa"
+
+msgid "Download"
+msgstr "Descargar"
+
+msgid "Drop your addons folder here, or click to browse, to convert it to doodba format."
+msgstr "Suelta aquí tu carpeta de addons, o haz clic para buscarla, para convertirla al formato doodba."
+
+msgid "Drop your addons.yaml here, or click to browse, to plan the version jump."
+msgstr "Suelta aquí tu addons.yaml, o haz clic para buscarlo, para planificar el salto de versión."
+
+msgid "Drop your addons.yaml here, or click to browse, to resolve its full dependency list."
+msgstr "Suelta aquí tu addons.yaml, o haz clic para buscarlo, para resolver su lista completa de dependencias."
+
+msgid "Each card holds its settings:"
+msgstr "Cada tarjeta contiene su configuración:"
+
+msgid "Each square of"
+msgstr "Cada cuadrado de"
+
+msgid "Editor"
+msgstr "Editor"
+
+msgid "Embed badges"
+msgstr "Insertar insignias"
+
+msgid "Enabled"
+msgstr "Activado"
+
+msgid "Enter an Odoo URL to probe it as an HTTP client."
+msgstr "Introduce una URL de Odoo para sondearla como cliente HTTP."
+
+msgid "Every month since the first commit. A commit that touches several modules counts once per module."
+msgstr "Cada mes desde el primer commit. Un commit que toca varios módulos cuenta una vez por módulo."
+
+msgid "Every tracked branch, bots left out."
+msgstr "Cada rama seguida, sin bots."
+
+msgid "Every tracked module and its dependencies as a graph. Pick an Odoo version, search a dependency, then drag and zoom to explore."
+msgstr "Cada módulo seguido y sus dependencias como un grafo. Elige una versión de Odoo, busca una dependencia y arrastra y haz zoom para explorar."
+
+#: web/js
+msgid "Export"
+msgstr "Exportar"
+
+msgid "Export CSV"
+msgstr "Exportar CSV"
+
+msgid "Extends"
+msgstr "Extiende"
+
+msgid "External deps"
+msgstr "Dependencias externas"
+
+msgid "Failing"
+msgstr "Fallando"
+
+msgid "Favorite"
+msgstr "Favorito"
+
+msgid "Favorites"
+msgstr "Favoritos"
+
+msgid "Favorites & Packs"
+msgstr "Favoritos y packs"
+
+msgid "Favorites and packs are saved in this browser's local storage on this computer — they are never sent to the server, are not synced across devices or browsers, and are visible to anyone else who uses this browser profile. Clearing the browser's site data deletes them for good."
+msgstr "Los favoritos y packs se guardan en el almacenamiento local de este navegador, en este equipo: nunca se envían al servidor, no se sincronizan entre dispositivos o navegadores y los ve cualquiera que use este perfil del navegador. Borrar los datos del sitio los elimina para siempre."
+
+msgid "Fields"
+msgstr "Campos"
+
+msgid "Filter addons"
+msgstr "Filtrar addons"
+
+msgid "Filter advisories"
+msgstr "Filtrar avisos"
+
+msgid "Filter by Odoo version"
+msgstr "Filtrar por versión de Odoo"
+
+msgid "Filter by addon or repository"
+msgstr "Filtrar por addon o repositorio"
+
+msgid "Filter by module or repository"
+msgstr "Filtrar por módulo o repositorio"
+
+msgid "Filter by package, advisory or module"
+msgstr "Filtrar por paquete, aviso o módulo"
+
+msgid "Filter by problem"
+msgstr "Filtrar por problema"
+
+msgid "Filter by project or version"
+msgstr "Filtrar por proyecto o versión"
+
+msgid "Filter localization by Odoo version"
+msgstr "Filtrar localización por versión de Odoo"
+
+msgid "Filter modules"
+msgstr "Filtrar módulos"
+
+msgid "Filter projects"
+msgstr "Filtrar proyectos"
+
+msgid "Findings"
+msgstr "Hallazgos"
+
+msgid "First commit in the last 12 months"
+msgstr "Primer commit en los últimos 12 meses"
+
+msgid "First commit seen, in"
+msgstr "Primer commit visto, en"
+
+msgid "Fixed in"
+msgstr "Corregido en"
+
+msgid "Flags"
+msgstr "Indicadores"
+
+msgid "Fleet newest"
+msgstr "Más reciente de la flota"
+
+msgid "Folder size"
+msgstr "Tamaño de la carpeta"
+
+msgid "Follow"
+msgstr "Seguir"
+
+msgid "Found by automated static analysis: these patterns are usually risky, but only a manual review of the module can confirm a real issue."
+msgstr "Detectado por análisis estático automatizado: estos patrones suelen ser arriesgados, pero solo una revisión manual del módulo puede confirmar un problema real."
+
+msgid "From"
+msgstr "Desde"
+
+msgid "From Odoo version"
+msgstr "Desde la versión de Odoo"
+
+msgid "From Version:"
+msgstr "Desde la versión:"
+
+msgid "From previous version"
+msgstr "Desde la versión anterior"
+
+msgid "Furthest behind the template first. The square is shaded against the furthest behind."
+msgstr "Primero los más atrasados respecto a la plantilla. El cuadrado se sombrea según el más atrasado."
+
+msgid "GHSA and PYSEC entries may describe the same issue"
+msgstr "Las entradas GHSA y PYSEC pueden describir el mismo problema"
+
+msgid "Grave"
+msgstr "Grave"
+
+msgid "Grave findings"
+msgstr "Hallazgos graves"
+
+msgid "Green"
+msgstr "Verde"
+
+msgid "HTML"
+msgstr "HTML"
+
+msgid "HTTP endpoints"
+msgstr "Endpoints HTTP"
+
+msgid "HTTP routes"
+msgstr "Rutas HTTP"
+
+msgid "HTTPS"
+msgstr "HTTPS"
+
+msgid "Handler"
+msgstr "Manejador"
+
+msgid "Health"
+msgstr "Salud"
+
+msgid "Heuristic over the facts below, not an audit ·"
+msgstr "Heurística sobre los hechos siguientes, no una auditoría ·"
+
+msgid "Highlighted countries have localization modules in the selected version. Choose one to see its modules."
+msgstr "Los países resaltados tienen módulos de localización en la versión seleccionada. Elige uno para ver sus módulos."
+
+msgid "Hook"
+msgstr "Hook"
+
+msgid "Hover to pause · Drag to rotate · Select a highlighted country"
+msgstr "Pasa el cursor para pausar · Arrastra para girar · Selecciona un país resaltado"
+
+msgid "How it's checked"
+msgstr "Cómo se comprueba"
+
+msgid "How it's computed"
+msgstr "Cómo se calcula"
+
+msgid "Import YAML"
+msgstr "Importar YAML"
+
+msgid "Installable modules. A module counts as migrated when its technical name exists in the next version, or when OpenUpgrade records it renamed or merged into one that does."
+msgstr "Módulos instalables. Un módulo cuenta como migrado cuando su nombre técnico existe en la siguiente versión, o cuando OpenUpgrade registra que se renombró o fusionó en uno que sí."
+
+msgid "Just this workflow, indented to paste under the workflows: of workflows.yaml"
+msgstr "Solo este flujo, con sangría para pegarlo bajo workflows: de workflows.yaml"
+
+msgid "Kind"
+msgstr "Tipo"
+
+msgid "Largest module"
+msgstr "Módulo más grande"
+
+msgid "Last 12 months"
+msgstr "Últimos 12 meses"
+
+msgid "Last commit"
+msgstr "Último commit"
+
+msgid "Last tracking update"
+msgstr "Última actualización del seguimiento"
+
+#: web/js
+msgid "Latest tracked version per module"
+msgstr "Última versión seguida por módulo"
+
+msgid "Lay the nodes out again"
+msgstr "Recolocar los nodos"
+
+msgid "License"
+msgstr "Licencia"
+
+msgid "License conflict in dependencies"
+msgstr "Conflicto de licencias en las dependencias"
+
+#: web/js
+msgid "License review"
+msgstr "Revisión de licencias"
+
+msgid "Likely need a code change"
+msgstr "Probablemente requieran un cambio de código"
+
+msgid "Lint"
+msgstr "Lint"
+
+msgid "Lint behind"
+msgstr "Lint atrasado"
+
+msgid "Lint hooks"
+msgstr "Hooks de lint"
+
+msgid "Load"
+msgstr "Cargar"
+
+msgid "Loading graph…"
+msgstr "Cargando grafo…"
+
+#: web/js
+msgid "Loading…"
+msgstr "Cargando…"
+
+msgid "Localization:"
+msgstr "Localización:"
+
+msgid "MB"
+msgstr "MB"
+
+msgid "Maintainers"
+msgstr "Mantenedores"
+
+msgid "Manifest"
+msgstr "Manifiesto"
+
+msgid "Markdown"
+msgstr "Markdown"
+
+msgid "Merge"
+msgstr "Fusionar"
+
+msgid "Merged"
+msgstr "Fusionada"
+
+msgid "Message"
+msgstr "Mensaje"
+
+msgid "Methodology"
+msgstr "Metodología"
+
+msgid "Methods"
+msgstr "Métodos"
+
+msgid "Migration PRs"
+msgstr "PRs de migración"
+
+msgid "Migration considerations"
+msgstr "Consideraciones de migración"
+
+msgid "Migration notes"
+msgstr "Notas de migración"
+
+msgid "Minor"
+msgstr "Menor"
+
+msgid "Minor findings"
+msgstr "Hallazgos menores"
+
+msgid "Missing"
+msgstr "Falta"
+
+msgid "Model"
+msgstr "Modelo"
+
+msgid "Models"
+msgstr "Modelos"
+
+msgid "Models touched"
+msgstr "Modelos tocados"
+
+msgid "Module"
+msgstr "Módulo"
+
+msgid "Module directory on disk"
+msgstr "Directorio del módulo en disco"
+
+msgid "Module facts"
+msgstr "Datos del módulo"
+
+msgid "Module page"
+msgstr "Página del módulo"
+
+msgid "Module version"
+msgstr "Versión del módulo"
+
+msgid "Modules depending on it"
+msgstr "Módulos que dependen de él"
+
+msgid "Modules in packs"
+msgstr "Módulos en packs"
+
+msgid "Modules with more than one migration PR"
+msgstr "Módulos con más de una PR de migración"
+
+msgid "Modules you starred and the packs you built from them."
+msgstr "Módulos que marcaste con estrella y los packs que construiste con ellos."
+
+msgid "Most advisories first; within a package, no fix first, then the highest release to upgrade to."
+msgstr "Primero los de más avisos; dentro de un paquete, primero los sin corrección y luego la versión más alta a la que actualizar."
+
+msgid "Most changed module"
+msgstr "Módulo más modificado"
+
+msgid "Name, license, category, flags and maintainers are unchanged."
+msgstr "Nombre, licencia, categoría, indicadores y mantenedores no cambian."
+
+msgid "Needs attention"
+msgstr "Requiere atención"
+
+msgid "New"
+msgstr "Nuevo"
+
+msgid "New faces"
+msgstr "Caras nuevas"
+
+msgid "New model"
+msgstr "Modelo nuevo"
+
+msgid "New scan"
+msgstr "Nuevo análisis"
+
+msgid "Newcomers"
+msgstr "Recién llegados"
+
+msgid "Newest module"
+msgstr "Módulo más reciente"
+
+msgid "Next version"
+msgstr "Siguiente versión"
+
+msgid "No CI data"
+msgstr "Sin datos de CI"
+
+msgid "No HTTP endpoints found for this module."
+msgstr "No se encontraron endpoints HTTP para este módulo."
+
+msgid "No addon matches the filter."
+msgstr "Ningún addon coincide con el filtro."
+
+msgid "No advisories."
+msgstr "Sin avisos."
+
+msgid "No code analysis is stored for one of these versions yet, so models, views and HTTP routes aren't compared — only the manifest and dependencies."
+msgstr "Aún no hay análisis de código almacenado para una de estas versiones, así que no se comparan modelos, vistas ni rutas HTTP: solo el manifiesto y las dependencias."
+
+msgid "No commit history collected yet."
+msgstr "Aún no se ha recopilado el historial de commits."
+
+msgid "No data found for this module."
+msgstr "No se encontraron datos de este módulo."
+
+msgid "No dated commits"
+msgstr "Sin commits con fecha"
+
+msgid "No description"
+msgstr "Sin descripción"
+
+msgid "No drift."
+msgstr "Sin desviación."
+
+msgid "No favorites yet — open a module page and click “Favorite”."
+msgstr "Aún no hay favoritos: abre la página de un módulo y pulsa «Favorito»."
+
+msgid "No findings that likely need a code change."
+msgstr "Sin hallazgos que probablemente requieran un cambio de código."
+
+msgid "No fix"
+msgstr "Sin corrección"
+
+msgid "No grave findings."
+msgstr "Sin hallazgos graves."
+
+msgid "No informational findings."
+msgstr "Sin hallazgos informativos."
+
+msgid "No known advisories in the pinned Python dependencies of tracked modules."
+msgstr "Sin avisos conocidos en las dependencias Python fijadas de los módulos seguidos."
+
+msgid "No localization modules indexed yet."
+msgstr "Aún no hay módulos de localización indexados."
+
+msgid "No minor findings."
+msgstr "Sin hallazgos menores."
+
+msgid "No model, field or public method changes."
+msgstr "Sin cambios en modelos, campos ni métodos públicos."
+
+msgid "No models found for this module."
+msgstr "No se encontraron modelos para este módulo."
+
+msgid "No module matches the filter."
+msgstr "Ningún módulo coincide con el filtro."
+
+msgid "No modules found for this country."
+msgstr "No se encontraron módulos para este país."
+
+msgid "No new fields."
+msgstr "Sin campos nuevos."
+
+msgid "No open PRs or security findings tracked."
+msgstr "Sin PRs abiertas ni hallazgos de seguridad seguidos."
+
+msgid "No packs yet — create one to group modules together."
+msgstr "Aún no hay packs: crea uno para agrupar módulos."
+
+msgid "No patches carried."
+msgstr "Sin parches aplicados."
+
+msgid "No project matches the filter."
+msgstr "Ningún proyecto coincide con el filtro."
+
+msgid "No public methods."
+msgstr "Sin métodos públicos."
+
+msgid "No pull requests match these filters."
+msgstr "Ninguna pull request coincide con estos filtros."
+
+msgid "No shared addons."
+msgstr "Sin addons compartidos."
+
+msgid "No views found for this module."
+msgstr "No se encontraron vistas para este módulo."
+
+msgid "Nobody new in the last 12 months."
+msgstr "Nadie nuevo en los últimos 12 meses."
+
+msgid "Node type to add"
+msgstr "Tipo de nodo a añadir"
+
+#: web/js
+msgid "None"
+msgstr "Ninguno"
+
+msgid "None."
+msgstr "Ninguno."
+
+msgid "None: every repository is its base branch as is."
+msgstr "Ninguno: cada repositorio es su rama base tal cual."
+
+msgid "Not analyzed: no code of this module changed, it's not its turn yet, or its source only tracks ports."
+msgstr "Sin analizar: no cambió código de este módulo, aún no le toca o su origen solo sigue portes."
+
+msgid "Not started"
+msgstr "Sin empezar"
+
+msgid "Notes that already apply to each module's own version; each module page has the full upgrade checklist."
+msgstr "Notas que ya se aplican a la versión de cada módulo; la página de cada módulo tiene la lista completa para actualizar."
+
+msgid "Nothing indexed yet: run the collector for an organization and an Odoo version."
+msgstr "Aún no hay nada indexado: ejecuta el recolector para una organización y una versión de Odoo."
+
+msgid "OSV"
+msgstr "OSV"
+
+msgid "Odoo"
+msgstr "Odoo"
+
+msgid "Odoo Version:"
+msgstr "Versión de Odoo:"
+
+msgid "Odoo dependencies"
+msgstr "Dependencias de Odoo"
+
+msgid "Odoo instance URL"
+msgstr "URL de la instancia de Odoo"
+
+msgid "Odoo loads one module per technical name: only one of these fits an addons path"
+msgstr "Odoo carga un módulo por nombre técnico: solo uno de estos cabe en un addons path"
+
+msgid "Odoo version for the new pack"
+msgstr "Versión de Odoo para el nuevo pack"
+
+msgid "Odoo versions"
+msgstr "Versiones de Odoo"
+
+msgid "Off: it doesn't run, even where a source names it"
+msgstr "Desactivado: no se ejecuta, aunque una fuente lo nombre"
+
+msgid "Often in the same modules as"
+msgstr "A menudo en los mismos módulos que"
+
+msgid "On"
+msgstr "Activado"
+
+msgid "Open"
+msgstr "Abierta"
+
+msgid "Open a workflow"
+msgstr "Abrir un flujo"
+
+msgid "Open migration PRs"
+msgstr "PRs de migración abiertas"
+
+msgid "Open pull requests changing this module"
+msgstr "Pull requests abiertas que cambian este módulo"
+
+msgid "OpenUpgrade"
+msgstr "OpenUpgrade"
+
+msgid "Organization"
+msgstr "Organización"
+
+msgid "Organizations"
+msgstr "Organizaciones"
+
+msgid "PR open"
+msgstr "PR abierta"
+
+msgid "Pack too large for a QR code — share the link above instead."
+msgstr "Pack demasiado grande para un código QR: comparte en su lugar el enlace de arriba."
+
+msgid "Package"
+msgstr "Paquete"
+
+msgid "Packages"
+msgstr "Paquetes"
+
+msgid "Packs"
+msgstr "Packs"
+
+msgid "Patch"
+msgstr "Parche"
+
+msgid "Patches"
+msgstr "Parches"
+
+msgid "Patches across the fleet"
+msgstr "Parches en toda la flota"
+
+msgid "Patches to drop"
+msgstr "Parches a eliminar"
+
+msgid "Path"
+msgstr "Ruta"
+
+#: web/js
+msgid "Pause layout"
+msgstr "Pausar disposición"
+
+msgid "Pending"
+msgstr "Pendiente"
+
+msgid "People"
+msgstr "Personas"
+
+msgid "People making their first tracked commit, by year."
+msgstr "Personas que hacen su primer commit seguido, por año."
+
+msgid "Pin"
+msgstr "Fijar"
+
+msgid "Ports and changes"
+msgstr "Portes y cambios"
+
+msgid "Postgres"
+msgstr "Postgres"
+
+msgid "Probed endpoints"
+msgstr "Endpoints sondeados"
+
+msgid "Probing endpoints…"
+msgstr "Sondeando endpoints…"
+
+msgid "Project"
+msgstr "Proyecto"
+
+msgid "Projects with the most pressing work first: credentials outside repos.yaml, then advisories, patches to drop, template updates and lint."
+msgstr "Proyectos con el trabajo más urgente primero: credenciales fuera de repos.yaml, luego avisos, parches a eliminar, actualizaciones de plantilla y lint."
+
+msgid "Public methods"
+msgstr "Métodos públicos"
+
+msgid "Published advisories from the"
+msgstr "Avisos publicados de la"
+
+msgid "Pull requests"
+msgstr "Pull requests"
+
+msgid "PyPI advisories on exact pip pins, with the projects to bump."
+msgstr "Avisos de PyPI sobre pins exactos de pip, con los proyectos a actualizar."
+
+msgid "PyPI advisories on its pinned pip dependencies"
+msgstr "Avisos de PyPI sobre sus dependencias pip fijadas"
+
+msgid "Python dependencies"
+msgstr "Dependencias Python"
+
+msgid "Python dependencies with an advisory"
+msgstr "Dependencias Python con un aviso"
+
+msgid "Quiet for longer than a typical merge at this version"
+msgstr "Inactiva más de lo habitual para fusionarse en esta versión"
+
+msgid "Recently tracked"
+msgstr "Seguidos recientemente"
+
+msgid "Recorded by OpenUpgrade"
+msgstr "Registrado por OpenUpgrade"
+
+msgid "Removed"
+msgstr "Eliminado"
+
+msgid "Repos"
+msgstr "Repos"
+
+msgid "Repositories"
+msgstr "Repositorios"
+
+msgid "Repository"
+msgstr "Repositorio"
+
+msgid "Repository drift"
+msgstr "Desviación del repositorio"
+
+msgid "Required by"
+msgstr "Requerido por"
+
+msgid "Results"
+msgstr "Resultados"
+
+msgid "Review priority"
+msgstr "Prioridad de revisión"
+
+msgid "Revision"
+msgstr "Revisión"
+
+msgid "Robots"
+msgstr "Robots"
+
+msgid "Running"
+msgstr "En ejecución"
+
+msgid "Same direct dependencies."
+msgstr "Mismas dependencias directas."
+
+msgid "Save"
+msgstr "Guardar"
+
+msgid "Scan"
+msgstr "Analizar"
+
+msgid "Scan an instance"
+msgstr "Analizar una instancia"
+
+msgid "Scanning…"
+msgstr "Analizando…"
+
+msgid "Search by dependency name"
+msgstr "Buscar por nombre de dependencia"
+
+msgid "Security checks"
+msgstr "Comprobaciones de seguridad"
+
+msgid "Security findings"
+msgstr "Hallazgos de seguridad"
+
+msgid "Security warnings"
+msgstr "Avisos de seguridad"
+
+msgid "Select module version"
+msgstr "Seleccionar versión del módulo"
+
+msgid "Session cookies"
+msgstr "Cookies de sesión"
+
+#: web/js
+msgid "Share"
+msgstr "Compartir"
+
+msgid "Share of commits per repository, listed below"
+msgstr "Proporción de commits por repositorio, listados abajo"
+
+msgid "Share this pack"
+msgstr "Compartir este pack"
+
+msgid "Shareable link"
+msgstr "Enlace para compartir"
+
+msgid "Shared addons"
+msgstr "Addons compartidos"
+
+msgid "Shared pack"
+msgstr "Pack compartido"
+
+msgid "Show details"
+msgstr "Mostrar detalles"
+
+msgid "Show every repository"
+msgstr "Mostrar todos los repositorios"
+
+msgid "Since"
+msgstr "Desde"
+
+msgid "Snippet format"
+msgstr "Formato del fragmento"
+
+msgid "Something went wrong"
+msgstr "Algo salió mal"
+
+msgid "Source"
+msgstr "Origen"
+
+msgid "Sources"
+msgstr "Orígenes"
+
+msgid "Start here"
+msgstr "Empieza aquí"
+
+msgid "State"
+msgstr "Estado"
+
+msgid "Static analysis of each version's latest snapshot: migration notes for the target version are on the"
+msgstr "Análisis estático de la última instantánea de cada versión: las notas de migración para la versión de destino están en la"
+
+msgid "Static analysis: a starting point for review, not confirmed issues."
+msgstr "Análisis estático: un punto de partida para la revisión, no problemas confirmados."
+
+#: web/js
+msgid "Status"
+msgstr "Estado"
+
+msgid "Status badges for a README, kept up to date with this site."
+msgstr "Insignias de estado para un README, siempre al día con este sitio."
+
+msgid "Stored only in this browser."
+msgstr "Guardado solo en este navegador."
+
+msgid "Subscribe"
+msgstr "Suscribirse"
+
+msgid "Summary"
+msgstr "Resumen"
+
+msgid "Swap versions"
+msgstr "Intercambiar versiones"
+
+msgid "System dependencies"
+msgstr "Dependencias del sistema"
+
+msgid "TLS certificate"
+msgstr "Certificado TLS"
+
+msgid "Plan migration"
+msgstr "Planificar migración"
+
+msgid "Target Odoo version"
+msgstr "Versión de Odoo de destino"
+
+msgid "Template"
+msgstr "Plantilla"
+
+msgid "Template versions"
+msgstr "Versiones de plantilla"
+
+msgid "The longest stretches between a first and a latest tracked commit. Not necessarily nonstop."
+msgstr "Los tramos más largos entre un primer y un último commit seguido. No necesariamente ininterrumpidos."
+
+msgid "The people behind the tracked modules: who's busy lately, who has been around the longest and who just arrived."
+msgstr "Las personas detrás de los módulos seguidos: quién está activo últimamente, quién lleva más tiempo y quién acaba de llegar."
+
+msgid "The people who committed to the most of the same modules."
+msgstr "Las personas que hicieron commit en más módulos en común."
+
+msgid "The template commits projects were generated or last updated from, newest first."
+msgstr "Los commits de plantilla desde los que se generaron o actualizaron los proyectos, del más reciente al más antiguo."
+
+msgid "The whole file"
+msgstr "El archivo completo"
+
+msgid "The workflow starts at this node"
+msgstr "El flujo empieza en este nodo"
+
+msgid "This Month"
+msgstr "Este mes"
+
+msgid "This Year"
+msgstr "Este año"
+
+msgid "This link doesn’t contain a valid pack — check the URL wasn’t truncated when it was shared."
+msgstr "Este enlace no contiene un pack válido: comprueba que la URL no se truncó al compartirla."
+
+msgid "Timings"
+msgstr "Tiempos"
+
+msgid "Title"
+msgstr "Título"
+
+msgid "To"
+msgstr "Hasta"
+
+msgid "To Odoo version"
+msgstr "Hasta la versión de Odoo"
+
+msgid "To Version:"
+msgstr "Hasta la versión:"
+
+msgid "Today"
+msgstr "Hoy"
+
+msgid "Tracked"
+msgstr "Seguido"
+
+msgid "Trivia"
+msgstr "Curiosidades"
+
+msgid "Try on Runboat"
+msgstr "Probar en Runboat"
+
+msgid "Type"
+msgstr "Tipo"
+
+msgid "Upstream"
+msgstr "Upstream"
+
+msgid "Variants"
+msgstr "Variantes"
+
+msgid "Version"
+msgstr "Versión"
+
+msgid "Versions"
+msgstr "Versiones"
+
+msgid "Veterans"
+msgstr "Veteranos"
+
+msgid "View source"
+msgstr "Ver código fuente"
+
+msgid "Views"
+msgstr "Vistas"
+
+msgid "Views touched"
+msgstr "Vistas tocadas"
+
+msgid "Website"
+msgstr "Sitio web"
+
+msgid "What changed between two Odoo versions of this module"
+msgstr "Qué cambió entre dos versiones de Odoo de este módulo"
+
+msgid "Where the installable modules of one Odoo version stand in another. A module counts as migrated when its technical name exists there, or when"
+msgstr "Dónde están los módulos instalables de una versión de Odoo en otra. Un módulo cuenta como migrado cuando su nombre técnico existe allí, o cuando"
+
+msgid "With at least one tracked commit"
+msgstr "Con al menos un commit seguido"
+
+msgid "Workflow graph"
+msgstr "Grafo del flujo"
+
+msgid "Worth a second look"
+msgstr "Merece una segunda mirada"
+
+msgid "XML ID"
+msgstr "ID XML"
+
+msgid "YAML"
+msgstr "YAML"
+
+msgid "Years"
+msgstr "Años"
+
+msgid "checks failing"
+msgstr "comprobaciones fallando"
+
+msgid "checks running"
+msgstr "comprobaciones en ejecución"
+
+msgid "contents never leave your machine"
+msgstr "el contenido nunca sale de tu equipo"
+
+msgid "csrf off"
+msgstr "csrf desactivado"
+
+msgid "database for the pinned Python dependencies of tracked modules. A module is listed because it declares an affected version, not because it uses the affected code: a starting point for review."
+msgstr "base de datos para las dependencias Python fijadas de los módulos seguidos. Un módulo aparece porque declara una versión afectada, no porque use el código afectado: un punto de partida para la revisión."
+
+msgid "default, …"
+msgstr "por defecto, …"
+
+msgid "every addon"
+msgstr "todos los addons"
+
+msgid "folds it,"
+msgstr "lo pliega,"
+
+msgid "in a migration PR"
+msgstr "en una PR de migración"
+
+msgid "lays the cards out again."
+msgstr "recoloca las tarjetas."
+
+msgid "module folder"
+msgstr "carpeta del módulo"
+
+msgid "module page"
+msgstr "página del módulo"
+
+msgid "no CI data"
+msgstr "sin datos de CI"
+
+msgid "no fix"
+msgstr "sin corrección"
+
+msgid "not started"
+msgstr "sin empezar"
+
+msgid "of commits"
+msgstr "de los commits"
+
+msgid "projects with a lint hook older than the fleet's newest"
+msgstr "proyectos con un hook de lint más antiguo que el más reciente de la flota"
+
+msgid "reStructuredText"
+msgstr "reStructuredText"
+
+msgid "records it renamed or merged into one that does. Renames it doesn't know of read as not started."
+msgstr "lo registra como renombrado o fusionado en uno que sí. Los renombrados que no conoce figuran como sin empezar."
+
+msgid "static analysis"
+msgstr "análisis estático"
+
+msgid "— that's what's actually blocking the jump. Modules never seen before show up as"
+msgstr "— que es lo que realmente bloquea el salto. Los módulos nunca vistos aparecen como"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "(based on {0} merged PR{1} {2})"
+msgstr "(basado en {0} PR{1} fusionada{1} {2})"
+
+msgid "(for {0}){1}"
+msgstr "(para {0}){1}"
+
+msgid "(inherited route override)"
+msgstr "(sobrescritura de ruta heredada)"
+
+msgid "({0}% of their commits)"
+msgstr "({0}% de sus commits)"
+
+msgid ": at no indexed version before it, under this name or one OpenUpgrade renamed into it."
+msgstr ": en ninguna versión indexada antes, con este nombre o con uno que OpenUpgrade renombró a este."
+
+msgid "A migration PR to {0} is open"
+msgstr "Hay una PR de migración a {0} abierta"
+
+msgid "A whole {0} (or {1}) or just its {2} section."
+msgstr "Un {0} entero (o {1}) o solo su sección {2}."
+
+msgid "Add to a pack (saved in this browser only)"
+msgstr "Añadir a un pack (se guarda solo en este navegador)"
+
+msgid "Add to favorites (saved in this browser only)"
+msgstr "Añadir a favoritos (se guarda solo en este navegador)"
+
+msgid "Added / removed / changed"
+msgstr "Añadidos / eliminados / modificados"
+
+msgid "Another open PR/MR is also migrating this module at this Odoo version"
+msgstr "Otra PR/MR abierta también está migrando este módulo en esta versión de Odoo"
+
+msgid "Atom feeds; add {0} or {1} to filter (see {2})."
+msgstr "Feeds Atom; añade {0} o {1} para filtrar (ver {2})."
+
+msgid "Best candidate for {0}: green checks, approval, not a draft, recent activity"
+msgstr "Mejor candidata para {0}: checks en verde, aprobada, no es borrador, actividad reciente"
+
+msgid "Collector activity: organization scans, migration PR/MR changes and new findings, newest first."
+msgstr "Actividad del recolector: análisis de organizaciones, cambios en PRs/MRs de migración y nuevos hallazgos, del más reciente al más antiguo."
+
+msgid "Commercial licenses needed: {0}"
+msgstr "Licencias comerciales necesarias: {0}"
+
+msgid "Commits per Odoo version; most in {0}"
+msgstr "Commits por versión de Odoo; la mayoría en {0}"
+
+msgid "Commits per month by people, last {0} months with activity"
+msgstr "Commits por mes de personas, últimos {0} meses con actividad"
+
+msgid "Committers · {0}"
+msgstr "Contribuidores · {0}"
+
+msgid "Copy gives just this workflow, indented to paste under the {0} of {1}; Download gives the whole file above."
+msgstr "Copiar entrega solo este flujo, con sangría para pegarlo bajo {0} de {1}; Descargar entrega el archivo completo de arriba."
+
+msgid "Countries with {0} modules or {1} repositories (every addon in them counts). Choose a version and a country to list its modules."
+msgstr "Países con módulos de {0} o repositorios de {1} (cuenta cada addon que contienen). Elige una versión y un país para listar sus módulos."
+
+msgid "Direct Odoo {0}"
+msgstr "{0} directas de Odoo"
+
+msgid "Each PR, MR or branch merged in through {0}, with the projects carrying it. Merged or closed upstream first: those can go."
+msgstr "Cada PR, MR o rama fusionada mediante {0}, con los proyectos que la llevan. Primero las fusionadas o cerradas en upstream: esas pueden quitarse."
+
+msgid "Every Odoo version together; the bar marks the versions committed to, within their own {0} – {1}."
+msgstr "Todas las versiones de Odoo juntas; la barra marca las versiones con commits, dentro de su propio rango {0} – {1}."
+
+msgid "Every collected branch with a Doodba layout ({0} and {1}). {2} counts the commits on the template's default branch since the one the project was last generated or updated from (copier's {3}). Lint hooks are compared with the newest revision the fleet runs for the same Odoo version."
+msgstr "Cada rama recopilada con estructura Doodba ({0} y {1}). {2} cuenta los commits de la rama por defecto de la plantilla desde el que se generó o actualizó por última vez el proyecto ({3} de copier). Los hooks de lint se comparan con la revisión más reciente que usa la flota para la misma versión de Odoo."
+
+msgid "Every installable module of {0} is in {1}."
+msgstr "Todos los módulos instalables de {0} están en {1}."
+
+msgid "Extracted from the source by best-effort static analysis (no code is executed); details may be incomplete."
+msgstr "Extraído del código fuente mediante análisis estático de mejor esfuerzo (no se ejecuta código); los detalles pueden estar incompletos."
+
+msgid "Favourite month: active in it {0} of {1} years"
+msgstr "Mes favorito: activo en él {0} de {1} años"
+
+msgid "First tracked commit in the last 12 months"
+msgstr "Primer commit seguido en los últimos 12 meses"
+
+msgid "First-time committers per year, {0} to {1}; the peak year had {2}"
+msgstr "Contribuidores por primera vez al año, de {0} a {1}; el año con más tuvo {2}"
+
+msgid "Grave / minor (static analysis)"
+msgstr "Grave / menor (análisis estático)"
+
+msgid "Grave / minor ({0})"
+msgstr "Grave / menor ({0})"
+
+msgid "Grave findings, {0}"
+msgstr "Hallazgos graves, {0}"
+
+msgid "In dependencies of {0} module{1} · {2}"
+msgstr "En dependencias de {0} módulo{1} · {2}"
+
+msgid "In {0} repositor{1}"
+msgstr "En {0} repositorio(s)"
+
+msgid "In {0}, not in {1}"
+msgstr "En {0}, no en {1}"
+
+msgid "Inherits {0}"
+msgstr "Hereda {0}"
+
+msgid "Installable modules per Odoo version, shaded against each repository's busiest one. The bar is {0} → {1}: migrated, in a PR, not started. Most pending work first; pick one to list its modules."
+msgstr "Módulos instalables por versión de Odoo, sombreados según el repositorio más activo. La barra es {0} → {1}: migrados, en una PR, sin empezar. Primero el trabajo más pendiente; elige uno para listar sus módulos."
+
+msgid "Last activity {0} day{1} ago"
+msgstr "Última actividad hace {0} día{1}"
+
+msgid "Last job failed: {0}"
+msgstr "Falló el último trabajo: {0}"
+
+msgid "Less"
+msgstr "Menos"
+
+msgid "Longest-followed module: {0}, {1} → {2}"
+msgstr "Módulo seguido durante más tiempo: {0}, {1} → {2}"
+
+msgid "Made by {0} bot{1} (translations, CI, merges)"
+msgstr "Hecho por {0} bot{1} (traducciones, CI, fusiones)"
+
+msgid "Migration PR to {0}: {1}"
+msgstr "PR de migración a {0}: {1}"
+
+msgid "Most commits in {0}"
+msgstr "Más commits en {0}"
+
+msgid "New in {0}"
+msgstr "Nuevo en {0}"
+
+msgid "No Doodba project collected yet: add the organization or group that holds them to {0} (the {1} template also collects their private addons)."
+msgstr "Aún no se ha recopilado ningún proyecto Doodba: añade la organización o grupo que los contiene a {0} (la plantilla {1} también recopila sus addons privados)."
+
+msgid "No advisories match the filter in Odoo {0}."
+msgstr "Ningún aviso coincide con el filtro en Odoo {0}."
+
+msgid "No open migration PRs/MRs tracked."
+msgstr "No se siguen PRs/MRs de migración abiertas."
+
+msgid "Not collected at {0}"
+msgstr "No recopilado en {0}"
+
+msgid "Not in the merged module (for a port: its previous version)"
+msgstr "No está en el módulo fusionado (para un porte: su versión anterior)"
+
+msgid "Nothing here for {0} → {1}"
+msgstr "Nada aquí para {0} → {1}"
+
+msgid "Odoo {0}"
+msgstr "Odoo {0}"
+
+msgid "Of the {0} collected addons: {1} in {2}, {3} in a migration PR, {4} missing"
+msgstr "De los {0} addons recopilados: {1} en {2}, {3} en una PR de migración, {4} faltan"
+
+msgid "Only {0}/{1} URLs to public addresses are scanned — private, loopback and cloud-metadata addresses are refused."
+msgstr "Solo se analizan URLs {0}/{1} a direcciones públicas: las direcciones privadas, de loopback y de metadatos de la nube se rechazan."
+
+msgid "Open PRs and findings for {0}"
+msgstr "PRs abiertas y hallazgos de {0}"
+
+msgid "Open PRs/MRs porting a module to Odoo {0}. Click a status to filter."
+msgstr "PRs/MRs abiertas que portan un módulo a Odoo {0}. Pulsa un estado para filtrar."
+
+msgid "OpenUpgrade, {0}"
+msgstr "OpenUpgrade, {0}"
+
+msgid "Opened {0} day{1} ago"
+msgstr "Abierta hace {0} día{1}"
+
+msgid "Other repositories: {0}%"
+msgstr "Otros repositorios: {0}%"
+
+msgid "Ports (not merged in that version)"
+msgstr "Portes (no fusionados en esa versión)"
+
+msgid "Public methods ({0})"
+msgstr "Métodos públicos ({0})"
+
+msgid "Pull/merge requests and branches merged on top of a repository's base: code the project runs that upstream may not have. A merged PR can leave repos.yaml once the base has it; a closed one was never merged."
+msgstr "Pull/merge requests y ramas fusionadas sobre la base de un repositorio: código que el proyecto ejecuta y que upstream puede no tener. Una PR fusionada puede salir de repos.yaml cuando la base ya la tiene; una cerrada nunca se fusionó."
+
+msgid "PyPI advisories on the pinned pip dependencies of {0} project{1}"
+msgstr "Avisos de PyPI sobre las dependencias pip fijadas de {0} proyecto{1}"
+
+msgid "Python packages / system binaries"
+msgstr "Paquetes Python / binarios del sistema"
+
+msgid "Ranked by the {0} modules that depend on them. Renames and merges OpenUpgrade records are left out; others still read as missing."
+msgstr "Ordenados por los módulos de {0} que dependen de ellos. Los renombrados y fusiones que registra OpenUpgrade se omiten; el resto siguen figurando como faltantes."
+
+msgid "Replaces {0} modules renamed or merged into it"
+msgstr "Reemplaza {0} módulos renombrados o fusionados en él"
+
+msgid "Repositories with a module of this technical name (the same name, not necessarily the same code)"
+msgstr "Repositorios con un módulo de este nombre técnico (el mismo nombre, no necesariamente el mismo código)"
+
+msgid "Revisions of each {0} hook per Odoo version; the newest the fleet runs is in bold."
+msgstr "Revisiones de cada hook {0} por versión de Odoo; la más reciente que usa la flota va en negrita."
+
+msgid "Route(s)"
+msgstr "Ruta(s)"
+
+msgid "Security findings: grave / minor"
+msgstr "Hallazgos de seguridad: graves / menores"
+
+msgid "Since {0}"
+msgstr "Desde {0}"
+
+msgid "Template changes since {0}"
+msgstr "Cambios de plantilla desde {0}"
+
+msgid "The same {0} entry configured differently in projects of one Odoo version (target branch or patches)."
+msgstr "La misma entrada {0} configurada de forma distinta en proyectos de una misma versión de Odoo (rama destino o parches)."
+
+msgid "Their PR/MR is merged or closed upstream"
+msgstr "Su PR/MR está fusionada o cerrada en upstream"
+
+msgid "Upload your {0} and get back every module it depends on, plus the Python and system packages behind them — nothing missing when you deploy — and a license review of the whole set. {1}"
+msgstr "Sube tu {0} y obtén todos los módulos de los que depende, más los paquetes Python y del sistema que hay detrás — sin que falte nada al desplegar — y una revisión de licencias de todo el conjunto. {1}"
+
+msgid "Used by {0} Doodba project{1}"
+msgstr "Usado por {0} proyecto{1} Doodba"
+
+msgid "What PyPI reports for the exact pins of {0} (the addons' own Python dependencies are on {1})."
+msgstr "Lo que PyPI informa sobre los pins exactos de {0} (las dependencias Python propias de los addons están en {1})."
+
+msgid "What a {0} would bring"
+msgstr "Lo que traería un {0}"
+
+msgid "What the collector does with each module or pull request it finds. Open one, change it or build a new one, then copy its YAML into {0} (next to {1}): nothing is saved here. It's checked against the collector's own rules as you go."
+msgstr "Lo que hace el recolector con cada módulo o pull request que encuentra. Abre uno, cámbialo o crea uno nuevo, y copia su YAML en {0} (junto a {1}): aquí no se guarda nada. Se comprueba con las reglas del propio recolector mientras trabajas."
+
+msgid "Where their commits go"
+msgstr "Adónde van sus commits"
+
+msgid "Workflows (same trigger) it runs after, on each module or PR: only once they finished, starting from what they computed"
+msgstr "Flujos (mismo disparador) tras los que se ejecuta, en cada módulo o PR: solo cuando han terminado, partiendo de lo que calcularon"
+
+msgid "added"
+msgstr "añadido"
+
+msgid "added {0}"
+msgstr "añadido {0}"
+
+msgid "addons enabled, {0} of them collected"
+msgstr "addons activados, {0} de ellos recopilados"
+
+msgid "advisories"
+msgstr "avisos"
+
+msgid "args: {0}"
+msgstr "args: {0}"
+
+msgid "behind the template, {0} on its latest commit"
+msgstr "por detrás de la plantilla, {0} en su último commit"
+
+msgid "best for {0}"
+msgstr "mejor para {0}"
+
+msgid "changed"
+msgstr "modificado"
+
+msgid "credentials"
+msgstr "credenciales"
+
+msgid "current"
+msgstr "actual"
+
+msgid "draft"
+msgstr "borrador"
+
+msgid "failing"
+msgstr "fallando"
+
+msgid "grave"
+msgstr "grave"
+
+msgid "green"
+msgstr "verde"
+
+msgid "in repos.yaml (that's how {0} works), so a token can come from the build environment instead."
+msgstr "en repos.yaml (así funciona {0}), de modo que un token puede venir del entorno de compilación."
+
+msgid "modules"
+msgstr "módulos"
+
+msgid "modules and every addon of its {0} repositories."
+msgstr "módulos y todos los addons de sus {0} repositorios."
+
+msgid "new"
+msgstr "nuevo"
+
+msgid "of the {0} collected exist in {1}"
+msgstr "de los {0} recopilados existen en {1}"
+
+msgid "of {0} is in {1}: {2} of {3} modules"
+msgstr "de {0} está en {1}: {2} de {3} módulos"
+
+msgid "on the template's latest commit, {0}"
+msgstr "en el último commit de la plantilla, {0}"
+
+msgid "patches (PRs, branches) merged in by {0} projects"
+msgstr "parches (PRs, ramas) fusionados por {0} proyectos"
+
+msgid "patches merged on top of {0} aggregated repositories"
+msgstr "parches fusionados sobre {0} repositorios agregados"
+
+msgid "pending"
+msgstr "pendiente"
+
+msgid "port"
+msgstr "porte"
+
+msgid "projects (one per repository and Odoo version)"
+msgstr "proyectos (uno por repositorio y versión de Odoo)"
+
+msgid "project{0} with credentials written outside repos.yaml (pip.txt...); a token in repos.yaml is usual"
+msgstr "proyecto{0} con credenciales escritas fuera de repos.yaml (pip.txt...); un token en repos.yaml es lo habitual"
+
+msgid "removed"
+msgstr "eliminado"
+
+msgid "source"
+msgstr "código"
+
+msgid "template commits behind, from {0}"
+msgstr "commits de la plantilla por detrás, desde {0}"
+
+#: web/js
+msgid "unknown"
+msgstr "desconocido"
+
+msgid "via {0}"
+msgstr "vía {0}"
+
+msgid "{0} ({1}): activity"
+msgstr "{0} ({1}): actividad"
+
+msgid "{0} Credentials written in"
+msgstr "{0} Credenciales escritas en"
+
+msgid "{0} HTTP endpoint{1}"
+msgstr "{0} endpoint{1} HTTP"
+
+msgid "{0} Migrated from {1}"
+msgstr "{0} Migrados desde {1}"
+
+msgid "{0} Name collision in {1}: {2} have {3}"
+msgstr "{0} Colisión de nombres en {1}: {2} tienen {3}"
+
+msgid "{0} Odoo module{1} tracked across all registered organizations."
+msgstr "{0} módulo{1} de Odoo seguido{1} en todas las organizaciones registradas."
+
+msgid "{0} Token in {1}: usual for a read-only token shared by the team; check it can only read."
+msgstr "{0} Token en {1}: habitual para un token de solo lectura compartido por el equipo; comprueba que solo pueda leer."
+
+msgid "{0} advisories"
+msgstr "{0} avisos"
+
+msgid "{0} behind"
+msgstr "{0} por detrás"
+
+msgid "{0} commit{1}"
+msgstr "{0} commit{1}"
+
+msgid "{0} done"
+msgstr "{0} hechos"
+
+msgid "{0} dup."
+msgstr "{0} dup."
+
+msgid "{0} duplicate"
+msgstr "{0} duplicadas"
+
+msgid "{0} field{1}"
+msgstr "{0} campo{1}"
+
+msgid "{0} grave and {1} minor static-analysis findings; not a security audit"
+msgstr "{0} hallazgos graves y {1} menores de análisis estático; no es una auditoría de seguridad"
+
+msgid "{0} grave finding{1}"
+msgstr "{0} hallazgo{1} grave{1}"
+
+msgid "{0} in a migration PR · {1} not started"
+msgstr "{0} en una PR de migración · {1} sin empezar"
+
+msgid "{0} migrated ({1} renamed or merged upstream), {2} in a migration PR, {3} not started, out of {4} in {5}"
+msgstr "{0} migrados ({1} renombrados o fusionados en upstream), {2} en una PR de migración, {3} sin empezar, de {4} en {5}"
+
+msgid "{0} migrated ({1} renamed or merged), {2} in a migration PR, {3} not started, out of {4}"
+msgstr "{0} migrados ({1} renombrados o fusionados), {2} en una PR de migración, {3} sin empezar, de {4}"
+
+msgid "{0} migration note{1}"
+msgstr "{0} nota{1} de migración"
+
+msgid "{0} minor · static analysis"
+msgstr "{0} menores · análisis estático"
+
+msgid "{0} model{1}"
+msgstr "{0} modelo{1}"
+
+msgid "{0} module{1} for {2}"
+msgstr "{0} módulo{1} para {2}"
+
+msgid "{0} renamed or merged"
+msgstr "{0} renombrados o fusionados"
+
+msgid "{0} rotten"
+msgstr "{0} obsoletas"
+
+msgid "{0} versions"
+msgstr "{0} versiones"
+
+msgid "{0} view{1}"
+msgstr "{0} vista{1}"
+
+msgid "{0} {1}: {2} modules"
+msgstr "{0} {1}: {2} módulos"
+
+msgid "{0} · {1} · what changed between two Odoo versions of this module, from the stored manifest and static code analysis (models, views and routes in Dev mode)."
+msgstr "{0} · {1} · qué cambió entre dos versiones de Odoo de este módulo, a partir del manifiesto almacenado y el análisis estático del código (modelos, vistas y rutas en modo Dev)."
+
+msgid "{0} → {1}, by repository and module"
+msgstr "{0} → {1}, por repositorio y módulo"
+
+msgid "{0}, against the newest revision the fleet runs for {1}."
+msgstr "{0}, frente a la revisión más reciente que usa la flota para {1}."
+
+msgid "{0}, installed in the image on top of the addons' own."
+msgstr "{0}, instalado en la imagen además de los propios del addon."
+
+msgid "{0}, not in {1}"
+msgstr "{0}, no en {1}"
+
+msgid "{0}. A commit that touches several modules counts once per module."
+msgstr "{0}. Un commit que toca varios módulos cuenta una vez por módulo."
+
+msgid "{0}: the base each one is built from, and the patches merged on top."
+msgstr "{0}: la base de la que se construye cada uno y los parches fusionados encima."
+
+msgid "{0}d open"
+msgstr "{0}d abierta"
+
+msgid "{0}d quiet"
+msgstr "{0}d sin actividad"
+
+msgid "{0}{1} more"
+msgstr "{0}{1} más"
+
+msgid "Production"
+msgstr "Producción"
+
+msgid "Demo"
+msgstr "Demo"
+
+msgid "Off"
+msgstr "Apagada"
+
+msgid "no .gitlab-ci.yml: demo environment unknown"
+msgstr "sin .gitlab-ci.yml: se desconoce si hay demo"
+
+msgid "no demo environment deployed (DEPLOY_DEMO_ENVIRONMENT)"
+msgstr "sin entorno de demo desplegado (DEPLOY_DEMO_ENVIRONMENT)"
+
+msgid "demo from branch {0}"
+msgstr "demo desde la rama {0}"
+
+msgid "the default branch"
+msgstr "la rama por defecto"
+
+msgid "cloned from production"
+msgstr "clonada de producción"
+
+msgid "database reset on deploy"
+msgstr "base de datos reiniciada al desplegar"
+
+msgid "named {0}"
+msgstr "llamada {0}"
+
+msgid "Verified instance"
+msgstr "Instancia verificada"
+
+msgid "What the running instance answered to the collector, not what the repository says."
+msgstr "Lo que respondió la instancia en marcha al collector, no lo que dice el repositorio."
+
+msgid "{0} active users"
+msgstr "{0} usuarios activos"
+
+msgid "checked"
+msgstr "consultada"
+
+msgid "Last query failed (showing the previous answer, if any)"
+msgstr "La última consulta falló (se muestra la respuesta anterior, si la hay)"
+
+msgid "Enabled in addons.yaml but not installed here"
+msgstr "Activados en addons.yaml pero no instalados aquí"
+
+msgid "{0} installed modules"
+msgstr "{0} módulos instalados"
+
+#: web/js
+msgid "Loading..."
+msgstr "Cargando..."
+
+#: web/js
+msgid "Failed to load logs."
+msgstr "No se pudieron cargar los registros."
+
+#: web/js
+msgid "Server responded with {0}"
+msgstr "El servidor respondió con {0}"
+
+#: web/js
+msgid "Search module ({0})..."
+msgstr "Buscar módulo ({0})..."
+
+#: web/js
+msgid "No modules found in the file."
+msgstr "No se encontraron módulos en el archivo."
+
+#: web/js
+msgid "❓ Unknown to this system, not reported as missing: {0}"
+msgstr "❓ Desconocidos para este sistema, no se informan como faltantes: {0}"
+
+#: web/js
+msgid "Resume layout"
+msgstr "Reanudar disposición"
+
+#: web/js
+msgid "Localization: {0} - Odoo Module Metadata"
+msgstr "Localización: {0} - Odoo Module Metadata"
+
+#: web/js
+msgid "Remove {0}"
+msgstr "Quitar {0}"
+
+#: web/js
+msgid "Odoo version this pack was built for"
+msgstr "Versión de Odoo para la que se creó este pack"
+
+#: web/js
+msgid "Export for Odoo {0} — open the pack's share link to convert it to another version first"
+msgstr "Exportar para Odoo {0} — abre el enlace para compartir del pack para convertirlo antes a otra versión"
+
+#: web/js
+msgid "Open a shareable link (and QR code) for this pack"
+msgstr "Abrir un enlace para compartir (y código QR) de este pack"
+
+#: web/js
+msgid "More actions"
+msgstr "Más acciones"
+
+#: web/js
+msgid "Rename"
+msgstr "Renombrar"
+
+#: web/js
+msgid "Delete pack"
+msgstr "Eliminar pack"
+
+#: web/js
+msgid "Delete pack \"{0}\"?"
+msgstr "¿Eliminar el pack \"{0}\"?"
+
+#: web/js
+msgid "Still loading Odoo versions - try again in a second."
+msgstr "Aún se cargan las versiones de Odoo: inténtalo de nuevo en un segundo."
+
+#: web/js
+msgid "Checking…"
+msgstr "Comprobando…"
+
+#: web/js
+msgid " Copied!"
+msgstr " ¡Copiado!"
+
+#: web/js
+msgid " Press Ctrl+C"
+msgstr " Pulsa Ctrl+C"
+
+#: web/js
+msgid " Copy"
+msgstr " Copiar"
+
+#: web/js
+msgid "Copied!"
+msgstr "¡Copiado!"
+
+#: web/js
+msgid "Press Ctrl+C"
+msgstr "Pulsa Ctrl+C"
+
+#: web/js
+msgid "Not available for Odoo {0}"
+msgstr "No disponible para Odoo {0}"
+
+#: web/js
+msgid "+ New pack…"
+msgstr "+ Nuevo pack…"
+
+#: web/js
+msgid "{0} module(s) not found in {1}"
+msgstr "{0} módulo(s) no encontrado(s) en {1}"
+
+#: web/js
+msgid "Could not load the modules."
+msgstr "No se pudieron cargar los módulos."
+
+#: web/js
+msgid "{0} module(s)"
+msgstr "{0} módulo(s)"
+
+#: web/js
+msgid "Failed to resolve dependencies for this pack."
+msgstr "No se pudieron resolver las dependencias de este pack."
+
+#: web/js
+msgid "No modules found for Odoo {0} in this pack."
+msgstr "No se encontraron módulos para Odoo {0} en este pack."
+
+#: web/js
+msgid "Processing…"
+msgstr "Procesando…"
+
+#: web/js
+msgid "{0} critical"
+msgstr "{0} críticos"
+
+#: web/js
+msgid "{0} high severity"
+msgstr "{0} de severidad alta"
+
+#: web/js
+msgid "Highest observed severity"
+msgstr "Severidad más alta observada"
+
+#: web/js
+msgid "Unknown"
+msgstr "Desconocido"
+
+#: web/js
+msgid "Supported"
+msgstr "Compatible"
+
+#: web/js
+msgid "Outdated"
+msgstr "Obsoleta"
+
+#: web/js
+msgid "source: {0}"
+msgstr "origen: {0}"
+
+#: web/js
+msgid "Yes"
+msgstr "Sí"
+
+#: web/js
+msgid "No"
+msgstr "No"
+
+#: web/js
+msgid "No critical points detected."
+msgstr "No se detectaron puntos críticos."
+
+#: web/js
+msgid "No security checks ran."
+msgstr "No se ejecutó ninguna comprobación de seguridad."
+
+#: web/js
+msgid "Total scan time"
+msgstr "Tiempo total del análisis"
+
+#: web/js
+msgid "Main endpoint TTFB"
+msgstr "TTFB del endpoint principal"
+
+#: web/js
+msgid "Main endpoint total"
+msgstr "Total del endpoint principal"
+
+#: web/js
+msgid "Instance not reachable."
+msgstr "Instancia no accesible."
+
+#: web/js
+msgid "info endpoint exposed"
+msgstr "endpoint de información expuesto"
+
+#: web/js
+msgid "manager exposed"
+msgstr "gestor expuesto"
+
+#: web/js
+msgid "no database exposure detected"
+msgstr "no se detectó exposición de bases de datos"
+
+#: web/js
+msgid "Not applicable: the target uses HTTP."
+msgstr "No aplica: el destino usa HTTP."
+
+#: web/js
+msgid "Certificate could not be inspected."
+msgstr "No se pudo inspeccionar el certificado."
+
+#: web/js
+msgid "trusted and valid"
+msgstr "de confianza y válido"
+
+#: web/js
+msgid "expired or not yet valid"
+msgstr "caducado o aún no válido"
+
+#: web/js
+msgid "self-signed"
+msgstr "autofirmado"
+
+#: web/js
+msgid "untrusted or hostname mismatch"
+msgstr "sin confianza o el nombre de host no coincide"
+
+#: web/js
+msgid "Subject"
+msgstr "Sujeto"
+
+#: web/js
+msgid "Issuer"
+msgstr "Emisor"
+
+#: web/js
+msgid "Validity"
+msgstr "Validez"
+
+#: web/js
+msgid "not provided"
+msgstr "no indicado"
+
+#: web/js
+msgid "{0} to {1}"
+msgstr "{0} a {1}"
+
+#: web/js
+msgid "SAN: {0}"
+msgstr "SAN: {0}"
+
+#: web/js
+msgid "Enumeration endpoint: HTTP {0}"
+msgstr "Endpoint de enumeración: HTTP {0}"
+
+#: web/js
+msgid "Module enumeration not available (endpoint gated or empty)."
+msgstr "Enumeración de módulos no disponible (endpoint restringido o vacío)."
+
+#: web/js
+msgid "Showing the first {0} modules."
+msgstr "Mostrando los primeros {0} módulos."
+
+#: web/js
+msgid "No session cookies seen."
+msgstr "No se vieron cookies de sesión."
+
+#: web/js
+msgid "not set"
+msgstr "sin definir"
+
+#: web/js
+msgid "no {0}"
+msgstr "sin {0}"
+
+#: web/js
+msgid "No endpoints probed."
+msgstr "No se sondeó ningún endpoint."
+
+#: web/js
+msgid "No probe received an HTTP response."
+msgstr "Ninguna sonda recibió respuesta HTTP."
+
+#: web/js
+msgid "Failed to reach the server: {0}"
+msgstr "No se pudo contactar con el servidor: {0}"
+
+#: web/js
+msgid "The request was rejected."
+msgstr "Se rechazó la petición."
+
+#: web/js
+msgid "Please enter an Odoo URL."
+msgstr "Introduce una URL de Odoo."
+
+#: web/js
+msgid "Expand sidebar"
+msgstr "Expandir barra lateral"
+
+#: web/js
+msgid "resolved {0} of {1}"
+msgstr "resueltos {0} de {1}"
+
+#: web/js
+msgid "not found"
+msgstr "no encontrado"
+
+#: web/js
+msgid "Pack name:"
+msgstr "Nombre del pack:"
+
+#: web/js
+msgid "Added \"{0}\" to your Packs (see Favorites & Packs)."
+msgstr "Se añadió «{0}» a tus Packs (ver Favoritos y packs)."
+
+#: web/js
+msgid "{0} module(s) not available for Odoo {1} were skipped."
+msgstr "Se omitieron {0} módulo(s) no disponibles para Odoo {1}."
+
+#: web/js
+msgid "Shared Odoo module pack — {0} module(s) for Odoo {1}"
+msgstr "Pack de módulos de Odoo compartido — {0} módulo(s) para Odoo {1}"
+
+#: web/js
+msgid "Shared Odoo module pack — {0} module(s)"
+msgstr "Pack de módulos de Odoo compartido — {0} módulo(s)"
+
+#: web/js
+msgid "For Odoo {0}"
+msgstr "Para Odoo {0}"
+
+#: web/js
+msgid "{0} of {1}"
+msgstr "{0} de {1}"
+
+#: web/js
+msgid "Failed to load this tab."
+msgstr "No se pudo cargar esta pestaña."

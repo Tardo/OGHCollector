@@ -12,6 +12,19 @@ import {libStylePlugin} from 'rollup-plugin-lib-style';
 
 const is_production = process.env.NODE_ENV === 'production';
 
+// Identifies this build: the bundle carries it (`virtual:build-id`) and the
+// server puts the one in static/auto/build-id.txt in every page, so main.mjs
+// can tell a page cached from before a deploy (see web/js/utils/build-id.mjs).
+const build_id = Date.now().toString(36);
+const build_id_plugin = {
+  name: 'build-id',
+  resolveId: id => (id === 'virtual:build-id' ? '\0build-id' : null),
+  load: id => (id === '\0build-id' ? `export default '${build_id}';` : null),
+  generateBundle() {
+    this.emitFile({type: 'asset', fileName: 'build-id.txt', source: build_id});
+  },
+};
+
 export default [
   {
     input: [
@@ -78,6 +91,7 @@ export default [
         include: /node_modules/,
       }),
       json(),
+      build_id_plugin,
 
       libStylePlugin({
         importCSS: false,

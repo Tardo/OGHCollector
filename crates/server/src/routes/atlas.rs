@@ -72,7 +72,7 @@ fn set_main_node_attributes(
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(50, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ format!("{_workspace}:{odoo_version}") }"#

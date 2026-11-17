@@ -178,6 +178,15 @@ pub fn num(value: Value) -> String {
         .unwrap_or_else(|_| value.to_string())
 }
 
+/// `build_id()` template function: the id of the JS bundle build (written by rollup), so a page
+/// cached from before a deploy can tell its bundle changed (`web/js/utils/build-id.mjs`). Empty
+/// when the bundle isn't built: the check is then skipped.
+pub fn build_id() -> String {
+    std::fs::read_to_string("static/auto/build-id.txt")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
 /// `avatar` filter: initials and a stable hue (0-359) for a committer name.
 /// A parenthesized suffix ("Name (ACME)") is ignored; one word gives two letters.
 pub fn avatar(name: String) -> Value {

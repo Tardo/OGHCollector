@@ -130,7 +130,7 @@ fn get_group(
     create = r#"
         {
             let ttl_secs = *SERVER_CONFIG.get_cache_ttl();
-            TimedSizedCache::with_size_and_lifespan_and_refresh(16, std::time::Duration::from_secs(ttl_secs), true)
+            TimedSizedCache::with_size_and_lifespan_and_refresh(16, std::time::Duration::from_secs(ttl_secs), false)
         }
     "#,
     convert = r#"{ _workspace.to_string() }"#
@@ -333,6 +333,11 @@ pub async fn route_tab(
     Ok(HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html.0))
+}
+
+/// Cache warm-up (`warmup.rs`).
+pub(crate) fn warm(conn: &mut SqliteConnection, key: &str) {
+    compute_modules_page_data_prime_cache(conn, key);
 }
 
 #[cfg(test)]

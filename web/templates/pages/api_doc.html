@@ -14,6 +14,7 @@
 {% endblock %}
 {% block content %}
 {{ super() }}
+<mirlo-code-panels>
 
 {#- `params`: rows of [name, "path"|"query", type, required, description (HTML)]. The call
     block's body is the endpoint description. `example`/`schema` are plain text (autoescaped);
@@ -871,4 +872,5 @@ ITEM_DIFF = {
         {% endcall %}
     </div>
 </div>
+</mirlo-code-panels>
 {% endblock %}

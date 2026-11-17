@@ -892,3 +892,27 @@ html[data-mode='user'] .dev-only {
   color: var(--bs-body-color) !important;
   background-color: var(--bs-tertiary-bg) !important;
 }
+
+// Shell controls (components/shell.mjs) and page components wrap
+// server-rendered markup: they must not take part in the layout.
+:is(
+    mirlo-sidebar-toggle,
+    mirlo-theme-toggle,
+    mirlo-lang-select,
+    mirlo-workspace-select,
+    mirlo-mode-switch,
+    mirlo-search-palette,
+    mirlo-module,
+    mirlo-modules,
+    mirlo-osv,
+    mirlo-migration,
+    mirlo-projects,
+    mirlo-code-panels,
+    mirlo-favorites,
+    mirlo-pack,
+    mirlo-scan,
+    mirlo-localization,
+    mirlo-workflows
+  ) {
+  display: contents;
+}

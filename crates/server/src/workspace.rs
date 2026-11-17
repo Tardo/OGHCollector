@@ -38,6 +38,29 @@ impl Workspaces {
         names(&self.global)
     }
 
+    /// Every (shared, own-only) pool pair a visitor can get, the whole-DB one first: the cache
+    /// warm-up (`warmup.rs`) fills what their requests would, under the same keys.
+    pub fn all_areas(&self) -> Vec<(AreaPool, AreaPool)> {
+        std::iter::once(None)
+            .chain(self.names().into_iter().map(Some))
+            .map(|ws| {
+                let ws = ws.as_deref();
+                let key = ws.unwrap_or_default().to_string();
+                let own_key = ws.map_or(String::new(), |w| format!("{w}\0own"));
+                (
+                    AreaPool {
+                        pool: self.pool(ws, false),
+                        key,
+                    },
+                    AreaPool {
+                        pool: self.pool(ws, true),
+                        key: own_key,
+                    },
+                )
+            })
+            .collect()
+    }
+
     fn pool(&self, ws: Option<&str>, own: bool) -> Pool {
         let Some(ws) = ws else {
             return self.global.clone();

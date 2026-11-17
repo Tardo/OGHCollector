@@ -9,6 +9,7 @@
 {% endblock %}
 {% block content %}
 {{ super() }}
+<mirlo-localization>
 <header class="page-header">
     <h1>{{ "Localizations"|t }}</h1>
     <p class="page-header-desc">{% set _i70 %}<code>l10n_XX</code>{% endset %}{% set _i71 %}<code>l10n-*</code>{% endset %}{{ "Countries with {0} modules or {1} repositories (every addon in them counts). Choose a version and a country to list its modules."|t(_i70, _i71) }}</p>
@@ -42,4 +43,5 @@
 {% else %}
 <p class="text-body-secondary">{{ "No localization modules indexed yet."|t }}</p>
 {% endif %}
+</mirlo-localization>
 {% endblock %}

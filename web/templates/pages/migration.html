@@ -9,6 +9,7 @@
 {% endblock %}
 {% block content %}
 {{ super() }}
+<mirlo-migration>
 {% from "partials/report.html" import meter %}
 {# This page with another status filter or repository (`''` drops it). #}
 {% macro url(status, repo) -%}
@@ -154,4 +155,5 @@
     {% endif %}
 </section>
 {% endif %}
+</mirlo-migration>
 {% endblock %}
