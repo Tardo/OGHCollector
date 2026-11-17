@@ -245,6 +245,7 @@ async fn doodba_projects_answer_from_the_db() {
             "dependencies",
             "deploy",
             "exposed_credentials",
+            "instances",
             "last_commit_date",
             "linters",
             "next_odoo_version",

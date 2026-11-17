@@ -633,5 +633,12 @@
  "the default branch": "a rama por defecto",
  "cloned from production": "clonada de produción",
  "database reset on deploy": "base de datos reiniciada ao despregar",
- "named {0}": "chamada {0}"
+ "named {0}": "chamada {0}",
+ "Verified instance": "Instancia verificada",
+ "What the running instance answered to the collector, not what the repository says.": "O que respondeu a instancia en marcha ao collector, non o que di o repositorio.",
+ "{0} active users": "{0} usuarios activos",
+ "checked": "consultada",
+ "Last query failed (showing the previous answer, if any)": "A última consulta fallou (móstrase a resposta anterior, se a hai)",
+ "Enabled in addons.yaml but not installed here": "Activados en addons.yaml pero non instalados aquí",
+ "{0} installed modules": "{0} módulos instalados"
 }

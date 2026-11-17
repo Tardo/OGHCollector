@@ -18,6 +18,10 @@
 #             the root too)
 #   git:      GH (default) or GL
 #   base_url: GitLab API URL of a self-hosted instance (default: gitlab.com)
+#   instance: ask the real prod/demo of each Doodba project it finds (Odoo JSON-RPC, API key
+#             from a secret; see crates/collector/src/instance.rs). Example:
+#               instance: {hosts: [client.example], login: ogh-bot,
+#                          api_key: "vault:secret/data/odoo/{repo}#api_key", db: "{repo}"}
 #   workspaces: portal workspaces its repos are shown in (default: all of
 #             them). Letters, digits, '-' and '_'. Entries with the same
 #             `source` share the union. Dependencies on modules of other

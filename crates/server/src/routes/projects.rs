@@ -668,6 +668,27 @@ pub async fn route_project(
         return Err(actix_web::error::ErrorNotFound("No such Doodba project"));
     };
 
+    // Declared in addons.yaml by name, yet absent from what an instance really has installed.
+    let instances = row.instances();
+    let not_installed = |env: &Option<doodba_project::Instance>| -> Vec<String> {
+        let Some(env) = env.as_ref().filter(|e| !e.modules.is_empty()) else {
+            return Vec::new();
+        };
+        let installed: std::collections::HashSet<&str> =
+            env.modules.iter().map(|m| m.name.as_str()).collect();
+        let mut missing: Vec<String> = addons
+            .iter()
+            .filter(|a| a.technical_name != "*" && !installed.contains(a.technical_name.as_str()))
+            .map(|a| a.technical_name.clone())
+            .collect();
+        missing.dedup();
+        missing
+    };
+    let not_installed = (
+        not_installed(&instances.prod),
+        not_installed(&instances.demo),
+    );
+
     let repos: Vec<Repo> = row.repos();
     let patches: Vec<PatchView> = repos
         .iter()
@@ -733,6 +754,8 @@ pub async fn route_project(
                 patches_done => patches.iter().filter(|p| matches!(p.state.as_deref(), Some("merged" | "closed"))).count(),
                 advisories => row.advisories(),
                 deploy => row.deploy(),
+                instances,
+                not_installed => [not_installed.0, not_installed.1],
                 // "<file> <host>"
                 exposed => row.exposed_elsewhere().iter().map(|e| {
                     let (file, host) = e.split_once(' ').unwrap_or((e, ""));

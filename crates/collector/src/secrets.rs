@@ -7,7 +7,10 @@
 //! $VAULT_ADDR/v1/<path>` with `X-Vault-Token` (`VAULT_TOKEN`, or the `vault_token` Docker secret;
 //! neither = a Vault Proxy with `use_auto_auth_token` adds it, and renews it), and
 //! `X-Vault-Namespace` (`VAULT_NAMESPACE`); `VAULT_CACERT` = a PEM bundle trusted besides the
-//! system's (only for Vault). The value is `data.data.<key>` (KV v2, whose API path has `data/`
+//! system's (only for Vault). With `VAULT_ROLE_ID` + `VAULT_SECRET_ID` (Docker secrets
+//! `vault_role_id`/`vault_secret_id`) the job logs in with AppRole (`POST
+//! /v1/auth/<VAULT_APPROLE_PATH, default approle>/login`) and uses the short-lived token it gets,
+//! once per job, instead of `VAULT_TOKEN`. The value is `data.data.<key>` (KV v2, whose API path has `data/`
 //! after the mount) else `data.<key>` (KV v1, other engines). Values never reach templates, logs
 //! or the ledger: errors name the reference, never a value or the token. Cached per process = per
 //! job (each is a child process), failures too: a Vault outage costs one timeout per reference
@@ -65,11 +68,89 @@ async fn vault(path: &str, key: &str) -> Result<String, String> {
         client = client.tls_certs_merge(certs);
     }
     let client = client.build().map_err(|e| e.to_string())?;
-    let token = config::read_secret("vault_token", "VAULT_TOKEN");
     let namespace = env::var("VAULT_NAMESPACE").ok();
+    let approle = config::read_secret("vault_role_id", "VAULT_ROLE_ID")
+        .zip(config::read_secret("vault_secret_id", "VAULT_SECRET_ID"));
+    let token = match approle {
+        Some((role_id, secret_id)) => {
+            let mount = env::var("VAULT_APPROLE_PATH").unwrap_or_else(|_| "approle".into());
+            Some(
+                login_token(
+                    &client,
+                    &addr,
+                    namespace.clone(),
+                    &mount,
+                    &role_id,
+                    &secret_id,
+                )
+                .await
+                .map_err(|err| format!("{at}: {err}"))?,
+            )
+        }
+        None => config::read_secret("vault_token", "VAULT_TOKEN"),
+    };
     read_vault(&client, &addr, token, namespace, path, key)
         .await
         .map_err(|err| format!("{at}: {err}"))
+}
+
+static LOGIN: LazyLock<tokio::sync::Mutex<Option<Result<String, String>>>> =
+    LazyLock::new(Default::default);
+
+/// The AppRole token of this job: one login, its failure too.
+async fn login_token(
+    client: &reqwest::Client,
+    addr: &str,
+    namespace: Option<String>,
+    mount: &str,
+    role_id: &str,
+    secret_id: &str,
+) -> Result<String, String> {
+    let mut known = LOGIN.lock().await;
+    if known.is_none() {
+        *known = Some(approle_login(client, addr, namespace, mount, role_id, secret_id).await);
+    }
+    known.clone().unwrap()
+}
+
+/// `client_token` Vault at `addr` gives for an AppRole login.
+async fn approle_login(
+    client: &reqwest::Client,
+    addr: &str,
+    namespace: Option<String>,
+    mount: &str,
+    role_id: &str,
+    secret_id: &str,
+) -> Result<String, String> {
+    let mount = mount.trim_matches('/');
+    let mut req = client
+        .post(format!(
+            "{}/v1/auth/{mount}/login",
+            addr.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({"role_id": role_id, "secret_id": secret_id}));
+    if let Some(namespace) = namespace.filter(|n| !n.is_empty()) {
+        req = req.header("X-Vault-Namespace", namespace);
+    }
+    let res = req.send().await.map_err(|e| e.without_url().to_string())?;
+    let status = res.status();
+    let body: Value = res.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        let why: Vec<&str> = body["errors"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        return Err(format!(
+            "AppRole login at auth/{mount} answered {status} {}",
+            why.join("; ")
+        ));
+    }
+    body["auth"]["client_token"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or(format!("AppRole login at auth/{mount} gave no token"))
 }
 
 /// `key` of what Vault at `addr` answers for `path`.
@@ -173,6 +254,39 @@ mod tests {
             "{denied}"
         );
         assert!(!denied.contains("wrong"), "the token stays out: {denied}");
+    }
+
+    #[tokio::test]
+    async fn approle_login_gives_a_token_and_never_echoes_the_secret_id() {
+        let app = axum::Router::new().route(
+            "/v1/auth/approle/login",
+            axum::routing::post(|axum::Json(b): axum::Json<Value>| async move {
+                if b["role_id"] == "r" && b["secret_id"] == "s3cret-id" {
+                    let body = serde_json::json!({"auth": {"client_token": "tok"}});
+                    (axum::http::StatusCode::OK, axum::Json(body))
+                } else {
+                    let body = serde_json::json!({"errors": ["invalid secret id"]});
+                    (axum::http::StatusCode::BAD_REQUEST, axum::Json(body))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = gitclient::http_client();
+        let login = |role: &'static str, secret: &'static str, mount: &'static str| {
+            let (client, addr) = (client.clone(), addr.clone());
+            async move { approle_login(&client, &addr, None, mount, role, secret).await }
+        };
+        assert_eq!(login("r", "s3cret-id", "approle").await, Ok("tok".into()));
+        assert_eq!(login("r", "s3cret-id", "/approle/").await, Ok("tok".into()));
+        let bad = login("r", "wrong-id", "approle").await.unwrap_err();
+        assert!(
+            bad.contains("400") && bad.contains("invalid secret id"),
+            "{bad}"
+        );
+        assert!(!bad.contains("wrong-id"), "{bad}");
+        assert!(login("r", "s3cret-id", "other").await.is_err());
     }
 
     #[tokio::test]

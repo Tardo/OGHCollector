@@ -169,6 +169,8 @@ fn seed(conn: &mut SqliteConnection) {
             .to_string(),
         deploy: r#"{"gitlab_ci":true,"prod":true,"prod_url":"https://erp.example","demo":true,"demo_branch":"18.0-demo","demo_clone_prod":true,"demo_url":"https://demo.example"}"#
             .to_string(),
+        instances: r#"{"prod":{"url":"https://erp.example","checked_at":"2026-11-14 10:00:00","server_version":"18.0-20260101","modules":[{"name":"base","version":"18.0.1.3","state":"installed"},{"name":"web_widget_demo","version":"18.0.1.0.0","state":"installed"}],"users":12,"languages":["es_ES"]}}"#
+            .to_string(),
     };
     let addons = [
         ("web".to_string(), "web_widget_demo".to_string()),

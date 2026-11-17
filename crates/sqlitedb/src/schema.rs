@@ -65,6 +65,7 @@ diesel::table! {
         exposed -> Text,
         advisories -> Text,
         deploy -> Text,
+        instances -> Text,
     }
 }
 

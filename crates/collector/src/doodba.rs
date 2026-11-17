@@ -12,6 +12,7 @@
 //!   demo's branch/clone/reset/name) and the hosts of the answers' `domains_prod`/`domains_test`:
 //!   the real instances and their URLs (`deploy`). The included CI template isn't fetched, so
 //!   an unset switch has its default (prod on, demo off).
+//! - `instances`: with `instance:` in the source, what the real prod/demo answered (`instance.rs`).
 //! - `.pre-commit-config.yaml` hook revs, `dependencies/*.txt`, the Dockerfile `FROM`.
 //!
 //! Template drift: each distinct template is cloned once per job under
@@ -42,12 +43,13 @@ use yaml_rust2::{Yaml, YamlLoader};
 
 use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models::dependency_osv;
-use sqlitedb::models::doodba_project::{self, Advisory, Deploy, Linter, Patch, Repo};
+use sqlitedb::models::doodba_project::{self, Advisory, Deploy, Instances, Linter, Patch, Repo};
 use sqlitedb::DbSqliteConnection as SqliteConnection;
 
 use crate::anygitclient::AnyGitClient;
 use crate::clients::github::GithubClient;
 use crate::gitclient::{git_auth_env, git_run, git_run_env, GitClient, RepoInfo};
+use crate::instance;
 use crate::project_workflow::FoundProject;
 use crate::pypi::PypiClient;
 use crate::workflow::{Deps, Engine};
@@ -654,6 +656,7 @@ pub(crate) async fn collect(
     gh_repo_ids: &[i64],
     version_odoo: u8,
     repos_path: &str,
+    instance: Option<&instance::Config>,
     flow: Flow<'_>,
 ) {
     let version = odoo_version_u8_to_string(&version_odoo);
@@ -704,6 +707,18 @@ pub(crate) async fn collect(
                     Some(drift(&dir, commit))
                 })
                 .unwrap_or_default();
+            // Kept as stored when nothing asks (no `instance:` in this run).
+            let stored_instances: Instances = stored
+                .as_ref()
+                .and_then(|m| serde_json::from_str(&m.instances).ok())
+                .unwrap_or_default();
+            let instances = match instance {
+                Some(config) => {
+                    instance::refresh(config, repo.get_name(), &p.deploy, &stored_instances).await
+                }
+                None => stored_instances,
+            };
+            let instances_json = serde_json::to_string(&instances).unwrap_or_default();
             if !p.exposed.is_empty() {
                 log::warn!(
                     "'{}': credentials in its project files: {}",
@@ -742,6 +757,7 @@ pub(crate) async fn collect(
                 exposed: serde_json::to_string(&p.exposed).unwrap_or_default(),
                 advisories: serde_json::to_string(&advisories).unwrap_or_default(),
                 deploy: serde_json::to_string(&p.deploy).unwrap_or_default(),
+                instances: instances_json,
             });
         }
         let stored = doodba_project::replace(

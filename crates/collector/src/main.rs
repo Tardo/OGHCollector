@@ -25,6 +25,7 @@ mod embeddings;
 mod gitclient;
 #[cfg(test)]
 mod golden;
+mod instance;
 mod listen;
 mod migration;
 mod openupgrade;
@@ -459,6 +460,7 @@ async fn main() {
         &gh_repo_ids,
         *odoo_ver,
         config.get_repos_path(),
+        config.get_instance(),
         doodba::Flow {
             engine: &engine,
             deps: &deps,

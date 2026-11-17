@@ -4,7 +4,7 @@
 //! versions, template, paths, git, base_url}]`; `deny_unknown_fields`, everything validated up
 //! front — it's meant to be machine-generated too, JSON/TOML work via the `config` crate) into
 //! those CLI arg lists. `pull_requests: migration|full` → 5th job arg (see `pull_requests.rs`);
-//! `workflows: [..]` → 6th (see `workflow.rs`); `actions: [..]` → 7th (see `actions.rs`). Run with
+//! `workflows: [..]` → 6th (see `workflow.rs`); `actions: [..]` → 7th (see `actions.rs`); `instance: {..}` → 8th, JSON or `-` (see `instance.rs`). Run with
 //! no args (or `--config <file>`, `--check` = validate + print jobs), `main.rs::run_config` runs
 //! each job as its own child process (`current_exe()`), so a panic/busy lock only skips that job,
 //! and runs the embeddings pass once at the end (`OGHCOLLECTOR_SKIP_EMBEDDINGS` on the children).
@@ -21,6 +21,7 @@ use std::fs;
 
 use oghutils::version::{odoo_version_string_to_u8, parse_odoo_version};
 
+use crate::instance;
 use crate::workflow::{self, Workflow};
 
 // `deny_unknown_fields`: a typo (`path:`, `version:`) in a hand-written or
@@ -66,6 +67,9 @@ struct CollectorSource {
     /// `pr_comment`, `pr_edit`, `pr_open`); the rest are dry-run.
     #[serde(default)]
     actions: Vec<String>,
+    /// Ask the real instances (prod/demo) of the Doodba projects it finds
+    /// (see `instance.rs`).
+    instance: Option<instance::Config>,
 }
 
 /// The 6th/7th job argument when a source runs no workflow / allows no action.
@@ -196,6 +200,13 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
                 PULL_REQUEST_MODES.join(" or ")
             ));
         }
+        let source_instance = match &src.instance {
+            Some(instance) => {
+                instance.validate().map_err(|e| format!("{name}: {e}"))?;
+                serde_json::to_string(instance).map_err(|e| e.to_string())?
+            }
+            None => instance::NONE.to_string(),
+        };
         let mut paths = match &src.template {
             Some(tmpl) => templates
                 .get(tmpl)
@@ -236,6 +247,7 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
                 src.pull_requests.clone(),
                 source_workflows.clone(),
                 source_actions.clone(),
+                source_instance.clone(),
             ]);
         }
     }
@@ -279,6 +291,7 @@ pub struct OGHCollectorConfig {
     full_pull_requests: bool,
     workflows: Vec<String>,
     actions: Vec<String>,
+    instance: Option<instance::Config>,
 }
 
 impl OGHCollectorConfig {
@@ -360,6 +373,12 @@ impl OGHCollectorConfig {
             panic!("Invalid action '{bad}' ({})", workflow::ACTIONS.join(", "));
         }
 
+        // No 8th argument: the real instances aren't asked.
+        let instance = args
+            .get(8)
+            .map(|arg| instance::Config::parse(arg).unwrap_or_else(|e| panic!("{e}")))
+            .unwrap_or_default();
+
         OGHCollectorConfig {
             src: src.to_string(),
             token,
@@ -373,6 +392,7 @@ impl OGHCollectorConfig {
             full_pull_requests,
             workflows,
             actions,
+            instance,
         }
     }
 
@@ -427,6 +447,10 @@ impl OGHCollectorConfig {
         &self.actions
     }
 
+    pub fn get_instance(&self) -> Option<&instance::Config> {
+        self.instance.as_ref()
+    }
+
     /// Every PR/MR analyzed (`full`), not only migration branches tracked.
     pub fn get_full_pull_requests(&self) -> bool {
         self.full_pull_requests
@@ -446,6 +470,7 @@ mod tests {
                 "all".to_string(),
                 "migration".to_string(),
                 "default".to_string(),
+                "-".to_string(),
                 "-".to_string(),
             ]
         };

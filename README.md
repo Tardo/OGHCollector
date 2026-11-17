@@ -905,6 +905,7 @@ OGHCOLLECTOR_FORCE_REANALYZE=1 cargo run --bin collector -- OCA 18.0
 | `OGHCOLLECTOR_WRITE_TOKEN_GH` / `_GL` | collector | Write token for workflow PR/MR actions (fallback if the `gh_write_token`/`gl_write_token` Docker secret isn't set); never the read token |
 | `OGHCOLLECTOR_AI_LIMIT` | collector | AI calls per job at most (default `20`) |
 | `VAULT_ADDR` / `VAULT_TOKEN` / `VAULT_NAMESPACE` / `VAULT_CACERT` | collector | HashiCorp Vault for `vault:` [workflow secrets](#workflow-secrets): address, token (fallback if the `vault_token` Docker secret isn't set; none = a Vault Proxy adds it), Enterprise namespace, private CA (PEM) |
+| `VAULT_ROLE_ID` / `VAULT_SECRET_ID` / `VAULT_APPROLE_PATH` | collector | AppRole login for `vault:` secrets: Docker secrets `vault_role_id`/`vault_secret_id` first, mount default `approle`. One login per job, short-lived token; wins over `VAULT_TOKEN` |
 | `OGHCOLLECTOR_COMMIT_AUTHOR` | collector | Author of `pr_open` commits, `Name <email>` (default `OGHCollector <oghcollector@localhost>`) |
 | `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` | collector | Pull/merge requests analyzed per job at most, most recently active first (default `100`) |
 | `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass (set on the per-job children of a `collector.yaml` run, which runs it once at the end) |

@@ -91,6 +91,45 @@
 {% endif %}
 
 <div class="dash-report">
+{% for env, label, inst, missing in [('prod', 'Production', instances.prod, not_installed[0]), ('demo', 'Demo', instances.demo, not_installed[1])] if inst %}
+    <section aria-labelledby="inst-{{ env }}-title">
+        <div class="section-heading">
+            <h2 id="inst-{{ env }}-title">{{ "Verified instance"|t }}: {{ label|t }}</h2>
+        </div>
+        <p class="dash-caption">{{ "What the running instance answered to the collector, not what the repository says."|t }} <a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a>
+        {%- if inst.server_version %} · Odoo {{ inst.server_version }}{% endif %}
+        {%- if inst.db %} · <code>{{ inst.db }}</code>{% endif %}
+        {%- if inst.users is not none %} · {{ "{0} active users"|t((inst.users | num)) }}{% endif %}
+        {%- if inst.languages %} · {{ inst.languages | join(", ") }}{% endif %}
+        {%- if inst.checked_at %} · {{ "checked"|t }} {{ inst.checked_at }}{% endif %}</p>
+        {% if inst.error %}
+        <p class="dash-caption prj-alert"><span class="material-icons" aria-hidden="true">error</span> {{ "Last query failed (showing the previous answer, if any)"|t }}: {{ inst.error }}</p>
+        {% endif %}
+        {% if missing %}
+        <p class="dash-caption prj-alert"><span class="material-icons" aria-hidden="true">warning</span> {{ "Enabled in addons.yaml but not installed here"|t }}: {% for name in missing %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+        {% endif %}
+        {% if inst.modules %}
+        <details>
+            <summary>{{ "{0} installed modules"|t((inst.modules | length | num)) }}</summary>
+            <table class="dash-rank">
+                <thead><tr><th>{{ "Module"|t }}</th><th>{{ "Version"|t }}</th><th>{{ "State"|t }}</th></tr></thead>
+                <tbody>
+                    {% for m in inst.modules %}
+                    <tr>
+                        <td class="dash-name"><code>{{ m.name }}</code></td>
+                        <td class="dash-meta">{{ m.version or '-' }}</td>
+                        <td>{% if m.state == 'installed' %}<span class="dash-meta">{{ m.state }}</span>{% else %}<span class="dash-flag">{{ m.state }}</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+    </section>
+{% endfor %}
+</div>
+
+<div class="dash-report">
     <section aria-labelledby="repos-title">
         <div class="section-heading">
             <h2 id="repos-title">{{ "Aggregated repositories"|t }}</h2>

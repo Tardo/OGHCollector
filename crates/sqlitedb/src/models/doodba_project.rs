@@ -33,6 +33,7 @@ pub struct Model {
     pub exposed: String,
     pub advisories: String,
     pub deploy: String,
+    pub instances: String,
 }
 
 /// An entry of the `repos` JSON (repos.yaml): `patches` are its merges after
@@ -83,6 +84,43 @@ pub struct Deploy {
     pub demo_reset_db: bool,
     pub demo_name: Option<String>,
     pub demo_url: Option<String>,
+}
+
+/// What one real instance (prod or demo) answered to the collector over
+/// Odoo's JSON-RPC, authenticated with an API key from the vault: the
+/// installed modules as the database has them, not as the repository says.
+/// A failed query keeps the last good answer and sets `error`.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[serde(default)]
+pub struct Instance {
+    pub url: String,
+    /// UTC time of the last successful query.
+    pub checked_at: Option<String>,
+    pub error: Option<String>,
+    pub db: Option<String>,
+    pub server_version: Option<String>,
+    pub modules: Vec<InstalledModule>,
+    /// Active internal users; `None` = not allowed to count.
+    pub users: Option<i64>,
+    /// Active languages (codes).
+    pub languages: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[serde(default)]
+pub struct InstalledModule {
+    pub name: String,
+    pub version: Option<String>,
+    /// `installed`, `to upgrade` or `to remove`.
+    pub state: String,
+}
+
+/// The `instances` JSON.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[serde(default)]
+pub struct Instances {
+    pub prod: Option<Instance>,
+    pub demo: Option<Instance>,
 }
 
 /// An entry of the `advisories` JSON: a PyPI advisory of an exact pip pin.
@@ -315,6 +353,10 @@ impl Row {
         serde_json::from_str(&self.project.deploy).unwrap_or_default()
     }
 
+    pub fn instances(&self) -> Instances {
+        serde_json::from_str(&self.project.instances).unwrap_or_default()
+    }
+
     pub fn exposed(&self) -> Vec<String> {
         serde_json::from_str(&self.project.exposed).unwrap_or_default()
     }
@@ -412,6 +454,8 @@ pub struct Report {
     pub advisories: Vec<Advisory>,
     /// Its production and demo instances (CI switches, demo options, URLs).
     pub deploy: Deploy,
+    /// What its real instances answered (modules actually installed...).
+    pub instances: Instances,
     /// Where the project files hold credentials ("<file> <host>").
     pub exposed_credentials: Vec<String>,
     /// The next indexed Odoo version, which `in_next_version` is about.
@@ -442,6 +486,7 @@ pub fn report(conn: &mut SqliteConnection, row: &Row) -> Report {
         dependencies: serde_json::from_str(&p.dependencies).unwrap_or_default(),
         advisories: row.advisories(),
         deploy: row.deploy(),
+        instances: row.instances(),
         exposed_credentials: row.exposed(),
         next_odoo_version: next.map(|v| odoo_version_u8_to_string(&(v as u8))),
         addons: addons(conn, p.gh_repository_id, p.version_odoo, next)
