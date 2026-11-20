@@ -5,10 +5,9 @@
 //!
 //! The workflow model and rules, shared by collector (runs them) and server (editor):
 //! `Workflow`/`Node` (serde both ways; unset fields skipped when serialized), `NODE_TYPES` (type,
-//! fields, triggers), `validate`, `built_in()` (= `include_str!` of the repo-root `workflows.yaml`:
-//! the binary's fallback copy) / `shipped(config)` (the `workflows.yaml` beside the config if it
-//! exists — then the whole list, the built-in copy ignored — else `built_in()`) / `layered` (+ the
-//! config's own `workflows:`), `parse_workflows(yaml)` (`config` crate from a string — the same
+//! fields, triggers), `validate`, `shipped(config)` (the `workflows.yaml` beside the config: required,
+//! nothing is built into the binary; the whole list) / `layered` (+ the config's own `workflows:`),
+//! `built_in()`/`with_built_in` (test fixtures: the repo's `workflows.example.yaml` read at runtime), `parse_workflows(yaml)` (`config` crate from a string — the same
 //! parse the collector does) and `file_workflows(path)`. `metadata()` = the editor's view of the
 //! same tables (`NODE_DOCS`, `FIELDS` kind/description/enum values, `REQUIRED`, variables per
 //! trigger); `the_editor_metadata_covers_every_rule` fails if a rule field has no spec.
@@ -21,9 +20,6 @@ use std::collections::{HashMap, HashSet};
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
 
-/// The repository's `workflows.yaml`, as built: what runs when there's none
-/// next to the collector config (see `shipped`).
-const BUILT_IN: &str = include_str!("../../../workflows.yaml");
 /// What a source without `workflows:` runs.
 pub const DEFAULT: &str = "default";
 
@@ -474,17 +470,14 @@ pub fn workflows_file(config: &str) -> std::path::PathBuf {
     std::path::Path::new(config).with_file_name("workflows.yaml")
 }
 
-/// The workflows a collector config starts from: its `workflows_file`, or
-/// the copy built into the binary when there's none there (`false`). Never
-/// both: what the file leaves out is gone.
-pub fn shipped(config: &str) -> Result<(HashMap<String, Workflow>, bool), String> {
+/// The workflows a collector config starts from: its `workflows_file`,
+/// which is required (nothing is built into the binary): what the file
+/// leaves out doesn't exist.
+pub fn shipped(config: &str) -> Result<HashMap<String, Workflow>, String> {
     let path = workflows_file(config);
-    if !path.is_file() {
-        return Ok((built_in(), false));
-    }
     let failed = |err: String| format!("Can't load '{}': {err}", path.display());
     let text = std::fs::read_to_string(&path).map_err(|e| failed(e.to_string()))?;
-    Ok((parse_workflows(&text).map_err(failed)?, true))
+    parse_workflows(&text).map_err(failed)
 }
 
 /// What a collector config can run: `shipped`, then its own `workflows:`
@@ -493,13 +486,13 @@ pub fn layered(
     config: &str,
     own: &HashMap<String, Workflow>,
 ) -> Result<HashMap<String, Workflow>, String> {
-    let (mut all, _) = shipped(config)?;
+    let mut all = shipped(config)?;
     all.extend(own.iter().map(|(name, wf)| (name.clone(), wf.clone())));
     Ok(all)
 }
 
 /// The `workflows:` of a collector config (`config` crate: `path` with or
-/// without its .yaml/.json/.toml extension). No file: none.
+/// without its .yaml/.json/.toml extension). No file: none (a single run with CLI arguments needs no config; `load_jobs` is the one that requires it).
 pub fn file_workflows(path: &str) -> Result<HashMap<String, Workflow>, String> {
     #[derive(Deserialize)]
     struct Doc {
@@ -819,16 +812,21 @@ pub fn problems(name: &str, wf: &Workflow) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The built-in workflows, then the config file's (same name: the file's).
+/// Test fixture: `built_in()`, then `file` (same name: the file's).
+#[doc(hidden)]
 pub fn with_built_in(file: &HashMap<String, Workflow>) -> HashMap<String, Workflow> {
     let mut all = built_in();
     all.extend(file.iter().map(|(name, wf)| (name.clone(), wf.clone())));
     all
 }
 
-/// The copy of `workflows.yaml` built into the binary.
+/// Test fixture: the repository's `workflows.example.yaml`, read from the
+/// source tree (never part of a binary's behavior).
+#[doc(hidden)]
 pub fn built_in() -> HashMap<String, Workflow> {
-    parse_workflows(BUILT_IN).expect("the repository's workflows.yaml parses")
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../workflows.example.yaml");
+    let text = std::fs::read_to_string(path).expect("workflows.example.yaml is readable");
+    parse_workflows(&text).expect("workflows.example.yaml parses")
 }
 
 #[cfg(test)]
@@ -1027,12 +1025,13 @@ mod tests {
         let all = layered(config.to_str().unwrap(), &own).unwrap();
         let message = |name: &str| all[name].nodes[0].message.clone().unwrap();
         assert_eq!((message("a"), message("b")), ("file".into(), "own".into()));
-        // The file replaces the built-in copy entirely: no `default` here.
+        // Only what the file lists: no `default` here.
         assert!(!all.contains_key(DEFAULT));
-        // No file there: the built-in copy.
+        // No file there: an error, nothing built in.
         std::fs::remove_file(dir.join("workflows.yaml")).unwrap();
-        let (none, from_file) = shipped(config.to_str().unwrap()).unwrap();
-        assert!(!from_file && none.contains_key(DEFAULT));
+        assert!(shipped(config.to_str().unwrap())
+            .unwrap_err()
+            .contains("Can't load"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

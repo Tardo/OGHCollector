@@ -264,8 +264,9 @@ pub fn read_secret(file: &str, env_var: &str) -> Option<String> {
     (!secret.is_empty()).then_some(secret)
 }
 
-/// The workflows a job can run: the built-in ones plus the config file's
-/// (an absent file is fine: manual runs only need the built-in `default`).
+/// The workflows a job can run: `workflows.yaml` plus the config file's
+/// (`workflows.yaml` is required, nothing is built in; the config file
+/// itself is optional here: a single run with CLI arguments needs none).
 /// `load_jobs` already validated the file; a job re-reads it when it starts.
 pub fn load_workflows(path: &str) -> Result<HashMap<String, Workflow>, String> {
     oghworkflow::layered(path, &oghworkflow::file_workflows(path)?)
@@ -495,6 +496,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ogh-ws-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("collector.yaml");
+        std::fs::write(
+            dir.join("workflows.yaml"),
+            include_str!("../../../workflows.example.yaml"),
+        )
+        .unwrap();
         let load = |yaml: &str| {
             std::fs::write(&path, yaml).unwrap();
             super::load_jobs(path.to_str().unwrap())
@@ -518,15 +524,16 @@ mod tests {
         let wf_of =
             |jobs: Vec<Vec<String>>| jobs.into_iter().map(|j| j[5].clone()).collect::<Vec<_>>();
         assert_eq!(wf_of(jobs.unwrap()), ["default", "-", "default,logged"]);
-        // What a job loads: the file's workflows plus the built-in ones, or
-        // only those without a file (a manual run elsewhere).
+        // What a job loads: workflows.yaml's plus the config file's.
         let defs = super::load_workflows(dir.join("collector").to_str().unwrap()).unwrap();
         assert!(defs.contains_key("logged") && defs.contains_key("default"));
-        // No workflows.yaml next to it: the copy built in (the repository's).
-        let defs = super::load_workflows(dir.join("absent").to_str().unwrap()).unwrap();
-        let mut built_in: Vec<_> = defs.keys().collect();
-        built_in.sort();
-        assert_eq!(built_in, ["ai_pr_review", "default", "doodba_fixes"]);
+        // No config file: fine for a single run (workflows.yaml still read).
+        assert!(super::load_workflows(dir.join("collector").to_str().unwrap()).is_ok());
+        // Batch mode reads it, and complains when it's missing.
+        std::fs::remove_file(&path).unwrap();
+        assert!(super::load_jobs(path.to_str().unwrap()).is_err());
+        let defs = super::load_workflows(path.to_str().unwrap()).unwrap();
+        assert!(defs.contains_key("default"));
         for bad in ["[nope]", "[default, default]"] {
             let yaml = format!("sources:\n- {{source: A, versions: [18.0], workflows: {bad}}}\n");
             assert!(load(&yaml).is_err(), "{bad}");

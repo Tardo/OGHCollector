@@ -16,9 +16,8 @@
 //! (one per file). PR workflows also see `security.grave|minor|findings` (only the PR's `new`
 //! findings) and `migration.count|notes` over its modules (`workflow::pr_problems`), like module
 //! workflows. Workflows load via `oghworkflow::layered`: the `workflows.yaml` beside the collector
-//! config (repo root; shipped in the image, bind-mounted into collector+server, and bind-mounted
-//! into the Docker *build* too since `oghworkflow` `include_str!`s it as the fallback copy) or,
-//! without one, that built-in copy; then the config's own `workflows:`. `default` lives there
+//! config (repo root, git-ignored copy of `workflows.example.yaml`; required, bind-mounted into
+//! collector+server, nothing built into the binary); then the config's own `workflows:`. `default` lives there
 //! (golden-pinned). `Workflow.enabled: false` = validated but skipped by `Engine::new` (warn),
 //! editor switch + "· off" in its list. The demo `ai_pr_review` lives in root `workflows.yaml`,
 //! `enabled: false` (its test loads that file).

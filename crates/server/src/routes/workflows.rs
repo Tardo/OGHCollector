@@ -41,12 +41,12 @@ pub async fn route(tmpl_env: MiniJinjaRenderer, req: HttpRequest) -> Result<impl
 
 /// What the editor starts from: the node types and fields (the rules), and
 /// the existing workflows with where each comes from: the workflows file
-/// next to the collector config (none there: the copy built in), then the
+/// next to the collector config, then the
 /// config's own, which replace any of the same name. Both files are read on
 /// every request; a broken one is reported and left out, the rest still load.
 fn data(collector_config: &str) -> serde_json::Value {
     let mut errors = Vec::new();
-    let (shipped, from_file) = oghworkflow::shipped(collector_config).unwrap_or_else(|err| {
+    let shipped = oghworkflow::shipped(collector_config).unwrap_or_else(|err| {
         errors.push(err);
         Default::default()
     });
@@ -57,11 +57,7 @@ fn data(collector_config: &str) -> serde_json::Value {
     let mut all: BTreeMap<_, _> = shipped.into_iter().collect();
     all.extend(own.clone());
     let file_error = (!errors.is_empty()).then(|| errors.join("\n"));
-    let base = if from_file {
-        "workflows.yaml"
-    } else {
-        "built-in"
-    };
+    let base = "workflows.yaml";
     let workflows: Vec<serde_json::Value> = all
         .into_iter()
         .map(|(name, wf)| {
@@ -191,16 +187,6 @@ mod tests {
             [("mine", "collector config"), ("shared", "workflows.yaml")]
         );
         assert!(!got.to_string().contains("Secret"), "sources stay out");
-        // No workflows file there: the copy built in.
-        std::fs::remove_file(dir.join("workflows.yaml")).unwrap();
-        let built_in = data(dir.join("collector").to_str().unwrap());
-        let default = built_in["workflows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|w| w["name"] == "default")
-            .unwrap();
-        assert_eq!(default["origin"], "built-in");
         std::fs::write(
             dir.join("workflows.yaml"),
             "workflows:\n  shared: {on: module, enabled: false, nodes: [{id: o, type: osv}]}\n",

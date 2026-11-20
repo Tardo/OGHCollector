@@ -53,6 +53,12 @@ it collects on a schedule and, for repositories you can add webhooks to, as soon
 git clone git@github.com:Tardo/OGHCollector.git
 cd OGHCollector
 
+# 0. REQUIRED. The collector needs these two files (collector.yaml only to read its sources): not in the image,
+#    compose mounts them as volumes (git-ignored local copies). Edit collector.yaml to choose
+#    what to collect.
+cp collector.example.yaml collector.yaml
+cp workflows.example.yaml workflows.yaml
+
 # 1. Build the shared image
 docker compose build
 
@@ -162,7 +168,7 @@ docker compose exec -T collector oghcollector --check              # validate th
 docker compose exec -T collector oghcollector <origin> <version> [git_type]  # a single source/version
 ```
 
-Without a source, the collector runs every job declared in [`collector.yaml`](./collector.yaml)
+Without a source, the collector runs every job declared in `collector.yaml` (copy of [`collector.example.yaml`](./collector.example.yaml))
 (see [Collector config](#collector-config)). The single-run form takes:
 
 - `<origin>`:
@@ -245,10 +251,13 @@ kept. Each failed job is also recorded as a `Scan failed for '<source>' [<versio
 error in the portal's event log (`/logs`, and its Atom feed). API rate limits are waited out
 (up to an hour) and server/network errors retried before giving up.
 
-`docker-compose.yaml` bind-mounts `./collector.yaml` and `./workflows.yaml` read-only into `/app`,
-so edits apply on the next run without rebuilding. If your editor saves by replacing the file (vim, most
-IDEs), the container keeps seeing the old copy until `docker compose restart collector`. The image
-also ships the repository's copy as a fallback for plain `docker run`.
+`workflows.yaml` is always **required** and `collector.yaml` whenever the collector has to read the sources from it (no source argument, the `--listen` daemon): without them it fails with an error saying which file is missing. A single run with arguments (`oghcollector OCA 18.0`) needs no `collector.yaml`. The
+image doesn't contain them; `docker-compose.yaml` bind-mounts `./collector.yaml` and `./workflows.yaml`
+read-only into `/app` (collector and server), so edits apply on the next run without rebuilding. Create
+them from `collector.example.yaml` and `workflows.example.yaml` before `docker compose up`; if one is
+missing, Docker creates a directory with that name and the service fails. For plain `docker run`, mount
+them the same way (`-v ./collector.yaml:/app/collector.yaml:ro`). If your editor saves by replacing the
+file (vim, most IDEs), the container keeps seeing the old copy until `docker compose restart collector`.
 
 ### Workflows
 
@@ -257,13 +266,12 @@ happens to each module is a *workflow*, a graph of nodes, and a source runs the 
 `default` workflow is what the collector always did (a test checks it leaves exactly the same data
 and events), so a source without `workflows:` behaves as before; `workflows: []` only walks.
 
-Workflows live in `workflows.yaml` at the repository root, next to `collector.yaml` (in Docker both
-are mounted from there, so editing them needs no rebuild). The binary also carries the copy it was
-built with, used only when there's no `workflows.yaml` next to the collector config: when there is
-one, it's the whole list (a workflow taken out of it is gone). `collector.yaml` may have a
+Workflows live in `workflows.yaml` at the repository root, next to `collector.yaml` (copies of the
+`.example.yaml` files; in Docker both are mounted from there, so editing them needs no rebuild). The
+binary carries no copy: `workflows.yaml` is the whole list (a workflow taken out of it is gone). `collector.yaml` may have a
 `workflows:` too; its definitions replace any of the same name. A workflow with `enabled: false`
 doesn't run even where a source names it (the job logs a warning); it's still checked. The shipped
-`workflows.yaml` has `default` and one more, off: `ai_pr_review`, an AI reviewing the PRs that
+`workflows.example.yaml` has `default` and one more, off: `ai_pr_review`, an AI reviewing the PRs that
 bring grave security findings or migration notes (see [Actions](#actions)).
 
 A workflow can run after others: `after: [default]`. On each module (or PR) it then runs once
@@ -293,8 +301,7 @@ default:
 
 A workflow starts at its first node and follows `next` (or, for `if`, `then`/`else`) until a node
 has none. The portal can show them as a graph and build them visually: with
-`workflow_editor_enabled` (server config), `/workflows` lists those of `workflows.yaml` (or the
-built-in copy) and the collector config, lets you change them or draw new ones (drag nodes, link
+`workflow_editor_enabled` (server config), `/workflows` lists those of `workflows.yaml` and the collector config, lets you change them or draw new ones (drag nodes, link
 their outputs, fill in their fields, switch them on or off) and gives the YAML to paste into
 `workflows.yaml`, checked as you go by the same
 rules as `oghcollector --check`. Nothing is saved there. Each node's place in the editor goes in

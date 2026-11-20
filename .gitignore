@@ -22,3 +22,5 @@ docker-compose.*.yaml
 CLAUDE.md
 .claude/
 AGENTS.md
+collector.yaml
+workflows.yaml

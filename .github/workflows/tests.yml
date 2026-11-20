@@ -1,6 +1,11 @@
 name: Tests
 
 on:
+  workflow_call:
+    inputs:
+      skip_docker:
+        type: boolean
+        default: false
   schedule:
     - cron: '0 0 * * SUN'
   push:
@@ -83,6 +88,7 @@ jobs:
 
   docker:
     name: Docker build
+    if: ${{ !inputs.skip_docker }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

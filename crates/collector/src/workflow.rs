@@ -75,7 +75,7 @@ use crate::{migration, review, secrets, security};
 
 pub use oghworkflow::{validate, Node, Workflow, ACTIONS, DEFAULT};
 // Jobs load workflows in layers (`config::load_workflows`); tests start from
-// the built-ins.
+// the example file (`built_in`).
 #[cfg(test)]
 pub use oghworkflow::with_built_in;
 

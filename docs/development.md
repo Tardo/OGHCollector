@@ -29,6 +29,8 @@ cargo run --bin server
 ```
 
 ## Update Database
+First `cp collector.example.yaml collector.yaml` (and `cp workflows.example.yaml workflows.yaml` to customize workflows); both copies are git-ignored.
+
 ```sh
 cargo run --bin collector -- OCA 15.0   # one source/version
 cargo run --bin collector               # every source/version in ./collector.yaml

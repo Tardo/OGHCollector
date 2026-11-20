@@ -504,6 +504,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("collector.yaml");
         std::fs::write(&path, "sources:\n- {source: OCA, versions: [18.0]}\n").unwrap();
+        std::fs::write(
+            dir.join("workflows.yaml"),
+            include_str!("../../../workflows.example.yaml"),
+        )
+        .unwrap();
         let path = path.to_str().unwrap();
         let secret = "s";
         let deliver = |event: &str, body: serde_json::Value| {
