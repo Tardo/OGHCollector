@@ -1,3 +1,4 @@
+# Copy to docker-compose.yaml (git-ignored) and adjust; layer local changes in docker-compose.override.yaml.
 name: oghcollector
 
 x-app: &app
@@ -64,11 +65,13 @@ services:
     environment:
       RUST_LOG: info
       RUST_BACKTRACE: 0
-      # GitHub/GitLab API tokens (Docker secrets are read first, see docs/auth.md)
-      OGHCOLLECTOR_TOKEN_GH: ${OGHCOLLECTOR_TOKEN_GH:-}
-      OGHCOLLECTOR_TOKEN_GL: ${OGHCOLLECTOR_TOKEN_GL:-}
       # Hook cache of the `pre_commit` workflow node, kept across jobs.
       OGHCOLLECTOR_PRE_COMMIT_HOME: /app/data/.pre-commit
+    # API tokens, read from /run/secrets (see docs/auth.md). Both files must
+    # exist: leave the one you don't use empty.
+    secrets:
+      - gh_token
+      - gl_token
     volumes:
       - app_data:/app/data
       - ./collector.yaml:/app/collector.yaml:ro
@@ -79,6 +82,12 @@ services:
         condition: service_completed_successfully
     ports:
       - 8082:8082
+
+secrets:
+  gh_token:
+    file: ./gh_token.txt
+  gl_token:
+    file: ./gl_token.txt
 
 volumes:
   app_data:

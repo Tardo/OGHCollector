@@ -32,5 +32,5 @@
 
 ## Advanced Configuration
 
-`docker-compose.yaml` is meant to stay untouched; layer your own settings (volumes, env vars, ports) on
+`docker-compose.yaml` is a copy of `docker-compose.example.yaml`, meant to stay untouched; layer your own settings (volumes, env vars, ports) on
 top of it with a `docker-compose.override.yaml` file, which Docker Compose picks up automatically.

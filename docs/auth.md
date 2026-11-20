@@ -27,23 +27,10 @@ fine; entries with the same `source` share the union). Names are letters, digits
 ## Authentication
 
 The recommended way to provide API tokens is through Docker secrets, so they never end up in
-`docker-compose.yaml` or shell history. The collector automatically reads `/run/secrets/gh_token` and
-`/run/secrets/gl_token` if present:
-
-```yaml
-# docker-compose.override.yaml
-services:
-  collector:
-    secrets:
-      - gh_token
-      - gl_token
-
-secrets:
-  gh_token:
-    file: ./gh_token.txt
-  gl_token:
-    file: ./gl_token.txt
-```
+`docker-compose.yaml` or shell history. `docker-compose.example.yaml` already wires them: create
+`gh_token.txt` and `gl_token.txt` next to it (git-ignored; leave the one you don't use empty, since
+compose refuses a missing file). The collector reads `/run/secrets/gh_token` and
+`/run/secrets/gl_token`.
 
 Git gets the token from a credential helper scoped to the repository's host, set up through
 `GIT_CONFIG_*` environment variables. It's only used when the server asks for credentials, it's never

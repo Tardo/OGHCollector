@@ -17,7 +17,9 @@ server.yaml
 *_token.txt
 compose.yaml
 compose.*.yaml
+docker-compose.yaml
 docker-compose.*.yaml
+!docker-compose.example.yaml
 .eslintcache
 CLAUDE.md
 .claude/

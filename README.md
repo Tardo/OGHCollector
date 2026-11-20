@@ -49,13 +49,15 @@ it collects on a schedule and, for repositories you can add webhooks to, as soon
 
 ## Quick Start
 
-`docker-compose.yaml` always uses the image published on GitHub (`ghcr.io/tardo/oghcollector`, built
+`docker-compose.example.yaml` (copy it to `docker-compose.yaml`) always uses the image published on GitHub (`ghcr.io/tardo/oghcollector`, built
 after the tests pass). Nothing is built locally: you only provide the configuration, mounted as
 volumes.
 
 ```
 oghcollector/
-├── docker-compose.yaml   # from this repository
+├── docker-compose.yaml   # copy of docker-compose.example.yaml
+├── gh_token.txt          # GitHub API token (empty if unused; docs/auth.md)
+├── gl_token.txt          # GitLab API token (empty if unused)
 ├── server.yaml           # dashboard settings (server.example.yaml, docs/server.md)
 ├── collector.yaml        # what to collect (collector.example.yaml)
 └── workflows.yaml        # what to do with each module (workflows.example.yaml)
