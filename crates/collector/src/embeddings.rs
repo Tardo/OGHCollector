@@ -5,7 +5,8 @@
 //! (re)embeds only modules whose hash changed or that have no vector yet — so the first run after
 //! the migration backfills the whole DB. Vectors land in `module_embedding` (little-endian f32
 //! BLOB); orphans of deleted modules are cleaned explicitly (FKs aren't enabled on these
-//! connections, the CASCADE never fires). Model failures only log — a collector run never dies
+//! connections, the CASCADE never fires). Embedded in chunks, each stored before the next (progress
+//! logged, a stopped backfill keeps what it did). Model failures only log — a collector run never dies
 //! because HuggingFace is unreachable.
 use sqlitedb::models;
 use sqlitedb::DbSqliteConnection as SqliteConnection;
@@ -56,16 +57,30 @@ pub fn update_embeddings(conn: &mut SqliteConnection) {
         return;
     }
     log::info!("Generating embeddings for '{}' modules...", pending.len());
-    let texts: Vec<&str> = pending.iter().map(|(_, _, text)| text.as_str()).collect();
-    let vectors = match oghembed::embed_texts(&texts) {
-        Ok(vectors) => vectors,
-        Err(err) => {
-            log::warn!("Can't generate embeddings: {err}. Skipping...");
-            return;
-        }
-    };
-    for ((module_id, hash, _), vector) in pending.iter().zip(vectors) {
-        models::module_embedding::upsert(conn, module_id, hash, &oghembed::vec_to_bytes(&vector))
+    // Chunked so a backfill (tens of thousands of modules) shows progress and
+    // keeps what it embedded if the process is stopped halfway.
+    let mut done = 0;
+    for chunk in pending.chunks(EMBED_CHUNK) {
+        let texts: Vec<&str> = chunk.iter().map(|(_, _, text)| text.as_str()).collect();
+        let vectors = match oghembed::embed_texts(&texts) {
+            Ok(vectors) => vectors,
+            Err(err) => {
+                log::warn!("Can't generate embeddings: {err}. Skipping...");
+                return;
+            }
+        };
+        for ((module_id, hash, _), vector) in chunk.iter().zip(vectors) {
+            models::module_embedding::upsert(
+                conn,
+                module_id,
+                hash,
+                &oghembed::vec_to_bytes(&vector),
+            )
             .unwrap();
+        }
+        done += chunk.len();
+        log::info!("Embeddings: {done}/{}", pending.len());
     }
 }
+
+const EMBED_CHUNK: usize = 1000;

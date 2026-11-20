@@ -108,12 +108,14 @@ as in a [`collector.yaml`](#collector-config) run):
 - **Schedule**: every source in `collector.yaml` at 00:00, 06:00, 12:00 and 18:00 UTC (every
   multiple of `OGHCOLLECTOR_SCHEDULE_HOURS`, default `6`; `0` turns it off). By default that's
   OpenERP (6.1–9.0), Odoo (10.0–20.0) and OCA (6.1–20.0). Nothing runs at startup, so a redeploy
-  doesn't start a batch. A job still waiting from the previous batch isn't queued twice.
+  doesn't start a batch, except on an empty database (a new install). The log says when the next
+  run starts. A redeploy kills the running job and drops the pending ones: the batch starts over at
+  the next scheduled time. A job still waiting from the previous batch isn't queued twice.
 - **Webhooks**: a push to a version branch (`18.0`, ...) of a repository some source collects, a
   pull/merge request against one, or its CI finishing, queues that repository and version alone,
   ahead of any scheduled job still waiting, so it starts as soon as the running job ends. Several
   deliveries for the same repository and version while it waits are one job. The embedding pass
-  runs whenever the queue empties.
+  runs whenever the queue empties, unless `OGHCOLLECTOR_SKIP_EMBEDDINGS` is set on the daemon.
 
 Each job also refreshes the open pull/merge requests of its repositories and version, as the
 source's `pull_requests` says:

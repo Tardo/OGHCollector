@@ -25,7 +25,7 @@
 | `VAULT_ROLE_ID` / `VAULT_SECRET_ID` / `VAULT_APPROLE_PATH` | collector | AppRole login for `vault:` secrets: Docker secrets `vault_role_id`/`vault_secret_id` first, mount default `approle`. One login per job, short-lived token; wins over `VAULT_TOKEN` |
 | `OGHCOLLECTOR_COMMIT_AUTHOR` | collector | Author of `pr_open` commits, `Name <email>` (default `OGHCollector <oghcollector@localhost>`) |
 | `OGHCOLLECTOR_PR_ANALYSIS_LIMIT` | collector | Pull/merge requests analyzed per job at most, most recently active first (default `100`) |
-| `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass (set on the per-job children of a `collector.yaml` run, which runs it once at the end) |
+| `OGHCOLLECTOR_SKIP_EMBEDDINGS` | collector | Skip the end-of-run embedding pass: set it on a `collector.yaml` batch run or the `--listen` daemon to turn embeddings off (always set on their per-job children, the parent runs the pass once) |
 | `RUST_LOG` | all three binaries | Log level (default: `info`) |
 
 ---

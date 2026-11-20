@@ -9,13 +9,14 @@
 //! one worker thread runs a deduplicating queue of `load_jobs` arg lists one at a time via
 //! `run_and_record` (still child processes), so jobs never hit each other's org lock. A scheduler
 //! thread queues the whole config at multiples of `OGHCOLLECTOR_SCHEDULE_HOURS` since the epoch
-//! (never at startup); `POST /hooks/github` (HMAC `X-Hub-Signature-256`; push, pull_request,
+//! (never at startup, except on an empty DB; each wait is logged); `POST /hooks/github` (HMAC `X-Hub-Signature-256`; push, pull_request,
 //! check_suite, status) / `/hooks/gitlab` (`X-Gitlab-Token`; push, merge_request, pipeline) map an
 //! event to a branch (CI events: `pull_request::get_version_by_head_sha` through the pool) and then
 //! via `jobs_for_push` (source = the repo or its direct parent, `job[1]` = branch, same git type;
 //! `job[0]` rewritten to the repo, paths/git/workspaces kept) and queue it at the front. A route
 //! exists only if its secret is set; everything not queued answers 2xx (GitLab disables failing
-//! hooks). When the queue drains it runs `oghcollector --embeddings` as a child: the ONNX model
+//! hooks). When the queue drains it runs `oghcollector --embeddings` as a child (not with
+//! `OGHCOLLECTOR_SKIP_EMBEDDINGS` set on the daemon): the ONNX model
 //! stays resident in whatever process loads it (~800MB). SIGTERM/Ctrl+C TERMs the running job's
 //! group (`RUNNING_JOB`) and waits ≤25s holding the queue lock (compose: `init: true`,
 //! `stop_grace_period: 30s`). Webhooks only help for orgs you administer; OCA/odoo stay on the
@@ -85,6 +86,9 @@ fn work(queue: &Queue, pool: &sqlitedb::Pool) {
             continue;
         }
         collected = false;
+        if env::var_os(super::SKIP_EMBEDDINGS_ENV).is_some() {
+            continue;
+        }
         let args = ["--embeddings".to_string()];
         if let Err(reason) = super::run_job(&exe, &args, super::JOB_TIMEOUT) {
             log::error!("Embeddings pass failed: {reason}");
@@ -101,7 +105,13 @@ fn schedule(queue: &Queue, path: &str, period: u64) {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        thread::sleep(Duration::from_secs(period - now % period));
+        let wait = period - now % period;
+        log::info!(
+            "Next scheduled run in {}h{:02}m",
+            wait / 3600,
+            wait % 3600 / 60
+        );
+        thread::sleep(Duration::from_secs(wait));
         match config::load_jobs(path) {
             Ok(jobs) => {
                 log::info!("Scheduled run: queuing {} jobs", jobs.len());
@@ -359,6 +369,13 @@ pub async fn run(path: &str) {
     let pool = super::open_db();
     let (worker_queue, worker_pool) = (queue.clone(), pool.clone());
     thread::spawn(move || work(&worker_queue, &worker_pool));
+    // A new install would show nothing until the first scheduled run (up to
+    // `OGHCOLLECTOR_SCHEDULE_HOURS`): an empty DB is collected right away.
+    if models::gh_organization::count(&mut pool.get().unwrap()) == 0 {
+        let jobs = config::load_jobs(path).unwrap_or_default();
+        log::info!("Empty database: queuing {} jobs now", jobs.len());
+        jobs.into_iter().for_each(|job| queue.push(job, false));
+    }
 
     let hours: u64 = env::var("OGHCOLLECTOR_SCHEDULE_HOURS")
         .map(|h| {

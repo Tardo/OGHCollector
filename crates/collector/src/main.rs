@@ -13,6 +13,8 @@
 //! first so git drops its lock files) after `JOB_TIMEOUT` (4h), `gitclient::http_client` (every
 //! reqwest client) has connect/request timeouts and `git_run_env` a low-speed limit. The batch
 //! parent's embeddings pass is not covered (the daemon's is: it's a `run_job` child).
+//! `OGHCOLLECTOR_SKIP_EMBEDDINGS` set on the batch parent or the daemon turns that pass off (the
+//! children always get it: the parent runs the pass once).
 mod actions;
 #[cfg(test)]
 mod actions_tests;
@@ -319,7 +321,9 @@ fn run_config(path: &str, check: bool) {
             failed.push(args[..2].join(" "));
         }
     }
-    embeddings::update_embeddings(&mut pool.get().unwrap());
+    if env::var_os(SKIP_EMBEDDINGS_ENV).is_none() {
+        embeddings::update_embeddings(&mut pool.get().unwrap());
+    }
     // The failed jobs again in the last line, where a long log is read.
     if !failed.is_empty() {
         log::error!(
