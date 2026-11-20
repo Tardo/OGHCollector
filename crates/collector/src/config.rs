@@ -458,10 +458,31 @@ impl OGHCollectorConfig {
     }
 }
 
+/// `collector.yaml` and `workflows.yaml` are git-ignored copies of their
+/// `.example.yaml`, and some tests read them: create the missing ones (never
+/// overwrite) so `cargo test` runs on a fresh checkout or in CI.
+#[cfg(test)]
+pub(crate) fn ensure_example_configs() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for name in ["collector", "workflows"] {
+            let real = root.join(format!("{name}.yaml"));
+            if !real.exists() {
+                // Copy + rename: a parallel test run never reads a half-written file.
+                let tmp = root.join(format!("{name}.yaml.{}.tmp", std::process::id()));
+                std::fs::copy(root.join(format!("{name}.example.yaml")), &tmp).unwrap();
+                std::fs::rename(&tmp, &real).unwrap();
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn shipped_collector_yaml_matches_the_old_ofelia_loop() {
+        super::ensure_example_configs();
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../collector.yaml");
         let job = |src: &str, ver: &str| {
             vec![

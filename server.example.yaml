@@ -1,0 +1,19 @@
+# Copy to server.yaml (git-ignored); docker-compose.yaml mounts it into /app.
+# Every option and its default: docs/server.md. Uncommented lines below differ from the defaults.
+
+# The compose file publishes 8080: keep this port unless you change the mapping.
+port: 8080
+
+# Needs the embedding model (~800MB in memory, downloaded on first use).
+semantic_search_enabled: false
+
+# Optional pages, all off by default. The last three expose or probe private data:
+# enable them only behind access control.
+# mcp_info_enabled: true
+# workflow_editor_enabled: true   # publishes the `workflows:` of collector.yaml
+# scan_enabled: true              # makes outbound requests to the scanned instance
+# projects_enabled: true          # describes your Doodba deployments
+
+# Login through oauth2-proxy: see docs/auth.md.
+# auth_enabled: true
+# trusted_proxies: [172.18.0.0/16]

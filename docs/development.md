@@ -29,7 +29,7 @@ cargo run --bin server
 ```
 
 ## Update Database
-First `cp collector.example.yaml collector.yaml` (and `cp workflows.example.yaml workflows.yaml` to customize workflows); both copies are git-ignored.
+Running outside Docker, the collector reads `./collector.yaml` and `./workflows.yaml` (git-ignored; start from the `.example.yaml` files: `cp collector.example.yaml collector.yaml`, `cp workflows.example.yaml workflows.yaml`).
 
 ```sh
 cargo run --bin collector -- OCA 15.0   # one source/version

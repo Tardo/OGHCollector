@@ -1897,6 +1897,7 @@ mod tests {
     /// its modules' migration notes), and what it asks and writes.
     #[test]
     fn the_demo_reviews_prs_with_grave_findings_or_migration_notes() {
+        crate::config::ensure_example_configs();
         let finding = |code: &str, severity: &str, new: bool| {
             json!({"code": code, "severity": severity, "new": new, "file": "models/m.py",
                    "xml_id": null, "message": format!("{code} here")})

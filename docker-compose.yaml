@@ -1,10 +1,8 @@
 name: oghcollector
 
 x-app: &app
-  image: oghcollector:local
-  build:
-    context: .
-    target: final
+  # Built and published by .github/workflows/docker.yml
+  image: ghcr.io/tardo/oghcollector:latest
   volumes:
     - app_data:/app/data
   environment:
@@ -27,6 +25,7 @@ services:
       # sources) are shown on /workflows.
       - ./collector.yaml:/app/collector.yaml:ro
       - ./workflows.yaml:/app/workflows.yaml:ro
+      - ./server.yaml:/app/server.yaml:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -46,7 +45,7 @@ services:
   collector:
     <<: *app
     # Collects every source in collector.yaml every 6 hours, and a pushed
-    # repository as soon as its webhook arrives (see README, "Scheduling updates").
+    # repository as soon as its webhook arrives (see docs/collector.md, "Scheduling updates").
     command: [oghcollector, --listen]
     # PID 1 that reaps the git processes a killed job leaves behind.
     init: true
@@ -65,6 +64,9 @@ services:
     environment:
       RUST_LOG: info
       RUST_BACKTRACE: 0
+      # GitHub/GitLab API tokens (Docker secrets are read first, see docs/auth.md)
+      OGHCOLLECTOR_TOKEN_GH: ${OGHCOLLECTOR_TOKEN_GH:-}
+      OGHCOLLECTOR_TOKEN_GL: ${OGHCOLLECTOR_TOKEN_GL:-}
       # Hook cache of the `pre_commit` workflow node, kept across jobs.
       OGHCOLLECTOR_PRE_COMMIT_HOME: /app/data/.pre-commit
     volumes:
