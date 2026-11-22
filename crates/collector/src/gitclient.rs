@@ -248,6 +248,16 @@ pub trait GitClient {
         // `.git` check (not just `exists()`): git run inside a non-repo dir
         // walks up to any parent repo and would act on that one instead.
         let mut needs_clone = !Path::new(&clone_path).join(".git").exists();
+        // Partial (blobless) clones made by an earlier version of this code:
+        // `git log --shortstat` then fetches every missing blob one by one over
+        // the network (minutes per module), so replace them with a full clone.
+        if !needs_clone
+            && git_run(&clone_path, &["config", "--get", "remote.origin.promisor"])
+                .is_ok_and(|v| v.trim() == "true")
+        {
+            log::info!("'{repo_name}' is a partial clone - re-cloning in full");
+            needs_clone = true;
+        }
         if !needs_clone {
             log::info!("Updating repo: {repo_name} @ {branch}");
             // Never delete the clone because of a fetch failure (network down,
@@ -307,11 +317,10 @@ pub trait GitClient {
                 &base_dir,
                 &[
                     "clone",
-                    // Blobless: every branch's commits and trees (committer
-                    // ranges need `origin/<previous version>`), but file
-                    // contents only for what is checked out or diffed. A server
-                    // without filter support ignores it and sends everything.
-                    "--filter=blob:none",
+                    // Full clone, never `--filter=blob:none`: committer stats
+                    // (`git log --shortstat`) diff every commit of the range,
+                    // and a blobless clone fetches each missing blob lazily.
+                    // Every branch: committer ranges need `origin/<previous version>`.
                     "--no-single-branch",
                     "--branch",
                     branch,
