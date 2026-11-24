@@ -5,8 +5,9 @@
 //! Listing pages (dashboard, modules, search, atlas, committers, OSV...) take
 //! `AreaPool`; module pages, dependency closures, tools, feeds and badges keep
 //! `web::Data<Pool>` (everything); `OwnAreaPool` (overview, modules, migration) drops the
-//! shared repositories too, leaving only the workspace's own, so a dependency on a module of another
-//! workspace still resolves and its page still opens.
+//! shared repositories too, leaving only the workspace's own (a workspace with none, like auth's
+//! `default_workspace`, gets the shared view instead of an empty one), so a dependency on a module
+//! of another workspace still resolves and its page still opens.
 use actix_web::{dev::Payload, error::ErrorInternalServerError, web, FromRequest, HttpRequest};
 use cached::{proc_macro::cached, stores::TimedCache};
 use std::collections::HashMap;
@@ -209,21 +210,42 @@ impl FromRequest for OwnAreaPool {
             return ready(Err(ErrorInternalServerError("Workspaces not configured")));
         };
         let workspace = current(req);
-        // Own-only views differ from the shared ones: distinct cache key.
-        let key = workspace
-            .as_ref()
-            .map_or(String::new(), |w| format!("{w}\0own"));
+        let (own, key) = own_view(workspace.as_deref(), &workspaces.names());
         ready(Ok(OwnAreaPool(AreaPool {
-            pool: workspaces.pool(workspace.as_deref(), true),
+            pool: workspaces.pool(workspace.as_deref(), own),
             key,
         })))
     }
 }
 
+/// Whether `ws` gets its own-only view, and the cache key. A workspace with no repositories of
+/// its own (not in `names`, e.g. auth's `default_workspace`) would see nothing: it gets the
+/// shared view instead, under `AreaPool`'s key. Own-only views get a distinct key.
+fn own_view(ws: Option<&str>, names: &[String]) -> (bool, String) {
+    match ws {
+        Some(w) if names.iter().any(|n| n == w) => (true, format!("{w}\0own")),
+        w => (false, w.unwrap_or_default().to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::allowed_for;
+    use super::{allowed_for, own_view};
     use std::collections::HashMap;
+
+    #[test]
+    fn own_view_falls_back_to_shared_without_own_repos() {
+        let names = ["isonor".to_string()];
+        assert_eq!(
+            own_view(Some("isonor"), &names),
+            (true, "isonor\0own".to_string())
+        );
+        assert_eq!(
+            own_view(Some("default"), &names),
+            (false, "default".to_string())
+        );
+        assert_eq!(own_view(None, &names), (false, String::new()));
+    }
 
     #[test]
     fn groups_map_to_workspaces_plus_default() {
