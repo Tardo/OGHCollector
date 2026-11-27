@@ -569,8 +569,19 @@ struct AddonView {
     repo: String,
     technical_name: String,
     org_name: Option<String>,
+    repo_version: Option<String>,
     in_next: bool,
     pr: Option<crate::routes::doodba_tools::MigrationPendingModuleInfo>,
+}
+
+/// A manifest version as Odoo stores it once installed (`odoo.modules.module.adapt_version`):
+/// prefixed with the series unless it already is.
+fn adapt_version(serie: &str, version: &str) -> String {
+    if version == serie || version.starts_with(&format!("{serie}.")) {
+        version.to_string()
+    } else {
+        format!("{serie}.{version}")
+    }
 }
 
 /// A remote without the `user:token@` part, so it can be shown and grouped on.
@@ -655,6 +666,7 @@ pub async fn route_project(
                         || (pr.organization == row.org_name && pr.repository_name == row.repository)
                 }),
                 in_next: a.in_next != 0,
+                repo_version: a.repo_version,
                 repo: a.repo,
                 technical_name: a.technical_name,
                 org_name: a.org_name,
@@ -688,6 +700,30 @@ pub async fn route_project(
         not_installed(&instances.prod),
         not_installed(&instances.demo),
     );
+    // Installed at another version than the repository's manifest: (module, installed, repo).
+    let serie = version_str(version_odoo);
+    let version_drift = |env: &Option<doodba_project::Instance>| -> Vec<(String, String, String)> {
+        let Some(env) = env.as_ref() else {
+            return Vec::new();
+        };
+        env.modules
+            .iter()
+            .filter_map(|m| {
+                let installed = m.version.as_deref()?;
+                let repo = addons
+                    .iter()
+                    .find(|a| a.technical_name == m.name)?
+                    .repo_version
+                    .as_deref()?;
+                let repo = adapt_version(&serie, repo);
+                (installed != repo).then(|| (m.name.clone(), installed.to_string(), repo))
+            })
+            .collect()
+    };
+    let version_drift = [
+        version_drift(&instances.prod),
+        version_drift(&instances.demo),
+    ];
 
     let repos: Vec<Repo> = row.repos();
     let patches: Vec<PatchView> = repos
@@ -756,6 +792,7 @@ pub async fn route_project(
                 deploy => row.deploy(),
                 instances,
                 not_installed => [not_installed.0, not_installed.1],
+                version_drift,
                 // "<file> <host>"
                 exposed => row.exposed_elsewhere().iter().map(|e| {
                     let (file, host) = e.split_once(' ').unwrap_or((e, ""));
@@ -775,6 +812,13 @@ pub async fn route_project(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manifest_versions_compare_as_odoo_installs_them() {
+        assert_eq!(adapt_version("18.0", "1.2.0"), "18.0.1.2.0");
+        assert_eq!(adapt_version("18.0", "18.0.1.2.0"), "18.0.1.2.0");
+        assert_eq!(adapt_version("18.0", "18.0"), "18.0");
+    }
 
     #[test]
     fn revs_sort_by_their_numbers_and_patches_link_to_their_pr() {

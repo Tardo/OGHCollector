@@ -235,10 +235,10 @@ mod tests {
 
     #[test]
     fn own_view_falls_back_to_shared_without_own_repos() {
-        let names = ["isonor".to_string()];
+        let names = ["acme".to_string()];
         assert_eq!(
-            own_view(Some("isonor"), &names),
-            (true, "isonor\0own".to_string())
+            own_view(Some("acme"), &names),
+            (true, "acme\0own".to_string())
         );
         assert_eq!(
             own_view(Some("default"), &names),

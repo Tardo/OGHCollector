@@ -91,7 +91,7 @@
 {% endif %}
 
 <div class="dash-report">
-{% for env, label, inst, missing in [('prod', 'Production', instances.prod, not_installed[0]), ('demo', 'Demo', instances.demo, not_installed[1])] if inst %}
+{% for env, label, inst, missing, drift in [('prod', 'Production', instances.prod, not_installed[0], version_drift[0]), ('demo', 'Demo', instances.demo, not_installed[1], version_drift[1])] if inst %}
     <section aria-labelledby="inst-{{ env }}-title">
         <div class="section-heading">
             <h2 id="inst-{{ env }}-title">{{ "Verified instance"|t }}: {{ label|t }}</h2>
@@ -107,6 +107,21 @@
         {% endif %}
         {% if missing %}
         <p class="dash-caption prj-alert"><span class="material-icons" aria-hidden="true">warning</span> {{ "Enabled in addons.yaml but not installed here"|t }}: {% for name in missing %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+        {% endif %}
+        {% if drift %}
+        <p class="dash-caption prj-alert"><span class="material-icons" aria-hidden="true">sync_problem</span> {{ "Installed at another version than the repository"|t }}:</p>
+        <table class="dash-rank">
+            <thead><tr><th>{{ "Module"|t }}</th><th>{{ "Installed"|t }}</th><th>{{ "Repository"|t }}</th></tr></thead>
+            <tbody>
+                {% for name, installed, repo in drift %}
+                <tr>
+                    <td class="dash-name"><code>{{ name }}</code></td>
+                    <td class="dash-meta">{{ installed }}</td>
+                    <td class="dash-meta">{{ repo }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% endif %}
         {% if inst.modules %}
         <details>

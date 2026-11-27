@@ -4,13 +4,15 @@
 //! versions, template, paths, git, base_url}]`; `deny_unknown_fields`, everything validated up
 //! front — it's meant to be machine-generated too, JSON/TOML work via the `config` crate) into
 //! those CLI arg lists. `pull_requests: migration|full` → 5th job arg (see `pull_requests.rs`);
-//! `workflows: [..]` → 6th (see `workflow.rs`); `actions: [..]` → 7th (see `actions.rs`); `instance: {..}` → 8th, JSON or `-` (see `instance.rs`). Run with
+//! `workflows: [..]` → 6th (see `workflow.rs`); `actions: [..]` → 7th (see `actions.rs`); `doodba_project_scan: true` → 8th, `scan` or `-`
+//! (see `instance.rs`; its credentials come from the environment, checked here). Run with
 //! no args (or `--config <file>`, `--check` = validate + print jobs), `main.rs::run_config` runs
-//! each job as its own child process (`current_exe()`), so a panic/busy lock only skips that job,
+//! each job as its own child processes (`current_exe()`), so a panic/busy lock only skips that job,
 //! and runs the embeddings pass once at the end (`OGHCOLLECTOR_SKIP_EMBEDDINGS` on the children).
 //! The image ships `collector.yaml`. `read_secret` (Docker secret file, else env var) backs both
-//! the API tokens and the webhook secrets. A test pins the shipped file to the old shell loop's 30
-//! jobs. `workspaces: [..]` per source → 4th job arg (`a,b`, or `all` = every workspace;
+//! the API tokens and the webhook secrets. One job per source, its versions joined by `,` in the
+//! 2nd arg (`main::run_and_record` fetches once, then runs each version as its own child); a test
+//! pins the shipped file's 3 jobs. `workspaces: [..]` per source → 4th job arg (`a,b`, or `all` = every workspace;
 //! same-`source` entries get the union): each job rewrites `gh_repository_workspace` for the repos
 //! it collected; a run without a 4th arg leaves them alone. No rows = repo in every workspace.
 use config::Config;
@@ -69,7 +71,8 @@ struct CollectorSource {
     actions: Vec<String>,
     /// Ask the real instances (prod/demo) of the Doodba projects it finds
     /// (see `instance.rs`).
-    instance: Option<instance::Config>,
+    #[serde(default)]
+    doodba_project_scan: bool,
 }
 
 /// The 6th/7th job argument when a source runs no workflow / allows no action.
@@ -200,12 +203,11 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
                 PULL_REQUEST_MODES.join(" or ")
             ));
         }
-        let source_instance = match &src.instance {
-            Some(instance) => {
-                instance.validate().map_err(|e| format!("{name}: {e}"))?;
-                serde_json::to_string(instance).map_err(|e| e.to_string())?
-            }
-            None => instance::NONE.to_string(),
+        let source_instance = if src.doodba_project_scan {
+            instance::Config::from_env().map_err(|e| format!("{name}: {e}"))?;
+            instance::SCAN.to_string()
+        } else {
+            instance::NONE.to_string()
         };
         let mut paths = match &src.template {
             Some(tmpl) => templates
@@ -234,22 +236,26 @@ pub fn load_jobs(path: &str) -> Result<Vec<Vec<String>>, String> {
         } else {
             format!("{git}:{}", src.base_url)
         };
+        let mut versions: Vec<String> = Vec::with_capacity(src.versions.len());
         for ver in &src.versions {
             let ver = format!("{ver:.1}");
             if parse_odoo_version(&ver).is_none() {
                 return Err(format!("{name}: invalid Odoo version '{ver}'"));
             }
-            jobs.push(vec![
-                origin.clone(),
-                ver,
-                git.clone(),
-                source_workspaces[&src.source].clone(),
-                src.pull_requests.clone(),
-                source_workflows.clone(),
-                source_actions.clone(),
-                source_instance.clone(),
-            ]);
+            if !versions.contains(&ver) {
+                versions.push(ver);
+            }
         }
+        jobs.push(vec![
+            origin,
+            versions.join(","),
+            git,
+            source_workspaces[&src.source].clone(),
+            src.pull_requests.clone(),
+            source_workflows,
+            source_actions,
+            source_instance,
+        ]);
     }
     Ok(jobs)
 }
@@ -283,6 +289,7 @@ pub struct OGHCollectorConfig {
     src: String,
     token: String,
     branch: String,
+    branches: Vec<String>,
     repos_path: String,
     base_url: String,
     git_type: GitType,
@@ -298,7 +305,9 @@ pub struct OGHCollectorConfig {
 impl OGHCollectorConfig {
     pub fn new(args: &[String]) -> OGHCollectorConfig {
         let raw_src = args[1].clone();
-        let branch = args[2].clone();
+        // `16.0,17.0`: one job over several versions (`main::run_and_record`).
+        let branches: Vec<String> = args[2].split(',').map(str::to_string).collect();
+        let branch = branches[0].clone();
         let raw_git_type = args.get(3).map_or("GH", |s| s.as_str());
         let git_type_str: String;
         let base_url: String;
@@ -384,6 +393,7 @@ impl OGHCollectorConfig {
             src: src.to_string(),
             token,
             branch,
+            branches,
             repos_path,
             base_url,
             git_type,
@@ -448,6 +458,11 @@ impl OGHCollectorConfig {
         &self.actions
     }
 
+    /// Every version of the job (`16.0,17.0`); one for a single-version job.
+    pub fn get_branches(&self) -> &[String] {
+        &self.branches
+    }
+
     pub fn get_instance(&self) -> Option<&instance::Config> {
         self.instance.as_ref()
     }
@@ -481,13 +496,13 @@ pub(crate) fn ensure_example_configs() {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn shipped_collector_yaml_matches_the_old_ofelia_loop() {
+    fn shipped_collector_yaml_has_one_job_per_source() {
         super::ensure_example_configs();
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../collector.yaml");
-        let job = |src: &str, ver: &str| {
+        let job = |src: &str, versions: &[&str]| {
             vec![
                 src.to_string(),
-                ver.to_string(),
+                versions.join(","),
                 "GH".to_string(),
                 "all".to_string(),
                 "migration".to_string(),
@@ -500,15 +515,11 @@ mod tests {
             "10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0",
         ];
         let old_versions = ["6.1", "7.0", "8.0", "9.0"];
-        let mut expected: Vec<Vec<String>> = Vec::new();
-        expected.extend(old_versions.map(|v| job("odoo/odoo:/addons,/openerp/addons", v)));
-        expected.extend(new_versions.map(|v| job("odoo/odoo:/addons,/odoo/addons", v)));
-        expected.extend(
-            old_versions
-                .iter()
-                .chain(&new_versions)
-                .map(|v| job("OCA", v)),
-        );
+        let expected = vec![
+            job("odoo/odoo:/addons,/openerp/addons", &old_versions),
+            job("odoo/odoo:/addons,/odoo/addons", &new_versions),
+            job("OCA", &[&old_versions[..], &new_versions[..]].concat()),
+        ];
         assert_eq!(super::load_jobs(path).unwrap(), expected);
     }
 

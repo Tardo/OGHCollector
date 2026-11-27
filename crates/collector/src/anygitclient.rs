@@ -45,17 +45,22 @@ impl GitClient for AnyGitClient {
         }
     }
 
-    async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_org_repos(
+        &self,
+        org_name: &str,
+        branches: &[String],
+        dest: &str,
+    ) -> Vec<RepoInfo> {
         match self {
-            AnyGitClient::Github(c) => c.clone_org_repos(org_name, branch, dest).await,
-            AnyGitClient::Gitlab(c) => c.clone_org_repos(org_name, branch, dest).await,
+            AnyGitClient::Github(c) => c.clone_org_repos(org_name, branches, dest).await,
+            AnyGitClient::Gitlab(c) => c.clone_org_repos(org_name, branches, dest).await,
         }
     }
 
-    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_source(&self, source: &str, branches: &[String], dest: &str) -> Vec<RepoInfo> {
         match self {
-            AnyGitClient::Github(c) => c.clone_source(source, branch, dest).await,
-            AnyGitClient::Gitlab(c) => c.clone_source(source, branch, dest).await,
+            AnyGitClient::Github(c) => c.clone_source(source, branches, dest).await,
+            AnyGitClient::Gitlab(c) => c.clone_source(source, branches, dest).await,
         }
     }
 

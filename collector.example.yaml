@@ -1,6 +1,7 @@
 # What `oghcollector` collects when run without a source (the `--listen`
-# daemon's schedule does exactly that). Jobs run in the order listed, one per version, each
-# the same as `oghcollector <source>[:<paths>] <version> <git>`.
+# daemon's schedule does exactly that). Jobs run in the order listed, one per source, each
+# the same as `oghcollector <source>[:<paths>] <version>,<version>... <git>`: the repositories
+# are fetched once, then each version runs as its own process over them.
 # `oghcollector --check` validates this file and prints those jobs.
 #
 # templates: named lists of module folders, referenced by `template:`
@@ -18,10 +19,13 @@
 #             the root too)
 #   git:      GH (default) or GL
 #   base_url: GitLab API URL of a self-hosted instance (default: gitlab.com)
-#   instance: ask the real prod/demo of each Doodba project it finds (Odoo JSON-RPC, API key
-#             from a secret; see crates/collector/src/instance.rs). Example:
-#               instance: {hosts: [client.example], login: ogh-bot,
-#                          api_key: "vault:secret/data/odoo/{repo}#api_key", db: "{repo}"}
+#   doodba_project_scan: true asks the real prod/demo of each Doodba project it finds
+#             (Odoo JSON-RPC, read-only): installed modules and their versions, users,
+#             languages. URLs (domains_prod/domains_test) and database (postgres_dbname)
+#             come from the project's copier answers; the login and the password from
+#             OGHCOLLECTOR_DOODBA_SCAN_LOGIN and OGHCOLLECTOR_DOODBA_SCAN_PASSWORD (a
+#             secret reference, e.g. vault:secret/data/{repo}#odoo_password; both
+#             required). See crates/collector/src/instance.rs (default: false)
 #   workspaces: portal workspaces its repos are shown in (default: all of
 #             them). Letters, digits, '-' and '_'. Entries with the same
 #             `source` share the union. Dependencies on modules of other

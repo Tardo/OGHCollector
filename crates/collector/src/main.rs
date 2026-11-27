@@ -14,7 +14,10 @@
 //! reqwest client) has connect/request timeouts and `git_run_env` a low-speed limit. The batch
 //! parent's embeddings pass is not covered (the daemon's is: it's a `run_job` child).
 //! `OGHCOLLECTOR_SKIP_EMBEDDINGS` set on the batch parent or the daemon turns that pass off (the
-//! children always get it: the parent runs the pass once).
+//! children always get it: the parent runs the pass once). A job over several versions
+//! (`16.0,17.0`) is a fetch child (source listed once, each repository fetched once for the
+//! versions it has: `OGHCOLLECTOR_REPOS_OUT`) and then one child per version over that file
+//! (`OGHCOLLECTOR_REPOS_FILE`: local checkout only), each with its own timeout and failure record.
 mod actions;
 #[cfg(test)]
 mod actions_tests;
@@ -154,9 +157,15 @@ static STOPPING: AtomicBool = AtomicBool::new(false);
 /// Runs one `collector.yaml` job as a child process, passing its log (stderr)
 /// through as it comes. `Err` = why it failed: its first logged error plus
 /// how it ended.
-fn run_job(exe: &Path, args: &[String], timeout: Duration) -> Result<(), String> {
+fn run_job(
+    exe: &Path,
+    args: &[String],
+    env: &[(&str, &Path)],
+    timeout: Duration,
+) -> Result<(), String> {
     let mut child = Command::new(exe)
         .args(args)
+        .envs(env.iter().copied())
         .env(SKIP_EMBEDDINGS_ENV, "1")
         .env(CONFIG_ENV, config_path())
         .stderr(Stdio::piped())
@@ -269,11 +278,54 @@ fn open_db() -> sqlitedb::Pool {
     pool
 }
 
-/// Runs a job (`run_job`) and records its failure in the event log. `false`
-/// when it failed.
+/// Set on the fetch child of a several-version job: where it writes the repositories it fetched
+/// (JSON `RepoInfo`s, each with the versions it has).
+const REPOS_OUT_ENV: &str = "OGHCOLLECTOR_REPOS_OUT";
+/// Set on its version children: that file, so they only check out (no listing, no network).
+const REPOS_FILE_ENV: &str = "OGHCOLLECTOR_REPOS_FILE";
+
+/// Runs a job and records its failure in the event log. `false` when it failed. A job over
+/// several versions (`16.0,17.0`, one per source from `load_jobs`) runs as a fetch child (the
+/// source listed once, each repository fetched once for all its versions) and then one child
+/// per version, each with its own timeout, so a panic/OOM/hang in one version doesn't stop the
+/// others. A failed fetch is recorded and the versions still run over what it wrote.
 fn run_and_record(exe: &Path, args: &[String], pool: &sqlitedb::Pool) -> bool {
+    if !args[1].contains(',') {
+        return run_and_record_one(exe, args, &[], pool);
+    }
+    let file = env::temp_dir().join(format!(
+        "oghcollector-repos-{}-{}.json",
+        std::process::id(),
+        REPOS_FILES.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_file(&file);
+    let mut ok = run_and_record_one(exe, args, &[(REPOS_OUT_ENV, &file)], pool);
+    if !file.exists() {
+        return false;
+    }
+    for version in args[1].split(',') {
+        if STOPPING.load(Ordering::SeqCst) {
+            break;
+        }
+        let mut job = args.to_vec();
+        job[1] = version.to_string();
+        ok &= run_and_record_one(exe, &job, &[(REPOS_FILE_ENV, &file)], pool);
+    }
+    let _ = fs::remove_file(&file);
+    ok
+}
+
+/// Tells apart the repository files of `run_and_record` calls in one process.
+static REPOS_FILES: AtomicUsize = AtomicUsize::new(0);
+
+fn run_and_record_one(
+    exe: &Path,
+    args: &[String],
+    env: &[(&str, &Path)],
+    pool: &sqlitedb::Pool,
+) -> bool {
     log::info!("Running job: {}", args.join(" "));
-    let Err(reason) = run_job(exe, args, JOB_TIMEOUT) else {
+    let Err(reason) = run_job(exe, args, env, JOB_TIMEOUT) else {
         return true;
     };
     if STOPPING.load(Ordering::SeqCst) {
@@ -343,7 +395,7 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let usage = || -> ! {
         eprintln!(
-            "Usage: oghcollector [--config <file>] [--check|--listen]\n       oghcollector --embeddings\n       oghcollector <source>[:<paths>] <version> [<git> [<workspaces>|all [migration|full [<workflows>|-]]]]"
+            "Usage: oghcollector [--config <file>] [--check|--listen]\n       oghcollector --embeddings\n       oghcollector <source>[:<paths>] <version>[,<version>...] [<git> [<workspaces>|all [migration|full [<workflows>|-]]]]"
         );
         std::process::exit(2);
     };
@@ -372,6 +424,14 @@ async fn main() {
         usage();
     }
     let config = OGHCollectorConfig::new(&args);
+    // Several versions from the command line: what a `collector.yaml` run does with them.
+    if config.get_branches().len() > 1 && env::var_os(REPOS_OUT_ENV).is_none() {
+        let exe = env::current_exe().expect("Can't locate the collector binary");
+        std::process::exit(match run_and_record(&exe, &args[1..], &open_db()) {
+            true => 0,
+            false => 1,
+        });
+    }
 
     let _lock_guard = try_lock(&config);
 
@@ -393,6 +453,28 @@ async fn main() {
     };
     let pypi_client = PypiClient::new();
 
+    // The fetch child of a several-version job (`run_and_record`): only the network part.
+    if let Some(out) = env::var_os(REPOS_OUT_ENV) {
+        log::info!("Cloning/Updating ({})...", config.get_branches().join(","));
+        let repos = git_client
+            .clone_source(
+                config.get_source(),
+                config.get_branches(),
+                config.get_repos_path(),
+            )
+            .await;
+        let written = serde_json::to_vec(&repos)
+            .map_err(|err| err.to_string())
+            .and_then(|json| fs::write(&out, json).map_err(|err| err.to_string()));
+        if let Err(err) = written {
+            log::error!("Can't write the fetched repositories: {err}");
+        }
+        if LOGGED_ERRORS.load(Ordering::Relaxed) > 0 {
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let pool = open_db();
     let mut conn = pool.get().unwrap();
 
@@ -404,14 +486,33 @@ async fn main() {
         config.get_source(),
         &odoo_ver_str,
     );
-    log::info!("Cloning/Updating ({})...", odoo_ver_str);
-    let repo_infos: Vec<RepoInfo> = git_client
-        .clone_source(
-            config.get_source(),
-            config.get_branch(),
-            config.get_repos_path(),
-        )
-        .await;
+    // A version child gets what its job's fetch child fetched; a single-version job fetches.
+    let fetched: Vec<RepoInfo> = match env::var_os(REPOS_FILE_ENV) {
+        Some(file) => {
+            let read = fs::read(&file)
+                .map_err(|err| err.to_string())
+                .and_then(|json| serde_json::from_slice(&json).map_err(|err| err.to_string()));
+            read.unwrap_or_else(|err| {
+                log::error!("Can't read the fetched repositories: {err}");
+                std::process::exit(1);
+            })
+        }
+        None => {
+            log::info!("Cloning/Updating ({})...", odoo_ver_str);
+            git_client
+                .clone_source(
+                    config.get_source(),
+                    std::slice::from_ref(config.get_branch()),
+                    config.get_repos_path(),
+                )
+                .await
+        }
+    };
+    let repo_infos: Vec<RepoInfo> = fetched
+        .into_iter()
+        .filter(|r| r.branches.contains(config.get_branch()))
+        .filter(|r| gitclient::checkout(r, config.get_branch()))
+        .collect();
 
     let mut gh_repo_ids: Vec<i64> = Vec::with_capacity(repo_infos.len());
     for repo_info in &repo_infos {
@@ -533,7 +634,7 @@ mod tests {
         // The background sleep holds stderr open too: only killing the whole
         // group ends the job before the 30s grace periods.
         let args = ["-c".to_string(), "sleep 60 & sleep 60".to_string()];
-        let err = run_job(Path::new("sh"), &args, Duration::from_secs(1)).unwrap_err();
+        let err = run_job(Path::new("sh"), &args, &[], Duration::from_secs(1)).unwrap_err();
         assert!(err.starts_with("timed out after 1s"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(10));
     }

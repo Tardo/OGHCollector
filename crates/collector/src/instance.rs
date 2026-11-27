@@ -1,78 +1,68 @@
 // Copyright Alexandre D. Díaz
-//! The real instances of a Doodba project: a source's `instance:` (`collector.yaml`; the 8th job
-//! argument as JSON, `-` = none) makes `doodba::collect` ask each deployed environment (prod,
-//! demo; the URLs `doodba::parse_deploy` read from the copier answers) over Odoo's JSON-RPC
-//! (`/jsonrpc`): version, installed modules with their versions, active internal users, active
-//! languages. That is what the database says, not the repository. Odoo has no JWT: the login and
-//! an API key (Odoo >= 14: user preferences > Account security) take the password's place.
-//! - `login`; `api_key` = a secret reference (`secrets::get`: env/Docker secret or
-//!   `vault:<path>#<key>`), `{repo}` replaced by the repository's name first so each project has
-//!   its own; `db` (optional, `{repo}` too; else the instance's database list must have exactly one).
-//! - `hosts` is mandatory: the URL comes from a file anyone with push access to the project
-//!   repository writes, and the key goes to it. Only `https` URLs on those domains (or their
-//!   subdomains) are called, redirects are never followed.
+//! The real instances of a Doodba project: a source's `doodba_project_scan: true`
+//! (`collector.yaml`; the 8th job argument, `scan` or `-` = none) makes `doodba::collect` ask
+//! each deployed environment (prod, demo) over Odoo's JSON-RPC (`/jsonrpc`): version, installed
+//! modules with their versions, active internal users, active languages. That is what the
+//! database says, not the repository. Everything but the credentials comes from the project's
+//! own files (`doodba::parse_deploy`): the URLs from the copier answers' `domains_prod`/
+//! `domains_test`, the database from `postgres_dbname` (none = the instance's database list must
+//! have exactly one). Read-only calls only (`version`, `db.list`, `authenticate`, `search_read`,
+//! `search_count`).
+//! - `OGHCOLLECTOR_DOODBA_SCAN_LOGIN`: the Odoo user every instance has.
+//! - `OGHCOLLECTOR_DOODBA_SCAN_PASSWORD`: a secret reference (`secrets::get`: env/Docker secret
+//!   or `vault:<path>#<key>`, e.g. `vault:secret/data/{repo}#odoo_password`), `{repo}` replaced by
+//!   the repository's name first so each project has its own. A password or an API key
+//!   (Odoo >= 14) both work. Both are required when a source scans; `load_jobs` checks them.
 //!
-//! A failed query keeps the last good answer and sets `error` (an outage never reads as "nothing
-//! installed"). The key never reaches logs, errors or the DB: reqwest errors go without URL, and
+//! No host allowlist (a deliberate choice): the URL comes from a file anyone with push access to
+//! the project repository writes, and that project's password goes to it. Only `https` URLs are
+//! called and redirects are never followed. A failed query keeps the last good answer and sets
+//! `error` (an outage never reads as "nothing installed"). An answer younger than `REUSE_FOR`
+//! (any project, same URL: a project's branches share their instances) is reused, not asked
+//! again. The password never reaches logs, errors or the DB: reqwest errors go without URL, and
 //! Odoo's own error text is cut short.
 use reqwest::Url;
-use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use sqlitedb::models::doodba_project::{Deploy, InstalledModule, Instance, Instances};
 
 use crate::{gitclient, secrets};
 
-#[derive(Debug, Clone, Deserialize, serde::Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
-    pub hosts: Vec<String>,
     pub login: String,
-    pub api_key: String,
-    #[serde(default)]
-    pub db: Option<String>,
+    pub password: String,
 }
 
-/// The 8th job argument of a source without `instance:`.
+/// The 8th job argument of a source with `doodba_project_scan: true` / without it.
+pub const SCAN: &str = "scan";
 pub const NONE: &str = "-";
 
 impl Config {
+    /// The 8th job argument: `scan` = the credentials from the environment.
     pub fn parse(arg: &str) -> Result<Option<Config>, String> {
-        if arg == NONE {
-            return Ok(None);
+        match arg {
+            NONE => Ok(None),
+            SCAN => Config::from_env().map(Some),
+            bad => Err(format!("doodba_project_scan: '{bad}' ({SCAN} or {NONE})")),
         }
-        let config: Config = serde_json::from_str(arg).map_err(|e| format!("instance: {e}"))?;
-        config.validate()?;
-        Ok(Some(config))
     }
 
-    pub fn validate(&self) -> Result<(), String> {
-        let host = |h: &str| {
-            !h.is_empty()
-                && !h.starts_with('.')
-                && h.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    pub fn from_env() -> Result<Config, String> {
+        let var = |name: &str| {
+            std::env::var(name)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .ok_or(format!("{name} isn't set (doodba_project_scan)"))
         };
-        if self.hosts.is_empty() || !self.hosts.iter().all(|h| host(h)) {
-            return Err("instance.hosts: domains the instances live on (example.com)".into());
-        }
-        if self.login.trim().is_empty() {
-            return Err("instance.login is empty".into());
-        }
-        oghworkflow::secret_ref(&fill(&self.api_key, "repo"))
-            .map_err(|e| format!("instance.api_key: {e}"))?;
-        Ok(())
-    }
-
-    fn allows(&self, url: &Url) -> bool {
-        let Some(host) = url.host_str() else {
-            return false;
+        let config = Config {
+            login: var("OGHCOLLECTOR_DOODBA_SCAN_LOGIN")?,
+            password: var("OGHCOLLECTOR_DOODBA_SCAN_PASSWORD")?,
         };
-        url.scheme() == "https"
-            && self
-                .hosts
-                .iter()
-                .any(|h| host == h || host.ends_with(&format!(".{h}")))
+        oghworkflow::secret_ref(&fill(&config.password, "repo"))
+            .map_err(|e| format!("OGHCOLLECTOR_DOODBA_SCAN_PASSWORD: {e}"))?;
+        Ok(config)
     }
 }
 
@@ -87,30 +77,66 @@ pub async fn refresh(
     repo: &str,
     deploy: &Deploy,
     stored: &Instances,
+    recent: &mut HashMap<String, Instance>,
 ) -> Instances {
     let client = reqwest_client();
-    let ask = |url: &Option<String>, on: bool, old: &Option<Instance>| {
-        let url = url.clone().filter(|_| on);
-        let old = old.clone();
-        let client = &client;
-        async move {
-            let url = url?;
-            Some(match query(client, config, repo, &url).await {
-                Ok(instance) => instance,
+    let mut ask = Asker {
+        client: &client,
+        config,
+        repo,
+        db: deploy.db.as_deref(),
+        recent,
+    };
+    Instances {
+        prod: ask.ask(&deploy.prod_url, deploy.prod, &stored.prod).await,
+        demo: ask.ask(&deploy.demo_url, deploy.demo, &stored.demo).await,
+    }
+}
+
+/// How long an instance's answer stands for every project naming its URL.
+pub const REUSE_FOR: chrono::Duration = chrono::Duration::hours(1);
+
+struct Asker<'a> {
+    client: &'a reqwest::Client,
+    config: &'a Config,
+    repo: &'a str,
+    db: Option<&'a str>,
+    /// Answers newer than `REUSE_FOR` by URL (`doodba_project::recent_instances`, plus this job's).
+    recent: &'a mut HashMap<String, Instance>,
+}
+
+impl Asker<'_> {
+    async fn ask(
+        &mut self,
+        url: &Option<String>,
+        on: bool,
+        old: &Option<Instance>,
+    ) -> Option<Instance> {
+        let url = url.clone().filter(|_| on)?;
+        if let Some(fresh) = self.recent.get(&url) {
+            log::info!(
+                "'{}': {url} answered at {:?}, not asked again",
+                self.repo,
+                fresh.checked_at
+            );
+            return Some(fresh.clone());
+        }
+        Some(
+            match query(self.client, self.config, self.repo, self.db, &url).await {
+                Ok(instance) => {
+                    self.recent.insert(url, instance.clone());
+                    instance
+                }
                 Err(err) => {
-                    log::warn!("'{repo}': can't query {url}: {err}");
+                    log::warn!("'{}': can't query {url}: {err}", self.repo);
                     Instance {
                         url,
                         error: Some(err),
-                        ..old.unwrap_or_default()
+                        ..old.clone().unwrap_or_default()
                     }
                 }
-            })
-        }
-    };
-    Instances {
-        prod: ask(&deploy.prod_url, deploy.prod, &stored.prod).await,
-        demo: ask(&deploy.demo_url, deploy.demo, &stored.demo).await,
+            },
+        )
     }
 }
 
@@ -125,17 +151,18 @@ pub async fn query(
     client: &reqwest::Client,
     config: &Config,
     repo: &str,
+    db: Option<&str>,
     url: &str,
 ) -> Result<Instance, String> {
     let base = Url::parse(url).map_err(|_| "not a URL".to_string())?;
-    if !config.allows(&base) {
+    if base.scheme() != "https" {
         return Err(format!(
-            "{} isn't an https URL on instance.hosts",
+            "{} isn't an https URL",
             base.host_str().unwrap_or("?")
         ));
     }
     let endpoint = base.join("/jsonrpc").map_err(|e| e.to_string())?;
-    fetch(client, config, repo, url, &endpoint).await
+    fetch(client, config, repo, db, url, &endpoint).await
 }
 
 /// `query` past the host check (the tests' server isn't https).
@@ -143,10 +170,11 @@ async fn fetch(
     client: &reqwest::Client,
     config: &Config,
     repo: &str,
+    db: Option<&str>,
     url: &str,
     endpoint: &Url,
 ) -> Result<Instance, String> {
-    let key = secrets::get(&fill(&config.api_key, repo)).await?;
+    let key = secrets::get(&fill(&config.password, repo)).await?;
     let rpc = |service: &'static str, method: &'static str, args: Value| {
         call(client, endpoint, service, method, args)
     };
@@ -155,22 +183,26 @@ async fn fetch(
         .get("server_version")
         .and_then(Value::as_str)
         .map(str::to_string);
-    let db = match &config.db {
-        Some(db) => fill(db, repo),
+    let db = match db {
+        Some(db) => db.to_string(),
         None => {
             let list = rpc("db", "list", json!([])).await.map_err(|e| {
-                format!("{e} (set instance.db when the instance hides its database list)")
+                format!("{e} (no postgres_dbname in the copier answers to name it)")
             })?;
             match list.as_array().map(Vec::as_slice) {
                 Some([only]) => only.as_str().unwrap_or_default().to_string(),
-                _ => return Err("can't tell the database: set instance.db".into()),
+                _ => {
+                    return Err(
+                        "can't tell the database: no postgres_dbname in the copier answers".into(),
+                    )
+                }
             }
         }
     };
     let uid = rpc("common", "authenticate", json!([db, config.login, key, {}]))
         .await?
         .as_i64()
-        .ok_or("login or API key refused")?;
+        .ok_or("login or password refused")?;
     let object = |model: &'static str, method: &'static str, args: Value, kwargs: Value| {
         rpc(
             "object",
@@ -275,33 +307,61 @@ async fn call(
 mod tests {
     use super::*;
 
-    fn config(hosts: &[&str]) -> Config {
+    fn config() -> Config {
         Config {
-            hosts: hosts.iter().map(|h| h.to_string()).collect(),
             login: "ogh".into(),
-            api_key: "OGH_TEST_INSTANCE_KEY".into(),
-            db: Some("{repo}".into()),
+            password: "OGH_TEST_INSTANCE_KEY".into(),
         }
     }
 
+    #[tokio::test]
+    async fn a_fresh_answer_for_the_same_url_is_reused() {
+        let url = "https://erp.invalid".to_string();
+        let fresh = Instance {
+            url: url.clone(),
+            server_version: Some("18.0".into()),
+            ..Default::default()
+        };
+        let mut recent = HashMap::from([(url.clone(), fresh.clone())]);
+        let deploy = Deploy {
+            prod: true,
+            prod_url: Some(url),
+            demo_url: Some("https://demo.invalid".into()),
+            ..Default::default()
+        };
+        // Demo is off: not asked. Prod would fail (no such host): it isn't asked either.
+        let got = refresh(
+            &config(),
+            "client-a",
+            &deploy,
+            &Instances::default(),
+            &mut recent,
+        )
+        .await;
+        assert_eq!(got.prod, Some(fresh));
+        assert_eq!(got.demo, None);
+    }
+
     #[test]
-    fn config_validates_and_only_allows_https_on_its_hosts() {
+    fn the_scan_switch_takes_its_credentials_from_the_environment() {
         assert_eq!(Config::parse("-"), Ok(None));
-        assert!(Config::parse(r#"{"hosts":[],"login":"a","api_key":"K"}"#).is_err());
-        assert!(
-            Config::parse(r#"{"hosts":["a.b"],"login":"a","api_key":"GH_TOKEN"}"#)
-                .unwrap_err()
-                .contains("collector's own")
+        assert!(Config::parse("yes").is_err());
+        // The only test that touches these env vars.
+        std::env::remove_var("OGHCOLLECTOR_DOODBA_SCAN_LOGIN");
+        assert!(Config::parse("scan").unwrap_err().contains("_LOGIN"));
+        std::env::set_var("OGHCOLLECTOR_DOODBA_SCAN_LOGIN", "ogh");
+        std::env::set_var("OGHCOLLECTOR_DOODBA_SCAN_PASSWORD", "GH_TOKEN");
+        assert!(Config::parse("scan")
+            .unwrap_err()
+            .contains("collector's own"));
+        let password = "vault:secret/data/{repo}#odoo_password";
+        std::env::set_var("OGHCOLLECTOR_DOODBA_SCAN_PASSWORD", password);
+        let c = Config::parse("scan").unwrap().unwrap();
+        assert_eq!(c.login, "ogh");
+        assert_eq!(
+            fill(&c.password, "client-a"),
+            "vault:secret/data/client-a#odoo_password"
         );
-        let ok = r#"{"hosts":["a.b"],"login":"a","api_key":"vault:kv/data/odoo/{repo}#key"}"#;
-        assert!(Config::parse(ok).unwrap().is_some());
-        let c = config(&["example.com"]);
-        let allowed = |u: &str| c.allows(&Url::parse(u).unwrap());
-        assert!(allowed("https://erp.example.com/web"));
-        assert!(allowed("https://example.com"));
-        assert!(!allowed("http://example.com"));
-        assert!(!allowed("https://evilexample.com"));
-        assert!(!allowed("https://example.com.evil.net"));
     }
 
     #[tokio::test]
@@ -314,6 +374,7 @@ mod tests {
                 let args = &p["args"];
                 let result = match (p["service"].as_str(), p["method"].as_str()) {
                     (Some("common"), Some("version")) => json!({"server_version": "18.0"}),
+                    (Some("db"), Some("list")) => json!(["client-a"]),
                     (Some("common"), Some("authenticate")) => {
                         if args[2] == "s3cr3t-key" && args[1] == "ogh" && args[0] == "client-a" {
                             json!(7)
@@ -343,7 +404,7 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let client = reqwest_client();
         let endpoint = Url::parse(&format!("{url}/jsonrpc")).unwrap();
-        let got = fetch(&client, &config(&[]), "client-a", &url, &endpoint)
+        let got = fetch(&client, &config(), "client-a", None, &url, &endpoint)
             .await
             .unwrap();
         assert_eq!(got.db.as_deref(), Some("client-a"));
@@ -353,9 +414,16 @@ mod tests {
         assert_eq!(got.modules.len(), 2);
         assert_eq!(got.modules[1].version, None);
         assert_eq!(got.modules[1].state, "to upgrade");
-        let wrong = fetch(&client, &config(&[]), "other", &url, &endpoint)
-            .await
-            .unwrap_err();
+        let wrong = fetch(
+            &client,
+            &config(),
+            "client-a",
+            Some("other"),
+            &url,
+            &endpoint,
+        )
+        .await
+        .unwrap_err();
         assert!(
             wrong.contains("refused") && !wrong.contains("s3cr3t"),
             "{wrong}"
@@ -395,11 +463,11 @@ mod tests {
             denied.contains("Access Denied") && !denied.contains("s3cr3t"),
             "{denied}"
         );
-        let refused = query(&client, &config(&["127.0.0.1"]), "client-a", &url)
+        let refused = query(&client, &config(), "client-a", None, &url)
             .await
             .unwrap_err();
         assert!(
-            refused.contains("instance.hosts") && !refused.contains("s3cr3t"),
+            refused.contains("https") && !refused.contains("s3cr3t"),
             "{refused}"
         );
     }

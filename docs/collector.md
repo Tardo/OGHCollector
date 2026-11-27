@@ -78,9 +78,13 @@ back silently to a default), and the same keys work as JSON or TOML (`--config c
 `oghcollector --check` validates the file and prints its jobs, one per line, without running them
 (exit status `2` on an invalid file), so a pipeline can check a generated config before deploying it.
 
-The file is validated before anything runs. Jobs then run in order, one `oghcollector <source>[:<paths>] <version> <git>`
-child process per version: a failed job is logged and skipped, the rest still run, and the run
-exits non-zero at the end. The embedding pass runs once, after the last job.
+The file is validated before anything runs. Jobs then run in order, one per source,
+`oghcollector <source>[:<paths>] <version>,<version>... <git>`. A job first lists the source and
+fetches each repository once, only the branches of its versions that exist (a repository without
+one of them simply has nothing for that version, not an error); then each version runs as its
+own child process over those clones, checked out locally. A failed or crashed version is logged
+and skipped, the other versions and jobs still run, and the run exits non-zero at the end. The
+embedding pass runs once, after the last job.
 
 A job fails when anything goes wrong in it, not only when it crashes: an API error (a bad or
 expired token, a rate limit that outlasts the retries), a repository that can't be cloned or

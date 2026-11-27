@@ -12,7 +12,9 @@
 //!   demo's branch/clone/reset/name) and the hosts of the answers' `domains_prod`/`domains_test`:
 //!   the real instances and their URLs (`deploy`). The included CI template isn't fetched, so
 //!   an unset switch has its default (prod on, demo off).
-//! - `instances`: with `instance:` in the source, what the real prod/demo answered (`instance.rs`).
+//!   The answers' `postgres_dbname` is the database the instances serve (`deploy.db`).
+//! - `instances`: with `doodba_project_scan: true` in the source, what the real prod/demo
+//!   answered (`instance.rs`).
 //! - `.pre-commit-config.yaml` hook revs, `dependencies/*.txt`, the Dockerfile `FROM`.
 //!
 //! Template drift: each distinct template is cloned once per job under
@@ -276,6 +278,10 @@ fn parse_deploy(root: &Path, answers: Option<&Yaml>) -> Deploy {
             .filter(|n| demo && !n.is_empty())
             .map(|n| strip_credentials(&n)),
         demo_url: first_host_url(answers, "domains_test").filter(|_| demo),
+        db: answers
+            .and_then(|a| scalar(&a["postgres_dbname"]))
+            .filter(|db| !db.is_empty())
+            .map(|db| strip_credentials(&db)),
     }
 }
 
@@ -667,6 +673,10 @@ pub(crate) async fn collect(
         checkouts: HashMap::new(),
     };
     let mut patch_states = PatchStates::new(git);
+    let mut recent_instances = match instance {
+        Some(_) => doodba_project::recent_instances(conn, instance::REUSE_FOR),
+        None => HashMap::new(),
+    };
     let mut pins = HashMap::new();
     for (repo, gh_repo_id) in repos.iter().zip(gh_repo_ids) {
         let mut project = match detect(Path::new(repo.get_clone_path()), &version) {
@@ -707,14 +717,21 @@ pub(crate) async fn collect(
                     Some(drift(&dir, commit))
                 })
                 .unwrap_or_default();
-            // Kept as stored when nothing asks (no `instance:` in this run).
+            // Kept as stored when nothing asks (no `doodba_project_scan` in this run).
             let stored_instances: Instances = stored
                 .as_ref()
                 .and_then(|m| serde_json::from_str(&m.instances).ok())
                 .unwrap_or_default();
             let instances = match instance {
                 Some(config) => {
-                    instance::refresh(config, repo.get_name(), &p.deploy, &stored_instances).await
+                    instance::refresh(
+                        config,
+                        repo.get_name(),
+                        &p.deploy,
+                        &stored_instances,
+                        &mut recent_instances,
+                    )
+                    .await
                 }
                 None => stored_instances,
             };
@@ -947,7 +964,7 @@ mod tests {
         write(
             &root,
             ".copier-answers.yml",
-            "domains_prod:\n  - hosts:\n      - erp.example.com\ndomains_test:\n  - hosts:\n      - demo.example.com\n      - other.example.com\n",
+            "postgres_dbname: client_a\ndomains_prod:\n  - hosts:\n      - erp.example.com\ndomains_test:\n  - hosts:\n      - demo.example.com\n      - other.example.com\n",
         );
         let answers = read_yaml(&root.join(".copier-answers.yml"))
             .unwrap()
@@ -964,6 +981,7 @@ mod tests {
         assert_eq!(d.demo_branch.as_deref(), Some("17.0-demo"));
         assert_eq!(d.prod_url.as_deref(), Some("https://erp.example.com"));
         assert_eq!(d.demo_url.as_deref(), Some("https://demo.example.com"));
+        assert_eq!(d.db.as_deref(), Some("client_a"));
         // Demo off by default; prod off when told so, and then it has no URL.
         write(
             &root,

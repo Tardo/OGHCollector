@@ -162,7 +162,7 @@ mod tests {
             secret: "s".into(),
             gitlab: format!("http://{addr}"),
             token: "t".into(),
-            group: "isonor".into(),
+            group: "acme".into(),
             ttl: Duration::from_secs(60),
             http: reqwest::Client::new(),
             cache: Mutex::default(),

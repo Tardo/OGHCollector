@@ -12,7 +12,8 @@
 //! (never at startup, except on an empty DB; each wait is logged); `POST /hooks/github` (HMAC `X-Hub-Signature-256`; push, pull_request,
 //! check_suite, status) / `/hooks/gitlab` (`X-Gitlab-Token`; push, merge_request, pipeline) map an
 //! event to a branch (CI events: `pull_request::get_version_by_head_sha` through the pool) and then
-//! via `jobs_for_push` (source = the repo or its direct parent, `job[1]` = branch, same git type;
+//! via `jobs_for_push` (source = the repo or its direct parent, the branch among `job[1]`'s
+//! versions and then its only one, same git type;
 //! `job[0]` rewritten to the repo, paths/git/workspaces kept) and queue it at the front. A route
 //! exists only if its secret is set; everything not queued answers 2xx (GitLab disables failing
 //! hooks). When the queue drains it runs `oghcollector --embeddings` as a child (not with
@@ -90,7 +91,7 @@ fn work(queue: &Queue, pool: &sqlitedb::Pool) {
             continue;
         }
         let args = ["--embeddings".to_string()];
-        if let Err(reason) = super::run_job(&exe, &args, super::JOB_TIMEOUT) {
+        if let Err(reason) = super::run_job(&exe, &args, &[], super::JOB_TIMEOUT) {
             log::error!("Embeddings pass failed: {reason}");
         }
     }
@@ -125,7 +126,8 @@ fn schedule(queue: &Queue, path: &str, period: u64) {
 /// The jobs (`load_jobs` argument lists) a push to `repo`'s `branch` concerns,
 /// narrowed to that repository: those of a source that is the repository
 /// itself or its org/group (only direct children: a group source doesn't
-/// include its subgroups), with `git` (`GH`/`GL`) and `branch` as version.
+/// include its subgroups), with `git` (`GH`/`GL`) and `branch` among its versions, which
+/// becomes the job's only one.
 // ponytail: GitLab instances aren't told apart, a push to `grp/x` on one also
 // matches a `grp` source of another (that job then fails); compare the
 // base_url host with the payload's `project.web_url` if both are ever used.
@@ -134,12 +136,13 @@ fn jobs_for_push(jobs: Vec<Vec<String>>, git: &str, repo: &str, branch: &str) ->
     jobs.into_iter()
         .filter(|job| {
             let source = job[0].split(':').next().unwrap_or_default();
-            job[1] == branch
+            job[1].split(',').any(|v| v == branch)
                 && job[2].split(':').next() == Some(git)
                 && (source.eq_ignore_ascii_case(repo)
                     || parent.is_some_and(|p| p.eq_ignore_ascii_case(source)))
         })
         .map(|mut job| {
+            job[1] = branch.to_string();
             job[0] = match job[0].split_once(':') {
                 Some((_, paths)) => format!("{repo}:{paths}"),
                 None => repo.to_string(),
@@ -456,14 +459,18 @@ mod tests {
     fn a_push_runs_its_repository_of_each_matching_source() {
         let jobs = vec![
             job("odoo/odoo:/addons,/odoo/addons", "18.0", "GH"),
-            job("OCA", "17.0", "GH"),
-            job("OCA", "18.0", "GH"),
+            job("OCA", "17.0,18.0", "GH"),
             job("grp/sub", "18.0", "GL:https://git.acme.dev/api/v4/"),
         ];
         let push = |git, repo, branch| jobs_for_push(jobs.clone(), git, repo, branch);
+        // One version of a several-version job: only that one runs.
         assert_eq!(
             push("GH", "OCA/web", "18.0"),
             [job("OCA/web", "18.0", "GH")]
+        );
+        assert_eq!(
+            push("GH", "OCA/web", "17.0"),
+            [job("OCA/web", "17.0", "GH")]
         );
         assert_eq!(
             push("GH", "odoo/odoo", "18.0"),

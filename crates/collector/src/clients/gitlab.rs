@@ -70,7 +70,12 @@ impl GitClient for GitlabClient {
         Ok(res)
     }
 
-    async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_org_repos(
+        &self,
+        org_name: &str,
+        branches: &[String],
+        dest: &str,
+    ) -> Vec<RepoInfo> {
         let mut page_count: usize = 1;
         let mut repos: Vec<RepoInfo> = Vec::new();
 
@@ -104,7 +109,7 @@ impl GitClient for GitlabClient {
             }
 
             for project in group_repos_items.iter() {
-                repos.extend(self.clone_project(project, org_name, branch, dest));
+                repos.extend(self.clone_project(project, org_name, branches, dest));
             }
 
             if group_repos_items.len() < GITLAB_LIMIT_PER_PAGE {
@@ -119,13 +124,13 @@ impl GitClient for GitlabClient {
 
     /// GitLab nests groups, so `a/b` is either a project or a subgroup: the
     /// project lookup decides, anything that isn't one is listed as a group.
-    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_source(&self, source: &str, branches: &[String], dest: &str) -> Vec<RepoInfo> {
         if source.contains('/') {
             let url = format!("projects/{}", urlencoding::encode(source));
             match self.request_json(&url).await {
                 Ok(project) if project["http_url_to_repo"].is_string() => {
                     return self
-                        .clone_project(&project, source, branch, dest)
+                        .clone_project(&project, source, branches, dest)
                         .into_iter()
                         .collect();
                 }
@@ -138,7 +143,7 @@ impl GitClient for GitlabClient {
                 }
             }
         }
-        self.clone_org_repos(source, branch, dest).await
+        self.clone_org_repos(source, branches, dest).await
     }
 
     async fn get_repo_pull_requests(
@@ -246,7 +251,7 @@ impl GitlabClient {
         &self,
         project: &serde_json::Value,
         org_name: &str,
-        branch: &str,
+        branches: &[String],
         dest: &str,
     ) -> Option<RepoInfo> {
         let name = project["path"].as_str().unwrap_or("");
@@ -258,8 +263,9 @@ impl GitlabClient {
         let owner = path_with_namespace
             .split_once('/')
             .map_or(org_name, |(owner, _)| owner);
-        let Some(mut info) = self.clone_or_update_repo(owner, name, http_url, branch, dest) else {
-            log::info!("'{http_url}' Is not a valid Odoo modules repository!");
+        let Some(mut info) = self.clone_or_update_repo(owner, name, http_url, branches, dest)
+        else {
+            log::debug!("'{http_url}': none of the job's branches");
             return None;
         };
         info.full_path = path_with_namespace.to_string();

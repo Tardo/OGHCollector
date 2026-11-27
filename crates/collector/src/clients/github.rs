@@ -59,7 +59,12 @@ impl GitClient for GithubClient {
         Ok(res)
     }
 
-    async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_org_repos(
+        &self,
+        org_name: &str,
+        branches: &[String],
+        dest: &str,
+    ) -> Vec<RepoInfo> {
         let mut page_count: usize = 1;
         let mut repos: Vec<RepoInfo> = Vec::new();
         while page_count < GITHUB_LIMIT_PAGES {
@@ -95,11 +100,16 @@ impl GitClient for GithubClient {
                 if repo_owner_login.is_empty() || repo_name.is_empty() || repo_url.is_empty() {
                     continue;
                 }
-                let repo_info_opt =
-                    self.clone_or_update_repo(repo_owner_login, repo_name, repo_url, branch, dest);
+                let repo_info_opt = self.clone_or_update_repo(
+                    repo_owner_login,
+                    repo_name,
+                    repo_url,
+                    branches,
+                    dest,
+                );
                 match repo_info_opt {
                     Some(info) => repos.push(info),
-                    _ => log::info!("'{repo_url}' Is not a valid Odoo modules repository!"),
+                    _ => log::debug!("'{repo_url}': none of the job's branches"),
                 }
             }
             if org_repos_items.len() < GITHUB_LIMIT_PER_PAGE {
@@ -110,14 +120,14 @@ impl GitClient for GithubClient {
         repos
     }
 
-    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo> {
+    async fn clone_source(&self, source: &str, branches: &[String], dest: &str) -> Vec<RepoInfo> {
         let Some((owner, repo)) = source.split_once('/') else {
-            return self.clone_org_repos(source, branch, dest).await;
+            return self.clone_org_repos(source, branches, dest).await;
         };
         let repo_url = format!("https://github.com/{owner}/{repo}.git");
-        let info = self.clone_or_update_repo(owner, repo, &repo_url, branch, dest);
+        let info = self.clone_or_update_repo(owner, repo, &repo_url, branches, dest);
         if info.is_none() {
-            log::info!("'{repo_url}' Is not a valid Odoo modules repository!");
+            log::debug!("'{repo_url}': none of the job's branches");
         }
         info.into_iter().collect()
     }

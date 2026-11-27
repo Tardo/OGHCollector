@@ -84,6 +84,8 @@ pub struct Deploy {
     pub demo_reset_db: bool,
     pub demo_name: Option<String>,
     pub demo_url: Option<String>,
+    /// The copier answers' `postgres_dbname`: the database both instances serve.
+    pub db: Option<String>,
 }
 
 /// What one real instance (prod or demo) answered to the collector over
@@ -245,6 +247,29 @@ pub fn newest_revs(rows: &[Row]) -> HashMap<(String, i32), String> {
 }
 
 /// Every project the connection sees, by organization, repository, version.
+/// The successful instance answers of every project checked within `max_age`, by URL: what a job
+/// reuses instead of asking the same instance again (branches of a project share it, a push
+/// shortly after a scheduled run).
+pub fn recent_instances(
+    conn: &mut SqliteConnection,
+    max_age: chrono::Duration,
+) -> HashMap<String, Instance> {
+    let since = crate::utils::date::to_sqlite_datetime(chrono::Utc::now() - max_age);
+    let all: Vec<String> = doodba_project::table
+        .select(doodba_project::instances)
+        .load(conn)
+        .expect("DB error in doodba_project::recent_instances");
+    all.iter()
+        .filter_map(|json| serde_json::from_str::<Instances>(json).ok())
+        .flat_map(|i| [i.prod, i.demo])
+        .flatten()
+        .filter(|i| {
+            i.error.is_none() && i.checked_at.as_deref().is_some_and(|c| c >= since.as_str())
+        })
+        .map(|i| (i.url.clone(), i))
+        .collect()
+}
+
 pub fn list(conn: &mut SqliteConnection) -> Vec<Row> {
     diesel::sql_query(format!(
         "{ROW_SQL} ORDER BY o.name, r.name, p.version_odoo DESC"
@@ -516,6 +541,9 @@ pub struct AddonRow {
     pub technical_name: String,
     #[diesel(sql_type = Nullable<Text>)]
     pub org_name: Option<String>,
+    /// The manifest version of the collected module (`None` = not collected).
+    #[diesel(sql_type = Nullable<Text>)]
+    pub repo_version: Option<String>,
     #[diesel(sql_type = Integer)]
     pub in_next: i32,
 }
@@ -545,25 +573,8 @@ pub fn addons(
     next_version: Option<i32>,
 ) -> Vec<AddonRow> {
     diesel::sql_query(
-        "SELECT a.repo, a.technical_name,
-            CASE WHEN a.repo = 'private' THEN
-                (SELECT o.name FROM gh_repository r
-                 JOIN gh_organization o ON o.id = r.gh_organization_id
-                 WHERE r.id = a.gh_repository_id AND EXISTS (
-                     SELECT 1 FROM module m WHERE m.gh_repository_id = r.id
-                     AND m.technical_name = a.technical_name AND m.version_odoo = a.version_odoo))
-            -- SQLite rejects outer columns in a subquery's ORDER BY: two lookups.
-            ELSE COALESCE(
-                (SELECT o.name FROM module m
-                 JOIN gh_repository r ON r.id = m.gh_repository_id
-                 JOIN gh_organization o ON o.id = r.gh_organization_id
-                 WHERE m.technical_name = a.technical_name AND m.version_odoo = a.version_odoo
-                 AND r.name = a.repo LIMIT 1),
-                (SELECT o.name FROM module m
-                 JOIN gh_repository r ON r.id = m.gh_repository_id
-                 JOIN gh_organization o ON o.id = r.gh_organization_id
-                 WHERE m.technical_name = a.technical_name AND m.version_odoo = a.version_odoo
-                 ORDER BY r.id LIMIT 1)) END AS org_name,
+        // `mid`: the collected module an addon is, so its org and version come from one row.
+        "SELECT a.repo, a.technical_name, o.name AS org_name, m.version_module AS repo_version,
             (?3 IS NOT NULL AND CASE WHEN a.repo = 'private' THEN
                 EXISTS (SELECT 1 FROM module m WHERE m.gh_repository_id = a.gh_repository_id
                         AND m.technical_name = a.technical_name AND m.version_odoo = ?3)
@@ -573,8 +584,23 @@ pub fn addons(
                 OR EXISTS (SELECT 1 FROM openupgrade_rename u
                            WHERE u.old_name = a.technical_name
                            AND u.version_odoo > a.version_odoo AND u.version_odoo <= ?3)) END) AS in_next
-         FROM doodba_project_addon a
-         WHERE a.gh_repository_id = ?1 AND a.version_odoo = ?2
+         FROM (SELECT a.*,
+                CASE WHEN a.repo = 'private' THEN
+                    (SELECT m.id FROM module m WHERE m.gh_repository_id = a.gh_repository_id
+                     AND m.technical_name = a.technical_name AND m.version_odoo = a.version_odoo)
+                ELSE COALESCE(
+                    (SELECT m.id FROM module m
+                     JOIN gh_repository r ON r.id = m.gh_repository_id
+                     WHERE m.technical_name = a.technical_name AND m.version_odoo = a.version_odoo
+                     AND r.name = a.repo LIMIT 1),
+                    (SELECT m.id FROM module m
+                     WHERE m.technical_name = a.technical_name AND m.version_odoo = a.version_odoo
+                     ORDER BY m.gh_repository_id LIMIT 1)) END AS mid
+               FROM doodba_project_addon a
+               WHERE a.gh_repository_id = ?1 AND a.version_odoo = ?2) a
+         LEFT JOIN module m ON m.id = a.mid
+         LEFT JOIN gh_repository r ON r.id = m.gh_repository_id
+         LEFT JOIN gh_organization o ON o.id = r.gh_organization_id
          ORDER BY a.repo, a.technical_name",
     )
     .bind::<BigInt, _>(gh_repository_id)
@@ -620,14 +646,14 @@ mod tests {
         // Another client's project of the same group has a private module
         // of the same name, at both versions.
         for version in [160, 170] {
-            add_module(conn, "iso_custom", "isonor", "client_b", version);
+            add_module(conn, "acme_custom", "acme", "client_b", version);
             add_module(conn, "web_responsive", "OCA", "web", version);
         }
-        let org = gh_organization::add(conn, "isonor").unwrap();
+        let org = gh_organization::add(conn, "acme").unwrap();
         let project = gh_repository::add(conn, &org.id, "client_a").unwrap();
         add_module(conn, "base_technical_user", "OCA", "server-tools", 160);
         let addon_rows = [
-            ("private".to_string(), "iso_custom".to_string()),
+            ("private".to_string(), "acme_custom".to_string()),
             ("web".to_string(), "web_responsive".to_string()),
             ("server-tools".to_string(), "*".to_string()),
         ];
@@ -646,11 +672,16 @@ mod tests {
         assert_eq!(
             found(conn),
             [
-                ("iso_custom".into(), None, 0),
+                ("acme_custom".into(), None, 0),
                 ("*".into(), None, 0),
                 ("web_responsive".into(), Some("OCA".into()), 1),
             ]
         );
+        let versions: Vec<_> = addons(conn, project.id, 160, None)
+            .into_iter()
+            .map(|a| a.repo_version)
+            .collect();
+        assert_eq!(versions, [None, None, Some("1.0.0".into())]);
         let users = |conn: &mut SqliteConnection, name: &str, org: Option<&str>| {
             using_module(conn, name, org)
                 .into_iter()
@@ -659,24 +690,24 @@ mod tests {
         };
         assert_eq!(
             users(conn, "web_responsive", Some("OCA")),
-            ["isonor/client_a 160"]
+            ["acme/client_a 160"]
         );
-        assert!(users(conn, "web_responsive", Some("isonor")).is_empty());
+        assert!(users(conn, "web_responsive", Some("acme")).is_empty());
         // `server-tools: "*"`.
         assert_eq!(
             users(conn, "base_technical_user", None),
-            ["isonor/client_a 160"]
+            ["acme/client_a 160"]
         );
         assert!(
-            users(conn, "iso_custom", None).is_empty(),
+            users(conn, "acme_custom", None).is_empty(),
             "client_b's isn't its"
         );
         // Its own private module, not migrated to 17.0 in its repository.
-        add_module(conn, "iso_custom", "isonor", "client_a", 160);
+        add_module(conn, "acme_custom", "acme", "client_a", 160);
         assert_eq!(
             found(conn)[0],
-            ("iso_custom".into(), Some("isonor".into()), 0)
+            ("acme_custom".into(), Some("acme".into()), 0)
         );
-        assert_eq!(users(conn, "iso_custom", None), ["isonor/client_a 160"]);
+        assert_eq!(users(conn, "acme_custom", None), ["acme/client_a 160"]);
     }
 }

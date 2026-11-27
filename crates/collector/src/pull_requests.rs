@@ -726,6 +726,7 @@ mod tests {
             clone_path: dir.join("clone").to_string_lossy().to_string(),
             full_path: "org/repo".to_string(),
             url: origin_url,
+            branches: vec!["18.0".to_string()],
         };
         let client = AnyGitClient::Gitlab(GitlabClient::new("x", ""));
         let defs = crate::workflow::with_built_in(&Default::default());

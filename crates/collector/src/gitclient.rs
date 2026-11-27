@@ -1,6 +1,8 @@
 // Copyright Alexandre D. Díaz
-//! `GitClient` trait: `clone_source` (what `main.rs` calls: one repo or a whole org/group),
-//! `clone_or_update_repo`, `clone_org_repos`, `get_org_repos`. Default impl uses `duct::cmd!` to
+//! `GitClient` trait: `clone_source` (what `main.rs` calls: one repo or a whole org/group, for
+//! every version of the job), `clone_or_update_repo` (the network side: `ls-remote`, then one
+//! fetch/clone of the job's branches that exist), `clone_org_repos`, `get_org_repos`; `checkout`
+//! puts a clone on one version, locally. Default impl uses `duct::cmd!` to
 //! shell out to `git`. GitHub: `owner/repo` = repo, else org. GitLab: `a/b[/c]` is looked up as a
 //! project (`projects/:path`), else listed as a (sub)group; org = first path segment (same-named
 //! projects in sibling subgroups collide). Private repos: `clone`/`fetch` get a host-scoped
@@ -26,6 +28,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RepoInfo {
     pub name: String,
     pub org: String,
@@ -33,6 +36,9 @@ pub struct RepoInfo {
     pub full_path: String,
     /// Clone URL (GitHub or a GitLab host), stored so links point back to it.
     pub url: String,
+    /// The job's versions this repository has a branch for, fetched.
+    #[serde(default)]
+    pub branches: Vec<String>,
 }
 
 impl RepoInfo {
@@ -51,6 +57,52 @@ impl RepoInfo {
     pub fn get_url(&self) -> &str {
         &self.url
     }
+}
+
+/// Puts a fetched clone (`GitClient::clone_or_update_repo`) on `branch`, locally: no network.
+/// `false` (logged) = it can't be trusted to be on that branch; the clone is then removed, so the
+/// next job clones it afresh (a stale/other-branch tree would be stored under this version).
+pub fn checkout(repo: &RepoInfo, branch: &str) -> bool {
+    let (path, name) = (repo.get_clone_path(), repo.get_name());
+    let origin_branch = format!("origin/{branch}");
+    let updated = [
+        vec!["reset", "--hard", &origin_branch],
+        vec!["clean", "-fdx"],
+        vec!["switch", "-C", branch, &origin_branch],
+    ]
+    .iter()
+    .all(|args| match git_run(path, args) {
+        Ok(_) => true,
+        Err(err) => {
+            log::error!("'{name}': git {} @ {branch} failed: {err}", args[0]);
+            false
+        }
+    });
+    // HEAD must be exactly the tip of the requested branch on the requested branch.
+    let rev = |r: &str| git_run(path, &["rev-parse", r]);
+    let on_branch = updated
+        && match (rev("HEAD"), rev(&origin_branch)) {
+            (Ok(head), Ok(tip)) if head == tip => true,
+            (head, tip) => {
+                log::error!("'{name}': HEAD is not at '{origin_branch}': {head:?} {tip:?}");
+                false
+            }
+        }
+        // Full ref, not `--short`: a tag named like the branch (OCA's `6.1`)
+        // makes git shorten it to `heads/6.1`.
+        && match git_run(path, &["symbolic-ref", "-q", "HEAD"]) {
+            Ok(b) if b == format!("refs/heads/{branch}") => true,
+            other => {
+                log::error!("'{name}': checked out {other:?}, requested '{branch}'");
+                false
+            }
+        };
+    if on_branch {
+        log::info!("Repo checked out: {name} @ {branch}");
+    } else if let Err(err) = fs::remove_dir_all(path) {
+        log::error!("'{name}': cannot remove the broken clone: {err}");
+    }
+    on_branch
 }
 
 #[derive(Debug, Clone)]
@@ -232,19 +284,46 @@ pub trait GitClient {
     /// API one, the user whatever the provider expects alongside a token.
     fn git_credentials(&self) -> (&str, &str);
 
+    /// The network side of a job, once per repository whatever its versions: which of `branches`
+    /// exist upstream (`ls-remote`, one request), then one fetch of those (or a clone). `None` =
+    /// none of them exists (not an error: that version has nothing here) or it failed (logged).
+    /// The checkout of each version is `checkout`, local.
     fn clone_or_update_repo(
         &self,
         org_name: &str,
         repo_name: &str,
         repo_url: &str,
-        branch: &str,
+        branches: &[String],
         dest: &str,
     ) -> Option<RepoInfo> {
         let clone_path = format!("{dest}/{org_name}/{repo_name}");
         let base_dir = format!("{dest}/{org_name}");
-        let origin_branch = format!("origin/{branch}");
         let (git_user, git_token) = self.git_credentials();
         let auth_env = git_auth_env(repo_url, git_user, git_token);
+        if let Err(err) = fs::create_dir_all(&base_dir) {
+            log::error!("Cannot create directory '{base_dir}': {err}");
+            return None;
+        }
+        let heads = match git_run_env(&base_dir, &["ls-remote", "--heads", repo_url], &auth_env) {
+            Ok(out) => out,
+            Err(err) => {
+                log::error!("'{repo_name}': ls-remote failed - keeping the clone, skipping: {err}");
+                return None;
+            }
+        };
+        let heads: Vec<&str> = heads
+            .lines()
+            .filter_map(|l| l.split_once("\trefs/heads/").map(|(_, b)| b.trim()))
+            .collect();
+        let branches: Vec<String> = branches
+            .iter()
+            .filter(|b| heads.contains(&b.as_str()))
+            .cloned()
+            .collect();
+        let Some(first) = branches.first() else {
+            log::debug!("'{repo_name}': none of the job's branches exists upstream");
+            return None;
+        };
         // `.git` check (not just `exists()`): git run inside a non-repo dir
         // walks up to any parent repo and would act on that one instead.
         let mut needs_clone = !Path::new(&clone_path).join(".git").exists();
@@ -259,55 +338,25 @@ pub trait GitClient {
             needs_clone = true;
         }
         if !needs_clone {
-            log::info!("Updating repo: {repo_name} @ {branch}");
+            log::info!("Updating repo: {repo_name} @ {}", branches.join(","));
             // Never delete the clone because of a fetch failure (network down,
-            // rate limit, auth) or a missing upstream branch: neither means the
-            // checkout is broken, and the clone is shared by every Odoo version.
-            // Explicit refspec: clones made single-branch (older versions of
+            // rate limit, auth): it doesn't mean the checkout is broken, and the
+            // clone is shared by every Odoo version.
+            // Explicit refspecs: clones made single-branch (older versions of
             // this code) only track their first branch, so a plain
-            // `fetch origin` never brings in the requested one.
-            let refspec = format!("+refs/heads/{branch}:refs/remotes/{origin_branch}");
-            let fetched = git_run_env(
-                &clone_path,
-                &["fetch", "--prune", "origin", &refspec],
-                &auth_env,
+            // `fetch origin` never brings in the requested ones.
+            let mut args = vec!["fetch".to_string(), "--prune".into(), "origin".into()];
+            args.extend(
+                branches
+                    .iter()
+                    .map(|b| format!("+refs/heads/{b}:refs/remotes/origin/{b}")),
             );
-            if let Err(err) = fetched {
-                if err.contains("couldn't find remote ref") {
-                    log::info!(
-                        "'{repo_name}': branch '{branch}' doesn't exist upstream - skipping"
-                    );
-                } else {
-                    log::error!("'{repo_name}': fetch failed - keeping the clone, skipping: {err}");
-                }
+            if let Err(err) = git_run_env(&clone_path, &args, &auth_env) {
+                log::error!("'{repo_name}': fetch failed - keeping the clone, skipping: {err}");
                 return None;
             }
-            let updated = [
-                vec!["reset", "--hard", &origin_branch],
-                vec!["clean", "-fdx"],
-                vec!["switch", "-C", branch, &origin_branch],
-            ]
-            .iter()
-            .all(|args| match git_run(&clone_path, args) {
-                Ok(_) => true,
-                Err(err) => {
-                    log::warn!("'{repo_name}': git {} failed: {err}", args[0]);
-                    false
-                }
-            });
-            if updated {
-                log::info!("Repo updated & cleaned: {repo_name} @ {branch}");
-            } else {
-                log::warn!("Update of '{repo_name}' failed - re-cloning");
-                needs_clone = true;
-            }
-        }
-        if needs_clone {
-            log::info!("Cloning repo: {repo_name} @ {branch}");
-            if let Err(err) = fs::create_dir_all(&base_dir) {
-                log::error!("Cannot create directory '{base_dir}': {err}");
-                return None;
-            }
+        } else {
+            log::info!("Cloning repo: {repo_name} @ {first}");
             // Clone aside and swap only on success, so a failed (re)clone never
             // leaves the repo missing.
             let tmp_name = format!("{repo_name}.tmp");
@@ -323,20 +372,14 @@ pub trait GitClient {
                     // Every branch: committer ranges need `origin/<previous version>`.
                     "--no-single-branch",
                     "--branch",
-                    branch,
+                    first,
                     repo_url,
                     &tmp_name,
                 ],
                 &auth_env,
             );
             if let Err(err) = cloned {
-                if err.contains("not found in upstream") {
-                    log::info!(
-                        "'{repo_name}': branch '{branch}' doesn't exist upstream - skipping"
-                    );
-                } else {
-                    log::error!("'{repo_name}': clone @ {branch} failed: {err}");
-                }
+                log::error!("'{repo_name}': clone @ {first} failed: {err}");
                 let _ = fs::remove_dir_all(&tmp_path);
                 return None;
             }
@@ -349,44 +392,13 @@ pub trait GitClient {
                 return None;
             }
         }
-
-        // HEAD must be exactly the tip of the requested branch on the requested
-        // branch: a stale/other-branch tree would be analyzed and stored under
-        // this version's label.
-        let rev = |r: &str| git_run(&clone_path, &["rev-parse", r]);
-        let (head, tip) = match (rev("HEAD"), rev(&origin_branch)) {
-            (Ok(h), Ok(t)) => (h, t),
-            (h, t) => {
-                log::error!(
-                    "'{repo_name}': rev-parse failed: {:?} {:?}",
-                    h.err(),
-                    t.err()
-                );
-                return None;
-            }
-        };
-        if head != tip {
-            log::error!("'{repo_name}': HEAD is not at '{origin_branch}' - skipping");
-            return None;
-        }
-        // Full ref, not `--short`: a tag named like the branch (OCA's `6.1`)
-        // makes git shorten it to `heads/6.1`.
-        match git_run(&clone_path, &["symbolic-ref", "-q", "HEAD"]) {
-            Ok(b) if b == format!("refs/heads/{branch}") => {}
-            other => {
-                log::error!(
-                    "'{repo_name}': checked out {other:?}, requested '{branch}' - skipping"
-                );
-                return None;
-            }
-        }
-
         Some(RepoInfo {
             name: repo_name.into(),
             org: org_name.into(),
             clone_path,
             full_path: format!("{org_name}/{repo_name}"),
             url: repo_url.into(),
+            branches,
         })
     }
 
@@ -426,11 +438,16 @@ pub trait GitClient {
         page: &usize,
     ) -> Result<serde_json::Value, reqwest::Error>;
 
-    async fn clone_org_repos(&self, org_name: &str, branch: &str, dest: &str) -> Vec<RepoInfo>;
+    async fn clone_org_repos(
+        &self,
+        org_name: &str,
+        branches: &[String],
+        dest: &str,
+    ) -> Vec<RepoInfo>;
 
     /// Clones/updates what a collector source names: one repository
     /// (`owner/repo`) or every repository of an organization/group.
-    async fn clone_source(&self, source: &str, branch: &str, dest: &str) -> Vec<RepoInfo>;
+    async fn clone_source(&self, source: &str, branches: &[String], dest: &str) -> Vec<RepoInfo>;
 
     async fn get_repo_pull_requests(
         &self,
@@ -513,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tag_named_like_the_branch_does_not_fail_the_checkout() {
+    fn fetches_the_existing_branches_once_and_checks_each_out() {
         use super::GitClient;
         use crate::clients::github::GithubClient;
         let dir = std::env::temp_dir().join(format!("ogh-tag-test-{}", std::process::id()));
@@ -536,14 +553,22 @@ mod tests {
         git(&["init", "-q", "-b", "6.1"]);
         git(&["commit", "-q", "--allow-empty", "-m", "base"]);
         git(&["tag", "6.1"]); // OCA/account-financial-reporting has both
+        git(&["branch", "7.0", "refs/heads/6.1"]);
         let client = GithubClient::new("", "");
         let (url, dest) = (origin.to_str().unwrap(), dir.to_str().unwrap());
+        let wanted = ["6.1", "7.0", "8.0"].map(String::from);
         // First call clones, second one takes the update path.
         for _ in 0..2 {
-            assert!(client
-                .clone_or_update_repo("org", "repo", url, "6.1", dest)
-                .is_some());
+            let repo = client
+                .clone_or_update_repo("org", "repo", url, &wanted, dest)
+                .unwrap();
+            assert_eq!(repo.branches, ["6.1", "7.0"], "8.0 doesn't exist: skipped");
+            assert!(super::checkout(&repo, "7.0") && super::checkout(&repo, "6.1"));
         }
+        // No branch of the job: nothing to collect, not an error.
+        assert!(client
+            .clone_or_update_repo("org", "repo", url, &wanted[2..], dest)
+            .is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

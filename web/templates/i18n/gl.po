@@ -1943,6 +1943,12 @@ msgstr "A última consulta fallou (móstrase a resposta anterior, se a hai)"
 msgid "Enabled in addons.yaml but not installed here"
 msgstr "Activados en addons.yaml pero non instalados aquí"
 
+msgid "Installed at another version than the repository"
+msgstr "Instalado noutra versión que a do repositorio"
+
+msgid "Installed"
+msgstr "Instalado"
+
 msgid "{0} installed modules"
 msgstr "{0} módulos instalados"
 

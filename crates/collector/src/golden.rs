@@ -70,6 +70,7 @@ impl Fixture {
             clone_path: self.repo.to_string_lossy().to_string(),
             full_path: "org/repo".to_string(),
             url: "https://github.com/org/repo.git".to_string(),
+            branches: vec!["18.0".to_string()],
         }]
     }
 
