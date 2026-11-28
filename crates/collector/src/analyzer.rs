@@ -492,8 +492,9 @@ SQL_SAFE_CALLS = {"Identifier", "SQL", "Literal", "AsIs", "identifier", "int", "
 # safe to splice whatever the caller sent (core 16 account's cumulated
 # balance orders and filters by the context through them).
 ORM_SQL_BUILDERS = {"_where_calc", "_generate_order_by", "_generate_order_by_inner", "_order_to_sql", "get_sql"}
-# Names a model method can't receive from an RPC caller.
-NON_RPC_PARAMS = {"self", "cls", "cr", "registry", "env"}
+# Names a model method can't receive from an RPC caller (old-API `uid` is
+# set by the server).
+NON_RPC_PARAMS = {"self", "cls", "cr", "uid", "registry", "env"}
 # Markers for an already-reviewed hit: pylint's own check names, bandit's
 # nosec, ruff's S608 and a bare `# noqa`. `# noqa: E501` (line length, all
 # over OCA) must not count. Only pylint's disable has block scope.
@@ -515,7 +516,8 @@ def _safe(fn, *args, default=None):
 
 def _sql_value_safe(node):
     # pylint-odoo's allow-list plus constants: private attributes/methods
-    # (self._table, self._select()) are the standard reporting-model pattern.
+    # (self._table, self._select()) are the standard reporting-model pattern,
+    # and record ids (`rec.id`, `self.ids`) are integers.
     if isinstance(node, ast.Constant):
         return True
     # `limit and " LIMIT %s" or ""`: an `and` only passes an earlier operand
@@ -532,21 +534,49 @@ def _sql_value_safe(node):
         if name in SQL_SAFE_CALLS:
             return True
         node = func
-    return isinstance(node, ast.Attribute) and node.attr.startswith("_")
+    return isinstance(node, ast.Attribute) and (node.attr.startswith("_") or node.attr in ("id", "ids"))
+
+
+# One printf conversion: `%s`, `%(name)d`, `%-10.2f`, `%%`.
+FORMAT_SPEC_RE = re.compile(r"%(?:\(([^)]*)\))?[-+ #0]*(?:\*|\d+)?(?:\.(?:\*|\d+))?[hlL]?([a-zA-Z%])")
+# Conversions that only accept numbers: the format raises on anything else.
+NUMERIC_CONVERSIONS = set("diouxXeEfFgGc")
+
+
+def _mod_values(node):
+    # The values `fmt % args` splices in as text. `%d`/`%f`-style conversions
+    # force a number (core website_membership's `' LIMIT %d' % limit`), so
+    # they can't carry SQL.
+    right = node.right
+    fmt = node.left.value if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str) else None
+    specs = None if fmt is None else [m for m in FORMAT_SPEC_RE.finditer(fmt) if m.group(2) != "%"]
+    if isinstance(right, ast.Dict):
+        if specs is None:
+            return list(right.values)
+        textual = {m.group(1) for m in specs if m.group(2) not in NUMERIC_CONVERSIONS}
+        return [
+            v
+            for k, v in zip(right.keys, right.values)
+            if not (isinstance(k, ast.Constant) and k.value not in textual)
+        ]
+    if isinstance(right, ast.Tuple):
+        if (
+            specs is not None
+            and len(specs) == len(right.elts)
+            and not any(isinstance(e, ast.Starred) for e in right.elts)
+        ):
+            return [v for v, m in zip(right.elts, specs) if m.group(2) not in NUMERIC_CONVERSIONS]
+        return list(right.elts)
+    if specs is not None and len(specs) == 1 and specs[0].group(2) in NUMERIC_CONVERSIONS:
+        return []
+    return [right]
 
 
 def _sql_risky_values(node):
     # The unsafe values a %, +, .format() or f-string expression splices into
     # a SQL string; [] when it isn't string-building or everything is safe.
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
-        right = node.right
-        if isinstance(right, (ast.Tuple, ast.List)):
-            values = right.elts
-        elif isinstance(right, ast.Dict):
-            values = right.values
-        else:
-            values = [right]
-        return [v for v in values if not _sql_value_safe(v)] + _sql_risky_values(node.left)
+        return [v for v in _mod_values(node) if not _sql_value_safe(v)] + _sql_risky_values(node.left)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         out = []
         for side in (node.left, node.right):
@@ -600,29 +630,68 @@ def _is_request_payload(node):
     return r.startswith(("request.params", "request.httprequest.form", "request.httprequest.args"))
 
 
-def _caller_names(node):
-    # Names whose own value flows into `node`. `rec.amount` reads a stored
-    # field (not the caller's text), so a Name used only as an attribute base
-    # doesn't count - a method call on it (`kw.get('x')`) still does.
-    calls = {id(n.func) for n in ast.walk(node) if isinstance(n, ast.Call)}
-    bases = {
-        id(n.value) for n in ast.walk(node) if isinstance(n, ast.Attribute) and id(n) not in calls
-    }
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and id(n) not in bases}
+# Calls whose result still holds their input's text (string, dict and list
+# plumbing); any other call returns that function's own value, and numeric
+# casts (int, float, len, bool) end the taint.
+TAINT_PASS_CALLS = {
+    "get", "getlist", "pop", "setdefault", "split", "rsplit", "splitlines", "partition",
+    "rpartition", "strip", "lstrip", "rstrip", "lower", "upper", "title", "capitalize",
+    "replace", "join", "format", "encode", "decode", "str", "list", "tuple", "set", "dict",
+    "sorted", "reversed", "copy", "keys", "values", "items", "unquote", "unquote_plus",
+}
+REQUEST_PREFIXES = ("request.httprequest", "request.get_json_data", "request.jsonrequest")
+CONTEXT_PREFIXES = ("self._context", "self.env.context")
 
 
-def _is_client_controlled(node, params, context=True):
-    # Values an RPC/HTTP caller sets directly: the method's own parameters
-    # (any public model method is callable over RPC), the request payload and
-    # the context (also sent by the client).
-    if _caller_names(node) & params:
-        return True
-    prefixes = ("request.httprequest", "request.get_json_data", "request.jsonrequest")
-    if context:
-        prefixes += ("self._context", "self.env.context")
-    for n in ast.walk(node):
-        if _is_request_payload(n) or (_expr_repr(n) or "").startswith(prefixes):
+def _taints(node, names, context=True):
+    # Whether `node`'s value carries text an RPC/HTTP caller sent: one of
+    # `names` (the function's tainted locals), the request payload, or the
+    # context (also sent by the client). Attribute reads (`rec.amount` is a
+    # stored field, not the caller's text) and other functions' results don't.
+    if isinstance(node, ast.Name):
+        return node.id in names
+    if isinstance(node, ast.Attribute):
+        prefixes = REQUEST_PREFIXES + (CONTEXT_PREFIXES if context else ())
+        return _is_request_payload(node) or (_expr_repr(node) or "").startswith(prefixes)
+    if isinstance(node, (ast.Subscript, ast.Starred, ast.FormattedValue, ast.NamedExpr)):
+        return _taints(node.value, names, context)
+    if isinstance(node, ast.Call):
+        f = node.func
+        if isinstance(f, ast.Attribute) and _taints(f, names, context):
             return True
+        name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+        if name not in TAINT_PASS_CALLS:
+            return False
+        args = list(node.args) + [k.value for k in node.keywords]
+        return (isinstance(f, ast.Attribute) and _taints(f.value, names, context)) or any(
+            _taints(a, names, context) for a in args
+        )
+    if isinstance(node, ast.BinOp):
+        if isinstance(node.op, ast.Mod):
+            return _taints(node.left, names, context) or any(
+                _taints(v, names, context) for v in _mod_values(node)
+            )
+        return isinstance(node.op, ast.Add) and (
+            _taints(node.left, names, context) or _taints(node.right, names, context)
+        )
+    if isinstance(node, ast.BoolOp):
+        values = node.values[-1:] if isinstance(node.op, ast.And) else node.values
+        return any(_taints(v, names, context) for v in values)
+    if isinstance(node, ast.IfExp):
+        return _taints(node.body, names, context) or _taints(node.orelse, names, context)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return any(_taints(v, names, context) for v in node.elts)
+    if isinstance(node, ast.JoinedStr):
+        return any(_taints(v, names, context) for v in node.values)
+    if isinstance(node, ast.Dict):
+        return any(_taints(v, names, context) for v in node.values) or any(
+            k is not None and _taints(k, names, context) for k in node.keys
+        )
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+        elts = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+        return any(_taints(e, names, context) for e in elts) or any(
+            _taints(g.iter, names, context) for g in node.generators
+        )
     return False
 
 
@@ -646,13 +715,18 @@ def _suppressed(lines, node, scope=None):
 
 def _caller_params(owner, func):
     # Only parameters of an RPC/route-reachable method count as
-    # client-controlled; @api.private (17.0+) opts a method out of RPC.
+    # client-controlled; @api.private (17.0+) opts a method out of RPC, and
+    # so does a parameter the method calls: RPC can't send a function (core
+    # 9 mail.alias's migrate_to_alias takes the model's _auto_init).
+    params = _function_params(func)
     exposed = (
         _is_model_class(owner)
         and not func.name.startswith("_")
         and not any((_expr_repr(d) or "").endswith("private") for d in func.decorator_list)
+        and not any(isinstance(n, ast.Call) and getattr(n.func, "id", None) in params for n in ast.walk(func))
     )
-    params = _function_params(func) if exposed or _route_decorator(func) else set()
+    if not (exposed or _route_decorator(func)):
+        return set()
     # `assert mode in (...)` / `if mode not in ALLOWED: raise` is an
     # allow-list check: that parameter can't carry arbitrary values.
     return params - {
@@ -677,16 +751,261 @@ def _assignments(func):
     return assigned
 
 
+def _bound(target):
+    # Names an assignment/loop target (re)binds. `d[k] = v` doesn't taint all
+    # of `d`: one key from the context would mark every other value read from
+    # it (OCA account_financial_report's `data` wizard dict).
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [x for e in target.elts for x in _bound(e)]
+    if isinstance(target, ast.Starred):
+        return _bound(target.value)
+    return []
+
+
+def _flows(func):
+    # (target, value) of every binding: assignments, for loops, comprehensions.
+    out = []
+    for n in ast.walk(func):
+        if isinstance(n, ast.Assign):
+            out += [(t, n.value) for t in n.targets]
+        elif isinstance(n, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr)) and n.value is not None:
+            out.append((n.target, n.value))
+        elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)):
+            out.append((n.target, n.iter))
+    return out
+
+
+def _tainted_names(func, seeds, flows=None):
+    # Every local holding caller input, followed through any number of
+    # assignments, loops and string operations (`split = gb.split(':')`,
+    # `fn = split[1] if len(split) == 2 else None`). A seed the function
+    # overwrites first thing (`data = {}`) no longer holds what was sent, and
+    # a name checked against an allow-list (`assert mode in ("a", "b")`,
+    # `if f not in self._fields: raise`) can't carry arbitrary text.
+    seeds = set(seeds)
+    for st in func.body:
+        if (
+            isinstance(st, ast.Assign)
+            and len(st.targets) == 1
+            and isinstance(st.targets[0], ast.Name)
+            and st.targets[0].id in seeds
+            and not _taints(st.value, seeds)
+        ):
+            seeds.discard(st.targets[0].id)
+    allowed = {
+        n.left.id
+        for n in ast.walk(func)
+        if isinstance(n, ast.Compare)
+        and isinstance(n.left, ast.Name)
+        and all(isinstance(op, (ast.In, ast.NotIn)) for op in n.ops)
+        and not any(_taints(c, seeds) for c in n.comparators)
+    }
+    names = seeds - allowed
+    flows = _flows(func) if flows is None else flows
+    changed = bool(names)
+    while changed:
+        changed = False
+        for target, value in flows:
+            if _taints(value, names):
+                new = set(_bound(target)) - names - allowed
+                if new:
+                    names |= new
+                    changed = True
+    return names
+
+
+def _self_callee(call, methods):
+    # The method of this class a `self._m(...)` / `self.sudo()._m(...)` /
+    # `self.with_context(...)._m(...)` call reaches, else None.
+    if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)):
+        return None
+    base = call.func.value
+    while isinstance(base, (ast.Call, ast.Attribute)):
+        base = base.func if isinstance(base, ast.Call) else base.value
+    if isinstance(base, ast.Name) and base.id == "self":
+        return methods.get(call.func.attr)
+    return None
+
+
+def _class_tainted(owner):
+    # method name -> its locals holding caller input. Seeds are the
+    # parameters of RPC/route-reachable methods, plus those of the private
+    # helpers they pass that input to, transitively: core 11's read_group
+    # handed `groupby` to _read_group_raw and on to
+    # _read_group_process_groupby, which spliced its `:month` suffix into
+    # `date_trunc('%s', ...)` (OCB #1372).
+    methods = {
+        f.name: f for f in owner.body if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    seeds = {name: _caller_params(owner, f) for name, f in methods.items()}
+    flows = {name: _flows(f) for name, f in methods.items()}
+    tainted = {}
+    for _ in range(len(methods) + 1):
+        tainted = {name: _tainted_names(f, seeds[name], flows[name]) for name, f in methods.items()}
+        changed = False
+        for name, f in methods.items():
+            if not tainted[name]:
+                continue
+            for n in ast.walk(f):
+                callee = _self_callee(n, methods)
+                if callee is None or callee is f:
+                    continue
+                a = callee.args
+                positional = [x.arg for x in a.posonlyargs + a.args][1:]
+                keywords = {x.arg for x in a.args + a.kwonlyargs}
+                hit = {
+                    p
+                    for p, arg in zip(positional, n.args)
+                    if not isinstance(arg, ast.Starred) and _taints(arg, tainted[name])
+                }
+                hit |= {k.arg for k in n.keywords if k.arg in keywords and _taints(k.value, tainted[name])}
+                hit -= NON_RPC_PARAMS | seeds[callee.name]
+                if hit:
+                    seeds[callee.name] |= hit
+                    changed = True
+        if not changed:
+            break
+    return methods, tainted
+
+
+# Literal text that reads as SQL, for fragments built away from the execute()
+# that runs them (a helper returning `date_trunc('%s', col)` or a WHERE clause).
+SQL_FRAGMENT_RE = re.compile(
+    r"\bdate_trunc\s*\(|\bselect\s+(?:distinct\s+)?[\w\"*(]+[\w\"*().,\s]*\s+from\s+[\w\"]"
+    r"|\binsert\s+into\s|\bupdate\s+[\w\"]+\s+set\s|\bdelete\s+from\s|\b(?:order|group)\s+by\s"
+    r"|\bwhere\s+[\w\".]+\s*(?:=|!=|<>|<=|>=|<|>|\bin\b|\bilike\b|\blike\b|\bis\b)",
+    re.I,
+)
+# Calls whose string argument is a message, not a query.
+MESSAGE_CALLS = re.compile(r"^(_|_lt|.*(Error|Exception|Warning)|.*\.(debug|info|warning|error|exception|critical|log))$")
+
+
+def _literal_text(node):
+    return " ".join(
+        n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    )
+
+
+def _is_string_building(node):
+    return (
+        (isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)))
+        or isinstance(node, ast.JoinedStr)
+        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format")
+    )
+
+
+def _sql_fragments(func):
+    # Outermost string-building expressions with SQL-looking literal text,
+    # outside messages (`_()`, exceptions, logging).
+    parents = {}
+    for p in ast.walk(func):
+        for c in ast.iter_child_nodes(p):
+            parents[c] = p
+    for n in ast.walk(func):
+        if not _is_string_building(n) or _is_string_building(parents.get(n)):
+            continue
+        if not SQL_FRAGMENT_RE.search(_literal_text(n)):
+            continue
+        p, message = parents.get(n), False
+        while p is not None and not isinstance(p, (ast.stmt,)):
+            if isinstance(p, ast.Call) and MESSAGE_CALLS.match(_expr_repr(p.func) or ""):
+                message = True
+            p = parents.get(p)
+        if not message and not isinstance(p, ast.Raise):
+            yield n
+
+
+# Core models whose create/write/unlink base grants only to admins
+# (group_system / group_erp_manager, who can make themselves admin anyway).
+ADMIN_ONLY_MODELS = {
+    "ir.model", "ir.model.fields", "ir.model.constraint", "ir.model.relation",
+    "ir.model.access", "ir.rule", "ir.module.module", "ir.config_parameter",
+    "ir.cron", "ir.actions.server", "res.groups",
+}
+ORM_WRITES = ("create", "write", "unlink")
+
+
+def _admin_guarded(owner, func, node):
+    # The sink runs after super().<create/write/unlink>() of an admin-only
+    # core model: the ORM's access check already let only admins through
+    # (core 10's IrModelFields.write renames the column after super()).
+    if func.name not in ORM_WRITES:
+        return False
+    models = set()
+    for stmt in owner.body:
+        if isinstance(stmt, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id in ("_name", "_inherit") for t in stmt.targets
+        ):
+            models.update(_const_str_list(stmt.value) or [])
+    if not models & ADMIN_ONLY_MODELS:
+        return False
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == func.name
+        and isinstance(n.func.value, ast.Call)
+        and isinstance(n.func.value.func, ast.Name)
+        and n.func.value.func.id == "super"
+        and n.lineno < node.lineno
+        for n in ast.walk(func)
+    )
+
+
 def _analyze_sql_injection(tree, rel_path, lines):
     facts = []
+    reviewed = set()
+
+    def tainted_kind(owner, func, node):
+        return "sql_injection_admin" if _admin_guarded(owner, func, node) else "sql_injection_tainted"
+
+    def fact(kind, owner, func, node):
+        # One review item per function (core's partner merge formats five
+        # queries from the same table/column names); caller-controlled ones
+        # are each reported.
+        if kind == "sql_injection":
+            if (owner.name, func.name) in reviewed:
+                return
+            reviewed.add((owner.name, func.name))
+        facts.append(
+            {
+                "kind": kind,
+                "context": f"{owner.name}.{func.name}",
+                "detail": _truncate(lines[node.lineno - 1].strip()) if node.lineno <= len(lines) else None,
+                "file": rel_path,
+                "line": node.lineno,
+            }
+        )
+
     for owner in ast.walk(tree):
         if not isinstance(owner, ast.ClassDef):
             continue
-        for func in owner.body:
-            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            params = _caller_params(owner, func)
+        methods, tainted_by = _class_tainted(owner)
+        for func in methods.values():
+            params = tainted_by[func.name]
             assigned = _assignments(func)
+
+            def constant_name(v):
+                # A local (or an item of one) only ever assigned safe values:
+                # `alias = p and 'p' or 'a'`, `clause = self._get_clause(data)`,
+                # `limit_clause = ' LIMIT %d' % limit`.
+                if isinstance(v, ast.Subscript):
+                    v = v.value
+                return (
+                    isinstance(v, ast.Name)
+                    and v.id not in params
+                    and v.id in assigned
+                    and not any(_risky_parts(x) for x in assigned[v.id])
+                )
+
+            def risky_of(expr):
+                return [p for v in _sql_risky_values(expr) for p in _risky_parts(v) if not constant_name(p)]
+
+            def is_tainted(v):
+                return not _orm_built(v) and _taints(v, params)
+
+            reported = set()
             for n in ast.walk(func):
                 if not (isinstance(n, ast.Call) and n.args):
                     continue
@@ -697,45 +1016,97 @@ def _analyze_sql_injection(tree, rel_path, lines):
                 is_sql = (isinstance(f, ast.Name) and f.id == "SQL") or (
                     isinstance(f, ast.Attribute) and f.attr == "SQL"
                 )
-                if not (is_execute or is_sql) or _suppressed(lines, n, func):
+                if not (is_execute or is_sql):
                     continue
                 query = n.args[0]
-                risky = [p for v in _sql_risky_values(query) for p in _risky_parts(v)]
+                for sub in ast.walk(query):
+                    reported.add(id(sub))
+                if _suppressed(lines, n, func):
+                    continue
+                risky = risky_of(query)
                 if not risky and isinstance(query, ast.Name):
                     # One hop: the query string built a few lines above.
                     for value in assigned.get(query.id, []):
+                        for sub in ast.walk(value):
+                            reported.add(id(sub))
                         if _suppressed(lines, value):
                             continue
-                        risky += [p for v in _sql_risky_values(value) for p in _risky_parts(v)] or (
-                            [value]
-                            if isinstance(value, ast.Name) and value.id in params
-                            else []
-                        )
-                if not risky:
+                        risky += risky_of(value) or ([value] if _taints(value, params) and isinstance(value, ast.Name) else [])
+                # The pieces a spliced local was built from are this finding too.
+                for p in risky:
+                    for value in assigned.get(p.id, []) if isinstance(p, ast.Name) else []:
+                        for sub in ast.walk(value):
+                            reported.add(id(sub))
+                if risky:
+                    fact(tainted_kind(owner, func, n) if any(map(is_tainted, risky)) else "sql_injection", owner, func, n)
+            # SQL text built here and run elsewhere: only worth a finding when
+            # it's caller-controlled (static analysis can't follow it further).
+            for n in _sql_fragments(func):
+                if id(n) in reported or _suppressed(lines, n, func):
                     continue
-                # Also one hop for each spliced value (`where = kw['x']`).
-                tainted = any(
-                    not _orm_built(v)
-                    and (
-                        _is_client_controlled(v, params)
-                        or any(
-                            _is_client_controlled(src, params)
-                            for name in _caller_names(v)
-                            for src in assigned.get(name, [])
-                            if not _orm_built(src)
-                        )
-                    )
-                    for v in risky
-                )
-                facts.append(
-                    {
-                        "kind": "sql_injection_tainted" if tainted else "sql_injection",
-                        "context": f"{owner.name}.{func.name}",
-                        "detail": _truncate(lines[n.lineno - 1].strip()) if n.lineno <= len(lines) else None,
-                        "file": rel_path,
-                        "line": n.lineno,
-                    }
-                )
+                if any(map(is_tainted, risky_of(n))):
+                    fact(tainted_kind(owner, func, n), owner, func, n)
+    return facts
+
+
+# A regex that removes or rewrites given HTML tags/attributes. `.*` and a
+# class that excludes `>` but not `<` both run across tag boundaries and
+# miss nested or malformed markup, so what they "clean" can be crafted to
+# survive (OCB #1378: html_normalize's `</?o:.*?>` and `<[^>]*\s)encoding=`).
+# A generic strip-all-tags (`<[^>]+>`, `<.*?>`) is text extraction, not a filter.
+TAG_PATTERN_RE = re.compile(r"^(?:\(\?[a-zA-Z]+\))?(?:\((?:\?:)?)*<")
+GENERIC_TAG_RE = re.compile(r"^(?:\(\?[a-zA-Z]+\))?</?\??(?:\[\^>\]|\.)[*+]\??>$")
+WEAK_TAG_SPAN_RE = re.compile(r"\.[*+]|\[\^(?=[^\]]*>)(?![^\]]*<)[^\]]*\]")
+
+
+def _weak_tag_filter(pattern):
+    return (
+        isinstance(pattern, str)
+        and TAG_PATTERN_RE.match(pattern) is not None
+        and GENERIC_TAG_RE.match(pattern) is None
+        and WEAK_TAG_SPAN_RE.search(pattern) is not None
+    )
+
+
+def _analyze_regex_html(tree, rel_path, lines):
+    def pattern_of(node):
+        # `r"<script.*?>"` or `re.compile(r"...")`.
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Call) and _expr_repr(node.func) == "re.compile" and node.args:
+            return pattern_of(node.args[0])
+        return None
+
+    compiled = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and pattern_of(n.value) is not None and isinstance(n.value, ast.Call):
+            for t in n.targets:
+                key = _expr_repr(t)
+                if key:
+                    compiled[key] = n.value.args[0].value if isinstance(n.value.args[0], ast.Constant) else None
+    facts = []
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ("sub", "subn")):
+            continue
+        if _expr_repr(n.func.value) == "re":
+            pattern, repl = (pattern_of(n.args[0]) if n.args else None), (n.args[1] if len(n.args) > 1 else None)
+        else:
+            receiver = n.func.value
+            pattern = pattern_of(receiver) if isinstance(receiver, ast.Call) else compiled.get(_expr_repr(receiver))
+            repl = n.args[0] if n.args else None
+        if not (isinstance(repl, ast.Constant) and isinstance(repl.value, str)) or not _weak_tag_filter(pattern):
+            continue
+        if _suppressed(lines, n):
+            continue
+        facts.append(
+            {
+                "kind": "regex_html_filter",
+                "context": _truncate(pattern),
+                "detail": _truncate(lines[n.lineno - 1].strip()) if n.lineno <= len(lines) else None,
+                "file": rel_path,
+                "line": n.lineno,
+            }
+        )
     return facts
 
 
@@ -784,20 +1155,71 @@ def _direct_input(node, params):
 OWNERSHIP_MARKERS = ("env.user", "env.uid", "session", "token", "published")
 
 
-def _checks_access(func):
+def _caller_chosen(node, func, params, assigned):
+    # The value a fetched record is matched against is the caller's own
+    # pick (`employee = sudo().browse(employee_id)` with no PIN asked):
+    # nothing is authenticated. A local some other test also checks
+    # (`employee.pin != pin_code`) counts as authenticated.
+    if _direct_input(node, params):
+        return True
+    if not (isinstance(node, ast.Name) and assigned and node.id in assigned):
+        return False
+    if not any(_direct_input(x, params) for v in assigned[node.id] for x in ast.walk(v)):
+        return False
+    tests = [
+        t for t in ast.walk(func)
+        if isinstance(t, (ast.If, ast.IfExp, ast.Assert))
+        and any(isinstance(x, ast.Name) and x.id == node.id for x in ast.walk(t.test))
+    ]
+    return len(tests) < 2
+
+
+CONTAINER_FIELDS = {"config_id", "pos_config_id", "company_id", "website_id", "session_id", "event_id"}
+
+
+def _owner_field(node):
+    # `order.config_id.id` -> "config_id"
+    while isinstance(node, ast.Attribute) and node.attr == "id" and isinstance(node.value, ast.Attribute):
+        node = node.value
+    return node.attr
+
+
+def _checks_access(func, params=(), assigned=None):
     # Calls an access check (check_access_rule, has_access, _document_check_
     # access, _assert_portal_write_access, has_group, consteq, a token/hash/
     # signature check/validate/verify helper) or tests
     # ownership (`order.id == request.session.get(...)`, `x.user_id ==
     # request.env.user`, `partner.website_published`).
+    # A check passed as an argument (`no_create=not user.has_group(...)`)
+    # picks an option, it guards nothing (odoo 20 /mail/partner/from_email).
+    as_argument = {
+        id(x)
+        for c in ast.walk(func)
+        if isinstance(c, ast.Call)
+        for k in c.keywords
+        for x in ast.walk(k.value)
+    }
     for n in ast.walk(func):
-        if isinstance(n, ast.Call):
+        if isinstance(n, ast.Call) and id(n) not in as_argument:
             name = (_expr_repr(n.func) or "").split(".")[-1]
-            if name in ("has_group", "user_has_groups", "consteq") or (
-                any(w in name for w in ("access", "token", "hash", "signature"))
-                and any(w in name for w in ("check", "assert", "has_", "valid", "verify"))
+            if name in ("has_group", "user_has_groups", "consteq") or name.startswith(("_can_", "can_")) or (
+                any(w in name for w in ("access", "token", "hash", "signature", "jwt"))
+                and any(w in name for w in ("check", "assert", "has_", "valid", "verify", "get_access", "with_access"))
             ):
                 return True
+        # `if rec.employee_id != employee: return`: the fetched record is
+        # matched against what the caller was authenticated as. Matching
+        # its container (`order.config_id != pos_config`) still lets the
+        # caller pick any record in it (odoo 19 pos_self_order_pine_labs).
+        if isinstance(n, ast.If) and any(
+            isinstance(c, ast.Compare)
+            and any(isinstance(op, (ast.NotEq, ast.IsNot, ast.NotIn)) for op in c.ops)
+            and isinstance(c.left, ast.Attribute)
+            and _owner_field(c.left) not in CONTAINER_FIELDS
+            and not any(isinstance(x, ast.Constant) or _caller_chosen(x, func, params, assigned) for x in c.comparators)
+            for c in ast.walk(n.test)
+        ) and any(isinstance(b, (ast.Raise, ast.Return)) for b in n.body):
+            return True
         if isinstance(n, (ast.If, ast.IfExp, ast.Assert, ast.While)) and any(
             m in (_expr_repr(x) or "") for x in ast.walk(n.test) for m in OWNERSHIP_MARKERS
         ):
@@ -805,28 +1227,127 @@ def _checks_access(func):
     return False
 
 
+# Many2ones to catalog/configuration data: filtering on them reads what
+# anyone may see (published products, a website's settings).
+REFERENCE_FK_RE = re.compile(
+    r"^(product|product_tmpl|website|company|country|state|currency|lang|uom|pricelist|categ|category|"
+    r"tag|attribute|config|pos_config|slide_channel|channel|survey|event|event_ticket|forum|blog|job|"
+    r"question|page|menu|template|parent)(_ids?)?$|_(categ|category|tag|type|template)_ids?$"
+)
+
+
+# Catalog/configuration models: picking one by id reads what the route
+# shows anyway (a product, a booth category, a self-order preset).
+REFERENCE_MODEL_RE = re.compile(
+    r"^(product\.|website(\.|$)|res\.(country|currency|lang)|uom\.|ir\.actions\.|event\.(event|booth)$|pos\.preset$"
+    r"|survey\.survey$|delivery\.carrier$|payment\.(provider|method)$|pos\.payment\.method$|im_livechat\.channel$)"
+    r"|\.(category|categ|tag|type|template|ticket)$"
+)
+
+
 def _picks_by_id(domain, params):
     # The caller picks the records: the whole domain is theirs, or it
-    # filters `id` on their value. Filtering other fields reads reference data.
+    # filters `id`, a sequential `reference`/`name` (odoo 19 payment_xendit
+    # charged any transaction found by its reference) or a many2one to a
+    # document (`pos_order_id`, `partner_id`) on their value. Filtering other fields reads reference
+    # data. odoo 20 pos_self_order_event handed out the registrations of
+    # any order via `('pos_order_id', '=', int(order_id))`.
     if isinstance(domain, ast.Name) and domain.id in params:
         return True
     return any(
         isinstance(t, ast.Tuple)
         and len(t.elts) == 3
         and isinstance(t.elts[0], ast.Constant)
-        and t.elts[0].value == "id"
+        and isinstance(t.elts[0].value, str)
+        and (
+            t.elts[0].value in ("id", "reference", "name")
+            or (t.elts[0].value.endswith(("_id", "_id.id")) and not REFERENCE_FK_RE.search(t.elts[0].value.removesuffix(".id").split(".")[-1]))
+        )
         and _direct_input(t.elts[2], params)
         for t in ast.walk(domain)
     )
 
 
-def _scoped_domain(node):
+OWNER_FIELDS = ("visitor_id", "user_id", "create_uid", "partner_id", "employee_id")
+
+
+def _scoped_domain(node, params=()):
     for n in ast.walk(node):
+        # `('visitor_id', '=', visitor_sudo.id)`: the caller's own records.
+        if (
+            isinstance(n, ast.Tuple)
+            and len(n.elts) == 3
+            and isinstance(n.elts[0], ast.Constant)
+            and n.elts[0].value in OWNER_FIELDS
+            and not _direct_input(n.elts[2], params)
+        ):
+            return True
         if isinstance(n, ast.Constant) and isinstance(n.value, str) and CAPABILITY_RE.search(n.value):
             return True
         if any(x in (_expr_repr(n) or "") for x in ("env.user", "env.uid", "session.uid", "self._uid")):
             return True
     return False
+
+
+def _elevated_env(node, route):
+    # Records looked up past the caller's own rights: `.sudo()`,
+    # `.with_user(...)`, or in a route `<record>.env[...]`, the env of a
+    # record the controller fetched elevated (`order_sudo.env`, a config
+    # switched to its kiosk user: OCB/odoo 18 pos_self_order_razorpay picked
+    # any order by id through `pos_config.env['pos.order']`).
+    for x in ast.walk(node):
+        if isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute) and x.func.attr in ("sudo", "with_user"):
+            if x.func.attr == "sudo" and x.args and isinstance(x.args[0], ast.Constant) and not x.args[0].value:
+                continue
+            return True
+        if (
+            route
+            and isinstance(x, ast.Attribute)
+            and x.attr == "env"
+            and isinstance(x.value, ast.Name)
+            and x.value.id not in ("request", "self", "http")
+        ):
+            return True
+    return False
+
+
+def _caller_browse(node, params):
+    # `request.env[model].browse(res_id)`, both picked by the caller.
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "browse"
+        and node.args
+        and _direct_input(node.args[0], params)
+        and isinstance(node.func.value, ast.Subscript)
+        and (_expr_repr(node.func.value.value) or "").endswith("env")
+        and _direct_input(node.func.value.slice, params)
+    )
+
+
+# BaseModel's private methods that check access themselves or read no data.
+ORM_CHECKED_PRIVATE = {"_update_field_translations", "_get_base_lang", "_get_field_translations"}
+
+
+def _unchecked_record_calls(func, params, assigned):
+    # A private method run on a record of a model and id the caller picks:
+    # browse() checks nothing and private methods don't either, so the
+    # caller acts on records they can't read (odoo 20 mail's
+    # /mail/partner/from_email called _partner_find_from_emails_single on
+    # any thread).
+    records = {
+        name
+        for name, values in assigned.items()
+        if values and all(_caller_browse(v, params) for v in values)
+    }
+    for n in ast.walk(func):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+            continue
+        method, target = n.func.attr, n.func.value
+        if not method.startswith("_") or "access" in method or method in ORM_CHECKED_PRIVATE:
+            continue
+        if _caller_browse(target, params) or (isinstance(target, ast.Name) and target.id in records):
+            yield n
 
 
 def _analyze_sudo_input(tree, rel_path, lines):
@@ -845,7 +1366,7 @@ def _analyze_sudo_input(tree, rel_path, lines):
                 continue
             route = _route_decorator(func) is not None
             params = _caller_params(owner, func)
-            if not (params or route) or _checks_access(func):
+            if not (params or route) or _checks_access(func, params, _assignments(func)):
                 continue
             if not route and any(
                 isinstance(n, ast.Attribute)
@@ -860,22 +1381,42 @@ def _analyze_sudo_input(tree, rel_path, lines):
             def sources(v):
                 return [v] + (assigned.get(v.id, []) if isinstance(v, ast.Name) else [])
 
+            if route:
+                for n in _unchecked_record_calls(func, params, assigned):
+                    if not _suppressed(lines, n, func):
+                        facts.append(
+                            {
+                                "kind": "route_record_input",
+                                "context": f"{owner.name}.{func.name}",
+                                "detail": _truncate(lines[n.lineno - 1].strip()) if n.lineno <= len(lines) else None,
+                                "file": rel_path,
+                                "line": n.lineno,
+                            }
+                        )
+                        break
             for n in ast.walk(func):
                 if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.args):
                     continue
                 attr, arg = n.func.attr, n.args[0]
-                if not any(
-                    isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute) and x.func.attr == "sudo"
-                    for x in ast.walk(n.func.value)
-                ):
+                if not _elevated_env(n.func.value, route):
                     continue
                 kind = "route_sudo_input" if route else "rpc_sudo_input"
+                model = next(
+                    (
+                        x.slice.value
+                        for x in ast.walk(n.func.value)
+                        if isinstance(x, ast.Subscript) and isinstance(x.slice, ast.Constant) and isinstance(x.slice.value, str)
+                    ),
+                    "",
+                )
+                if REFERENCE_MODEL_RE.search(model):
+                    continue
                 if attr == "browse":
                     hit = any(_direct_input(src, params) for src in sources(arg))
                 elif attr in SUDO_PICK_CALLS:
                     srcs = sources(arg)
                     hit = any(_picks_by_id(src, params) for src in srcs) and not any(
-                        _scoped_domain(src) for src in srcs
+                        _scoped_domain(src, params) for src in srcs
                     )
                 elif attr in SUDO_WRITE_CALLS and not route:
                     # The whole dict a caller sent, not values picked from it.
@@ -972,8 +1513,11 @@ def _mass_assignment(func):
 
 
 def _route_decorator(func_node):
-    # @route(...) / @http.route(...) / @odoo.http.route(...); a bare @route
-    # (no call) is a pure override of an inherited route and also counts.
+    # @route(...) / @http.route(...) / @odoo.http.route(...), and the
+    # wrapper with route's own arguments (mail's @mail_route, which carries
+    # every discuss/thread route; not @iot_route: the IoT box has no
+    # database nor users); a bare @route (no call) is a pure override of an
+    # inherited route and also counts.
     for dec in func_node.decorator_list:
         target = dec.func if isinstance(dec, ast.Call) else dec
         name = (
@@ -981,7 +1525,7 @@ def _route_decorator(func_node):
             if isinstance(target, ast.Attribute)
             else (target.id if isinstance(target, ast.Name) else None)
         )
-        if name == "route":
+        if name == "route" or (name == "mail_route" and isinstance(dec, ast.Call)):
             return dec
     return None
 
@@ -1009,6 +1553,25 @@ def _calls_method(func_node, method_name):
     return False
 
 
+def _reaches_method(func_node, method_name, methods, depth=3):
+    # The handler, or a helper of its own class it calls as `self._x(...)`
+    # (payment webhooks delegate to `self._verify_and_process`), calls it.
+    if _calls_method(func_node, method_name):
+        return True
+    if depth == 0:
+        return False
+    return any(
+        _reaches_method(methods[n.func.attr], method_name, methods, depth - 1)
+        for n in ast.walk(func_node)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id in ("self", "cls")
+        and n.func.attr in methods
+        and methods[n.func.attr] is not func_node
+    )
+
+
 def _analyze_controllers(tree, rel_path):
     # Every HTTP endpoint a module exposes: any method decorated with
     # http.route, whatever the class inherits from (matching on the decorator
@@ -1018,6 +1581,7 @@ def _analyze_controllers(tree, rel_path):
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
+        methods = {f.name: f for f in node.body if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))}
         for stmt in node.body:
             if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -1062,7 +1626,7 @@ def _analyze_controllers(tree, rel_path):
                     ),
                     "csrf": csrf,  # None = framework default (enabled)
                     "website": website,
-                    "uses_sudo": _calls_method(stmt, "sudo"),
+                    "uses_sudo": _reaches_method(stmt, "sudo", methods),
                     # Portal token-validation pattern: the endpoint gates its
                     # record access on _document_check_access(..., access_token).
                     "checks_token_access": _calls_method(stmt, "_document_check_access"),
@@ -1434,6 +1998,7 @@ def analyze_module(module_path):
                 security_facts.extend(_safe(_analyze_sql_injection, tree, rel_path, lines))
                 security_facts.extend(_safe(_analyze_dangerous_calls, tree, rel_path, lines))
                 security_facts.extend(_safe(_analyze_sudo_input, tree, rel_path, lines))
+                security_facts.extend(_safe(_analyze_regex_html, tree, rel_path, lines))
             elif filename.endswith(".xml"):
                 try:
                     with open(full_path, "rb") as fh:
@@ -1546,7 +2111,7 @@ def load(path):
 /// collector::security and collector::migration. Stored per module, so a
 /// module is re-analyzed when this changes even if its branch never gets
 /// another commit. Bump it whenever any of those three change.
-pub const ANALYSIS_VERSION: i32 = 4;
+pub const ANALYSIS_VERSION: i32 = 6;
 
 #[derive(Debug, Default)]
 pub struct GitInfo {
@@ -3042,10 +3607,9 @@ def helpers(data, cmd):
             ("D3", "unsafe_deserialization"),
             ("D4", "shell_injection"),
             ("D5", "tls_verify_disabled"),
+            // R2 and R4 share R1's and R3's functions: one review item each.
             ("R1", "sql_injection"),
-            ("R2", "sql_injection"),
             ("R3", "sql_injection"),
-            ("R4", "sql_injection"),
             ("S1", "rpc_sudo_write"),
             ("S2", "rpc_sudo_input"),
             ("S3", "route_sudo_input"),
@@ -3082,6 +3646,263 @@ def helpers(data, cmd):
             .find(|c| c.name == "safe")
             .unwrap();
         assert!(!safe.mass_assignment);
+    }
+
+    // Public routes that pick documents past the visitor's rights, from real
+    // odoo 18-20 fixes (before: B*, a finding; after: A*, silent), plus
+    // catalog lookups and owner-scoped searches that stay silent (Q*).
+    #[test]
+    fn test_route_record_picks_from_real_fixes() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "route_picks"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("main.py"),
+            r#"
+from odoo import http
+from odoo.http import request
+from odoo.tools import consteq
+from odoo.addons.mail.tools.discuss import mail_route
+
+
+class Ctrl(http.Controller):
+    @http.route("/razorpay/status", auth="public", type="jsonrpc")
+    def razorpay_status(self, access_token, order_id):
+        pos_config = self._verify_pos_config(access_token)
+        order = pos_config.env['pos.order'].search([('id', '=', order_id), ('config_id', '=', pos_config.id)])  # B1
+        order.action_pos_order_paid()
+
+    @http.route("/razorpay/status2", auth="public", type="jsonrpc")
+    def razorpay_status_fixed(self, access_token, order_id, payment_data):
+        pos_config = self._verify_pos_config(access_token)
+        order = pos_config.env['pos.order'].search([('id', '=', order_id), ('access_token', '=', payment_data.get('order_token'))])  # A1
+        order.action_pos_order_paid()
+
+    @http.route("/pine/status", auth="public", type="jsonrpc")
+    def pine_status(self, access_token, order_id):
+        pos_config = self._verify_pos_config(access_token)
+        order = pos_config.env['pos.order'].browse(order_id)  # B2
+        if not order.exists() or order.config_id.id != pos_config.id:
+            raise NotFound()
+        order.action_pos_order_paid()
+
+    @http.route("/event/regs", auth="public", type="jsonrpc")
+    def event_regs(self, access_token, order_id):
+        pos_config = self._verify_pos_config(access_token)
+        return pos_config.env['event.registration'].search([('pos_order_id', '=', int(order_id))])  # B3
+
+    @http.route("/xendit/pay", auth="public", type="jsonrpc")
+    def xendit_payment(self, reference, token_ref):
+        tx_sudo = request.env['payment.transaction'].sudo().search([('reference', '=', reference)])  # B4
+        tx_sudo._xendit_create_charge(token_ref)
+
+    @http.route("/xendit/pay2", auth="public", type="jsonrpc")
+    def xendit_payment_fixed(self, reference, token_ref, access_token):
+        tx_sudo = request.env['payment.transaction'].sudo().search([('reference', '=', reference)])  # A4
+        if not payment_utils.check_access_token(access_token, reference):
+            raise ValidationError("no")
+        tx_sudo._xendit_create_charge(token_ref)
+
+    @mail_route("/mail/partner/from_email", methods=["POST"], type="jsonrpc", auth="user")
+    def from_email(self, thread_model, thread_id, emails):
+        return request.env[thread_model].browse(thread_id)._partner_find_from_emails_single(  # B5
+            emails, no_create=not request.env.user.has_group("base.group_partner_manager")
+        )
+
+    @mail_route("/mail/partner/from_email2", methods=["POST"], type="jsonrpc", auth="user")
+    def from_email_fixed(self, thread_model, thread_id, emails):
+        thread = self._get_thread_with_access(thread_model, thread_id)
+        return thread._partner_find_from_emails_single(emails)  # A5
+
+    @http.route("/attendance/break_nopin", auth="public", type="jsonrpc")
+    def update_break_nopin(self, token, attendance_id, employee_id):
+        employee = request.env['hr.employee'].sudo().browse(employee_id)  # B6
+        attendance = request.env['hr.attendance'].sudo().browse(attendance_id)
+        if attendance.employee_id != employee:
+            return {}
+        attendance.write({'break': 1})
+
+    @http.route("/attendance/break_pin", auth="public", type="jsonrpc")
+    def update_break_pin(self, token, attendance_id, employee_id, pin_code):
+        employee = request.env['hr.employee'].sudo().browse(employee_id)
+        if employee.pin != pin_code:
+            employee = request.env['hr.employee']
+        attendance = request.env['hr.attendance'].sudo().browse(attendance_id)  # A6
+        if attendance.employee_id != employee:
+            return {}
+        attendance.write({'break': 1})
+
+    @http.route("/shop/viewed_delete", auth="public", type="jsonrpc")
+    def viewed_delete(self, product_id):
+        visitor_sudo = self.env["ir.http"]._get_visitor_from_request()
+        domain = [("visitor_id", "=", visitor_sudo.id), ("product_id", "=", int(product_id))]
+        self.env["website.track"].sudo().search(domain).unlink()  # Q1
+
+    @http.route("/shop/rate", auth="public", type="jsonrpc")
+    def rate(self, dm_id):
+        return self.env["delivery.carrier"].sudo().browse(int(dm_id)).exists()  # Q2
+
+    @http.route("/translate", auth="user", type="jsonrpc")
+    def translate(self, model, record_id, field_name, translations):
+        record = request.env[model].browse(record_id)
+        return record._update_field_translations(field_name, translations)  # Q3
+"#,
+        )
+        .unwrap();
+        let result = OGHCollectorAnalyzer::new(&200u8).analyze_module_source(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        let mut found: Vec<(String, String)> = result
+            .security_facts
+            .iter()
+            .map(|f| {
+                let detail = f.detail.as_deref().unwrap_or("");
+                let marker = detail.rsplit("# ").next().unwrap_or("").to_string();
+                (marker, f.kind.clone())
+            })
+            .collect();
+        found.sort();
+        let expected = [
+            ("B1", "route_sudo_input"),
+            ("B2", "route_sudo_input"),
+            ("B3", "route_sudo_input"),
+            ("B4", "route_sudo_input"),
+            ("B5", "route_record_input"),
+            ("B6", "route_sudo_input"),
+        ];
+        assert_eq!(
+            found,
+            expected
+                .iter()
+                .map(|(m, k)| (m.to_string(), k.to_string()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // Caller input followed into private helpers and SQL built away from its
+    // execute() (OCB #1372's read_group spec), regex HTML filters (OCB
+    // #1378's html_normalize), and the real false positives that must stay
+    // review items: numeric `%d`, a private helper's result, a parameter the
+    // method overwrites, a callable parameter (not RPC-reachable).
+    #[test]
+    fn test_taint_through_helpers_and_regex_html_filters() {
+        let dir = std::env::temp_dir().join(format!(
+            "oghcollector_analyzer_test_{}_{}",
+            std::process::id(),
+            "taint_helpers"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("main.py"),
+            r#"
+import re
+from odoo import models, _
+
+DOCTYPE = re.compile(r'(<[^>]*\s)(encoding=(["\'][^"\']*?["\']|[^\s\n\r>]+)(\s[^>]*|/)?>)', re.I)
+
+
+class Thing(models.Model):
+    _name = "x.thing"
+
+    def read_group(self, domain, fields, groupby, lazy=True):
+        return self._read_group_raw(domain, fields, groupby, lazy=lazy)
+
+    def _read_group_raw(self, domain, fields, groupby, lazy=True):
+        query = self._where_calc(domain)
+        groupby_list = groupby[:1] if lazy else groupby
+        return [self._process_groupby(gb, query) for gb in groupby_list]
+
+    def _process_groupby(self, gb, query):
+        split = gb.split(':')
+        fn = split[1] if len(split) == 2 else None
+        field = self._inherits_join_calc(self._table, split[0], query)
+        return "date_trunc('%s', %s)" % (fn or 'month', field)  # T1
+
+    def _unreached(self, gb):
+        return "date_trunc('%s', x)" % gb
+
+    def search_partner(self, name):
+        where = "WHERE name = '%s'" % name
+        self.env.cr.execute("SELECT id FROM res_partner " + where)  # T2
+
+    def message(self, name):
+        raise ValueError(_("Select one from %s where x = 1") % name)
+
+    def published(self, limit=None):
+        limit_clause = '' if limit is None else ' LIMIT %d' % limit
+        self.env.cr.execute("SELECT id FROM x WHERE id IN %s" + limit_clause, (tuple(self.ids),))
+
+    def lines(self, data):
+        clause = self._get_query_get_clause(data)
+        self.env.cr.execute('SELECT id FROM ' + clause[0] + ' WHERE ' + clause[1], clause[2])
+
+    def print_report(self, data):
+        data = {}
+        data['form'] = self.read()[0]
+        self.env.cr.execute("SELECT 1 FROM p WHERE p.id IN %s" % str(data['form']['ids']))  # R1
+
+    def migrate_to_alias(self, table, init_fct):
+        init_fct(self.env.cr)
+        self.env.cr.execute('ALTER TABLE %s ALTER COLUMN alias_id SET NOT NULL' % table)  # R2
+
+
+class Fields(models.Model):
+    _inherit = "ir.model.fields"
+
+    def write(self, vals):
+        self.env.cr.execute('ALTER TABLE x RENAME "%s"' % vals['name'])  # T3
+        res = super(Fields, self).write(vals)
+        self.env.cr.execute('ALTER TABLE x RENAME "%s"' % vals['name'])  # A1
+        return res
+
+    def rename(self, name):
+        super().write({})
+        self.env.cr.execute('ALTER TABLE x RENAME "%s"' % name)  # T4
+
+
+def normalize(src):
+    src = DOCTYPE.sub("", src)  # H1
+    src = re.sub(r'</?o:.*?>', '', src)  # H2
+    src = re.sub(r'</?o:[^<>\n]*?>', '', src)
+    text = re.sub(r'<[^>]+>', '', src)
+    return re.sub(r'<.*?>', '', text)
+"#,
+        )
+        .unwrap();
+        let result = OGHCollectorAnalyzer::new(&110u8).analyze_module_source(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        let mut found: Vec<(String, String)> = result
+            .security_facts
+            .iter()
+            .map(|f| {
+                let detail = f.detail.as_deref().unwrap_or("");
+                let marker = detail.rsplit("# ").next().unwrap_or("").to_string();
+                (marker, f.kind.clone())
+            })
+            .collect();
+        found.sort();
+        let expected = [
+            ("A1", "sql_injection_admin"),
+            ("H1", "regex_html_filter"),
+            ("H2", "regex_html_filter"),
+            ("R1", "sql_injection"),
+            ("R2", "sql_injection"),
+            ("T1", "sql_injection_tainted"),
+            ("T2", "sql_injection_tainted"),
+            ("T3", "sql_injection_tainted"),
+            ("T4", "sql_injection_tainted"),
+        ];
+        assert_eq!(
+            found,
+            expected
+                .iter()
+                .map(|(m, k)| (m.to_string(), k.to_string()))
+                .collect::<Vec<_>>()
+        );
     }
 
     // Rule-calibration harness, not a regression test: runs the extractor and

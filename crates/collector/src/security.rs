@@ -1,23 +1,30 @@
 // Copyright Alexandre D. Díaz
 //! Static security checks over a module's analyzed records (ir.model.access
-//! rows from CSV/XML and ir.rule records), HTTP controllers, code-level
+//! rows from CSV/XML and ir.rule records; Odoo 20's ir.access rows are
+//! rewritten into those first, see `expand_ir_access`), HTTP controllers, code-level
 //! sinks (SQL formatting, eval, pickle, shell, TLS) and Html fields. Findings
 //! identify review priorities, not confirmed exploits. Effective access also
 //! depends on other modules, global rules, field restrictions and Python code.
 //! "error" (shown prominently on ommd.info) is kept for high-precision
 //! rules; calibrate changes with analyzer.rs's ignored `calibrate` test.
 //!
-//! Static security checks over the analyzed records (lax `ir.model.access` grants — minor on the
-//! module's abstract models, its wizards that don't call sudo(), or when a global rule keeps users to
-//! their own rows —, permissive
-//! `ir.rule` domains correlated with the module's own ACLs, privilege-escalation ACLs, portal/public
+//! Static security checks over the analyzed records (lax `ir.model.access` write grants — minor on the
+//! module's abstract models, its wizards that don't call sudo(), labels (`*.tag`), or when a rule
+//! keeps that ACL's users to their own rows; group-less *read* grants
+//! aren't reported, credentials are —, always-true portal/public
+//! `ir.rule` domains correlated with the module's own ACLs (an internal group's is Odoo's "sees
+//! all" pattern, not reported), privilege-escalation ACLs, portal/public
 //! read of credentials — fields of a model the module opens to them, or added to `res.company`/
-//! `website` —, users created with a fixed password), HTTP controllers (CSRF disabled on
-//! authenticated endpoints, grave only when they refuse GET and reach the database, mass assignment
-//! of the raw request payload) and code-level facts (SQL injection: grave only when the formatted
-//! value is caller-controlled — a parameter of an RPC-callable model method or route, the request
-//! payload, or the context, unless it went through the ORM's query builders —, caller input picking
-//! records under `sudo()` in a route or RPC method that checks no access, and an RPC method writing
+//! `website` —, users created with a fixed password), HTTP controllers (CSRF disabled: minor, it
+//! needs a victim; public handlers acting under sudo() or on the session only aren't reported; mass
+//! assignment of the raw request payload) and code-level facts (SQL injection: grave only when the
+//! formatted value is caller-controlled — a parameter of an RPC-callable model method or route, the
+//! request payload, or the context, followed through locals and the class's private helpers, also
+//! when the SQL text is built away from its execute(), unless it went through the ORM's query
+//! builders —, regex HTML tag filters that `.*`/`[^>]` let markup slip through, caller input picking
+//! documents past the caller's rights — `sudo()`, `with_user()`, a route's elevated record env — in a
+//! route or RPC method that checks no access, private methods run on a record whose model and id a
+//! route's caller sends, and an RPC method writing
 //! its caller's whole dict under `sudo()` (grave), eval/exec, pickle/unsafe YAML, `shell=True`,
 //! `verify=False`, user-writable `Html(sanitize=False)`). `test_*`/"Tests"-category modules are
 //! skipped, and so are records from the manifest's `demo` files. Every
@@ -165,16 +172,7 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                     if intentional { SEVERITY_WARNING } else { SEVERITY_ERROR },
                     "acl-global-write",
                     format!(
-                        "ACL grants {write_perms} on '{model_label}' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user."
-                    ),
-                ));
-            } else if perm(rec, "perm_read") && !is_intentional_global(rec) {
-                out.push(warning(
-                    rec,
-                    SEVERITY_WARNING,
-                    "acl-global-read",
-                    format!(
-                        "Access rule grants read on '{model_label}' to every user (portal/public included): no group is set"
+                        "ACL grants {write_perms} on '{model_label}' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user. CWE-732."
                     ),
                 ));
             }
@@ -194,7 +192,7 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                 if intentional { SEVERITY_WARNING } else { SEVERITY_ERROR },
                 "acl-public-write",
                 format!(
-                    "ACL grants {write_perms} on '{model_label}' to '{g}'. Verify record rules restrict these operations to intended records, including records owned by other users/companies."
+                    "ACL grants {write_perms} on '{model_label}' to '{g}'. Verify record rules restrict these operations to intended records, including records owned by other users/companies. CWE-732."
                 ),
             ));
         }
@@ -212,7 +210,7 @@ fn check_access(rec: &RecordAnalysisInfo, out: &mut Vec<SecurityWarningInfo>) {
                     SEVERITY_ERROR,
                     "acl-privilege-escalation",
                     format!(
-                        "ACL grants {write_perms} on security model '{model_ref}' to {}. Review field restrictions and Python guards for possible privilege escalation; the ACL alone does not prove exploitability.",
+                        "ACL grants {write_perms} on security model '{model_ref}' to {}. Review field restrictions and Python guards for possible privilege escalation; the ACL alone does not prove exploitability. CWE-269.",
                         group.map(|g| format!("group '{g}'")).unwrap_or_else(|| "every user".to_string())
                     ),
                 ));
@@ -317,30 +315,12 @@ fn check_rule(
                 rec,
                 SEVERITY_ERROR,
                 "rule-public-bypass",
-                "Always-true portal/public group rule removes restrictions from other group rules for applicable operations. ACLs and global rules still apply; test access to other users' records.".to_string(),
+                "Always-true portal/public group rule removes restrictions from other group rules for applicable operations. ACLs and global rules still apply; test access to other users' records. CWE-863.".to_string(),
             ));
         }
-        Some("[]" | "False" | "[(5,)]" | "[(6, 0, [])]") => {}
-        Some(groups)
-            if is_intentional_global(rec)
-                || groups.split(['\'', '"']).any(|g| {
-                    is_core_id(g, &ADMIN_GROUP_XML_IDS)
-                        || g.split(['_', '.'])
-                            .any(|t| matches!(t, "manager" | "admin"))
-                }) => {}
-        Some(_)
-            if ["perm_write", "perm_create", "perm_unlink"]
-                .iter()
-                .all(|p| perm_explicit_false(rec, p)) => {}
-        Some(_) => {
-            out.push(warning(
-                rec,
-                SEVERITY_WARNING,
-                "rule-group-bypass",
-                "Always-true group rule removes restrictions from other group rules for applicable operations. Verify this scope is intended; ACLs and global rules still apply.".to_string(),
-            ));
-        }
-        None => {}
+        // An always-true rule for an internal group is how Odoo grants
+        // "officer/manager sees all": not reported.
+        _ => {}
     }
 }
 
@@ -398,17 +378,20 @@ fn restricted_to_own(
                             .any(|g| local_id(g) == local_id(group))
                     })
             })
-            && field_str(r, "domain_force").is_some_and(|d| {
-                d.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
-                    .any(|t| {
-                        t == "uid"
-                            || matches!(
-                                t.strip_prefix("user.").and_then(|r| r.split('.').next()),
-                                Some("id" | "partner_id" | "commercial_partner_id")
-                            )
-                    })
-            })
+            && field_str(r, "domain_force").is_some_and(own_domain)
     })
+}
+
+/// A domain naming the current user (`uid`, `user.id`, `user.partner_id`).
+fn own_domain(d: &str) -> bool {
+    d.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+        .any(|t| {
+            t == "uid"
+                || matches!(
+                    t.strip_prefix("user.").and_then(|r| r.split('.').next()),
+                    Some("id" | "partner_id" | "commercial_partner_id")
+                )
+        })
 }
 
 /// The stored credential fields of one model class: none for wizards or
@@ -541,6 +524,75 @@ pub fn analyze_secret_reads(
     out
 }
 
+/// Odoo 20 replaced `ir.model.access` + `ir.rule` with one `ir.access`
+/// model (`model_id`, `group_id`, `operation` as a subset of "crud",
+/// optional `domain`). A row with a group is a permission: an ACL for that
+/// group, limited by its domain if any (a group rule then); a row without
+/// one is a restriction, i.e. a global rule. `base.group_everyone` (every
+/// user, portal and public included) is the old group-less ACL. Each row is
+/// rewritten into those older records, under its own xml_id, so every
+/// ACL/rule check above applies unchanged.
+const SCOPED_DOMAIN: &str = "ir_access_domain";
+
+fn expand_ir_access(records: Vec<RecordAnalysisInfo>) -> Vec<RecordAnalysisInfo> {
+    let mut out = Vec::with_capacity(records.len());
+    for rec in records {
+        if rec.model != "ir.access" {
+            out.push(rec);
+            continue;
+        }
+        let ops = field_str(&rec, "operation").unwrap_or("");
+        // CSV rows give the model's name (`mail.message`), XML a ref.
+        let model = field_str(&rec, "model_id").map(|m| {
+            let m = strip_ref(m);
+            if m.contains("model_") {
+                m.to_string()
+            } else {
+                format!("model_{}", m.replace('.', "_"))
+            }
+        });
+        let group = field_str(&rec, "group_id")
+            .map(strip_ref)
+            .filter(|g| *g != "base.group_everyone")
+            .map(str::to_string);
+        let domain = field_str(&rec, "domain").map(str::to_string);
+        let flag = |c: char| serde_json::json!(if ops.contains(c) { "1" } else { "0" });
+        let perms = |mut fields: serde_json::Value| {
+            fields["perm_read"] = flag('r');
+            fields["perm_write"] = flag('u');
+            fields["perm_create"] = flag('c');
+            fields["perm_unlink"] = flag('d');
+            fields
+        };
+        let derived = |model_name: &str, fields: serde_json::Value| RecordAnalysisInfo {
+            model: model_name.to_string(),
+            fields: Some(fields),
+            ..rec.clone()
+        };
+        let has_group = field_str(&rec, "group_id").is_some();
+        if has_group {
+            let mut acl = serde_json::json!({ "model_id": model });
+            if let Some(g) = &group {
+                acl["group_id"] = serde_json::json!(g);
+            }
+            if let Some(d) = domain.as_deref().filter(|d| !is_permissive_domain(Some(d))) {
+                // Not a field of ir.model.access: tells demote_scratch_and_own_grants
+                // this grant only covers the records of its own domain.
+                acl[SCOPED_DOMAIN] = serde_json::json!(d);
+            }
+            out.push(derived("ir.model.access", perms(acl)));
+        }
+        // Only a restriction becomes a rule: permissions OR together, so one
+        // row's domain never narrows another's grant (it rides on its own
+        // ACL as SCOPED_DOMAIN instead).
+        if let Some(d) = domain.filter(|_| !has_group) {
+            let rule = serde_json::json!({ "model_id": model, "domain_force": d });
+            out.push(derived("ir.rule", perms(rule)));
+        }
+    }
+    out
+}
+
 /// Every security finding for one analyzed module.
 pub fn analyze_module(
     technical_name: &str,
@@ -557,11 +609,10 @@ pub fn analyze_module(
         .filter(|r| !r.demo)
         .cloned()
         .collect();
+    let records = expand_ir_access(records);
     let secrets = analyze_secret_reads(&records, &analysis.models);
     let mut out = analyze_records(&records);
     demote_scratch_and_own_grants(&mut out, &records, &analysis.models);
-    // Same ACL: the credential finding says everything acl-global-read does.
-    out.retain(|w| w.code != "acl-global-read" || !secrets.iter().any(|s| s.xml_id == w.xml_id));
     out.extend(secrets);
     out.extend(analyze_controllers(&analysis.controllers));
     out.extend(analyze_facts(&analysis.security_facts));
@@ -572,9 +623,12 @@ pub fn analyze_module(
 /// Grave groupless/portal write grants that can't reach anyone's business
 /// records become minor: on a wizard (TransientModel: per-request scratch
 /// rows; the ORM still checks the records its buttons act on, unless they
-/// use sudo()) or an AbstractModel (no table) of this module, or on a model
-/// a global rule of this module narrows to the user's own rows (core
-/// ir.ui.view.custom).
+/// use sudo()) or an AbstractModel (no table) of this module, on a model a
+/// rule of this module narrows to the user's own rows for that ACL's group
+/// (core ir.ui.view.custom, a global rule; website_crm_partner_assign's
+/// portal leads, a portal rule), or on labels (`*.tag`). Not `*.category`
+/// (product.category holds accounts and costing) nor `*.test`
+/// (account_test's assertions hold code it runs).
 fn demote_scratch_and_own_grants(
     out: &mut [SecurityWarningInfo],
     records: &[RecordAnalysisInfo],
@@ -602,15 +656,36 @@ fn demote_scratch_and_own_grants(
         .collect();
     for w in out.iter_mut().filter(|w| {
         w.severity == SEVERITY_ERROR
-            && matches!(w.code.as_str(), "acl-global-write" | "acl-public-write")
+            && matches!(
+                w.code.as_str(),
+                "acl-global-write" | "acl-public-write" | "acl-privilege-escalation"
+            )
     }) {
-        let model = records
+        let Some(acl) = records
             .iter()
             .find(|r| r.model == "ir.model.access" && w.xml_id.as_deref() == Some(&r.xml_id))
-            .and_then(|r| field_str(r, "model_id"))
-            .map(local_id);
+        else {
+            continue;
+        };
+        // Odoo 20 ir.access: the grant carries its own domain. Any domain
+        // bounds a write grant; escalation only stays grave unless it is the
+        // user's own record (core's res.users self-write, whose fields are
+        // guarded by SELF_WRITEABLE_FIELDS).
+        if let Some(d) = field_str(acl, SCOPED_DOMAIN) {
+            if w.code != "acl-privilege-escalation" || own_domain(d) {
+                w.severity = SEVERITY_WARNING.to_string();
+            }
+            continue;
+        }
+        if w.code == "acl-privilege-escalation" {
+            continue;
+        }
+        let group = field_str(acl, "group_id").map(strip_ref);
+        let model = field_str(acl, "model_id").map(local_id);
         if model.is_some_and(|m| {
-            scratch.iter().any(|s| s == m) || restricted_to_own(records, m, None, "perm_write")
+            scratch.iter().any(|s| s == m)
+                || restricted_to_own(records, m, group, "perm_write")
+                || matches!(m.rsplit('_').next(), Some("tag" | "tags"))
         }) {
             w.severity = SEVERITY_WARNING.to_string();
         }
@@ -647,6 +722,11 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<SecurityWarningInfo> {
                 "sql-injection",
                 format!("SQL built by string formatting from caller-controlled input (an RPC-callable method's parameter, the request payload or the context): `{snippet}`. Pass values as query parameters (`cr.execute(query, params)`, `SQL(\"... %s\", value)`). CWE-89."),
             ),
+            "sql_injection_admin" => (
+                SEVERITY_WARNING,
+                "sql-injection-review",
+                format!("SQL built by string formatting from caller input: `{snippet}`. It runs after the ORM's write check on a core model only admins can write, so only an admin reaches it; still, pass values as query parameters (`cr.execute(query, params)`, `SQL()`). CWE-89."),
+            ),
             "sql_injection" => (
                 SEVERITY_WARNING,
                 "sql-injection-review",
@@ -681,6 +761,16 @@ pub fn analyze_facts(facts: &[MigrationFactInfo]) -> Vec<SecurityWarningInfo> {
                 SEVERITY_WARNING,
                 "route-sudo-input",
                 format!("`{snippet}`: an HTTP route hands request input to sudo() to pick records, and checks no access itself (`_document_check_access`, a token compared with `consteq`): whoever reaches the route can open other users' records. CWE-639."),
+            ),
+            "route_record_input" => (
+                SEVERITY_WARNING,
+                "route-record-input",
+                format!("`{snippet}`: an HTTP route runs a private method on a record whose model and id the caller sends, and checks no access first: `browse()` checks nothing, so the caller acts on records they can't read. Fetch it through an access check (`_get_thread_with_access`, `check_access`) first. CWE-639."),
+            ),
+            "regex_html_filter" => (
+                SEVERITY_WARNING,
+                "html-regex-filter",
+                format!("`{snippet}` filters HTML tags with a regular expression whose `.*` or `[^>]` runs across tag boundaries: nested or malformed markup (`<scr<script>ipt>`, `<a <b>>`) survives it. Parse the HTML (lxml, `odoo.tools.html_sanitize`) or keep `<`, `>` and newlines out of the repeated part. CWE-185."),
             ),
             "tls_verify_disabled" => (
                 SEVERITY_WARNING,
@@ -784,12 +874,12 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                     .any(|m| !matches!(m.as_str(), "GET" | "HEAD" | "OPTIONS" | "TRACE")));
         if ctrl.csrf == Some(false) && csrf_relevant {
             if auth == Some("user") {
-                // Odoo never CSRF-checks GET, so on a route that also answers
-                // GET the flag removes no protection; and a handler that
-                // can't reach the database only changes the session.
+                // Minor: exploiting it takes a logged-in victim visiting the
+                // attacker's page. Odoo never CSRF-checks GET, so on a route
+                // that also answers GET the flag removes no protection; and a
+                // handler that can't reach the database only changes the session.
                 let answers_get =
                     ctrl.methods.is_empty() || ctrl.methods.iter().any(|m| m == "GET");
-                let grave = !answers_get && !ctrl.session_only;
                 let why = if answers_get {
                     " It also answers GET, which Odoo never CSRF-checks: review it as a state change over GET."
                 } else if ctrl.session_only {
@@ -799,20 +889,23 @@ pub fn analyze_controllers(controllers: &[ControllerAnalysisInfo]) -> Vec<Securi
                 };
                 out.push(controller_warning(
                     ctrl,
-                    if grave { SEVERITY_ERROR } else { SEVERITY_WARNING },
+                    SEVERITY_WARNING,
                     "route-user-csrf-off",
                     format!(
-                        "HTTP endpoint '{}.{}' disables CSRF protection for unsafe methods with session authentication.{why}",
+                        "HTTP endpoint '{}.{}' disables CSRF protection for unsafe methods with session authentication.{why} CWE-352.",
                         ctrl.class_name, ctrl.name
                     ),
                 ));
-            } else if is_public {
+            } else if is_public && !ctrl.uses_sudo && !ctrl.session_only {
+                // CSRF borrows the visitor's session: a handler acting under
+                // sudo() (payment IPNs, webhooks) or only on the session does
+                // the same whoever sends the request.
                 out.push(controller_warning(
                     ctrl,
                     SEVERITY_WARNING,
                     "route-public-csrf-off",
                     format!(
-                        "Public HTTP endpoint '{}.{}' disables CSRF protection (fine for webhooks/callbacks, worth a review otherwise)",
+                        "Public HTTP endpoint '{}.{}' disables CSRF protection and acts as the visitor (no sudo()): a logged-in visitor's session can be made to call it from another site. Fine for webhooks/callbacks, worth a review otherwise. CWE-352.",
                         ctrl.class_name, ctrl.name
                     ),
                 ));
@@ -911,11 +1004,111 @@ mod tests {
     }
 
     #[test]
-    fn test_global_read_is_minor() {
-        let found = analyze_records(&[access_csv("", ["1", "0", "0", "0"])]);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].code, "acl-global-read");
-        assert_eq!(found[0].severity, SEVERITY_WARNING);
+    fn test_global_read_is_not_a_finding() {
+        // Public catalogues (events, website menus, tags) are read this way;
+        // credentials are acl-public-read-secret's job.
+        assert!(analyze_records(&[access_csv("", ["1", "0", "0", "0"])]).is_empty());
+    }
+
+    #[test]
+    fn test_global_write_on_labels_is_minor() {
+        for (model, severity) in [
+            ("model_blog_tag", SEVERITY_WARNING),
+            ("model_res_partner_category_tags", SEVERITY_WARNING),
+            ("model_product_category", SEVERITY_ERROR),
+            ("model_accounting_assert_test", SEVERITY_ERROR),
+        ] {
+            let mut rec = access_csv("", ["1", "1", "1", "1"]);
+            rec.fields.as_mut().unwrap()["model_id:id"] = serde_json::json!(model);
+            let a = ModuleAnalysisInfo {
+                records: vec![rec],
+                ..Default::default()
+            };
+            let found = analyze_module("m", "", &a);
+            assert_eq!(found[0].severity, severity, "{model}");
+        }
+    }
+
+    // Odoo 20's ir.access rows (core addons/*/security/ir.access.csv).
+    #[test]
+    fn test_ir_access_rows_judged_like_acls_and_rules() {
+        let row =
+            |xml_id: &str, model: &str, group: &str, ops: &str, domain: &str| RecordAnalysisInfo {
+                xml_id: xml_id.to_string(),
+                model: "ir.access".to_string(),
+                fields: Some(serde_json::json!({
+                    "model_id": model,
+                    "group_id/id": group,
+                    "operation": ops,
+                    "domain": domain,
+                })),
+                file: Some("security/ir.access.csv".to_string()),
+                ..Default::default()
+            };
+        let a = ModuleAnalysisInfo {
+            records: vec![
+                row("thing_write", "x.thing", "base.group_portal", "ru", ""),
+                // A scoped permission next to it doesn't narrow the open one.
+                row(
+                    "thing_write_own",
+                    "x.thing",
+                    "base.group_portal",
+                    "u",
+                    "[('user_id', '=', user.id)]",
+                ),
+                row(
+                    "doc_write_scoped",
+                    "x.doc",
+                    "base.group_portal",
+                    "ru",
+                    "[('res_access_write', '=', True)]",
+                ),
+                row(
+                    "everyone_write",
+                    "x.other",
+                    "base.group_everyone",
+                    "cru",
+                    "",
+                ),
+                row(
+                    "self_write",
+                    "res.users",
+                    "base.group_user",
+                    "u",
+                    "[('id', '=', user.id)]",
+                ),
+                row("users_write", "res.groups", "base.group_user", "u", ""),
+                row(
+                    "restriction",
+                    "x.thing",
+                    "",
+                    "crud",
+                    "[('company_id', 'in', company_ids)]",
+                ),
+                row("portal_read", "x.thing", "base.group_portal", "r", ""),
+            ],
+            ..Default::default()
+        };
+        let mut got: Vec<(String, String, String)> = analyze_module("m", "", &a)
+            .into_iter()
+            .map(|w| (w.xml_id.unwrap_or_default(), w.code, w.severity))
+            .collect();
+        got.sort();
+        // The portal grant's xml_id avoids "portal" (an intent token).
+        let want = [
+            ("doc_write_scoped", "acl-public-write", SEVERITY_WARNING),
+            ("everyone_write", "acl-global-write", SEVERITY_ERROR),
+            ("self_write", "acl-privilege-escalation", SEVERITY_WARNING),
+            ("thing_write", "acl-public-write", SEVERITY_ERROR),
+            ("thing_write_own", "acl-public-write", SEVERITY_WARNING),
+            ("users_write", "acl-privilege-escalation", SEVERITY_ERROR),
+        ];
+        assert_eq!(
+            got,
+            want.iter()
+                .map(|(x, c, s)| (x.to_string(), c.to_string(), s.to_string()))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -929,23 +1122,25 @@ mod tests {
         assert_eq!(found[0].severity, SEVERITY_WARNING);
 
         // Token anywhere, not just as suffix; "public" counts too.
-        for xml_id in ["access_res_partner_all_x", "access_public_partner"] {
-            let mut rec = access_csv("", ["1", "0", "0", "0"]);
+        let severity = |xml_id: &str, name: Option<&str>| {
+            let mut rec = access_csv("", ["1", "1", "0", "0"]);
             rec.xml_id = xml_id.to_string();
-            assert!(analyze_records(&[rec]).is_empty(), "{xml_id}");
+            if let Some(name) = name {
+                rec.fields.as_mut().unwrap()["name"] = serde_json::json!(name);
+            }
+            analyze_records(&[rec])[0].severity.clone()
+        };
+        for xml_id in ["access_res_partner_all_x", "access_public_partner"] {
+            assert_eq!(severity(xml_id, None), SEVERITY_WARNING, "{xml_id}");
         }
-
-        // Token match only: "install" contains "all" but must still warn.
-        let mut rec = access_csv("", ["1", "0", "0", "0"]);
-        rec.xml_id = "access_module_install".to_string();
-        assert_eq!(analyze_records(&[rec]).len(), 1);
-
+        // Token match only: "install" contains "all" but stays grave.
+        assert_eq!(severity("access_module_install", None), SEVERITY_ERROR);
         // "name" field works too (CSV rows where the xml_id differs).
-        let mut rec = access_csv("", ["1", "0", "0", "0"]);
-        rec.fields.as_mut().unwrap()["name"] = serde_json::json!("res.partner all");
-        assert_eq!(analyze_records(&[rec.clone()]).len(), 1); // " all" ≠ "_all"
-        rec.fields.as_mut().unwrap()["name"] = serde_json::json!("access_res_partner_all");
-        assert!(analyze_records(&[rec]).is_empty());
+        assert_eq!(severity("x", Some("res.partner all")), SEVERITY_ERROR); // " all" ≠ "_all"
+        assert_eq!(
+            severity("x", Some("access_res_partner_all")),
+            SEVERITY_WARNING
+        );
     }
 
     #[test]
@@ -1121,11 +1316,8 @@ mod tests {
         all_rule.xml_id = "rule_settlement_all".to_string();
         assert!(analyze_records(&[all_rule]).is_empty());
 
-        // Plain internal group: minor (log-only). Also covers the `[]` domain form.
-        let found = analyze_records(&[rule("[]", Some("[(4, ref('base.group_user'))]"))]);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].code, "rule-group-bypass");
-        assert_eq!(found[0].severity, SEVERITY_WARNING);
+        // Plain internal group: Odoo's "sees all" pattern, not a finding.
+        assert!(analyze_records(&[rule("[]", Some("[(4, ref('base.group_user'))]"))]).is_empty());
 
         // Global always-true rule AND-combines: harmless no-op.
         assert!(analyze_records(&[rule("[(1,'=',1)]", None)]).is_empty());
@@ -1140,26 +1332,17 @@ mod tests {
     #[test]
     fn test_readonly_rule_needs_explicit_flags_not_just_a_name() {
         // Named "readonly" but doesn't actually turn off write/create/unlink
-        // (Odoo defaults those to True): still a full bypass, still warns.
-        let mut named_only = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
-        named_only.xml_id = "account_analytic_line_rule_readonly_user".to_string();
-        let found = analyze_records(&[named_only]);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].code, "rule-group-bypass");
+        // (Odoo defaults those to True): still a full portal bypass.
+        let mut named_only = rule("[(1,'=',1)]", Some("[(4, ref('base.group_portal'))]"));
+        named_only.xml_id = "portal_rule_readonly".to_string();
+        assert_eq!(analyze_records(&[named_only]).len(), 1);
 
-        // Explicit perm_write/create/unlink = False: genuinely read-only,
-        // not a finding - the name is irrelevant, only the flags matter.
-        let mut readonly = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
-        readonly.fields.as_mut().unwrap()["perm_write"] = serde_json::json!("False");
-        readonly.fields.as_mut().unwrap()["perm_create"] = serde_json::json!("False");
-        readonly.fields.as_mut().unwrap()["perm_unlink"] = serde_json::json!("False");
-        assert!(analyze_records(&[readonly]).is_empty());
-
-        // Only partially narrowed (perm_create still open): still a finding.
-        let mut partial = rule("[(1,'=',1)]", Some("[(4, ref('base.group_user'))]"));
-        partial.fields.as_mut().unwrap()["perm_write"] = serde_json::json!("False");
-        partial.fields.as_mut().unwrap()["perm_unlink"] = serde_json::json!("False");
-        assert_eq!(analyze_records(&[partial]).len(), 1);
+        // Every perm explicitly off: the rule grants nothing.
+        let mut off = rule("[(1,'=',1)]", Some("[(4, ref('base.group_portal'))]"));
+        for p in ["perm_read", "perm_write", "perm_create", "perm_unlink"] {
+            off.fields.as_mut().unwrap()[p] = serde_json::json!("False");
+        }
+        assert!(analyze_records(&[off]).is_empty());
 
         // Portal/public stays grave even when genuinely read-only: an
         // external group reading every record of the model is still a leak.
@@ -1195,17 +1378,22 @@ mod tests {
     }
 
     #[test]
-    fn test_user_csrf_off_is_grave_public_is_minor() {
+    fn test_csrf_off_is_minor_and_public_sudo_is_silent() {
         let found = analyze_controllers(&[route(Some("user"), Some(false), &["POST"], false)]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "route-user-csrf-off");
-        assert_eq!(found[0].severity, SEVERITY_ERROR);
+        assert_eq!(found[0].severity, SEVERITY_WARNING);
         assert_eq!(found[0].xml_id.as_deref(), Some("/demo/endpoint"));
 
         let found = analyze_controllers(&[route(Some("public"), Some(false), &["POST"], false)]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "route-public-csrf-off");
         assert_eq!(found[0].severity, SEVERITY_WARNING);
+        // A public handler acting under sudo() (payment IPN, webhook) does the
+        // same whoever sends the request: CSRF adds nothing.
+        assert!(
+            analyze_controllers(&[route(Some("public"), Some(false), &["POST"], true)]).is_empty()
+        );
 
         // Also answers GET (no `methods`, or GET listed), or a session-only
         // handler: the flag opens nothing a GET wouldn't, minor.
@@ -1322,6 +1510,7 @@ mod tests {
         let found = analyze_facts(&[
             fact("sql_injection_tainted"),
             fact("sql_injection"),
+            fact("sql_injection_admin"),
             fact("code_eval"),
             fact("unsafe_deserialization"),
             fact("shell_injection"),
@@ -1329,6 +1518,7 @@ mod tests {
             fact("rpc_sudo_write"),
             fact("rpc_sudo_input"),
             fact("route_sudo_input"),
+            fact("route_record_input"),
             fact("unknown"),
         ]);
         let got: Vec<(&str, &str)> = found
@@ -1340,6 +1530,7 @@ mod tests {
             [
                 ("sql-injection", SEVERITY_ERROR),
                 ("sql-injection-review", SEVERITY_WARNING),
+                ("sql-injection-review", SEVERITY_WARNING),
                 ("code-eval", SEVERITY_WARNING),
                 ("unsafe-deserialization", SEVERITY_WARNING),
                 ("shell-injection", SEVERITY_WARNING),
@@ -1347,6 +1538,7 @@ mod tests {
                 ("rpc-sudo-write", SEVERITY_ERROR),
                 ("rpc-sudo-input", SEVERITY_WARNING),
                 ("route-sudo-input", SEVERITY_WARNING),
+                ("route-record-input", SEVERITY_WARNING),
             ]
         );
         assert_eq!(found[0].xml_id.as_deref(), Some("X.method"));

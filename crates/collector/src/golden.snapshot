@@ -1,6 +1,6 @@
 ## module
-mod_a 180 Module A 1.1.0 LGPL-3 Sales 1 785 52b99c3d90845abd04c6eadf27ce9da262d40979 Ana Dev second Mon, 1 Jan 2024 00:00:00 +0000 mod_a 4
-mod_b 180 Module B 1.0.0 LGPL-3 Uncategorized 1 67 0428283b967b9da3345a5d612a16906be630f311 Ana Dev first Mon, 1 Jan 2024 00:00:00 +0000 mod_b 4
+mod_a 180 Module A 1.1.0 LGPL-3 Sales 1 785 52b99c3d90845abd04c6eadf27ce9da262d40979 Ana Dev second Mon, 1 Jan 2024 00:00:00 +0000 mod_a 6
+mod_b 180 Module B 1.0.0 LGPL-3 Uncategorized 1 67 0428283b967b9da3345a5d612a16906be630f311 Ana Dev first Mon, 1 Jan 2024 00:00:00 +0000 mod_b 6
 ## dependency
 mod_a module base
 mod_a python lxml
@@ -39,7 +39,7 @@ maintainer success New maintainer 'Acme' added for 'mod_a' (Module A) [18.0]
 maintainer success New maintainer 'Ana Dev' added for 'mod_a' (Module A) [18.0]
 committer success New committer 'Ana Dev' added for 'mod_a' (Module A) [18.0]
 module success New module 'mod_a' (Module A) [1.0.0] added in 'org/repo' [18.0]
-security warning Security notice in 'mod_a' (Module A) [18.0] ('access_a_thing_all'): ACL grants write/create/unlink on 'model_a_thing' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user.
+security warning Security notice in 'mod_a' (Module A) [18.0] ('access_a_thing_all'): ACL grants write/create/unlink on 'model_a_thing' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user. CWE-732.
 dependency success New dependency 'base' added for 'mod_a' (Module A) [18.0]
 dependency success New dependency 'sale' added for 'mod_a' (Module A) [18.0]
 dependency success New dependency 'requests' added for 'mod_a' (Module A) [18.0]
@@ -54,7 +54,7 @@ issue error PROBLEM DETECTED: 'mod_b' (Module B) from repo has an incorrect Odoo
 author warning 'Ana Dev' removed as author of 'mod_a' (Module A) [18.0]
 maintainer warning 'Ana Dev' removed as maintainer of 'mod_a' (Module A) [18.0]
 module info Module 'mod_a' (Module A) [1.1.0] in 'org/repo' [18.0] updated: Version Module: 1.0.0 -> 1.1.0, Folder Size: 864 -> 785. Commit "second" (52b99c3) by Ana Dev on Mon, 1 Jan 2024 00:00:00 +0000
-security warning Security notice in 'mod_a' (Module A) [18.0] ('access_a_thing_all'): ACL grants write/create/unlink on 'model_a_thing' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user.
+security warning Security notice in 'mod_a' (Module A) [18.0] ('access_a_thing_all'): ACL grants write/create/unlink on 'model_a_thing' to every user (portal/public included): no group is set. Verify record rules and test access as an unrelated public/portal user. CWE-732.
 dependency warning 'sale' removed as Odoo dependency of 'mod_a' (Module A) [18.0]
 dependency warning 'requests' removed as Python dependency of 'mod_a' (Module A) [18.0]
 dependency success New dependency 'lxml' added for 'mod_a' (Module A) [18.0]
