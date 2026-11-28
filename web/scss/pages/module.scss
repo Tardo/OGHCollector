@@ -75,10 +75,10 @@
     container-type: inline-size;
     margin-bottom: 1.25rem;
     overflow: hidden;
-    background-color: var(--ommd-panel);
+    background: var(--ommd-panel) var(--ommd-sheen);
     border: 1px solid var(--summary-line);
     border-radius: var(--bs-border-radius-lg);
-    box-shadow: var(--ommd-shadow);
+    box-shadow: var(--ommd-edge), var(--ommd-shadow);
 
     .stat-card {
         height: auto;

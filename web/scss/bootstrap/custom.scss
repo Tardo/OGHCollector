@@ -12,7 +12,17 @@
   --ommd-glow: rgba(23, 107, 102, 0.1);
   --ommd-panel: #ffffff;
   --ommd-sidebar: #ffffff;
-  --ommd-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.05);
+  // Layered shadows tinted with the ink colour (not pure black): a tight
+  // contact shadow plus a soft ambient one reads as depth, not as a border.
+  --ommd-shadow: 0 1px 1px rgba(25, 43, 61, 0.04), 0 2px 4px -1px rgba(25, 43, 61, 0.05), 0 8px 20px -12px rgba(25, 43, 61, 0.12);
+  --ommd-shadow-lg: 0 2px 4px rgba(25, 43, 61, 0.04), 0 12px 28px -6px rgba(25, 43, 61, 0.14), 0 32px 64px -24px rgba(25, 43, 61, 0.2);
+  // Surfaces: barely lighter at the top, like light falling from above.
+  --ommd-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 7rem);
+  --ommd-edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --ommd-sidebar-bg: linear-gradient(180deg, #ffffff 0%, #f8fbfb 100%);
+  --ommd-page-bg:
+    radial-gradient(70rem 32rem at 85% -8rem, rgba(23, 107, 102, 0.07), transparent 70%),
+    radial-gradient(50rem 28rem at -10% -6rem, rgba(70, 110, 170, 0.05), transparent 70%);
   --bs-font-sans-serif: 'DM Sans', system-ui, sans-serif;
   --bs-body-font-family: 'DM Sans', system-ui, sans-serif;
   --bs-body-font-size: 0.9375rem;
@@ -37,7 +47,14 @@
   --ommd-glow: rgba(80, 203, 189, 0.12);
   --ommd-panel: #101e30;
   --ommd-sidebar: #0d1828;
-  --ommd-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --ommd-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), 0 2px 6px -1px rgba(0, 0, 0, 0.22), 0 10px 24px -14px rgba(0, 0, 0, 0.5);
+  --ommd-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.25), 0 16px 36px -8px rgba(0, 0, 0, 0.45), 0 40px 80px -30px rgba(0, 0, 0, 0.6);
+  --ommd-sheen: linear-gradient(180deg, rgba(160, 210, 230, 0.045), rgba(160, 210, 230, 0) 8rem);
+  --ommd-edge: inset 0 1px 0 rgba(200, 235, 245, 0.06);
+  --ommd-sidebar-bg: linear-gradient(180deg, #0f1c2e 0%, #0b1524 100%);
+  --ommd-page-bg:
+    radial-gradient(70rem 32rem at 85% -8rem, rgba(80, 203, 189, 0.07), transparent 70%),
+    radial-gradient(50rem 28rem at -10% -6rem, rgba(90, 130, 220, 0.06), transparent 70%);
   --bs-body-bg: #0b1422;
   --bs-body-bg-rgb: 11, 20, 34;
   --bs-body-color: #e5eff5;
@@ -57,6 +74,10 @@
 
 body {
   min-height: 100dvh;
+  background-color: var(--bs-body-bg);
+  background-image: var(--ommd-page-bg);
+  background-repeat: no-repeat;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -157,7 +178,7 @@ html[data-mode='user'] .dev-only {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: var(--ommd-sidebar);
+  background: var(--ommd-sidebar-bg);
   border-right: 1px solid var(--bs-border-color-translucent);
 }
 
@@ -263,7 +284,7 @@ html[data-mode='user'] .dev-only {
   &.active {
     font-weight: 600;
     color: var(--ommd-accent);
-    background: var(--ommd-glow);
+    background: linear-gradient(90deg, var(--ommd-glow), transparent 95%);
     box-shadow: inset 2px 0 var(--ommd-accent);
   }
 }
@@ -336,6 +357,7 @@ html[data-mode='user'] .dev-only {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--bs-border-color-translucent);
+  box-shadow: 0 6px 16px -14px rgba(25, 43, 61, 0.35);
 }
 
 .app-icon-btn {
@@ -400,14 +422,18 @@ html[data-mode='user'] .dev-only {
   text-align: left;
   color: var(--bs-secondary-color);
   background: var(--ommd-panel);
+  background-image: var(--ommd-sheen);
   border: 1px solid var(--bs-border-color-translucent);
   border-radius: 0.55rem;
+  box-shadow: var(--ommd-edge), 0 1px 2px rgba(25, 43, 61, 0.06);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   .material-icons { font-size: 1.15rem; }
 
   &:hover {
     color: var(--bs-body-color);
     border-color: var(--ommd-accent);
+    box-shadow: var(--ommd-edge), 0 0 0 0.2rem var(--ommd-glow);
   }
 }
 
@@ -448,6 +474,22 @@ html[data-mode='user'] .dev-only {
   .app-breadcrumb-sep {
     display: none;
   }
+
+  // No room for it next to the actions; the page header names the page.
+  .app-breadcrumb { display: none; }
+  .app-topbar { gap: 0.25rem; padding-inline: 0.5rem; }
+  .app-topbar-actions { gap: 0.15rem; }
+  .app-topbar #workspace-select { max-width: 8.5rem; text-overflow: ellipsis; }
+  #lang-select .app-icon-btn { padding: 0 0.35rem; }
+
+  // The switch keeps its title/label for screen readers, only the text goes.
+  .mode-switch .form-check-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
 }
 
 .app-content {
@@ -479,6 +521,7 @@ html[data-mode='user'] .dev-only {
   background: var(--ommd-panel);
   border: 1px solid var(--bs-border-color-translucent);
   border-radius: var(--bs-border-radius-lg);
+  box-shadow: var(--ommd-edge), var(--ommd-shadow);
 
   mirlo-atlas {
     position: absolute;
@@ -508,7 +551,7 @@ html[data-mode='user'] .dev-only {
 
   .modal-content {
     padding: 0.75rem;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--ommd-shadow-lg);
   }
 }
 
@@ -558,6 +601,22 @@ html[data-mode='user'] .dev-only {
 .btn {
   font-weight: 600;
   letter-spacing: -0.01em;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+// Filled buttons: lit from above, a hair of depth below.
+:is(.btn-primary, .btn-success, .btn-danger, .btn-warning, .btn-info) {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(25, 43, 61, 0.16), 0 4px 10px -4px rgba(23, 107, 102, 0.45);
+
+  &:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 4px rgba(25, 43, 61, 0.16), 0 8px 18px -6px rgba(23, 107, 102, 0.5); }
+  &:active { background-image: none; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2); }
+}
+
+// Outline buttons sit on the page like small raised panels.
+:is(.btn-outline-secondary, .btn-outline-primary, .btn-light) {
+  background-image: var(--ommd-sheen);
+  box-shadow: var(--ommd-edge), 0 1px 2px rgba(25, 43, 61, 0.07);
 }
 
 [data-bs-theme="dark"] .btn-primary {
@@ -581,11 +640,21 @@ html[data-mode='user'] .dev-only {
   --bs-btn-active-color: var(--bs-body-color);
   --bs-btn-active-bg: var(--bs-tertiary-bg);
   --bs-btn-active-border-color: var(--ommd-accent);
+  --bs-btn-bg: var(--ommd-panel);
 }
 
 .form-control, .form-select, .dropdown-menu, .modal-content, .offcanvas, .accordion-item {
   background-color: var(--ommd-panel);
   border-color: var(--bs-border-color-translucent);
+}
+
+.dropdown-menu, .modal-content, .popover {
+  background-image: var(--ommd-sheen);
+  box-shadow: var(--ommd-shadow-lg);
+}
+
+.form-control, .form-select {
+  box-shadow: inset 0 1px 2px rgba(25, 43, 61, 0.05);
 }
 
 .form-control:focus, .form-select:focus {
@@ -599,7 +668,8 @@ html[data-mode='user'] .dev-only {
   --bs-card-border-radius: var(--bs-border-radius-lg);
   --bs-card-inner-border-radius: var(--bs-border-radius-lg);
   --bs-card-cap-bg: var(--bs-tertiary-bg);
-  box-shadow: var(--ommd-shadow);
+  background-image: var(--ommd-sheen);
+  box-shadow: var(--ommd-edge), var(--ommd-shadow);
 }
 
 // Segmented control look for the version/period tab strips.
@@ -613,6 +683,7 @@ html[data-mode='user'] .dev-only {
   background: var(--bs-tertiary-bg);
   border: 1px solid var(--bs-border-color-translucent);
   border-radius: 0.65rem;
+  box-shadow: inset 0 1px 2px rgba(25, 43, 61, 0.06);
 
   .nav-link {
     padding: 0.35rem 0.8rem;
@@ -626,8 +697,8 @@ html[data-mode='user'] .dev-only {
 
     &.active {
       color: var(--ommd-accent);
-      background: var(--ommd-panel);
-      box-shadow: var(--ommd-shadow);
+      background: var(--ommd-panel) var(--ommd-sheen);
+      box-shadow: var(--ommd-edge), 0 1px 2px rgba(25, 43, 61, 0.1), 0 2px 6px -2px rgba(25, 43, 61, 0.12);
     }
   }
 }
@@ -647,6 +718,10 @@ html[data-mode='user'] .dev-only {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--bs-secondary-color);
+  }
+
+  .panel & > thead th {
+    background: linear-gradient(180deg, rgba(var(--bs-tertiary-bg-rgb), 0.35), rgba(var(--bs-tertiary-bg-rgb), 0.75));
   }
 
   td {
@@ -760,10 +835,10 @@ html[data-mode='user'] .dev-only {
 // Bordered surface for tables, lists and widgets.
 .panel {
   overflow-x: auto;
-  background: var(--ommd-panel);
+  background: var(--ommd-panel) var(--ommd-sheen);
   border: 1px solid var(--bs-border-color-translucent);
   border-radius: var(--bs-border-radius-lg);
-  box-shadow: var(--ommd-shadow);
+  box-shadow: var(--ommd-edge), var(--ommd-shadow);
 
   .table { min-width: 400px; }
   .table a { font-weight: 600; text-decoration: none; }
@@ -777,6 +852,7 @@ html[data-mode='user'] .dev-only {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.8rem 1.15rem;
+  background: linear-gradient(180deg, rgba(var(--bs-tertiary-bg-rgb), 0.15), rgba(var(--bs-tertiary-bg-rgb), 0.55));
   border-bottom: 1px solid var(--bs-border-color-translucent);
 
   h2 {
@@ -810,10 +886,10 @@ html[data-mode='user'] .dev-only {
 .stat-card {
   height: 100%;
   padding: 1rem 1.15rem;
-  background-color: var(--ommd-panel);
+  background: var(--ommd-panel) var(--ommd-sheen);
   border: 1px solid var(--bs-border-color-translucent);
   border-radius: var(--bs-border-radius-lg);
-  box-shadow: var(--ommd-shadow);
+  box-shadow: var(--ommd-edge), var(--ommd-shadow);
 
   .stat-card-label {
     display: flex;
@@ -827,8 +903,17 @@ html[data-mode='user'] .dev-only {
     color: var(--bs-secondary-color);
 
     .material-icons {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      margin-right: 0.15rem;
       font-size: 1rem;
       color: var(--ommd-accent);
+      background: linear-gradient(145deg, var(--ommd-glow), rgba(var(--bs-tertiary-bg-rgb), 0.6));
+      border-radius: 0.45rem;
+      box-shadow: inset 0 0 0 1px var(--bs-border-color-translucent);
     }
   }
 

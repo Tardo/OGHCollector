@@ -133,9 +133,20 @@ pub fn visible_names(req: &HttpRequest) -> Vec<String> {
         .map(|w| w.names())
         .unwrap_or_default();
     match allowed(req) {
-        Some(a) => names.into_iter().filter(|n| a.contains(n)).collect(),
+        Some(a) => visible_under_auth(names, &a, SERVER_CONFIG.get_default_workspace()),
         None => names,
     }
+}
+
+/// `default` is always offered: `current` falls back to it, and having no repositories of its
+/// own it is never in `names`.
+fn visible_under_auth(names: Vec<String>, allowed: &[String], default: &str) -> Vec<String> {
+    let mut out: Vec<String> = names
+        .into_iter()
+        .filter(|n| allowed.contains(n) && n != default)
+        .collect();
+    out.insert(0, default.to_string());
+    out
 }
 
 /// The visitor's workspace, if the cookie names one that exists.
@@ -230,8 +241,18 @@ fn own_view(ws: Option<&str>, names: &[String]) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{allowed_for, own_view};
+    use super::{allowed_for, own_view, visible_under_auth};
     use std::collections::HashMap;
+
+    #[test]
+    fn default_workspace_always_offered_first() {
+        let names = vec!["acme".to_string(), "oca".to_string()];
+        let allowed = ["default".to_string(), "oca".to_string()];
+        assert_eq!(
+            visible_under_auth(names, &allowed, "default"),
+            ["default", "oca"]
+        );
+    }
 
     #[test]
     fn own_view_falls_back_to_shared_without_own_repos() {
