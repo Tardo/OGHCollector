@@ -1,4 +1,5 @@
 // Copyright Alexandre D. Díaz
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::{HashMap, HashSet};
 
 use actix_web::{get, http::StatusCode, web, HttpRequest, HttpResponse, Responder, Result};
@@ -11,7 +12,7 @@ use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 use crate::workspace::AreaPool;
 
-use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
+use oghutils::version::parse_odoo_version;
 use sqlitedb::{models, Pool};
 
 use super::api::v1::module::{process_modules_db, ModuleFullInfoResponse};
@@ -133,7 +134,7 @@ fn get_module_pull_requests(
                 ci_status: pr.ci_status,
                 title: pr.name,
                 prid: pr.prid,
-                odoo_version: odoo_version_u8_to_string(&(pr.version_odoo as u8)),
+                odoo_version: odoo_version_i32_to_string(pr.version_odoo),
                 repository,
                 organization,
             }
@@ -220,7 +221,7 @@ fn get_module_upstream(conn: &mut SqliteConnection, technical_name: &str) -> Mod
     let info = |r: &models::openupgrade_rename::Model, name: &str, via| ModuleUpstreamInfo {
         kind: if r.merged { "merged" } else { "renamed" },
         name: name.to_string(),
-        odoo_version: odoo_version_u8_to_string(&(r.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(r.version_odoo),
         org: orgs.get(name).cloned(),
         via,
     };
@@ -284,7 +285,7 @@ fn module_locations(rows: &[models::module::ModuleInfo]) -> ModuleLocations {
         shared.entry(r.version_odoo).or_default().push(key);
     }
     versions.values_mut().for_each(|v| v.sort_unstable());
-    let label = |v: &i32| odoo_version_u8_to_string(&(*v as u8));
+    let label = |v: &i32| odoo_version_i32_to_string(*v);
 
     let mut keys: Vec<(&str, &str)> = versions.keys().copied().collect();
     keys.sort_by_key(|k| (versions[k][0], *k));
@@ -335,7 +336,7 @@ fn build_module_context(
     let module_versions: HashMap<String, Vec<ModuleVersionHistoryInfo>> = modules
         .iter()
         .map(|m| {
-            let odoo_ver = odoo_version_u8_to_string(&(m.version_odoo as u8));
+            let odoo_ver = odoo_version_i32_to_string(m.version_odoo);
             let mut history: Vec<ModuleVersionHistoryInfo> =
                 models::module_version::get_by_module_id(conn, &m.id)
                     .into_iter()
@@ -412,7 +413,7 @@ pub async fn route(
         let odoo_versions: Vec<String> = distinct_versions
             .iter()
             .rev() // newest first, matches the tab order
-            .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+            .map(|v| odoo_version_i32_to_string(*v))
             .collect();
 
         // Only the newest Odoo version is rendered eagerly here - the rest
@@ -665,12 +666,12 @@ pub async fn route_compare(
         });
         let versions: Vec<String> = available
             .iter()
-            .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+            .map(|v| odoo_version_i32_to_string(*v))
             .collect();
         let picked = picked.map(|(from, to)| {
             (
-                odoo_version_u8_to_string(&(from as u8)),
-                odoo_version_u8_to_string(&(to as u8)),
+                odoo_version_i32_to_string(from),
+                odoo_version_i32_to_string(to),
             )
         });
         (name, versions, picked, diff)

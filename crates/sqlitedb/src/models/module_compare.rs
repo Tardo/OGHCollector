@@ -16,7 +16,7 @@ use super::{
     module_model, module_model_field, module_model_method, module_security_warning, module_version,
     module_view,
 };
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ListDiff {
@@ -206,7 +206,7 @@ fn load_snapshot(
         .collect();
     let analysis = module_version::resolve_current(conn, m).map(|mv| load_analysis(conn, &mv.id));
     Snapshot {
-        odoo_version: odoo_version_u8_to_string(&(m.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(m.version_odoo),
         module_version: m.version_module.clone(),
         manifest,
         depends,

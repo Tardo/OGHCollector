@@ -1,11 +1,11 @@
 // Copyright Alexandre D. Díaz
 use diesel::prelude::*;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::{Deserialize, Serialize};
 
 use crate::schema::dependency_module;
 
 use super::{dependency, module, system_event};
-use oghutils::version::odoo_version_u8_to_string;
 
 #[derive(Queryable, Selectable, Debug, Deserialize, Serialize, Clone)]
 #[diesel(table_name = dependency_module, check_for_backend(diesel::sqlite::Sqlite))]
@@ -116,7 +116,7 @@ pub fn add(
         name,
         &mod_info.technical_name,
         &mod_info.name,
-        odoo_version_u8_to_string(&(mod_info.version_odoo as u8)).as_str(),
+        odoo_version_i32_to_string(mod_info.version_odoo).as_str(),
     );
     Ok(ModelFull {
         id: new_id,

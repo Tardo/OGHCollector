@@ -17,7 +17,6 @@ serde.workspace = true
 serde_json.workspace = true
 actix-web.workspace = true
 actix-files.workspace = true
-actix-utils.workspace = true
 actix-web-lab.workspace = true
 actix-cors.workspace = true
 actix-session.workspace = true

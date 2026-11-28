@@ -22,6 +22,7 @@
 //! group (`RUNNING_JOB`) and waits ≤25s holding the queue lock (compose: `init: true`,
 //! `stop_grace_period: 30s`). Webhooks only help for orgs you administer; OCA/odoo stay on the
 //! schedule.
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::VecDeque;
 use std::env;
 use std::sync::atomic::Ordering;
@@ -38,7 +39,6 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
-use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models;
 
 use crate::config;
@@ -408,7 +408,7 @@ pub async fn run(path: &str) {
             let head_branch = |sha: &str| {
                 let mut conn = pool.get().ok()?;
                 let version = models::pull_request::get_version_by_head_sha(&mut conn, sha)?;
-                Some(odoo_version_u8_to_string(&(version as u8)))
+                Some(odoo_version_i32_to_string(version))
             };
             match git {
                 "GH" => github_hook(&queue, &path, &secret, &headers, &body, &head_branch),

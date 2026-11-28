@@ -1,11 +1,11 @@
 // Copyright Alexandre D. Díaz
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::HashMap;
 
 use actix_web::{get, web, Error as AWError, HttpResponse};
 use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
-use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models;
 
 use crate::workspace::AreaPool;
@@ -29,7 +29,7 @@ fn get_repository_generic_info(
     for repo in repos {
         let branches = orgs.entry(repo.organization).or_default();
         branches
-            .entry(odoo_version_u8_to_string(&(repo.version_odoo as u8)))
+            .entry(odoo_version_i32_to_string(repo.version_odoo))
             .or_insert(repo.num_modules as u16);
     }
     Some(RepositoryGenericInfoResponse {

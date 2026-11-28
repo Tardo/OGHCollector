@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use diesel::sqlite::SqliteConnection;
 use oghutils::license::LicenseReport;
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 use sqlitedb::{models, Pool};
 
 use crate::utils::normalize_python_dep;
@@ -524,7 +524,7 @@ pub fn process_modules_db(
             months_idle,
             required_by.len(),
             series.len(),
-            &odoo_version_u8_to_string(&(*series.first().unwrap_or(&module.version_odoo) as u8)),
+            &odoo_version_i32_to_string(*series.first().unwrap_or(&module.version_odoo)),
         );
         res.push(ModuleFullInfoResponse {
             name: module.name.clone(),
@@ -547,7 +547,7 @@ pub fn process_modules_db(
             folder_size: module.folder_size as u64,
             repository: repo.name.clone(),
             organization: org.name.clone(),
-            odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+            odoo_version: odoo_version_i32_to_string(module.version_odoo),
             source_path: module.source_path.clone(),
             views,
             models: module_models,
@@ -575,7 +575,7 @@ fn get_module_generic_info(
     let technical_name = &modules[0].technical_name;
     let odoo_versions = modules
         .iter()
-        .map(|x| odoo_version_u8_to_string(&(x.version_odoo as u8)))
+        .map(|x| odoo_version_i32_to_string(x.version_odoo))
         .collect::<Vec<String>>();
     let repos = modules
         .iter()

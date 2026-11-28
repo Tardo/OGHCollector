@@ -5,6 +5,7 @@ use array_tool::vec::Uniq;
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use oghutils::license::LicenseReport;
+use oghutils::version::odoo_version_i32_to_string;
 use oghutils::version::{odoo_version_string_to_u8, odoo_version_u8_to_string};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -180,7 +181,7 @@ fn get_unresolved(
         .filter(|r| r.version_odoo == version)
         .map(|r| (r.org_name, r.repository))
         .collect();
-    let version_string = |v: i32| Some(odoo_version_u8_to_string(&(v as u8)));
+    let version_string = |v: i32| Some(odoo_version_i32_to_string(v));
 
     names
         .into_iter()

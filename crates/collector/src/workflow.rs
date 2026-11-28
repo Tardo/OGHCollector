@@ -47,6 +47,7 @@
 //! `--config`). Node failures `warn`. `golden.rs` (test) pins the default workflow's DB output on a
 //! deterministic git fixture (`GIT_CONFIG_GLOBAL=/dev/null`: the dev's gpg signing hangs commits);
 //! `OGH_GOLDEN_RECORD=1` re-records — only when a change is *meant* to alter output.
+use oghutils::version::odoo_version_i32_to_string;
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -1433,7 +1434,7 @@ fn sync_dependencies(
             label,
             &module.technical_name,
             &module.name,
-            &odoo_version_u8_to_string(&(module.version_odoo as u8)),
+            &odoo_version_i32_to_string(module.version_odoo),
         );
     }
     wanted

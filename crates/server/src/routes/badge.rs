@@ -6,10 +6,11 @@
 //! "Embed badges" in the module facts aside.
 use actix_web::{get, web, HttpResponse, Result};
 use diesel::sqlite::SqliteConnection;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::Deserialize;
 
 use crate::utils::xml_escape;
-use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
+use oghutils::version::parse_odoo_version;
 use sqlitedb::{models, Pool};
 
 // shields.io's palette, so these sit well next to other README badges.
@@ -75,7 +76,7 @@ fn version_ranges(module_versions: &[i32], all_versions: &[i32]) -> String {
         }
         previous_index = Some(index);
     }
-    let fmt = |v: i32| odoo_version_u8_to_string(&(v as u8));
+    let fmt = |v: i32| odoo_version_i32_to_string(v);
     runs.into_iter()
         .map(|(from, to)| {
             if from == to {
@@ -122,7 +123,7 @@ fn badge_content(
                     None => return not_found(),
                 },
             };
-            let label = format!("odoo {}", odoo_version_u8_to_string(&(target as u8)));
+            let label = format!("odoo {}", odoo_version_i32_to_string(target));
             if modules.iter().any(|m| m.version_odoo == target) {
                 return (label, "available".to_string(), GREEN);
             }

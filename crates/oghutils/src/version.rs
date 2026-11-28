@@ -3,6 +3,11 @@ pub fn odoo_version_u8_to_string(version: &u8) -> String {
     format!("{float_ver:.1}")
 }
 
+/// The DB's `version_odoo` column (an `i32`, 180) → "18.0".
+pub fn odoo_version_i32_to_string(version: i32) -> String {
+    odoo_version_u8_to_string(&(version as u8))
+}
+
 /// "18.0" → 180, `None` for anything that isn't a number. No range check:
 /// the lenient reading of a manifest's version (`OdooVersion`); a request's
 /// goes through `parse_odoo_version`.

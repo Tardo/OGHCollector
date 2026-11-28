@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 use sqlitedb::models::doodba_project::{self, newest_revs, rev_key, Patch, Repo, Row, SharedAddon};
 use sqlitedb::{models, Pool};
 
@@ -24,10 +24,6 @@ use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::routes::doodba_tools::get_pending_modules;
 use crate::utils::get_minijinja_context;
 use crate::workspace::AreaPool;
-
-fn version_str(version_odoo: i32) -> String {
-    odoo_version_u8_to_string(&(version_odoo as u8))
-}
 
 /// `https://github.com/OCA/pylint-odoo` → `pylint-odoo`.
 fn hook_name(repo: &str) -> &str {
@@ -299,7 +295,7 @@ pub async fn route(
                 score += 10;
             }
             FleetRow {
-                next: next.map(version_str),
+                next: next.map(odoo_version_i32_to_string),
                 ready,
                 in_pr,
                 ready_tracked,
@@ -308,7 +304,7 @@ pub async fn route(
                 flags: flags.join(" "),
                 org_name: r.org_name.clone(),
                 repository: r.repository.clone(),
-                version: version_str(r.project.version_odoo),
+                version: odoo_version_i32_to_string(r.project.version_odoo),
                 template_commit: r.project.template_commit.clone(),
                 template_date: day(r.project.template_commit_date.as_deref()),
                 behind,
@@ -341,7 +337,7 @@ pub async fn route(
             (
                 r.org_name.clone(),
                 r.repository.clone(),
-                version_str(r.project.version_odoo),
+                odoo_version_i32_to_string(r.project.version_odoo),
                 extra,
             )
         };
@@ -411,7 +407,7 @@ pub async fn route(
                 .push((
                     r.org_name.clone(),
                     r.repository.clone(),
-                    version_str(r.project.version_odoo),
+                    odoo_version_i32_to_string(r.project.version_odoo),
                 ));
         }
     }
@@ -422,7 +418,7 @@ pub async fn route(
             let mut variants: Vec<_> = variants.into_iter().collect();
             variants.sort_by_key(|(_, p)| std::cmp::Reverse(p.len()));
             RepoDrift {
-                version: version_str(v),
+                version: odoo_version_i32_to_string(v),
                 repo,
                 variants,
             }
@@ -438,7 +434,11 @@ pub async fn route(
         shared_map
             .entry((a.version_odoo, a.repo, a.technical_name))
             .or_default()
-            .push((a.org_name, a.repository, version_str(a.version_odoo)));
+            .push((
+                a.org_name,
+                a.repository,
+                odoo_version_i32_to_string(a.version_odoo),
+            ));
     }
     let mut shared_addons: Vec<SharedAddonView> = shared_map
         .into_iter()
@@ -446,7 +446,7 @@ pub async fn route(
         .map(|((v, repo, technical_name), projects)| SharedAddonView {
             repo,
             technical_name,
-            version: version_str(v),
+            version: odoo_version_i32_to_string(v),
             projects,
         })
         .collect();
@@ -500,7 +500,7 @@ pub async fn route(
         .map(|((repo, version_odoo, rev), projects)| LintRev {
             newest: newest.get(&(repo.clone(), version_odoo)) == Some(&rev),
             hook: hook_name(&repo).to_string(),
-            version: version_str(version_odoo),
+            version: odoo_version_i32_to_string(version_odoo),
             rev,
             projects,
         })
@@ -701,7 +701,7 @@ pub async fn route_project(
         not_installed(&instances.demo),
     );
     // Installed at another version than the repository's manifest: (module, installed, repo).
-    let serie = version_str(version_odoo);
+    let serie = odoo_version_i32_to_string(version_odoo);
     let version_drift = |env: &Option<doodba_project::Instance>| -> Vec<(String, String, String)> {
         let Some(env) = env.as_ref() else {
             return Vec::new();
@@ -770,10 +770,10 @@ pub async fn route_project(
             ..get_minijinja_context(&req),
             ..context!(
                 page_name => "project",
-                meta_title => format!("{} {}", row.repository, version_str(version_odoo)),
-                version => version_str(version_odoo),
-                next => next.map(version_str),
-                targets => targets.into_iter().map(version_str).collect::<Vec<_>>(),
+                meta_title => format!("{} {}", row.repository, odoo_version_i32_to_string(version_odoo)),
+                version => odoo_version_i32_to_string(version_odoo),
+                next => next.map(odoo_version_i32_to_string),
+                targets => targets.into_iter().map(odoo_version_i32_to_string).collect::<Vec<_>>(),
                 in_next => tracked.iter().filter(|a| a.in_next).count(),
                 in_pr => tracked.iter().filter(|a| !a.in_next && a.pr.is_some()).count(),
                 tracked => tracked.len(),
@@ -879,7 +879,7 @@ pub async fn route_csv(pool: AreaPool) -> Result<impl Responder> {
         let line = [
             csv_field(&r.org_name),
             csv_field(&r.repository),
-            csv_field(&version_str(r.project.version_odoo)),
+            csv_field(&odoo_version_i32_to_string(r.project.version_odoo)),
             csv_field(r.project.template_commit.as_deref().unwrap_or("")),
             s.template_behind.map_or(String::new(), |b| b.to_string()),
             s.addons.to_string(),

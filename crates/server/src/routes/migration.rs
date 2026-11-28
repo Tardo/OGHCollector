@@ -15,6 +15,8 @@
 //! PR links resolve through the global pool. Cache keyed on `pool.key()`.
 //! Modules migrated under their own name are counted, never listed:
 //! thousands of rows nobody has to act on.
+use crate::utils::pct;
+use oghutils::version::odoo_version_i32_to_string;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -31,20 +33,7 @@ use crate::routes::module::pick_compare_versions;
 use crate::utils::get_minijinja_context;
 use crate::workspace::OwnAreaPool;
 
-use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
-
-fn version_str(version_odoo: i32) -> String {
-    odoo_version_u8_to_string(&(version_odoo as u8))
-}
-
-fn pct(part: i64, total: i64) -> i64 {
-    if total > 0 {
-        part * 100 / total
-    } else {
-        0
-    }
-}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct MigrationModule {
@@ -166,8 +155,12 @@ fn runs(versions: &[i32], keep: impl Fn(i32) -> bool) -> String {
         if versions.get(i + 1).is_none_or(|next| !keep(*next)) {
             let first = start.take().unwrap();
             out.push(match first == *v {
-                true => version_str(*v),
-                false => format!("{}–{}", version_str(first), version_str(*v)),
+                true => odoo_version_i32_to_string(*v),
+                false => format!(
+                    "{}–{}",
+                    odoo_version_i32_to_string(first),
+                    odoo_version_i32_to_string(*v)
+                ),
             });
         }
     }
@@ -278,13 +271,13 @@ pub fn compute_migration_data(
                 kind: if *merged { "merged" } else { "renamed" },
                 org_name: at_to.get(name.as_str()).map(|o| o.to_string()),
                 name: name.clone(),
-                version: version_str(*at),
+                version: odoo_version_i32_to_string(*at),
             }),
             None if status == "new" => {
                 replaces.get(m.technical_name.as_str()).map(|old| Upstream {
                     kind: "replaces",
                     name: old.join(", "),
-                    version: version_str(to),
+                    version: odoo_version_i32_to_string(to),
                     org_name: None,
                 })
             }
@@ -387,9 +380,12 @@ pub fn compute_migration_data(
     MigrationData {
         from_idx: idx(from),
         to_idx: idx(to),
-        versions: versions.into_iter().map(version_str).collect(),
-        from: version_str(from),
-        to: version_str(to),
+        versions: versions
+            .into_iter()
+            .map(odoo_version_i32_to_string)
+            .collect(),
+        from: odoo_version_i32_to_string(from),
+        to: odoo_version_i32_to_string(to),
         tally: tally.finish(),
         modules,
         repos,

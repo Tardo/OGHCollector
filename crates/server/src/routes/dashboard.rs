@@ -6,6 +6,8 @@
 //! from the `/modules` page data (same cache, same `is_new` semantics).
 //! Collector status reads `system_event`, which no workspace filters: the
 //! template shows it in dev mode only, uncached.
+use crate::utils::pct;
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::{BTreeMap, HashSet};
 
 use actix_web::{get, web, HttpRequest, Responder, Result};
@@ -21,7 +23,6 @@ use crate::routes::migration::{compute_migration_data, MigrationModule};
 use crate::routes::modules::{compute_modules_page_data, ActivePullRequestInfo};
 use crate::utils::get_minijinja_context;
 
-use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::{models, Pool};
 
 use crate::workspace::OwnAreaPool;
@@ -29,18 +30,6 @@ use crate::workspace::OwnAreaPool;
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-
-fn version_str(version_odoo: i32) -> String {
-    odoo_version_u8_to_string(&(version_odoo as u8))
-}
-
-fn pct(part: i64, total: i64) -> i64 {
-    if total > 0 {
-        part * 100 / total
-    } else {
-        0
-    }
-}
 
 #[derive(Debug, Serialize, Clone, Default)]
 pub struct VersionRow {
@@ -192,11 +181,11 @@ fn compute_dashboard_data(
     let versions: Vec<VersionRow> = coverage
         .iter()
         .map(|c| {
-            let version = version_str(c.version_odoo);
+            let version = odoo_version_i32_to_string(c.version_odoo);
             let mut row = VersionRow {
                 modules: c.modules,
                 modules_pct: pct(c.modules, max_modules),
-                prev_version: c.prev_version.map(version_str),
+                prev_version: c.prev_version.map(odoo_version_i32_to_string),
                 prev_modules: c.prev_modules,
                 ported: c.ported,
                 renamed: c.renamed,
@@ -329,7 +318,7 @@ fn compute_dashboard_data(
         .map(|m| NewModule {
             technical_name: m.technical_name,
             org_name: m.org_name,
-            version: version_str(m.version_odoo),
+            version: odoo_version_i32_to_string(m.version_odoo),
             create_date: m.create_date,
         })
         .collect();
@@ -343,12 +332,12 @@ fn compute_dashboard_data(
             repositories: s.repositories,
             modules: s.modules,
             versions: if s.min_version == s.max_version {
-                version_str(s.min_version)
+                odoo_version_i32_to_string(s.min_version)
             } else {
                 format!(
                     "{} – {}",
-                    version_str(s.min_version),
-                    version_str(s.max_version)
+                    odoo_version_i32_to_string(s.min_version),
+                    odoo_version_i32_to_string(s.max_version)
                 )
             },
         })

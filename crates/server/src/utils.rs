@@ -240,6 +240,15 @@ pub fn get_minijinja_context(req: &HttpRequest) -> Value {
     )
 }
 
+/// `part` as a whole percentage of `total`, 0 when `total` is 0.
+pub fn pct(part: i64, total: i64) -> i64 {
+    if total > 0 {
+        part * 100 / total
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{avatar, markdown, num, xml_escape};

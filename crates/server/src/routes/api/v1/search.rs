@@ -8,6 +8,7 @@
 //! `true`) turns the feature off: the route is not registered (via `App::configure`), the model
 //! warmup thread is skipped on startup, and the "Semantic" option / `/api` doc entry are hidden
 //! from templates (`SEMANTIC_SEARCH_ENABLED` in the context).
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::HashMap;
 
 use actix_web::{get, web, Error as AWError, HttpResponse};
@@ -174,7 +175,7 @@ pub async fn route_semantic(
                     technical_name: module.technical_name,
                     name: module.name,
                     category: module.category.unwrap_or_default(),
-                    odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+                    odoo_version: odoo_version_i32_to_string(module.version_odoo),
                     org_name: org.name,
                     repository: repo.name,
                     score,

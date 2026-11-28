@@ -1,11 +1,11 @@
 // Copyright Alexandre D. Díaz
 use diesel::prelude::*;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::{Deserialize, Serialize};
 
 use crate::schema::dependency_osv;
 
 use super::{dependency, dependency_module, module, system_event};
-use oghutils::version::odoo_version_u8_to_string;
 
 #[derive(QueryableByName, Debug, Deserialize, Serialize, Clone)]
 pub struct Model {
@@ -142,7 +142,7 @@ pub fn add(
             osv_id,
             &mod_info.technical_name,
             &mod_info.name,
-            odoo_version_u8_to_string(&(mod_info.version_odoo as u8)).as_str(),
+            odoo_version_i32_to_string(mod_info.version_odoo).as_str(),
         );
     }
 

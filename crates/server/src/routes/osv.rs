@@ -7,6 +7,7 @@
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder, Result};
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +15,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models;
 use sqlitedb::models::dependency_osv::summary;
 
@@ -170,7 +170,7 @@ fn compute_osv_groups(conn: &mut SqliteConnection) -> Vec<OSVVersionGroup> {
                 .collect::<Vec<_>>();
             packages.sort_by_key(|p| Reverse(p.advisories.len()));
             OSVVersionGroup {
-                odoo_version: odoo_version_u8_to_string(&(version_odoo as u8)),
+                odoo_version: odoo_version_i32_to_string(version_odoo),
                 vuln_count: packages.iter().map(|p| p.advisories.len()).sum(),
                 package_count: packages.len(),
                 module_count: modules.len(),

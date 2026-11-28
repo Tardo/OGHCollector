@@ -15,6 +15,7 @@
 //! (`OGHCOLLECTOR_SCAN_ENABLED`, a scanning service) and the Doodba project tools
 //! (`OGHCOLLECTOR_PROJECTS_ENABLED`, client project names; `doodba_project::Summary`/`Report`, the
 //! server's `/v1` answers).
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::HashMap;
 
 use cached::{proc_macro::cached, stores::TimedSizedCache};
@@ -631,7 +632,7 @@ fn build_module_info(conn: &mut SqliteConnection, module: &models::module::Model
     ModuleInfo {
         technical_name: module.technical_name.clone(),
         name: module.name.clone(),
-        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(module.version_odoo),
         module_version: module.version_module.clone(),
         description: module.description.clone().unwrap_or_default(),
         authors: models::module_author::get_names_by_module_id(conn, &module.id),
@@ -653,7 +654,7 @@ fn build_module_docs(conn: &mut SqliteConnection, module: &models::module::Model
     let (org, repo) = get_org_repo(conn, module);
     ModuleDocs {
         technical_name: module.technical_name.clone(),
-        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(module.version_odoo),
         organization: org.name,
         repository: repo.name,
         installation: module.installation.clone().unwrap_or_default(),
@@ -670,7 +671,7 @@ fn build_module_dependency_info(
     let license_review = full_deps.license_review(&[module.id]);
     ModuleDependencyInfo {
         technical_name: module.technical_name.clone(),
-        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(module.version_odoo),
         organization: org.name,
         repository: repo.name,
         dependencies: ModuleDependencies {
@@ -746,7 +747,7 @@ fn build_module_code_analysis(
     };
     ModuleCodeAnalysis {
         technical_name: module.technical_name.clone(),
-        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(module.version_odoo),
         module_version,
         organization: org.name,
         repository: repo.name,
@@ -823,7 +824,7 @@ fn build_repository_search_results(
             .entry((row.organization, row.name))
             .or_default()
             .insert(
-                odoo_version_u8_to_string(&(row.version_odoo as u8)),
+                odoo_version_i32_to_string(row.version_odoo),
                 row.num_modules as u32,
             );
     }
@@ -865,7 +866,7 @@ fn build_module_summary(
     ModuleSummary {
         technical_name: module.technical_name.clone(),
         name: module.name.clone(),
-        odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+        odoo_version: odoo_version_i32_to_string(module.version_odoo),
         module_version: module.version_module.clone(),
         description: module.description.clone().unwrap_or_default(),
         category: module.category.clone().unwrap_or_default(),
@@ -1104,7 +1105,7 @@ fn semantic_search(
             Some(SemanticSearchResult {
                 technical_name: module.technical_name,
                 name: module.name,
-                odoo_version: odoo_version_u8_to_string(&(module.version_odoo as u8)),
+                odoo_version: odoo_version_i32_to_string(module.version_odoo),
                 category: module.category.unwrap_or_default(),
                 installable: module.installable,
                 organization: org.name,
@@ -1622,7 +1623,7 @@ impl OghMcp {
                 .map(|a| CommitterActivityEntry {
                     technical_name: a.technical_name,
                     name: a.name,
-                    odoo_version: odoo_version_u8_to_string(&(a.version_odoo as u8)),
+                    odoo_version: odoo_version_i32_to_string(a.version_odoo),
                     organization: a.organization,
                     repository: a.repository,
                     commits: a.commits,

@@ -15,7 +15,7 @@ use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::{get_minijinja_context, thousands};
 
 use chrono::Month;
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 use sqlitedb::models::{self, module_committer::SharedModules};
 
 use crate::workspace::AreaPool;
@@ -40,10 +40,6 @@ pub(crate) fn month_year_label(year: i32, month: i32) -> String {
 /// "Oct 2016", for big-type headlines.
 fn short_month_year(year: i32, month: i32) -> String {
     format!("{:.3} {year}", month_name(month))
-}
-
-fn version_label(version: i32) -> String {
-    odoo_version_u8_to_string(&(version as u8))
 }
 
 /// A big-type trivia item: `headline` is the number, `caption` explains it.
@@ -345,7 +341,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
                 technical_name: row.technical_name.clone(),
                 name: row.name.clone(),
                 first_version: String::new(),
-                last_version: version_label(row.version_odoo),
+                last_version: odoo_version_i32_to_string(row.version_odoo),
                 versions: 0,
                 commits: 0,
                 left: 0.0,
@@ -353,7 +349,7 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
             });
         // A module's rows come newest version first, so a version repeats
         // (same name in two repositories) only right after itself.
-        let label = version_label(row.version_odoo);
+        let label = odoo_version_i32_to_string(row.version_odoo);
         if module.first_version != label {
             module.versions += 1;
             module.first_version = label;
@@ -383,12 +379,12 @@ fn build_committer_stats(conn: &mut SqliteConnection, name: &str) -> CommitterSt
     let top_version = versions
         .iter()
         .max_by_key(|(version, (_, commits))| (*commits, **version))
-        .map(|(version, _)| version_label(*version));
+        .map(|(version, _)| odoo_version_i32_to_string(*version));
     let busiest_version = versions.values().map(|(_, c)| *c).max().unwrap_or(0).max(1);
     let versions: Vec<VersionStat> = versions
         .into_iter()
         .map(|(version, (names, commits))| VersionStat {
-            version: version_label(version),
+            version: odoo_version_i32_to_string(version),
             modules: names.len(),
             commits,
             pct: commits * 100 / busiest_version,

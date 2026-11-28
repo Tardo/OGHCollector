@@ -3,7 +3,8 @@ use actix_web::{get, post, web, Error as AWError, HttpRequest, HttpResponse, Res
 use diesel::sqlite::SqliteConnection;
 use minijinja::context;
 use oghutils::license::LicenseReport;
-use oghutils::version::{odoo_version_u8_to_string, parse_odoo_version};
+use oghutils::version::odoo_version_i32_to_string;
+use oghutils::version::parse_odoo_version;
 use serde::{Deserialize, Serialize};
 
 use crate::minijinja_renderer::MiniJinjaRenderer;
@@ -87,7 +88,7 @@ fn get_pack_module_info(
                         found: true,
                         name: Some(m.name.clone()),
                         repository,
-                        odoo_version: Some(odoo_version_u8_to_string(&(m.version_odoo as u8))),
+                        odoo_version: Some(odoo_version_i32_to_string(m.version_odoo)),
                         folder_size: Some(m.folder_size as u64),
                     };
                     resolved_modules.push(m);

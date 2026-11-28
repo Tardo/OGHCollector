@@ -2,7 +2,7 @@
 use actix_web::{get, web, Error as AWError, HttpResponse, Result};
 use base64::Engine;
 use diesel::sqlite::SqliteConnection;
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::{Deserialize, Serialize};
 
 use sqlitedb::{models, Pool};
@@ -37,7 +37,7 @@ fn get_odoo_versions(conn: &mut SqliteConnection) -> Vec<OdooVersionInfo> {
         .into_iter()
         .map(|x| OdooVersionInfo {
             key: x,
-            value: odoo_version_u8_to_string(&(x as u8)),
+            value: odoo_version_i32_to_string(x),
         })
         .collect()
 }
@@ -49,7 +49,7 @@ fn get_odoo_module_list(conn: &mut SqliteConnection) -> Vec<ModuleListInfo> {
             versions: x
                 .versions_odoo
                 .iter()
-                .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+                .map(|v| odoo_version_i32_to_string(*v))
                 .collect(),
             technical_name: x.technical_name,
             name: x.name,

@@ -1,5 +1,6 @@
 // Copyright Alexandre D. Díaz
 use diesel::prelude::*;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -58,9 +59,6 @@ impl Model {
     }
     pub fn category_str(&self) -> &str {
         self.category.as_deref().unwrap_or("Uncategorized")
-    }
-    pub fn last_commit_partof_str(&self) -> &str {
-        self.last_commit_partof.as_deref().unwrap_or("")
     }
     pub fn installation_str(&self) -> &str {
         self.installation.as_deref().unwrap_or("")
@@ -1392,7 +1390,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
                 &a.name,
                 &existing_module.technical_name,
                 &existing_module.name,
-                odoo_version_u8_to_string(&(existing_module.version_odoo as u8)).as_str(),
+                odoo_version_i32_to_string(existing_module.version_odoo).as_str(),
             );
         }
     }
@@ -1424,7 +1422,7 @@ pub fn add(conn: &mut SqliteConnection, module_info: &ManifestInfo) -> QueryResu
                 &m.name,
                 &existing_module.technical_name,
                 &existing_module.name,
-                odoo_version_u8_to_string(&(existing_module.version_odoo as u8)).as_str(),
+                odoo_version_i32_to_string(existing_module.version_odoo).as_str(),
             );
         }
     }

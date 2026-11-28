@@ -1,4 +1,5 @@
 // Copyright Alexandre D. Díaz
+use oghutils::version::odoo_version_i32_to_string;
 use std::collections::{BTreeMap, HashMap};
 
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder, Result};
@@ -11,7 +12,6 @@ use crate::config::SERVER_CONFIG;
 use crate::minijinja_renderer::MiniJinjaRenderer;
 use crate::utils::get_minijinja_context;
 
-use oghutils::version::odoo_version_u8_to_string;
 use sqlitedb::models;
 
 use crate::workspace::OwnAreaPool;
@@ -115,7 +115,7 @@ fn get_group(
     by_version
         .entry(version_odoo)
         .or_insert_with(|| ModulesVersionGroup {
-            odoo_version: odoo_version_u8_to_string(&(version_odoo as u8)),
+            odoo_version: odoo_version_i32_to_string(version_odoo),
             ..Default::default()
         })
 }

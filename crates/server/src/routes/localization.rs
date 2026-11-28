@@ -1,7 +1,7 @@
 // Copyright Alexandre D. Díaz
 use actix_web::{get, web, HttpRequest, HttpResponse, Result};
 use minijinja::context;
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 use serde::Deserialize;
 use sqlitedb::models;
 
@@ -34,7 +34,7 @@ pub async fn route_index(
     let default_version = versions.first().copied();
     let versions: Vec<_> = versions
         .iter()
-        .map(|v| odoo_version_u8_to_string(&(*v as u8)))
+        .map(|v| odoo_version_i32_to_string(*v))
         .collect();
     let rendered = tmpl_env.render(
         "pages/localizations.html",
@@ -82,7 +82,7 @@ async fn country_modules(
                 let versions: Vec<_> = module
                     .versions_odoo
                     .iter()
-                    .map(|version| odoo_version_u8_to_string(&(*version as u8)))
+                    .map(|version| odoo_version_i32_to_string(*version))
                     .collect();
                 context!(
                     technical_name => module.technical_name,

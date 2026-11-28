@@ -10,7 +10,7 @@ use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-use oghutils::version::odoo_version_u8_to_string;
+use oghutils::version::odoo_version_i32_to_string;
 
 use crate::schema::{doodba_project, doodba_project_addon};
 
@@ -387,7 +387,7 @@ impl Row {
     }
 
     pub fn odoo_version(&self) -> String {
-        odoo_version_u8_to_string(&(self.project.version_odoo as u8))
+        odoo_version_i32_to_string(self.project.version_odoo)
     }
 
     pub fn summary(&self) -> Summary {
@@ -513,7 +513,7 @@ pub fn report(conn: &mut SqliteConnection, row: &Row) -> Report {
         deploy: row.deploy(),
         instances: row.instances(),
         exposed_credentials: row.exposed(),
-        next_odoo_version: next.map(|v| odoo_version_u8_to_string(&(v as u8))),
+        next_odoo_version: next.map(odoo_version_i32_to_string),
         addons: addons(conn, p.gh_repository_id, p.version_odoo, next)
             .into_iter()
             .map(|a| ReportAddon {
